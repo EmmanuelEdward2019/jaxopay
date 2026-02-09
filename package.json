@@ -1,0 +1,15 @@
+{
+    "name": "jaxopay-monorepo",
+    "private": true,
+    "workspaces": [
+        "jaxopay-backend",
+        "jaxopay-web"
+    ],
+    "scripts": {
+        "start": "npm run start --prefix jaxopay-backend",
+        "build": "npm run build --prefix jaxopay-backend"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
