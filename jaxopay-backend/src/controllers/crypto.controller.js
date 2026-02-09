@@ -25,22 +25,24 @@ export const getSupportedCryptos = catchAsync(async (req, res) => {
 
 // Get exchange rates
 export const getExchangeRates = catchAsync(async (req, res) => {
-  const { from, to, amount } = req.query;
+  const { from, to, from_currency, to_currency, amount } = req.query;
+  const fromCurr = from || from_currency;
+  const toCurr = to || to_currency;
 
-  if (!from || !to) {
+  if (!fromCurr || !toCurr) {
     throw new AppError('From and to currencies are required', 400);
   }
 
   // In production, this would call CoinGecko/Binance API
   // For now, using mock rates
-  const rate = await getMockExchangeRate(from, to);
+  const rate = await getMockExchangeRate(fromCurr, toCurr);
   const exchangeAmount = amount ? parseFloat(amount) * rate : null;
 
   res.status(200).json({
     success: true,
     data: {
-      from: from.toUpperCase(),
-      to: to.toUpperCase(),
+      from: fromCurr.toUpperCase(),
+      to: toCurr.toUpperCase(),
       rate,
       amount: amount ? parseFloat(amount) : null,
       exchange_amount: exchangeAmount,

@@ -1,5 +1,6 @@
 import express from 'express';
 import { verifyToken, requireKYCTier } from '../middleware/auth.js';
+import { requireFeature } from '../middleware/featureGuard.js';
 import { validate } from '../middleware/validator.js';
 import { body, param, query } from 'express-validator';
 import {
@@ -18,6 +19,7 @@ const router = express.Router();
 
 // All card routes require authentication
 router.use(verifyToken);
+router.use(requireFeature('virtual_cards'));
 
 // Get all user cards
 router.get('/', getCards);

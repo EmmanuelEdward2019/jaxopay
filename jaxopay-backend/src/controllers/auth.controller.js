@@ -9,10 +9,14 @@ import { sendEmail } from '../services/email.service.js';
 import { sendSMS } from '../services/sms.service.js';
 import { parseUserAgent, getDeviceInfo } from '../utils/deviceParser.js';
 import logger from '../utils/logger.js';
+import { supabaseAdmin } from '../config/supabase.js';
 
 // Generate JWT token
 const generateToken = (userId, expiresIn = process.env.JWT_EXPIRES_IN || '15m') => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn });
+  return jwt.sign({
+    userId,
+    jti: crypto.randomBytes(16).toString('hex') // Ensure token is unique even if generated in same second
+  }, process.env.JWT_SECRET, { expiresIn });
 };
 
 // Generate refresh token
@@ -30,6 +34,8 @@ const createSession = async (userId, token, deviceInfo, executor = query) => {
   const result = await executor(
     `INSERT INTO user_sessions (user_id, session_token, device_fingerprint, ip_address, user_agent, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (session_token) DO UPDATE 
+     SET last_activity_at = NOW(), expires_at = $6
      RETURNING id`,
     [userId, token, deviceInfo.fingerprint, deviceInfo.ipAddress, deviceInfo.userAgent, expiresAt]
   );
@@ -112,14 +118,15 @@ export const signup = catchAsync(async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Create user profile
-    if (metadata) {
-      await client.query(
-        `INSERT INTO user_profiles (user_id, first_name, last_name, country)
-         VALUES ($1, $2, $3, $4)`,
-        [user.id, metadata.first_name, metadata.last_name, country_code]
-      );
-    }
+    // Create user profile (Always create one, even if empty)
+    const firstName = metadata?.first_name || 'User';
+    const lastName = metadata?.last_name || user.id.substring(0, 8);
+
+    await client.query(
+      `INSERT INTO user_profiles (user_id, first_name, last_name, country)
+       VALUES ($1, $2, $3, $4)`,
+      [user.id, firstName, lastName, country_code || 'NG']
+    );
 
     // Create default wallets
     const defaultCurrencies = ['NGN', 'USD'];
@@ -148,6 +155,28 @@ export const signup = catchAsync(async (req, res) => {
        VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
       [user.id, verificationToken]
     );
+
+    // OPTIONAL: Sync with Supabase Auth (if service role key is provided)
+    if (supabaseAdmin) {
+      try {
+        const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email: email,
+          password: password, // Cross-platform sync
+          email_confirm: true,
+          user_metadata: { first_name: metadata?.first_name, last_name: metadata?.last_name }
+        });
+
+        if (authError) {
+          logger.warn('Supabase Auth sync failed (non-critical):', authError.message);
+        } else {
+          // Link Supabase UID to our public user record
+          await client.query('UPDATE users SET id = $1 WHERE id = $2', [authUser.user.id, user.id]);
+          user.id = authUser.user.id;
+        }
+      } catch (err) {
+        logger.error('Unexpected error during Supabase sync:', err);
+      }
+    }
 
     return { user, accessToken, refreshToken, verificationToken };
   });
@@ -191,15 +220,19 @@ export const signup = catchAsync(async (req, res) => {
 export const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
 
-  // Get user
+  // Get user with profile
   const result = await query(
-    `SELECT id, email, password_hash, role, kyc_tier, is_active, is_email_verified, two_fa_enabled, two_fa_method
-     FROM users
-     WHERE email = $1 AND deleted_at IS NULL`,
+    `SELECT u.id, u.email, u.password_hash, u.role, u.kyc_tier, u.is_active, 
+            u.is_email_verified, u.two_fa_enabled, u.two_fa_method, u.two_fa_secret,
+            up.first_name, up.last_name, up.avatar_url
+     FROM users u
+     LEFT JOIN user_profiles up ON u.id = up.user_id
+     WHERE u.email = $1 AND u.deleted_at IS NULL`,
     [email]
   );
 
   if (result.rows.length === 0) {
+    logger.warn('Login failed: User not found', { email });
     throw new AppError('Invalid email or password', 401);
   }
 
@@ -213,23 +246,30 @@ export const login = catchAsync(async (req, res) => {
   // Verify password
   const isPasswordValid = await bcrypt.compare(password, user.password_hash);
   if (!isPasswordValid) {
+    logger.warn('Login failed: Invalid password', { email, userId: user.id });
     throw new AppError('Invalid email or password', 401);
   }
 
-  // If 2FA is enabled, send OTP and return pending status
+  // If 2FA is enabled
   if (user.two_fa_enabled) {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpHash = await bcrypt.hash(otp, 10);
+    let otp;
 
-    await query(
-      `INSERT INTO otp_codes (user_id, code_hash, purpose, expires_at)
-       VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')`,
-      [user.id, otpHash, '2fa_login']
-    );
+    if (user.two_fa_method !== 'authenticator') {
+      otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpHash = await bcrypt.hash(otp, 10);
+
+      await query(
+        `INSERT INTO otp_codes (user_id, code_hash, purpose, expires_at)
+         VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')`,
+        [user.id, otpHash, '2fa_login']
+      );
+    }
 
     if (user.two_fa_method === 'sms') {
       const phoneResult = await query('SELECT phone FROM users WHERE id = $1', [user.id]);
       await sendSMS(phoneResult.rows[0].phone, `Your JAXOPAY login code is: ${otp}`);
+    } else if (user.two_fa_method === 'authenticator') {
+      // Do nothing, user will check their app
     } else {
       await sendEmail({
         to: email,
@@ -241,10 +281,10 @@ export const login = catchAsync(async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: '2FA code sent. Please verify to complete login.',
+      message: user.two_fa_method === 'authenticator' ? 'Please enter the code from your Authenticator app.' : '2FA code sent. Please verify to complete login.',
       data: {
         requires_2fa: true,
-        method: user.two_fa_method,
+        method: user.two_fa_method || 'email', // default fallback
         user_id: user.id,
       },
     });
@@ -275,6 +315,9 @@ export const login = catchAsync(async (req, res) => {
         role: user.role,
         kyc_tier: user.kyc_tier,
         is_email_verified: user.is_email_verified,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        avatar_url: user.avatar_url
       },
       session: {
         access_token: accessToken,
@@ -331,50 +374,87 @@ export const requestOTP = catchAsync(async (req, res) => {
 });
 
 // Verify OTP
+// Verify OTP / 2FA Challenge
 export const verifyOTP = catchAsync(async (req, res) => {
-  const { phone, otp } = req.body;
+  const { phone, userId, otp } = req.body;
 
-  // Get user
-  const userResult = await query(
-    'SELECT id, email, role, kyc_tier, is_active FROM users WHERE phone = $1 AND deleted_at IS NULL',
-    [phone]
-  );
-
-  if (userResult.rows.length === 0) {
-    throw new AppError('Invalid phone number', 401);
+  let user;
+  if (userId) {
+    const userResult = await query(
+      `SELECT u.id, u.email, u.role, u.kyc_tier, u.is_active, 
+              u.two_fa_enabled, u.two_fa_method, u.two_fa_secret,
+              up.first_name, up.last_name, up.avatar_url
+       FROM users u
+       LEFT JOIN user_profiles up ON u.id = up.user_id
+       WHERE u.id = $1 AND u.deleted_at IS NULL`,
+      [userId]
+    );
+    if (userResult.rows.length === 0) {
+      throw new AppError('User not found', 404);
+    }
+    user = userResult.rows[0];
+  } else if (phone) {
+    const userResult = await query(
+      `SELECT u.id, u.email, u.role, u.kyc_tier, u.is_active, 
+              u.two_fa_enabled, u.two_fa_method, u.two_fa_secret,
+              up.first_name, up.last_name, up.avatar_url
+       FROM users u
+       LEFT JOIN user_profiles up ON u.id = up.user_id
+       WHERE u.phone = $1 AND u.deleted_at IS NULL`,
+      [phone]
+    );
+    if (userResult.rows.length === 0) {
+      throw new AppError('Invalid phone number', 401);
+    }
+    user = userResult.rows[0];
+  } else {
+    throw new AppError('Phone or User ID is required', 400);
   }
 
-  const user = userResult.rows[0];
+  let isValid = false;
 
-  // Get latest OTP
-  const otpResult = await query(
-    `SELECT id, code_hash, expires_at
-     FROM otp_codes
-     WHERE user_id = $1 AND purpose = 'phone_login' AND used_at IS NULL
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [user.id]
-  );
+  // Authenticator (TOTP) Verification
+  if (user.two_fa_enabled && user.two_fa_method === 'authenticator') {
+    if (!user.two_fa_secret) {
+      throw new AppError('2FA is enabled but secret is missing. Contact support.', 500);
+    }
+    isValid = speakeasy.totp.verify({
+      secret: user.two_fa_secret,
+      encoding: 'base32',
+      token: otp,
+      window: 1 // Allow 30s drift
+    });
+  } else {
+    // SMS / Email OTP Verification (DB Check)
+    const otpResult = await query(
+      `SELECT id, code_hash, expires_at
+       FROM otp_codes
+       WHERE user_id = $1 AND used_at IS NULL
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [user.id]
+    );
 
-  if (otpResult.rows.length === 0) {
-    throw new AppError('No valid OTP found. Please request a new one.', 401);
+    if (otpResult.rows.length === 0) {
+      throw new AppError('No valid OTP found. Please request a new one.', 401);
+    }
+
+    const otpRecord = otpResult.rows[0];
+
+    if (new Date(otpRecord.expires_at) < new Date()) {
+      throw new AppError('OTP has expired. Please request a new one.', 401);
+    }
+
+    isValid = await bcrypt.compare(otp, otpRecord.code_hash);
+
+    if (isValid) {
+      await query('UPDATE otp_codes SET used_at = NOW() WHERE id = $1', [otpRecord.id]);
+    }
   }
 
-  const otpRecord = otpResult.rows[0];
-
-  // Check if OTP is expired
-  if (new Date(otpRecord.expires_at) < new Date()) {
-    throw new AppError('OTP has expired. Please request a new one.', 401);
-  }
-
-  // Verify OTP
-  const isOTPValid = await bcrypt.compare(otp, otpRecord.code_hash);
-  if (!isOTPValid) {
+  if (!isValid) {
     throw new AppError('Invalid OTP', 401);
   }
-
-  // Mark OTP as used
-  await query('UPDATE otp_codes SET used_at = NOW() WHERE id = $1', [otpRecord.id]);
 
   // Generate tokens
   const accessToken = generateToken(user.id);
@@ -384,15 +464,22 @@ export const verifyOTP = catchAsync(async (req, res) => {
   await createSession(user.id, accessToken, req.deviceInfo);
 
   // Store device info
-  await storeDeviceInfo(user.id, req.deviceInfo);
+  if (req.deviceInfo) {
+    await storeDeviceInfo(user.id, req.deviceInfo);
+  }
 
-  // Update last login and mark phone as verified
+  // Update last login
   await query(
-    'UPDATE users SET last_login_at = NOW(), is_phone_verified = true WHERE id = $1',
+    'UPDATE users SET last_login_at = NOW() WHERE id = $1',
     [user.id]
   );
 
-  logger.info('User logged in via OTP:', { userId: user.id, phone });
+  // If verified by phone, mark phone as verified
+  if (phone) {
+    await query('UPDATE users SET is_phone_verified = true WHERE id = $1', [user.id]);
+  }
+
+  logger.info('User logged in via 2FA/OTP:', { userId: user.id });
 
   res.status(200).json({
     success: true,
@@ -403,6 +490,9 @@ export const verifyOTP = catchAsync(async (req, res) => {
         email: user.email,
         role: user.role,
         kyc_tier: user.kyc_tier,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        avatar_url: user.avatar_url
       },
       session: {
         access_token: accessToken,
@@ -438,7 +528,12 @@ export const refreshToken = catchAsync(async (req, res) => {
   }
 
   // Verify refresh token
-  const decoded = jwt.verify(refresh_token, process.env.JWT_REFRESH_SECRET);
+  let decoded;
+  try {
+    decoded = jwt.verify(refresh_token, process.env.JWT_REFRESH_SECRET);
+  } catch (error) {
+    throw new AppError('Invalid or expired refresh token. Please log in again.', 401);
+  }
 
   // Get user info
   const result = await query(
@@ -695,48 +790,147 @@ export const resendVerificationEmail = catchAsync(async (req, res) => {
 });
 
 // Placeholder functions for 2FA and device/session management
+// Enable 2FA
 export const enable2FA = catchAsync(async (req, res) => {
-  res.json({ success: true, message: '2FA enable endpoint - To be fully implemented' });
+  const { method } = req.body; // 'authenticator', 'sms', 'email'
+
+  if (method === 'authenticator') {
+    const secret = speakeasy.generateSecret({
+      name: `JAXOPAY:${req.user.email}`,
+    });
+
+    // Store secret temporarily (or update user with pending status)
+    // For simplicity, we'll store it directly but enable flag remains false until verified
+    await query(
+      'UPDATE users SET two_fa_secret = $1, two_fa_method = $2 WHERE id = $3',
+      [secret.base32, 'authenticator', req.user.id]
+    );
+
+    const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        secret: secret.base32,
+        qr_code: qrCodeUrl,
+        method: 'authenticator',
+      },
+    });
+  }
+
+  // Handle other methods if needed (SMS/Email usually already verified via phone/email verification)
+  // For now, just allow them
+  await query(
+    'UPDATE users SET two_fa_method = $1 WHERE id = $2',
+    [method, req.user.id]
+  );
+
+  res.status(200).json({
+    success: true,
+    message: `Two-factor authentication via ${method} initiated`,
+    data: { method },
+  });
 });
 
+// Verify 2FA (Setup confirmation)
 export const verify2FA = catchAsync(async (req, res) => {
-  res.json({ success: true, message: '2FA verify endpoint - To be fully implemented' });
+  const { code, method } = req.body;
+
+  if (method === 'authenticator') {
+    const userResult = await query(
+      'SELECT two_fa_secret FROM users WHERE id = $1',
+      [req.user.id]
+    );
+
+    if (!userResult.rows[0].two_fa_secret) {
+      throw new AppError('2FA setup not initiated', 400);
+    }
+
+    const verified = speakeasy.totp.verify({
+      secret: userResult.rows[0].two_fa_secret,
+      encoding: 'base32',
+      token: code,
+    });
+
+    if (!verified) {
+      throw new AppError('Invalid authentication code', 401);
+    }
+  }
+
+  // Enable 2FA
+  await query(
+    'UPDATE users SET two_fa_enabled = true WHERE id = $1',
+    [req.user.id]
+  );
+
+  res.status(200).json({
+    success: true,
+    message: 'Two-factor authentication enabled successfully',
+  });
 });
 
+// Disable 2FA
 export const disable2FA = catchAsync(async (req, res) => {
-  res.json({ success: true, message: '2FA disable endpoint - To be fully implemented' });
+  const { password } = req.body;
+
+  // Verify password for security
+  if (password) {
+    const userResult = await query(
+      'SELECT password_hash FROM users WHERE id = $1',
+      [req.user.id]
+    );
+
+    const isPasswordValid = await bcrypt.compare(password, userResult.rows[0].password_hash);
+    if (!isPasswordValid) {
+      throw new AppError('Invalid password', 401);
+    }
+  }
+
+  await query(
+    'UPDATE users SET two_fa_enabled = false, two_fa_secret = NULL, two_fa_method = NULL WHERE id = $1',
+    [req.user.id]
+  );
+
+  res.status(200).json({
+    success: true,
+    message: 'Two-factor authentication disabled',
+  });
 });
 
 export const getUserDevices = catchAsync(async (req, res) => {
   const result = await query(
-    'SELECT id, device_name, device_type, os, browser, last_seen_at FROM user_devices WHERE user_id = $1 ORDER BY last_seen_at DESC',
+    'SELECT id, device_name, device_type, os, browser, last_seen_at, ip_address FROM user_devices WHERE user_id = $1 ORDER BY last_seen_at DESC',
     [req.user.id]
   );
 
-  res.json({ success: true, data: result.rows });
+  res.status(200).json({ success: true, data: result.rows });
 });
 
 export const removeDevice = catchAsync(async (req, res) => {
   await query('DELETE FROM user_devices WHERE id = $1 AND user_id = $2', [req.params.deviceId, req.user.id]);
-  res.json({ success: true, message: 'Device removed' });
+  res.status(200).json({ success: true, message: 'Device removed' });
 });
 
 export const getUserSessions = catchAsync(async (req, res) => {
   const result = await query(
-    'SELECT id, ip_address, user_agent, last_activity_at, created_at FROM user_sessions WHERE user_id = $1 AND is_active = true ORDER BY last_activity_at DESC',
-    [req.user.id]
+    `SELECT id, ip_address, user_agent, last_activity_at, created_at,
+     CASE WHEN id = $2 THEN true ELSE false END as is_current
+     FROM user_sessions 
+     WHERE user_id = $1 AND is_active = true 
+     ORDER BY last_activity_at DESC`,
+    [req.user.id, req.sessionId]
   );
 
-  res.json({ success: true, data: result.rows });
+  res.status(200).json({ success: true, data: { sessions: result.rows } });
 });
 
 export const terminateSession = catchAsync(async (req, res) => {
   await query('UPDATE user_sessions SET is_active = false WHERE id = $1 AND user_id = $2', [req.params.sessionId, req.user.id]);
-  res.json({ success: true, message: 'Session terminated' });
+  res.status(200).json({ success: true, message: 'Session terminated' });
 });
 
 export const terminateAllSessions = catchAsync(async (req, res) => {
   await query('UPDATE user_sessions SET is_active = false WHERE user_id = $1 AND id != $2', [req.user.id, req.sessionId]);
-  res.json({ success: true, message: 'All other sessions terminated' });
+  res.status(200).json({ success: true, message: 'All other sessions terminated' });
 });
 

@@ -12,6 +12,11 @@ import flightRoutes from './flight.routes.js';
 import giftCardRoutes from './giftCard.routes.js';
 import adminRoutes from './admin.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
+import configRoutes from './config.routes.js';
+import smsRoutes from './sms.routes.js';
+import notificationRoutes from './notification.routes.js';
+import announcementRoutes from './announcement.routes.js';
+import ticketRoutes from './ticket.routes.js';
 
 const router = express.Router();
 
@@ -36,6 +41,10 @@ router.get('/', (req, res) => {
       giftCards: '/gift-cards',
       admin: '/admin',
       dashboard: '/dashboard',
+      sms: '/sms',
+      notifications: '/notifications',
+      announcements: '/announcements',
+      tickets: '/tickets',
     },
   });
 });
@@ -54,6 +63,11 @@ router.use('/flights', flightRoutes);
 router.use('/gift-cards', giftCardRoutes);
 router.use('/admin', adminRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/config', configRoutes);
+router.use('/sms', smsRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/announcements', announcementRoutes);
+router.use('/tickets', ticketRoutes);
 
 export default router;
 

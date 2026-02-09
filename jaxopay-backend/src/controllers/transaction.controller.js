@@ -53,21 +53,18 @@ export const getTransactions = catchAsync(async (req, res) => {
   // Run data and count queries in parallel for better performance
   const [result, countResult] = await Promise.all([
     query(
-      `SELECT wt.id, wt.wallet_id, wt.transaction_type, wt.amount, wt.currency,
-              wt.status, wt.description, wt.metadata, wt.created_at,
-              w.wallet_type
-       FROM wallet_transactions wt
-       JOIN wallets w ON wt.wallet_id = w.id
-       ${conditions}
+      `SELECT wt.id, wt.from_wallet_id as wallet_id, wt.transaction_type, wt.from_amount as amount, wt.from_currency as currency,
+              wt.status, wt.description, wt.metadata, wt.created_at
+       FROM transactions wt
+       ${conditions.replace('w.user_id', 'wt.user_id').replace('wt.wallet_id', 'wt.from_wallet_id')}
        ORDER BY wt.created_at DESC
        LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`,
       [...params, limit, offset]
     ),
     query(
       `SELECT COUNT(*) as total
-       FROM wallet_transactions wt
-       JOIN wallets w ON wt.wallet_id = w.id
-       ${conditions}`,
+       FROM transactions wt
+       ${conditions.replace('w.user_id', 'wt.user_id').replace('wt.wallet_id', 'wt.from_wallet_id')}`,
       params
     )
   ]);
@@ -91,12 +88,11 @@ export const getTransaction = catchAsync(async (req, res) => {
   const { transactionId } = req.params;
 
   const result = await query(
-    `SELECT wt.id, wt.wallet_id, wt.transaction_type, wt.amount, wt.currency,
+    `SELECT wt.id, wt.from_wallet_id as wallet_id, wt.transaction_type, wt.from_amount as amount, wt.from_currency as currency,
             wt.status, wt.description, wt.metadata, wt.created_at, wt.updated_at,
-            w.wallet_type, w.user_id
-     FROM wallet_transactions wt
-     JOIN wallets w ON wt.wallet_id = w.id
-     WHERE wt.id = $1 AND w.user_id = $2`,
+            wt.user_id
+     FROM transactions wt
+     WHERE wt.id = $1 AND wt.user_id = $2`,
     [transactionId, req.user.id]
   );
 
@@ -116,13 +112,12 @@ export const getTransactionStats = catchAsync(async (req, res) => {
 
   // Total volume by type
   const volumeByType = await query(
-    `SELECT wt.transaction_type, wt.currency, SUM(wt.amount) as total_amount, COUNT(*) as count
-     FROM wallet_transactions wt
-     JOIN wallets w ON wt.wallet_id = w.id
-     WHERE w.user_id = $1
+    `SELECT wt.transaction_type, wt.from_currency as currency, SUM(wt.from_amount) as total_amount, COUNT(*) as count
+     FROM transactions wt
+     WHERE wt.user_id = $1
        AND wt.created_at >= NOW() - INTERVAL '${parseInt(period)} days'
        AND wt.status = 'completed'
-     GROUP BY wt.transaction_type, wt.currency
+     GROUP BY wt.transaction_type, wt.from_currency
      ORDER BY total_amount DESC`,
     [req.user.id]
   );
@@ -130,9 +125,8 @@ export const getTransactionStats = catchAsync(async (req, res) => {
   // Daily transaction count
   const dailyCount = await query(
     `SELECT DATE(wt.created_at) as date, COUNT(*) as count
-     FROM wallet_transactions wt
-     JOIN wallets w ON wt.wallet_id = w.id
-     WHERE w.user_id = $1
+     FROM transactions wt
+     WHERE wt.user_id = $1
        AND wt.created_at >= NOW() - INTERVAL '${parseInt(period)} days'
      GROUP BY DATE(wt.created_at)
      ORDER BY date DESC`,
@@ -142,9 +136,8 @@ export const getTransactionStats = catchAsync(async (req, res) => {
   // Status breakdown
   const statusBreakdown = await query(
     `SELECT wt.status, COUNT(*) as count
-     FROM wallet_transactions wt
-     JOIN wallets w ON wt.wallet_id = w.id
-     WHERE w.user_id = $1
+     FROM transactions wt
+     WHERE wt.user_id = $1
        AND wt.created_at >= NOW() - INTERVAL '${parseInt(period)} days'
      GROUP BY wt.status`,
     [req.user.id]

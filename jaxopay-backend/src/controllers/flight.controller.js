@@ -206,8 +206,8 @@ export const getBookings = catchAsync(async (req, res) => {
   }
 
   const result = await query(
-    `SELECT id, flight_id, booking_reference, passengers, contact_email,
-            total_amount, currency, booking_fee, status, created_at
+    `SELECT id, flight_number, booking_reference, passenger_details as passengers,
+            total_amount, currency, status, created_at
      FROM flight_bookings
      ${conditions}
      ORDER BY created_at DESC

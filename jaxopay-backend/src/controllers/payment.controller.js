@@ -138,6 +138,10 @@ export const deleteBeneficiary = catchAsync(async (req, res) => {
   });
 });
 
+import orchestrationLayer from '../orchestration/index.js';
+import complianceEngine from '../orchestration/compliance/ComplianceEngine.js';
+import routingEngine from '../orchestration/routing/RoutingEngine.js';
+
 // Send money
 export const sendMoney = catchAsync(async (req, res) => {
   const {
@@ -146,128 +150,67 @@ export const sendMoney = catchAsync(async (req, res) => {
     destination_currency,
     source_amount,
     purpose,
+    priority = 'balanced'
   } = req.body;
 
-  // Check KYC tier
-  if (req.user.kyc_tier < 1) {
-    throw new AppError('KYC Tier 1 or higher required to send money', 403);
-  }
+  // 1. Central Compliance Check (KYC limits, AML, balance)
+  await complianceEngine.validateTransaction(req.user.id, source_amount, 'CROSS_BORDER_PAYMENT');
 
-  if (source_amount <= 0) {
-    throw new AppError('Amount must be greater than 0', 400);
-  }
-
-  const result = await transaction(async (client) => {
-    // Get beneficiary
-    const beneficiary = await client.query(
-      `SELECT id, beneficiary_name, account_number, bank_name, country, currency
-       FROM beneficiaries
-       WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
-      [beneficiary_id, req.user.id]
-    );
-
-    if (beneficiary.rows.length === 0) {
-      throw new AppError('Beneficiary not found', 404);
-    }
-
-    // Get source wallet with lock
-    const sourceWallet = await client.query(
-      `SELECT id, balance FROM wallets
-       WHERE user_id = $1 AND currency = $2 AND deleted_at IS NULL
-       FOR UPDATE`,
-      [req.user.id, source_currency.toUpperCase()]
-    );
-
-    if (sourceWallet.rows.length === 0) {
-      throw new AppError(`No ${source_currency} wallet found`, 404);
-    }
-
-    // Calculate exchange and fees
-    const exchangeRate = await getExchangeRate(
-      source_currency,
-      destination_currency
-    );
-    const fee = source_amount * 0.015; // 1.5% fee
-    const totalDebit = source_amount + fee;
-
-    if (parseFloat(sourceWallet.rows[0].balance) < totalDebit) {
-      throw new AppError('Insufficient balance', 400);
-    }
-
-    const destinationAmount = source_amount * exchangeRate;
-
-    // Deduct from source wallet
-    await client.query(
-      'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
-      [totalDebit, sourceWallet.rows[0].id]
-    );
-
-    // Create payment record
-    const payment = await client.query(
-      `INSERT INTO payments
-       (user_id, beneficiary_id, source_currency, destination_currency,
-        source_amount, destination_amount, exchange_rate, fee, status, purpose, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'processing', $9, $10)
-       RETURNING id, status, created_at`,
-      [
-        req.user.id,
-        beneficiary_id,
-        source_currency.toUpperCase(),
-        destination_currency.toUpperCase(),
-        source_amount,
-        destinationAmount,
-        exchangeRate,
-        fee,
-        purpose || 'Personal transfer',
-        JSON.stringify(beneficiary.rows[0]),
-      ]
-    );
-
-    // Create wallet transaction
-    await client.query(
-      `INSERT INTO wallet_transactions
-       (wallet_id, transaction_type, amount, currency, status, description, metadata)
-       VALUES ($1, 'payment_sent', $2, $3, 'completed', 'Cross-border payment', $4)`,
-      [
-        sourceWallet.rows[0].id,
-        totalDebit,
-        source_currency.toUpperCase(),
-        JSON.stringify({
-          payment_id: payment.rows[0].id,
-          beneficiary: beneficiary.rows[0].beneficiary_name,
-          destination_amount: destinationAmount,
-          destination_currency: destination_currency.toUpperCase(),
-          fee,
-        }),
-      ]
-    );
-
-    return {
-      paymentId: payment.rows[0].id,
-      exchangeRate,
-      fee,
-      destinationAmount,
-    };
+  // 2. Select optimized Provider via Routing Engine
+  const provider = await routingEngine.selectProvider({
+    serviceType: 'payment',
+    country: 'NG', // In production, resolve from beneficiary info
+    amount: source_amount,
+    currency: destination_currency,
+    priority
   });
 
-  logger.info('Payment sent:', {
+  // 3. Resolve wallets
+  const sourceWallet = await query(
+    'SELECT id FROM wallets WHERE user_id = $1 AND currency = $2',
+    [req.user.id, source_currency.toUpperCase()]
+  );
+
+  if (sourceWallet.rows.length === 0) {
+    throw new AppError(`No ${source_currency} wallet found`, 404);
+  }
+
+  // 4. Resolve Beneficiary details
+  const beneficiary = await query(
+    'SELECT * FROM beneficiaries WHERE id = $1 AND user_id = $2',
+    [beneficiary_id, req.user.id]
+  );
+
+  if (beneficiary.rows.length === 0) {
+    throw new AppError('Beneficiary not found', 404);
+  }
+
+  // 5. Execute via Orchestration Layer (Handles Failover + Ledger)
+  const result = await orchestrationLayer.executePayment({
+    providerId: provider.name.toLowerCase(),
     userId: req.user.id,
-    paymentId: result.paymentId,
+    fromWalletId: sourceWallet.rows[0].id,
+    toWalletId: '00000000-0000-0000-0000-000000000000', // Platform Suspense Account
     amount: source_amount,
+    currency: source_currency,
+    destination_currency,
+    beneficiary: beneficiary.rows[0],
+    description: purpose || 'Cross-border transfer'
+  });
+
+  logger.info('Payment processed via Orchestration:', {
+    userId: req.user.id,
+    transactionId: result.transactionId,
+    provider: provider.name
   });
 
   res.status(201).json({
     success: true,
-    message: 'Payment initiated successfully',
+    message: 'Payment sent successfully',
     data: {
-      payment_id: result.paymentId,
-      source_amount,
-      source_currency: source_currency.toUpperCase(),
-      destination_amount: result.destinationAmount,
-      destination_currency: destination_currency.toUpperCase(),
-      exchange_rate: result.exchangeRate,
-      fee: result.fee,
-      status: 'processing',
+      transaction_id: result.transactionId,
+      status: result.status,
+      provider: provider.name
     },
   });
 });

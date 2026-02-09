@@ -1,5 +1,6 @@
 import express from 'express';
 import { verifyToken, requireKYCTier } from '../middleware/auth.js';
+import { requireFeature } from '../middleware/featureGuard.js';
 import { validate } from '../middleware/validator.js';
 import { body, query } from 'express-validator';
 import {
@@ -15,6 +16,7 @@ const router = express.Router();
 
 // All gift card routes require authentication
 router.use(verifyToken);
+router.use(requireFeature('gift_cards'));
 
 // Get gift card categories
 router.get('/categories', getGiftCardCategories);

@@ -91,98 +91,47 @@ export const createWallet = catchAsync(async (req, res) => {
   });
 });
 
+import ledgerService from '../orchestration/ledger/LedgerService.js';
+import complianceEngine from '../orchestration/compliance/ComplianceEngine.js';
+
 // Internal wallet-to-wallet transfer
 export const transferBetweenWallets = catchAsync(async (req, res) => {
   const { recipient_id, amount, currency, description } = req.body;
 
-  // Validate amount
+  // 1. Validate amount
   if (amount <= 0) {
     throw new AppError('Amount must be greater than zero', 400);
   }
 
-  // Execute transfer in transaction
-  const result = await transaction(async (client) => {
-    // Get sender wallet
-    const senderWallet = await client.query(
-      `SELECT id, balance, is_active FROM wallets
-       WHERE user_id = $1 AND currency = $2
-       FOR UPDATE`,
-      [req.user.id, currency.toUpperCase()]
-    );
+  // 2. Comprehensive Compliance Check
+  await complianceEngine.validateTransaction(req.user.id, amount, 'INTERNAL_TRANSFER');
 
-    if (senderWallet.rows.length === 0) {
-      throw new AppError('Sender wallet not found', 404);
-    }
+  // 3. Resolve Wallets
+  const senderWallet = await query(
+    'SELECT id FROM wallets WHERE user_id = $1 AND currency = $2',
+    [req.user.id, currency.toUpperCase()]
+  );
 
-    if (!senderWallet.rows[0].is_active) {
-      throw new AppError('Sender wallet is not active', 403);
-    }
+  const recipientWallet = await query(
+    'SELECT id FROM wallets WHERE user_id = $1 AND currency = $2',
+    [recipient_id, currency.toUpperCase()]
+  );
 
-    if (parseFloat(senderWallet.rows[0].balance) < amount) {
-      throw new AppError('Insufficient balance', 400);
-    }
+  if (!senderWallet.rows[0] || !recipientWallet.rows[0]) {
+    throw new AppError('Source or destination wallet not found', 404);
+  }
 
-    // Get recipient wallet
-    const recipientWallet = await client.query(
-      `SELECT id, is_active FROM wallets
-       WHERE user_id = $1 AND currency = $2
-       FOR UPDATE`,
-      [recipient_id, currency.toUpperCase()]
-    );
-
-    if (recipientWallet.rows.length === 0) {
-      throw new AppError('Recipient wallet not found', 404);
-    }
-
-    if (!recipientWallet.rows[0].is_active) {
-      throw new AppError('Recipient wallet is not active', 403);
-    }
-
-    // Deduct from sender
-    await client.query(
-      'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
-      [amount, senderWallet.rows[0].id]
-    );
-
-    // Add to recipient
-    await client.query(
-      'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
-      [amount, recipientWallet.rows[0].id]
-    );
-
-    // Create transaction record
-    const txResult = await client.query(
-      `INSERT INTO wallet_transactions 
-       (wallet_id, transaction_type, amount, currency, status, description, metadata)
-       VALUES ($1, 'transfer_out', $2, $3, 'completed', $4, $5)
-       RETURNING id, created_at`,
-      [
-        senderWallet.rows[0].id,
-        amount,
-        currency.toUpperCase(),
-        description || 'Wallet transfer',
-        JSON.stringify({ recipient_id, recipient_wallet_id: recipientWallet.rows[0].id }),
-      ]
-    );
-
-    // Create recipient transaction record
-    await client.query(
-      `INSERT INTO wallet_transactions 
-       (wallet_id, transaction_type, amount, currency, status, description, metadata)
-       VALUES ($1, 'transfer_in', $2, $3, 'completed', $4, $5)`,
-      [
-        recipientWallet.rows[0].id,
-        amount,
-        currency.toUpperCase(),
-        description || 'Wallet transfer',
-        JSON.stringify({ sender_id: req.user.id, sender_wallet_id: senderWallet.rows[0].id }),
-      ]
-    );
-
-    return txResult.rows[0];
+  // 4. Execute via Ledger Service (Atomic movement)
+  const result = await ledgerService.recordMovement({
+    fromWalletId: senderWallet.rows[0].id,
+    toWalletId: recipientWallet.rows[0].id,
+    amount,
+    currency,
+    transactionId: crypto.randomUUID(), // In production, this would be the transaction table record ID
+    description: description || 'Internal wallet transfer'
   });
 
-  logger.info('Wallet transfer completed:', {
+  logger.info('Wallet transfer completed via orchestration:', {
     senderId: req.user.id,
     recipientId: recipient_id,
     amount,
@@ -300,10 +249,10 @@ export const getWalletTransactions = catchAsync(async (req, res) => {
 
   // Get transactions
   const result = await query(
-    `SELECT wt.id, wt.transaction_type, wt.amount, wt.currency, wt.status,
+    `SELECT wt.id, wt.transaction_type, wt.from_amount as amount, wt.from_currency as currency, wt.status,
             wt.description, wt.metadata, wt.created_at
-     FROM wallet_transactions wt
-     ${conditions}
+     FROM transactions wt
+     ${conditions.replace('wt.wallet_id = $1', '(wt.from_wallet_id = $1 OR wt.to_wallet_id = $1)')}
      ORDER BY wt.created_at DESC
      LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`,
     [...params, limit, offset]
@@ -311,7 +260,7 @@ export const getWalletTransactions = catchAsync(async (req, res) => {
 
   // Get total count
   const countResult = await query(
-    `SELECT COUNT(*) as total FROM wallet_transactions wt ${conditions}`,
+    `SELECT COUNT(*) as total FROM transactions wt ${conditions.replace('wt.wallet_id = $1', '(wt.from_wallet_id = $1 OR wt.to_wallet_id = $1)')}`,
     params
   );
 
@@ -339,28 +288,44 @@ export const addFunds = catchAsync(async (req, res) => {
   }
 
   const result = await transaction(async (client) => {
-    // Update wallet balance
-    const walletResult = await client.query(
-      `UPDATE wallets
-       SET balance = balance + $1, updated_at = NOW()
-       WHERE id = $2 AND user_id = $3
-       RETURNING id, currency, balance`,
-      [amount, walletId, req.user.id]
+    // 1. Get destination wallet
+    const walletRes = await client.query(
+      'SELECT id, currency FROM wallets WHERE id = $1 AND user_id = $2 FOR UPDATE',
+      [walletId, req.user.id]
     );
+    if (walletRes.rows.length === 0) throw new AppError('Wallet not found', 404);
+    const destWallet = walletRes.rows[0];
 
-    if (walletResult.rows.length === 0) {
-      throw new AppError('Wallet not found', 404);
-    }
+    // 2. Find system wallet for source
+    const systemRes = await client.query(
+      'SELECT id FROM wallets WHERE user_id = (SELECT id FROM users WHERE email = \'system@jaxopay.com\') AND currency = $1 AND wallet_type = \'system\'',
+      [destWallet.currency]
+    );
+    if (systemRes.rows.length === 0) throw new AppError('System liquidity not available for this currency', 500);
+    const systemWalletId = systemRes.rows[0].id;
 
-    // Create transaction record
+    // 3. Record movement via ledger service
+    await ledgerService.recordMovement({
+      fromWalletId: systemWalletId,
+      toWalletId: walletId,
+      amount,
+      currency: destWallet.currency,
+      transactionId: `DEP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      description: description || 'External deposit',
+      metadata: { source: 'admin_manual' }
+    }, client);
+
+    // 4. Create transaction record (for history)
     await client.query(
-      `INSERT INTO wallet_transactions
-       (wallet_id, transaction_type, amount, currency, status, description)
-       VALUES ($1, 'deposit', $2, $3, 'completed', $4)`,
-      [walletId, amount, walletResult.rows[0].currency, description]
+      `INSERT INTO transactions
+       (user_id, from_wallet_id, to_wallet_id, transaction_type, from_amount, from_currency, status, description, reference)
+       VALUES ($1, $2, $3, 'deposit', $4, $5, 'completed', $6, $7)`,
+      [req.user.id, systemWalletId, walletId, amount, destWallet.currency, description, 'REF-' + Date.now()]
     );
 
-    return walletResult.rows[0];
+    // Get updated balance
+    const updated = await client.query('SELECT balance FROM wallets WHERE id = $1', [walletId]);
+    return { balance: updated.rows[0].balance, currency: destWallet.currency };
   });
 
   logger.info('Funds added to wallet:', {

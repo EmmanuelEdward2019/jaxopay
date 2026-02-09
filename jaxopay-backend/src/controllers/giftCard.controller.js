@@ -33,7 +33,7 @@ export const getGiftCards = catchAsync(async (req, res) => {
   const result = await query(
     `SELECT id, brand, category, country, denomination, price, currency,
             discount_percentage, image_url, description, created_at
-     FROM gift_cards
+     FROM gift_card_products
      ${conditions}
      ORDER BY created_at DESC
      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -41,7 +41,7 @@ export const getGiftCards = catchAsync(async (req, res) => {
   );
 
   const countResult = await query(
-    `SELECT COUNT(*) as total FROM gift_cards ${conditions}`,
+    `SELECT COUNT(*) as total FROM gift_card_products ${conditions}`,
     params
   );
 

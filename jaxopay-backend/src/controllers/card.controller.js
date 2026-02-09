@@ -1,6 +1,7 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import OrchestrationLayer, { ledgerService } from '../orchestration/index.js';
 
 // Get all user cards
 export const getCards = catchAsync(async (req, res) => {
@@ -82,9 +83,16 @@ export const createCard = catchAsync(async (req, res) => {
     throw new AppError(`Maximum ${maxCards} cards allowed for your tier`, 400);
   }
 
-  // Generate card details (in production, this would call Sudo Africa API)
-  const cardNumber = generateCardNumber();
-  const cvv = generateCVV();
+  // 4. Create card via Orchestration
+  const providerResult = await OrchestrationLayer.createCard({
+    userId: req.user.id,
+    card_type,
+    currency: currency.toUpperCase(),
+    spending_limit
+  });
+
+  const cardNumber = providerResult.card_number || generateCardNumber();
+  const cvv = providerResult.cvv || generateCVV();
   const expiresAt = new Date();
   expiresAt.setFullYear(expiresAt.getFullYear() + 3);
 
@@ -174,29 +182,35 @@ export const fundCard = catchAsync(async (req, res) => {
       throw new AppError('Insufficient wallet balance', 400);
     }
 
-    // Deduct from wallet
-    await client.query(
-      'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
-      [amount, wallet.rows[0].id]
+    // Use Ledger Service for atomic movement
+    const poolRes = await client.query(
+      'SELECT id FROM wallets WHERE user_id = (SELECT id FROM users WHERE email = \'cards-system@jaxopay.com\') AND currency = \'USD\''
     );
+    if (poolRes.rows.length === 0) throw new AppError('Card financing pool not initialized', 500);
+    const cardPoolWalletId = poolRes.rows[0].id;
 
-    // Add to card
+    await ledgerService.recordMovement({
+      fromWalletId: wallet.rows[0].id,
+      toWalletId: cardPoolWalletId,
+      amount,
+      currency: 'USD',
+      transactionId: `CARD-FUND-${Date.now()}`,
+      description: 'Funding virtual card',
+      metadata: { card_id: cardId }
+    }, client);
+
+    // Add to card balance in virtual_cards table
     await client.query(
       'UPDATE virtual_cards SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
       [amount, cardId]
     );
 
-    // Create wallet transaction
+    // Create record in transactions table
     await client.query(
-      `INSERT INTO wallet_transactions
-       (wallet_id, transaction_type, amount, currency, status, description, metadata)
-       VALUES ($1, 'card_funding', $2, $3, 'completed', 'Card funding', $4)`,
-      [
-        wallet.rows[0].id,
-        amount,
-        card.rows[0].currency,
-        JSON.stringify({ card_id: cardId }),
-      ]
+      `INSERT INTO transactions
+       (user_id, from_wallet_id, transaction_type, from_amount, from_currency, status, description, reference)
+       VALUES ($1, $2, 'card_funding', $3, $4, 'completed', 'Card funding', $5)`,
+      [req.user.id, wallet.rows[0].id, amount, 'USD', 'REF-' + Date.now()]
     );
 
     return { newBalance };

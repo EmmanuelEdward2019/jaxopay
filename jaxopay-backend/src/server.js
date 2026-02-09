@@ -41,10 +41,10 @@ app.use(helmet({
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'];
-    
+
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-    
+
     if (allowedOrigins.indexOf(origin) !== -1 || NODE_ENV === 'development') {
       callback(null, true);
     } else {
@@ -54,7 +54,7 @@ const corsOptions = {
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Fingerprint', 'X-Request-ID'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Fingerprint', 'X-Request-ID', 'X-2FA-Token'],
 };
 
 app.use(cors(corsOptions));
@@ -80,13 +80,15 @@ app.use(rateLimiter);
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
-    status: 'healthy',
+    status: 'ok',
+    service: 'jaxopay-backend',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: NODE_ENV,
     version: API_VERSION,
   });
 });
+
 
 // API routes
 app.use(`/api/${API_VERSION}`, routes);
@@ -126,10 +128,10 @@ const startServer = async () => {
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
   logger.info(`\n${signal} received. Starting graceful shutdown...`);
-  
+
   server.close(async () => {
     logger.info('HTTP server closed');
-    
+
     try {
       // Close database connections
       // await pool.end();

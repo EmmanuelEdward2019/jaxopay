@@ -13,6 +13,7 @@ import {
   deleteAccount,
   getUserById,
   searchUsers,
+  updateSettings,
 } from '../controllers/user.controller.js';
 
 const router = express.Router();
@@ -23,8 +24,11 @@ router.use(verifyToken);
 // Get current user profile
 router.get('/profile', getProfile);
 
+// Update user settings
+router.patch('/settings', updateSettings);
+
 // Get user statistics
-router.get('/stats', getUserStats);
+router.get('/statistics', getUserStats);
 
 // Get activity log
 router.get(
@@ -52,7 +56,7 @@ router.get(
 );
 
 // Update profile
-router.put(
+router.patch(
   '/profile',
   body('first_name').optional().isString().trim(),
   body('last_name').optional().isString().trim(),

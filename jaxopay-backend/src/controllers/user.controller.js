@@ -8,10 +8,10 @@ export const getProfile = catchAsync(async (req, res) => {
   const result = await query(
     `SELECT u.id, u.email, u.phone, u.country_code, u.role, u.kyc_tier,
             u.is_email_verified, u.is_phone_verified, u.two_fa_enabled,
-            u.is_active, u.created_at,
+            u.is_active, u.created_at, u.preferred_language, u.preferences,
             up.first_name, up.last_name, up.date_of_birth, up.gender,
-            up.country, up.city, up.address, up.postal_code,
-            up.avatar_url, up.bio
+            up.country, up.city, up.address_line1 as address, up.postal_code,
+            up.avatar_url
      FROM users u
      LEFT JOIN user_profiles up ON u.id = up.user_id
      WHERE u.id = $1`,
@@ -24,6 +24,42 @@ export const getProfile = catchAsync(async (req, res) => {
 
   res.status(200).json({
     success: true,
+    data: {
+      user: result.rows[0]
+    },
+  });
+});
+
+// Update user settings (Language, Notifications, etc)
+export const updateSettings = catchAsync(async (req, res) => {
+  const { language, notifications, show_balances } = req.body;
+
+  // Build preferences object
+  // First get existing preferences to merge? Or just overwrite?
+  // Let's merge if possible, but simplest is to just update what's passed.
+  // We'll fetch current first to be safe.
+  const current = await query('SELECT preferences FROM users WHERE id = $1', [req.user.id]);
+  const currentPrefs = current.rows[0].preferences || {};
+
+  const newPrefs = {
+    ...currentPrefs,
+    ...(notifications && { notifications }),
+    ...(show_balances !== undefined && { show_balances })
+  };
+
+  const result = await query(
+    `UPDATE users
+     SET preferred_language = COALESCE($1, preferred_language),
+         preferences = $2,
+         updated_at = NOW()
+     WHERE id = $3
+     RETURNING preferred_language, preferences`,
+    [language, newPrefs, req.user.id]
+  );
+
+  res.status(200).json({
+    success: true,
+    message: 'Settings updated successfully',
     data: result.rows[0],
   });
 });
@@ -39,7 +75,6 @@ export const updateProfile = catchAsync(async (req, res) => {
     city,
     address,
     postal_code,
-    bio,
   } = req.body;
 
   const result = await query(
@@ -50,22 +85,20 @@ export const updateProfile = catchAsync(async (req, res) => {
          gender = COALESCE($4, gender),
          country = COALESCE($5, country),
          city = COALESCE($6, city),
-         address = COALESCE($7, address),
+         address_line1 = COALESCE($7, address_line1),
          postal_code = COALESCE($8, postal_code),
-         bio = COALESCE($9, bio),
          updated_at = NOW()
-     WHERE user_id = $10
+     WHERE user_id = $9
      RETURNING *`,
     [
       first_name,
       last_name,
-      date_of_birth,
+      date_of_birth || null,
       gender,
       country,
       city,
       address,
       postal_code,
-      bio,
       req.user.id,
     ]
   );
@@ -172,7 +205,7 @@ export const getUserStats = catchAsync(async (req, res) => {
   const wallets = await query(
     `SELECT currency, SUM(balance) as balance
      FROM wallets
-     WHERE user_id = $1 AND deleted_at IS NULL
+     WHERE user_id = $1
      GROUP BY currency`,
     [req.user.id]
   );
@@ -180,26 +213,39 @@ export const getUserStats = catchAsync(async (req, res) => {
   // Get transaction count
   const txCount = await query(
     `SELECT COUNT(*) as total_transactions
-     FROM wallet_transactions wt
-     JOIN wallets w ON wt.wallet_id = w.id
-     WHERE w.user_id = $1`,
+     FROM transactions
+     WHERE user_id = $1`,
     [req.user.id]
   );
 
   // Get recent activity count (last 30 days)
   const recentActivity = await query(
     `SELECT COUNT(*) as recent_transactions
-     FROM wallet_transactions wt
-     JOIN wallets w ON wt.wallet_id = w.id
-     WHERE w.user_id = $1 AND wt.created_at >= NOW() - INTERVAL '30 days'`,
+     FROM transactions
+     WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '30 days'`,
+    [req.user.id]
+  );
+
+  // Get card count
+  const cardCount = await query(
+    `SELECT COUNT(*) as total_cards
+     FROM virtual_cards
+     WHERE user_id = $1`,
+    [req.user.id]
+  );
+
+  // Get wallet count
+  const walletCount = await query(
+    'SELECT COUNT(*) as total_wallets FROM wallets WHERE user_id = $1',
     [req.user.id]
   );
 
   res.status(200).json({
     success: true,
     data: {
-      wallets: wallets.rows,
-      total_transactions: parseInt(txCount.rows[0].total_transactions),
+      wallet_count: parseInt(walletCount.rows[0].total_wallets),
+      card_count: parseInt(cardCount.rows[0].total_cards),
+      transaction_count: parseInt(txCount.rows[0].total_transactions),
       recent_transactions: parseInt(recentActivity.rows[0].recent_transactions),
       kyc_tier: req.user.kyc_tier,
       account_age_days: Math.floor(
@@ -215,8 +261,8 @@ export const getActivityLog = catchAsync(async (req, res) => {
   const offset = (page - 1) * limit;
 
   const result = await query(
-    `SELECT id, activity_type, description, ip_address, user_agent, created_at
-     FROM user_activity_logs
+    `SELECT id, action as activity_type, action as description, ip_address, user_agent, created_at
+     FROM audit_logs
      WHERE user_id = $1
      ORDER BY created_at DESC
      LIMIT $2 OFFSET $3`,
@@ -224,14 +270,14 @@ export const getActivityLog = catchAsync(async (req, res) => {
   );
 
   const countResult = await query(
-    'SELECT COUNT(*) as total FROM user_activity_logs WHERE user_id = $1',
+    'SELECT COUNT(*) as total FROM audit_logs WHERE user_id = $1',
     [req.user.id]
   );
 
   res.status(200).json({
     success: true,
     data: {
-      activities: result.rows,
+      logs: result.rows,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -265,7 +311,7 @@ export const deleteAccount = catchAsync(async (req, res) => {
   const balanceCheck = await query(
     `SELECT SUM(balance) as total_balance
      FROM wallets
-     WHERE user_id = $1 AND deleted_at IS NULL`,
+     WHERE user_id = $1`,
     [req.user.id]
   );
 
@@ -286,9 +332,9 @@ export const deleteAccount = catchAsync(async (req, res) => {
       [req.user.id]
     );
 
-    // Mark wallets as deleted
+    // Mark wallets as inactive
     await client.query(
-      'UPDATE wallets SET deleted_at = NOW() WHERE user_id = $1',
+      'UPDATE wallets SET is_active = false WHERE user_id = $1',
       [req.user.id]
     );
 

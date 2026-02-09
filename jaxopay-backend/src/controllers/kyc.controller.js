@@ -7,10 +7,10 @@ export const getKYCStatus = catchAsync(async (req, res) => {
   const result = await query(
     `SELECT u.kyc_tier, u.kyc_status,
             kd.id as document_id, kd.document_type, kd.document_number,
-            kd.verification_status, kd.rejection_reason, kd.verified_at,
+            kd.status as verification_status, kd.rejection_reason, kd.reviewed_at as verified_at,
             kd.created_at, kd.updated_at
      FROM users u
-     LEFT JOIN kyc_documents kd ON u.id = kd.user_id AND kd.deleted_at IS NULL
+     LEFT JOIN kyc_documents kd ON u.id = kd.user_id
      WHERE u.id = $1
      ORDER BY kd.created_at DESC`,
     [req.user.id]
@@ -53,8 +53,7 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
   const existing = await query(
     `SELECT id FROM kyc_documents
      WHERE user_id = $1 AND document_type = $2
-       AND verification_status = 'verified'
-       AND deleted_at IS NULL`,
+       AND status = 'approved'`,
     [req.user.id, document_type]
   );
 
@@ -62,13 +61,21 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
     throw new AppError('This document type is already verified', 409);
   }
 
+  // Determine tier based on document type
+  let tier = 'tier_2'; // Default to higher tier for unspecified docs
+  if (['passport', 'national_id', 'drivers_license', 'id_card'].includes(document_type)) {
+    tier = 'tier_1';
+  } else if (['proof_of_address', 'utility_bill'].includes(document_type)) {
+    tier = 'tier_2';
+  }
+
   // Create KYC document
   const result = await query(
     `INSERT INTO kyc_documents
      (user_id, document_type, document_number, document_front_url,
-      document_back_url, selfie_url, metadata, verification_status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
-     RETURNING id, document_type, verification_status, created_at`,
+      document_back_url, selfie_url, metadata, status, tier)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
+     RETURNING id, document_type, status as verification_status, created_at`,
     [
       req.user.id,
       document_type,
@@ -77,6 +84,7 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
       document_back_url || null,
       selfie_url || null,
       metadata ? JSON.stringify(metadata) : null,
+      tier
     ]
   );
 
@@ -172,14 +180,14 @@ export const requestTierUpgrade = catchAsync(async (req, res) => {
 
   // Check if user has required documents
   const documents = await query(
-    `SELECT document_type, verification_status
+    `SELECT document_type, status
      FROM kyc_documents
-     WHERE user_id = $1 AND deleted_at IS NULL`,
+     WHERE user_id = $1`,
     [req.user.id]
   );
 
   const verifiedDocs = documents.rows
-    .filter((doc) => doc.verification_status === 'verified')
+    .filter((doc) => doc.status === 'approved')
     .map((doc) => doc.document_type);
 
   // Simple validation (in production, this would be more sophisticated)

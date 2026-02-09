@@ -4,6 +4,7 @@ import { catchAsync } from '../middleware/errorHandler.js';
 // Get dashboard summary - combines wallets, recent transactions, and stats in one call
 export const getDashboardSummary = catchAsync(async (req, res) => {
     const userId = req.user.id;
+    console.log(`Fetching dashboard summary for user: ${userId}`);
 
     // Run all queries in parallel for maximum performance
     const [walletsResult, transactionsResult, cardsResult] = await Promise.all([
