@@ -6,37 +6,24 @@ This guide provides a comprehensive roadmap for building mobile applications (iO
 
 ---
 
-## Technology Stack Recommendations
+## Technology Stack Recommendation
 
-### Option 1: Cross-Platform (Recommended for MVP)
+### **Flutter (Highly Recommended)**
+- **Pros**: Beautiful UI, native performance, single codebase for iOS/Android, excellent for fintech.
+- **State Management**: Riverpod.
+- **Networking**: Dio (with JWT refresh interceptors).
 
-**React Native with Expo**
-- Pros: Shared codebase, faster development, OTA updates, large community
-- Cons: Slightly less native feel, limited native module access
-- Best for: Rapid development, limited resources
+### **React Native (Secondary)**
+- **Pros**: Shared React knowledge with the web platform.
+- **Cons**: Can feel less "native" for complex financial animations.
 
-**Flutter**
-- Pros: Beautiful UI, great performance, hot reload, Google backing
-- Cons: Larger app size, Dart learning curve
-- Best for: Premium UI/UX requirements
+---
 
-### Option 2: Native Development
+## 2. Production Environment (Live)
 
-**iOS (Swift/SwiftUI)**
-- Pros: Best performance, native features, App Store optimization
-- Cons: iOS only, slower development
-
-**Android (Kotlin/Jetpack Compose)**
-- Pros: Best Android experience, Material Design
-- Cons: Android only, slower development
-
-### Recommendation
-
-For JAXOPAY, we recommend **React Native with Expo** for the following reasons:
-1. Your web frontend is already React-based (code sharing possible)
-2. Faster time to market
-3. Single team can maintain both platforms
-4. Expo provides OTA updates for quick fixes
+- **API Base URL**: `https://jaxopay-production.up.railway.app/api/v1`
+- **Dashboard URL**: `https://jaxopay.com`
+- **Region**: Global (Hosted on Railway)
 
 ---
 

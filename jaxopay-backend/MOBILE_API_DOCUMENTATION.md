@@ -1,9 +1,10 @@
-# Joxapay Mobile App - Master API Documentation (Full)
+# JAXOPAY Mobile App - Master API Documentation (Production)
 
-This document provides the complete API reference for all **18+ modules** in the JAXOPAY ecosystem. Use this as the primary source for building the Flutter Mobile App.
+This document provides the complete API reference for all **18+ modules** in the JAXOPAY ecosystem.
 
 ## 1. Core Architecture
-- **Base URL**: `http://10.0.2.2:3001/api/v1` (Emulator) or `http://localhost:3001/api/v1` (Simulator).
+- **Base URL**: `https://jaxopay-production.up.railway.app/api/v1`
+- **Frontend**: `https://jaxopay.com`
 - **Format**: All requests/responses are `application/json`.
 - **Headers**:
   - `Authorization: Bearer <token>`

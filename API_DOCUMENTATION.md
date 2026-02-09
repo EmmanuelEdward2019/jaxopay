@@ -7,7 +7,7 @@ This document provides comprehensive API documentation for the JAXOPAY backend, 
 ## Base URL
 
 ```
-Production: https://api.jaxopay.com/api/v1
+Production: https://jaxopay-production.up.railway.app/api/v1
 Development: http://localhost:3000/api/v1
 ```
 
@@ -27,10 +27,10 @@ Access tokens expire after 1 hour. Use the refresh token to obtain new access to
 
 ## Authentication Endpoints
 
-### Register
+### Signup (Register)
 
 ```http
-POST /auth/register
+POST /auth/signup
 ```
 
 | Field | Type | Required | Description |
@@ -161,7 +161,7 @@ POST /auth/2fa/verify
 ### Refresh Token
 
 ```http
-POST /auth/refresh
+POST /auth/refresh-token
 ```
 
 | Field | Type | Required | Description |
