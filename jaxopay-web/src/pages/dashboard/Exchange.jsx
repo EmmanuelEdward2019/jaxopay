@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeftRight,
     TrendingUp,
@@ -10,16 +10,21 @@ import {
     AlertCircle,
     Check,
     Info,
+    ChevronDown,
+    Search,
+    X,
+    Wallet,
+    Settings
 } from 'lucide-react';
 import cryptoService from '../../services/cryptoService';
 import walletService from '../../services/walletService';
-import { formatCurrency, formatPercentage } from '../../utils/formatters';
+import { formatCurrency } from '../../utils/formatters';
 
 const CRYPTO_DATA = {
-    BTC: { name: 'Bitcoin', symbol: '₿', color: 'bg-orange-500', icon: '🪙' },
-    ETH: { name: 'Ethereum', symbol: 'Ξ', color: 'bg-blue-500', icon: '🔷' },
-    USDT: { name: 'Tether', symbol: '₮', color: 'bg-green-500', icon: '💵' },
-    USDC: { name: 'USD Coin', symbol: '$', color: 'bg-blue-400', icon: '🔵' },
+    BTC: { name: 'Bitcoin', symbol: 'BTC', color: 'bg-orange-500', icon: '₿' },
+    ETH: { name: 'Ethereum', symbol: 'ETH', color: 'bg-blue-500', icon: 'Ξ' },
+    USDT: { name: 'Tether', symbol: 'USDT', color: 'bg-green-500', icon: '₮' },
+    USDC: { name: 'USD Coin', symbol: 'USDC', color: 'bg-blue-400', icon: '$' },
 };
 
 const Exchange = () => {
@@ -28,8 +33,12 @@ const Exchange = () => {
     const [cryptoWallets, setCryptoWallets] = useState([]);
     const [selectedFiatWallet, setSelectedFiatWallet] = useState('');
     const [selectedCrypto, setSelectedCrypto] = useState('BTC');
-    const [amount, setAmount] = useState('');
-    const [cryptoAmount, setCryptoAmount] = useState('');
+
+    // Amounts
+    const [payAmount, setPayAmount] = useState('');
+    const [receiveAmount, setReceiveAmount] = useState('');
+
+    // Logic
     const [rates, setRates] = useState(null);
     const [loadingRates, setLoadingRates] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -37,24 +46,40 @@ const Exchange = () => {
     const [success, setSuccess] = useState(null);
     const [history, setHistory] = useState([]);
 
+    // UI
+    const [showTokenModal, setShowTokenModal] = useState(false);
+    const [tokenModalType, setTokenModalType] = useState('crypto'); // 'crypto' or 'fiat'
+    const [showSettings, setShowSettings] = useState(false);
+    const [slippage, setSlippage] = useState(0.5);
+    const [deadline, setDeadline] = useState(20);
+    const searchInputRef = useRef(null);
+
+    // Debounce for rate fetching
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (payAmount && parseFloat(payAmount) > 0) {
+                fetchRates();
+            } else {
+                setReceiveAmount('');
+                setRates(null);
+            }
+        }, 500); // 500ms debounce
+
+        return () => clearTimeout(timer);
+    }, [payAmount, selectedCrypto, selectedFiatWallet, mode]);
+
     useEffect(() => {
         fetchWallets();
         fetchHistory();
     }, []);
 
-    useEffect(() => {
-        if (amount && selectedCrypto && selectedFiatWallet) {
-            fetchRates();
-        }
-    }, [amount, selectedCrypto, selectedFiatWallet, mode]);
-
     const fetchWallets = async () => {
         const result = await walletService.getWallets();
         if (result.success) {
-            const allWallets = result.data.wallets || [];
+            const allWallets = Array.isArray(result.data) ? result.data : (result.data?.wallets || []);
             setWallets(allWallets.filter(w => w.wallet_type === 'fiat' && w.status !== 'frozen'));
             setCryptoWallets(allWallets.filter(w => w.wallet_type === 'crypto'));
-            if (allWallets.length > 0) {
+            if (allWallets.length > 0 && !selectedFiatWallet) {
                 const usdWallet = allWallets.find(w => w.currency === 'USD');
                 setSelectedFiatWallet(usdWallet?.id || allWallets[0].id);
             }
@@ -62,30 +87,31 @@ const Exchange = () => {
     };
 
     const fetchRates = async () => {
-        if (!amount || parseFloat(amount) <= 0) return;
         setLoadingRates(true);
         const wallet = wallets.find(w => w.id === selectedFiatWallet);
-        const result = await cryptoService.getExchangeRates(
-            mode === 'buy' ? wallet?.currency : selectedCrypto,
-            mode === 'buy' ? selectedCrypto : wallet?.currency,
-            parseFloat(amount)
-        );
+        if (!wallet) return;
+
+        const from = mode === 'buy' ? wallet.currency : selectedCrypto;
+        const to = mode === 'buy' ? selectedCrypto : wallet.currency;
+
+        const result = await cryptoService.getExchangeRates(from, to, parseFloat(payAmount));
+
         if (result.success) {
             setRates(result.data);
-            setCryptoAmount(result.data.converted_amount?.toFixed(8) || '');
+            setReceiveAmount(result.data.converted_amount ? Number(result.data.converted_amount).toFixed(mode === 'buy' ? 6 : 2) : '');
         }
         setLoadingRates(false);
     };
 
     const fetchHistory = async () => {
-        const result = await cryptoService.getCryptoHistory({ limit: 10 });
+        const result = await cryptoService.getCryptoHistory({ limit: 5 });
         if (result.success) {
             setHistory(result.data.transactions || []);
         }
     };
 
     const handleExchange = async () => {
-        if (!amount || parseFloat(amount) <= 0 || !selectedFiatWallet) return;
+        if (!payAmount || parseFloat(payAmount) <= 0 || !selectedFiatWallet) return;
         setLoading(true);
         setError(null);
         setSuccess(null);
@@ -96,14 +122,14 @@ const Exchange = () => {
         if (mode === 'buy') {
             result = await cryptoService.buyCrypto(
                 selectedCrypto,
-                parseFloat(amount),
+                parseFloat(payAmount),
                 wallet?.currency,
                 selectedFiatWallet
             );
         } else {
             result = await cryptoService.sellCrypto(
                 selectedCrypto,
-                parseFloat(amount),
+                parseFloat(payAmount),
                 wallet?.currency,
                 selectedFiatWallet
             );
@@ -111,8 +137,8 @@ const Exchange = () => {
 
         if (result.success) {
             setSuccess(`Successfully ${mode === 'buy' ? 'purchased' : 'sold'} ${selectedCrypto}!`);
-            setAmount('');
-            setCryptoAmount('');
+            setPayAmount('');
+            setReceiveAmount('');
             setRates(null);
             fetchWallets();
             fetchHistory();
@@ -122,244 +148,509 @@ const Exchange = () => {
         setLoading(false);
     };
 
+    const handleMax = () => {
+        const wallet = mode === 'buy'
+            ? wallets.find(w => w.id === selectedFiatWallet)
+            : cryptoWallets.find(w => w.currency === selectedCrypto);
+
+        if (wallet) {
+            setPayAmount(wallet.balance.toString());
+        }
+    };
+
     const selectedWallet = wallets.find(w => w.id === selectedFiatWallet);
     const cryptoWallet = cryptoWallets.find(w => w.currency === selectedCrypto);
 
+    const getBalance = (isPay) => {
+        if (mode === 'buy') {
+            return isPay
+                ? formatCurrency(selectedWallet?.balance || 0, selectedWallet?.currency)
+                : `${Number(cryptoWallet?.balance || 0).toFixed(6)} ${selectedCrypto}`;
+        } else {
+            return isPay
+                ? `${Number(cryptoWallet?.balance || 0).toFixed(6)} ${selectedCrypto}`
+                : formatCurrency(selectedWallet?.balance || 0, selectedWallet?.currency);
+        }
+    };
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 max-w-4xl mx-auto">
             {/* Page Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Exchange</h1>
-                <p className="text-gray-600 dark:text-gray-400">Buy and sell cryptocurrency instantly</p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Exchange</h1>
+                    <p className="text-gray-600 dark:text-gray-400">Swap assets instantly with zero slippage</p>
+                </div>
+                <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                    <button
+                        onClick={() => { setMode('buy'); setPayAmount(''); setReceiveAmount(''); }}
+                        className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${mode === 'buy'
+                            ? 'bg-white dark:bg-gray-700 text-primary-600 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-300'
+                            }`}
+                    >
+                        Buy
+                    </button>
+                    <button
+                        onClick={() => { setMode('sell'); setPayAmount(''); setReceiveAmount(''); }}
+                        className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${mode === 'sell'
+                            ? 'bg-white dark:bg-gray-700 text-red-600 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-300'
+                            }`}
+                    >
+                        Sell
+                    </button>
+                </div>
             </div>
 
-            {/* Alerts */}
-            {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                    <div>
-                        <p className="text-red-700 dark:text-red-300">{error}</p>
-                        <button onClick={() => setError(null)} className="text-red-500 underline text-sm mt-1">Dismiss</button>
-                    </div>
-                </div>
-            )}
-            {success && (
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 flex items-start gap-3">
-                    <Check className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
-                    <div>
-                        <p className="text-green-700 dark:text-green-300">{success}</p>
-                        <button onClick={() => setSuccess(null)} className="text-green-500 underline text-sm mt-1">Dismiss</button>
-                    </div>
-                </div>
-            )}
+            {/* Custom Alert */}
+            <AnimatePresence>
+                {(error || success) && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className={`p-4 rounded-xl flex items-start gap-3 ${error ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}
+                    >
+                        {error ? <AlertCircle className="w-5 h-5 shrink-0" /> : <Check className="w-5 h-5 shrink-0" />}
+                        <div className="flex-1">
+                            <p className="font-medium">{error ? 'Transaction Failed' : 'Success'}</p>
+                            <p className="text-sm opacity-90">{error || success}</p>
+                        </div>
+                        <button onClick={() => { setError(null); setSuccess(null); }} className="p-1 hover:bg-black/5 rounded">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Exchange Form */}
-                <div className="lg:col-span-2">
-                    <div className="card">
-                        {/* Mode Toggle */}
-                        <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-700 rounded-lg mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Main Swap Interface */}
+                <div className="lg:col-span-2 space-y-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
+                        {/* Settings Icon */}
+                        <div className="absolute top-4 right-4 z-10">
                             <button
-                                onClick={() => setMode('buy')}
-                                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-colors ${mode === 'buy' ? 'bg-green-500 text-white' : 'text-gray-600 dark:text-gray-400'
-                                    }`}
+                                onClick={() => setShowSettings(true)}
+                                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                             >
-                                <TrendingUp className="w-5 h-5" />
-                                Buy Crypto
-                            </button>
-                            <button
-                                onClick={() => setMode('sell')}
-                                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-colors ${mode === 'sell' ? 'bg-red-500 text-white' : 'text-gray-600 dark:text-gray-400'
-                                    }`}
-                            >
-                                <TrendingDown className="w-5 h-5" />
-                                Sell Crypto
+                                <Settings className="w-5 h-5" />
                             </button>
                         </div>
 
-                        {/* Exchange Interface */}
+                        {/* Pay Section */}
                         <div className="space-y-4">
-                            {/* From Currency */}
-                            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm text-gray-500">{mode === 'buy' ? 'You Pay' : 'You Sell'}</span>
-                                    {mode === 'buy' && selectedWallet && (
-                                        <span className="text-sm text-gray-500">
-                                            Balance: {formatCurrency(selectedWallet.balance || 0, selectedWallet.currency)}
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors border border-transparent focus-within:border-primary-500/50 focus-within:ring-2 focus-within:ring-primary-500/20">
+                                <div className="flex justify-between mb-2">
+                                    <label className="text-sm font-medium text-gray-500 dark:text-gray-400">You Pay</label>
+                                    <div className="flex items-center gap-2">
+                                        <Wallet className="w-3.5 h-3.5 text-gray-400" />
+                                        <span className="text-xs text-gray-500 font-medium">
+                                            {getBalance(true)}
                                         </span>
-                                    )}
-                                    {mode === 'sell' && cryptoWallet && (
-                                        <span className="text-sm text-gray-500">
-                                            Balance: {cryptoWallet.balance?.toFixed(8)} {selectedCrypto}
-                                        </span>
-                                    )}
+                                        <button
+                                            onClick={handleMax}
+                                            className="text-xs font-bold text-primary-600 hover:text-primary-700 px-1.5 py-0.5 bg-primary-50 dark:bg-primary-900/20 rounded uppercase transition-colors"
+                                        >
+                                            Max
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <input
                                         type="number"
-                                        value={amount}
-                                        onChange={(e) => setAmount(e.target.value)}
+                                        value={payAmount}
+                                        onChange={(e) => setPayAmount(e.target.value)}
                                         placeholder="0.00"
-                                        className="flex-1 text-2xl font-bold bg-transparent border-none focus:outline-none text-gray-900 dark:text-white"
+                                        className="w-full bg-transparent text-3xl font-bold text-gray-900 dark:text-white placeholder-gray-300 focus:outline-none"
                                     />
                                     {mode === 'buy' ? (
-                                        <select
-                                            value={selectedFiatWallet}
-                                            onChange={(e) => setSelectedFiatWallet(e.target.value)}
-                                            className="px-4 py-2 bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg font-medium"
+                                        <button
+                                            onClick={() => { setTokenModalType('fiat'); setShowTokenModal(true); }}
+                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-primary-500 hover:ring-2 hover:ring-primary-100 dark:hover:ring-primary-900/20 transition-all min-w-[140px]"
                                         >
-                                            {wallets.map((w) => (
-                                                <option key={w.id} value={w.id}>{w.currency}</option>
-                                            ))}
-                                        </select>
+                                            {selectedWallet ? (
+                                                <>
+                                                    <span className="text-xl">{CURRENCY_OPTIONS.fiat.find(c => c.code === selectedWallet.currency)?.flag || '💰'}</span>
+                                                    <span className="font-bold text-gray-900 dark:text-white">{selectedWallet.currency}</span>
+                                                    <ChevronDown className="w-4 h-4 text-gray-400 ml-auto" />
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="font-bold text-gray-500">Select</span>
+                                                    <ChevronDown className="w-4 h-4 text-gray-400 ml-auto" />
+                                                </>
+                                            )}
+                                        </button>
                                     ) : (
-                                        <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-600 rounded-lg">
+                                        <button
+                                            onClick={() => { setTokenModalType('crypto'); setShowTokenModal(true); }}
+                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-primary-500 hover:ring-2 hover:ring-primary-100 dark:hover:ring-primary-900/20 transition-all min-w-[140px]"
+                                        >
                                             <span className="text-xl">{CRYPTO_DATA[selectedCrypto]?.icon}</span>
-                                            <span className="font-medium">{selectedCrypto}</span>
-                                        </div>
+                                            <span className="font-bold text-gray-900 dark:text-white">{selectedCrypto}</span>
+                                            <ChevronDown className="w-4 h-4 text-gray-400 ml-auto" />
+                                        </button>
                                     )}
                                 </div>
                             </div>
+                        </div>
 
-                            {/* Swap Icon */}
-                            <div className="flex justify-center -my-2 relative z-10">
-                                <div className="p-3 bg-primary-100 dark:bg-primary-900/30 rounded-full">
-                                    <ArrowLeftRight className="w-5 h-5 text-primary-600" />
+                        {/* Swap Divider */}
+                        <div className="relative h-2 my-2">
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-8 h-8 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-600 shadow-sm flex items-center justify-center z-10 transition-transform hover:rotate-180 duration-500 cursor-pointer" onClick={() => {
+                                    setMode(mode === 'buy' ? 'sell' : 'buy');
+                                    setPayAmount('');
+                                    setReceiveAmount('');
+                                }}>
+                                    <ArrowDown className="w-4 h-4 text-gray-500" />
                                 </div>
                             </div>
+                        </div>
 
-                            {/* To Currency */}
-                            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm text-gray-500">{mode === 'buy' ? 'You Receive' : 'You Get'}</span>
-                                    {loadingRates && <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />}
+                        {/* Receive Section */}
+                        <div className="space-y-4 mb-6">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-transparent hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
+                                <div className="flex justify-between mb-2">
+                                    <label className="text-sm font-medium text-gray-500 dark:text-gray-400">You Receive</label>
+                                    {loadingRates && <RefreshCw className="w-3.5 h-3.5 animate-spin text-gray-400" />}
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <input
                                         type="text"
-                                        value={loadingRates ? '...' : cryptoAmount}
                                         readOnly
+                                        value={receiveAmount}
                                         placeholder="0.00"
-                                        className="flex-1 text-2xl font-bold bg-transparent border-none focus:outline-none text-gray-900 dark:text-white"
+                                        className="w-full bg-transparent text-3xl font-bold text-gray-900 dark:text-white placeholder-gray-300 focus:outline-none cursor-default"
                                     />
                                     {mode === 'buy' ? (
-                                        <select
-                                            value={selectedCrypto}
-                                            onChange={(e) => setSelectedCrypto(e.target.value)}
-                                            className="px-4 py-2 bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg font-medium"
+                                        <button
+                                            onClick={() => { setTokenModalType('crypto'); setShowTokenModal(true); }}
+                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-primary-500 hover:ring-2 hover:ring-primary-100 dark:hover:ring-primary-900/20 transition-all min-w-[140px]"
                                         >
-                                            {Object.entries(CRYPTO_DATA).map(([code, data]) => (
-                                                <option key={code} value={code}>{data.icon} {code}</option>
-                                            ))}
-                                        </select>
+                                            <span className="text-xl">{CRYPTO_DATA[selectedCrypto]?.icon}</span>
+                                            <span className="font-bold text-gray-900 dark:text-white">{selectedCrypto}</span>
+                                            <ChevronDown className="w-4 h-4 text-gray-400 ml-auto" />
+                                        </button>
                                     ) : (
-                                        <select
-                                            value={selectedFiatWallet}
-                                            onChange={(e) => setSelectedFiatWallet(e.target.value)}
-                                            className="px-4 py-2 bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg font-medium"
+                                        <button
+                                            onClick={() => { setTokenModalType('fiat'); setShowTokenModal(true); }}
+                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-primary-500 hover:ring-2 hover:ring-primary-100 dark:hover:ring-primary-900/20 transition-all min-w-[140px]"
                                         >
-                                            {wallets.map((w) => (
-                                                <option key={w.id} value={w.id}>{w.currency}</option>
-                                            ))}
-                                        </select>
+                                            {selectedWallet ? (
+                                                <>
+                                                    <span className="text-xl">{CURRENCY_OPTIONS.fiat.find(c => c.code === selectedWallet.currency)?.flag || '💰'}</span>
+                                                    <span className="font-bold text-gray-900 dark:text-white">{selectedWallet.currency}</span>
+                                                    <ChevronDown className="w-4 h-4 text-gray-400 ml-auto" />
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="font-bold text-gray-500">Select</span>
+                                                    <ChevronDown className="w-4 h-4 text-gray-400 ml-auto" />
+                                                </>
+                                            )}
+                                        </button>
                                     )}
                                 </div>
                             </div>
+                        </div>
 
-                            {/* Rate Info */}
-                            {rates && (
-                                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 flex items-center gap-3">
-                                    <Info className="w-5 h-5 text-blue-600 shrink-0" />
-                                    <div className="text-sm text-blue-700 dark:text-blue-300">
-                                        <p>1 {selectedCrypto} = {formatCurrency(rates.rate, selectedWallet?.currency || 'USD')}</p>
-                                        <p className="text-xs text-blue-600 dark:text-blue-400">Rate valid for 60 seconds</p>
-                                    </div>
+                        {/* Fee Breakdown */}
+                        {rates && (
+                            <div className="mb-6 p-4 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 space-y-2">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Rate</span>
+                                    <span className="font-medium text-gray-900 dark:text-white">
+                                        1 {selectedCrypto} = {formatCurrency(rates.rate, selectedWallet?.currency)}
+                                    </span>
                                 </div>
-                            )}
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Network Fee</span>
+                                    <span className="font-medium text-gray-900 dark:text-white flex items-center gap-1">
+                                        <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                                        Low
+                                    </span>
+                                </div>
+                            </div>
+                        )}
 
-                            {/* Exchange Button */}
-                            <button
-                                onClick={handleExchange}
-                                disabled={!amount || parseFloat(amount) <= 0 || loading || loadingRates}
-                                className={`w-full py-4 font-bold text-white rounded-xl transition-colors disabled:opacity-50 ${mode === 'buy' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'
-                                    }`}
-                            >
-                                {loading ? 'Processing...' : mode === 'buy' ? `Buy ${selectedCrypto}` : `Sell ${selectedCrypto}`}
+                        {/* Action Button */}
+                        <button
+                            onClick={handleExchange}
+                            disabled={!payAmount || parseFloat(payAmount) <= 0 || loading || loadingRates}
+                            className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:shadow-none ${mode === 'buy'
+                                ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-primary-200 dark:shadow-none'
+                                : 'bg-red-600 hover:bg-red-700 text-white shadow-red-200 dark:shadow-none'
+                                }`}
+                        >
+                            {loading ? (
+                                <span className="flex items-center justify-center gap-2">
+                                    <RefreshCw className="w-5 h-5 animate-spin" /> Processing...
+                                </span>
+                            ) : (
+                                mode === 'buy' ? `Buy ${selectedCrypto}` : `Sell ${selectedCrypto}`
+                            )}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Sidebar: Recent Activity & Quick Stats */}
+                <div className="space-y-6">
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+                        <h3 className="font-bold text-gray-900 dark:text-white mb-4">Your Assets</h3>
+                        {cryptoWallets.length === 0 ? (
+                            <div className="text-center py-8 text-gray-400">
+                                <Wallet className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                                <p className="text-sm">No assets yet</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {cryptoWallets.map(w => (
+                                    <button
+                                        key={w.id}
+                                        onClick={() => { setSelectedCrypto(w.currency); setMode('sell'); }}
+                                        className="w-full flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors group"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-lg">
+                                                {CRYPTO_DATA[w.currency]?.icon}
+                                            </div>
+                                            <div className="text-left">
+                                                <p className="font-bold text-gray-900 dark:text-white">{w.currency}</p>
+                                                <p className="text-xs text-gray-500">{CRYPTO_DATA[w.currency]?.name}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="font-bold text-gray-900 dark:text-white">{Number(w.balance || 0).toFixed(6)}</p>
+                                            <p className="text-xs text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity">Click to Sell</p>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-gray-900 dark:text-white">Recent Trades</h3>
+                            <button onClick={fetchHistory} className="text-primary-600 hover:text-primary-700">
+                                <RefreshCw className="w-4 h-4" />
                             </button>
+                        </div>
+                        <div className="space-y-4">
+                            {history.length === 0 ? (
+                                <p className="text-sm text-gray-500 text-center py-4">No recent trades</p>
+                            ) : (
+                                history.map(trade => (
+                                    <div key={trade.id} className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-2 rounded-full ${trade.type === 'buy' ? 'bg-primary-50 text-primary-600' : 'bg-red-50 text-red-600'}`}>
+                                                {trade.type === 'buy' ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />}
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                                    {trade.type === 'buy' ? 'Bought' : 'Sold'} {trade.cryptocurrency}
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    {new Date(trade.created_at).toLocaleDateString()}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <span className={`text-sm font-bold ${trade.type === 'buy' ? 'text-primary-600' : 'text-gray-900 dark:text-white'}`}>
+                                            {trade.type === 'buy' ? '+' : '-'}{Number(trade.crypto_amount || 0).toFixed(4)}
+                                        </span>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>
+            </div>
 
-                {/* Crypto Wallets & History */}
-                <div className="space-y-6">
-                    {/* Crypto Holdings */}
-                    <div className="card">
-                        <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Your Crypto</h3>
-                        {cryptoWallets.length === 0 ? (
-                            <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-4">
-                                No crypto holdings yet. Buy some!
-                            </p>
-                        ) : (
-                            <div className="space-y-3">
-                                {cryptoWallets.map((wallet) => (
-                                    <div
-                                        key={wallet.id}
-                                        onClick={() => setSelectedCrypto(wallet.currency)}
-                                        className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-colors ${selectedCrypto === wallet.currency
-                                                ? 'bg-primary-50 dark:bg-primary-900/20 border-2 border-primary-500'
-                                                : 'bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-2xl">{CRYPTO_DATA[wallet.currency]?.icon || '🪙'}</span>
-                                            <div>
-                                                <p className="font-medium text-gray-900 dark:text-white">{wallet.currency}</p>
-                                                <p className="text-xs text-gray-500">{CRYPTO_DATA[wallet.currency]?.name}</p>
+            {/* Token Selection Modal */}
+            <AnimatePresence>
+                {showTokenModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowTokenModal(false)}>
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                                <h3 className="font-bold text-lg dark:text-white">Select {tokenModalType === 'crypto' ? 'Token' : 'Wallet'}</h3>
+                                <button onClick={() => setShowTokenModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
+                                    <X className="w-5 h-5 text-gray-500" />
+                                </button>
+                            </div>
+                            <div className="p-4">
+                                <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                                    {tokenModalType === 'crypto' ? (
+                                        <>
+                                            <p className="text-xs font-bold text-gray-500 uppercase px-2 mb-2">Popular Tokens</p>
+                                            {Object.entries(CRYPTO_DATA).map(([code, data]) => (
+                                                <button
+                                                    key={code}
+                                                    onClick={() => {
+                                                        setSelectedCrypto(code);
+                                                        setShowTokenModal(false);
+                                                    }}
+                                                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors group"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-2xl">{data.icon}</span>
+                                                        <div className="text-left">
+                                                            <p className="font-bold text-gray-900 dark:text-white">{data.name}</p>
+                                                            <p className="text-xs text-gray-500">{data.symbol}</p>
+                                                        </div>
+                                                    </div>
+                                                    {cryptoWallets.find(w => w.currency === code) && (
+                                                        <div className="text-right">
+                                                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                                                {Number(cryptoWallets.find(w => w.currency === code)?.balance || 0).toFixed(4)}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="text-xs font-bold text-gray-500 uppercase px-2 mb-2">Your Wallets</p>
+                                            {wallets.length === 0 ? (
+                                                <div className="text-center py-8 text-gray-500">
+                                                    <p>No fiat wallets found.</p>
+                                                </div>
+                                            ) : (
+                                                wallets.map(wallet => (
+                                                    <button
+                                                        key={wallet.id}
+                                                        onClick={() => {
+                                                            setSelectedFiatWallet(wallet.id);
+                                                            setShowTokenModal(false);
+                                                        }}
+                                                        className={`w-full flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors group ${selectedFiatWallet === wallet.id ? 'bg-primary-50 dark:bg-primary-900/10 ring-1 ring-primary-500' : ''}`}
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="text-2xl">{CURRENCY_OPTIONS.fiat.find(c => c.code === wallet.currency)?.flag || '💰'}</span>
+                                                            <div className="text-left">
+                                                                <p className="font-bold text-gray-900 dark:text-white">{wallet.currency} Wallet</p>
+                                                                <p className="text-xs text-gray-500">{formatCurrency(wallet.balance, wallet.currency)}</p>
+                                                            </div>
+                                                        </div>
+                                                        {selectedFiatWallet === wallet.id && (
+                                                            <Check className="w-5 h-5 text-primary-600" />
+                                                        )}
+                                                    </button>
+                                                ))
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Settings Modal */}
+            <AnimatePresence>
+                {showSettings && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl p-6"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="font-bold text-lg dark:text-white">Transaction Settings</h3>
+                                <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
+                                    <X className="w-5 h-5 text-gray-500" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-6">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Slippage Tolerance</p>
+                                        <div className="group relative">
+                                            <Info className="w-4 h-4 text-gray-400 cursor-help" />
+                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-gray-900 text-white text-xs rounded shadow-lg w-48 hidden group-hover:block z-50">
+                                                Your transaction will revert if the price changes unfavorably by more than this percentage.
                                             </div>
                                         </div>
-                                        <p className="font-bold text-gray-900 dark:text-white">
-                                            {(wallet.balance || 0).toFixed(6)}
-                                        </p>
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Recent Trades */}
-                    <div className="card">
-                        <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Recent Trades</h3>
-                        {history.length === 0 ? (
-                            <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-4">
-                                No trades yet
-                            </p>
-                        ) : (
-                            <div className="space-y-2">
-                                {history.slice(0, 5).map((trade) => (
-                                    <div key={trade.id} className="flex items-center justify-between p-2">
-                                        <div className="flex items-center gap-2">
-                                            {trade.type === 'buy' ? (
-                                                <ArrowDown className="w-4 h-4 text-green-500" />
-                                            ) : (
-                                                <ArrowUp className="w-4 h-4 text-red-500" />
-                                            )}
-                                            <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                                {trade.type === 'buy' ? 'Bought' : 'Sold'} {trade.cryptocurrency}
-                                            </span>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[0.1, 0.5, 1.0].map((val) => (
+                                            <button
+                                                key={val}
+                                                onClick={() => setSlippage(val)}
+                                                className={`py-2 px-1 text-sm font-medium rounded-lg transition-colors ${slippage === val
+                                                    ? 'bg-primary-600 text-white'
+                                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                                    }`}
+                                            >
+                                                {val}%
+                                            </button>
+                                        ))}
+                                        <div className="relative">
+                                            <input
+                                                type="number"
+                                                placeholder="Custom"
+                                                value={!([0.1, 0.5, 1.0].includes(slippage)) ? slippage : ''}
+                                                onChange={(e) => setSlippage(parseFloat(e.target.value))}
+                                                className={`w-full py-2 px-2 text-sm text-center rounded-lg border focus:ring-2 focus:ring-primary-500 focus:outline-none ${!([0.1, 0.5, 1.0].includes(slippage))
+                                                    ? 'border-primary-500 bg-white dark:bg-gray-800 text-primary-600'
+                                                    : 'border-transparent bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                                                    }`}
+                                            />
+                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 pointer-events-none">%</span>
                                         </div>
-                                        <span className={`text-sm font-medium ${trade.type === 'buy' ? 'text-green-600' : 'text-red-600'
-                                            }`}>
-                                            {trade.crypto_amount?.toFixed(6)}
-                                        </span>
                                     </div>
-                                ))}
+                                </div>
+
+                                <div>
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Transaction Deadline</p>
+                                        <div className="group relative">
+                                            <Info className="w-4 h-4 text-gray-400 cursor-help" />
+                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-gray-900 text-white text-xs rounded shadow-lg w-48 hidden group-hover:block z-50">
+                                                Your transaction will revert if it is pending for more than this long.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            value={deadline}
+                                            onChange={(e) => setDeadline(parseInt(e.target.value))}
+                                            className="w-20 py-2 px-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-right focus:ring-2 focus:ring-primary-500 focus:outline-none dark:text-white"
+                                        />
+                                        <span className="text-gray-500 dark:text-gray-400">minutes</span>
+                                    </div>
+                                </div>
                             </div>
-                        )}
+                        </motion.div>
                     </div>
-                </div>
-            </div>
+                )}
+            </AnimatePresence>
         </div>
     );
+};
+
+const CURRENCY_OPTIONS = {
+    fiat: [
+        { code: 'USD', name: 'US Dollar', symbol: '$', flag: '🇺🇸' },
+        { code: 'EUR', name: 'Euro', symbol: '€', flag: '🇪🇺' },
+        { code: 'GBP', name: 'British Pound', symbol: '£', flag: '🇬🇧' },
+        { code: 'NGN', name: 'Nigerian Naira', symbol: '₦', flag: '🇳🇬' },
+        { code: 'GHS', name: 'Ghanaian Cedi', symbol: '₵', flag: '🇬🇭' },
+        { code: 'KES', name: 'Kenyan Shilling', symbol: 'KSh', flag: '🇰🇪' },
+    ]
 };
 
 export default Exchange;
