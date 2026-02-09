@@ -1,5 +1,5 @@
 # Production Dockerfile for JAXOPAY Backend
-FROM node:18-slim
+FROM node:20-slim
 
 # Set working directory
 WORKDIR /app
@@ -15,7 +15,6 @@ COPY . .
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV PORT=3000
 
 # Expose the application port
 EXPOSE 3000
