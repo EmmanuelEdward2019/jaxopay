@@ -87,9 +87,16 @@ apiClient.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config;
+    const serverMessage = error.response?.data?.message;
+    const status = error.response?.status;
 
-    // Handle 401 Unauthorized - Token expired
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Handle 401 Unauthorized - Token expired (Skip for auth endpoints)
+    const isAuthRoute = originalRequest.url?.includes('/auth/login') ||
+      originalRequest.url?.includes('/auth/signup') ||
+      originalRequest.url?.includes('/auth/reset-password') ||
+      originalRequest.url?.includes('/auth/verify-otp');
+
+    if (status === 401 && !originalRequest._retry && !isAuthRoute) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -179,9 +186,8 @@ apiClient.interceptors.response.use(
     }
 
     // Get a user-friendly error message
-    const serverMessage = error.response?.data?.message;
-    const status = error.response?.status;
     const friendlyMessage = getErrorMessage(status, serverMessage);
+
 
     const errorData = {
       message: friendlyMessage,
