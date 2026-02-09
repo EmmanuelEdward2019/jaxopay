@@ -87,7 +87,7 @@ const ForgotPassword = () => {
                 {/* Logo */}
                 <div className="text-center mb-8">
                     <Link to="/" className="inline-flex items-center gap-2">
-                        <img src="/logo-icon.png" alt="JAXOPAY" className="w-12 h-12 object-contain" />
+                        <img src="/logo.png" alt="JAXOPAY" className="w-12 h-12 object-contain" />
                         <span className="text-2xl font-bold text-gray-900 dark:text-white">JAXOPAY</span>
                     </Link>
                 </div>
@@ -133,7 +133,7 @@ const ForgotPassword = () => {
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
                                             placeholder="Enter your email"
-                                            className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                            className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                         />
                                     </div>
                                 </div>
@@ -160,7 +160,7 @@ const ForgotPassword = () => {
                             animate={{ opacity: 1, scale: 1 }}
                             className="text-center"
                         >
-                            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <Mail className="w-8 h-8 text-primary-600" />
                             </div>
                             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
@@ -182,7 +182,7 @@ const ForgotPassword = () => {
                                 Didn't receive the email?{' '}
                                 <button
                                     onClick={() => setStep(1)}
-                                    className="text-primary-600 hover:text-green-700 font-medium"
+                                    className="text-primary-600 hover:text-primary-700 font-medium"
                                 >
                                     Click to resend
                                 </button>
@@ -222,7 +222,7 @@ const ForgotPassword = () => {
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
                                             placeholder="Enter new password"
-                                            className="w-full pl-12 pr-12 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                            className="w-full pl-12 pr-12 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                         />
                                         <button
                                             type="button"
@@ -246,7 +246,7 @@ const ForgotPassword = () => {
                                             value={confirmPassword}
                                             onChange={(e) => setConfirmPassword(e.target.value)}
                                             placeholder="Confirm new password"
-                                            className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                            className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                         />
                                     </div>
                                 </div>
@@ -273,7 +273,7 @@ const ForgotPassword = () => {
                             animate={{ opacity: 1, scale: 1 }}
                             className="text-center"
                         >
-                            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <Check className="w-8 h-8 text-primary-600" />
                             </div>
                             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
@@ -282,14 +282,14 @@ const ForgotPassword = () => {
                             <p className="text-gray-600 dark:text-gray-400 mb-6">
                                 Your password has been reset. Redirecting to login...
                             </p>
-                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600 mx-auto" />
+                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600 mx-auto" />
                         </motion.div>
                     )}
                 </div>
 
                 <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
                     Remember your password?{' '}
-                    <Link to="/login" className="text-primary-600 hover:text-green-700 font-medium">
+                    <Link to="/login" className="text-primary-600 hover:text-primary-700 font-medium">
                         Sign in
                     </Link>
                 </p>

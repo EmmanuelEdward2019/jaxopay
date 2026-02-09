@@ -2,8 +2,8 @@ import { AlertCircle, ExternalLink, CheckCircle } from 'lucide-react';
 
 export default function SetupNotice() {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const hasValidCredentials = 
-    supabaseUrl && 
+  const hasValidCredentials =
+    supabaseUrl &&
     !supabaseUrl.includes('placeholder');
 
   if (hasValidCredentials) {
@@ -32,7 +32,7 @@ export default function SetupNotice() {
         <div className="space-y-6">
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
             <p className="text-sm text-blue-900 dark:text-blue-200">
-              <strong>JAXOPAY</strong> requires a Supabase backend to function. 
+              <strong>JAXOPAY</strong> requires a Supabase backend to function.
               Follow the steps below to set up your project.
             </p>
           </div>
@@ -77,7 +77,7 @@ export default function SetupNotice() {
                   Run the Database Schema
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  In your Supabase project, go to <strong>SQL Editor</strong> and run the 
+                  In your Supabase project, go to <strong>SQL Editor</strong> and run the
                   contents of <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">supabase/schema.sql</code>
                 </p>
               </div>
@@ -112,7 +112,7 @@ export default function SetupNotice() {
                   Update Environment Variables
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                  Edit the <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">.env</code> file 
+                  Edit the <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">.env</code> file
                   in the project root and add your credentials:
                 </p>
                 <div className="bg-gray-900 dark:bg-gray-950 rounded-lg p-3 text-xs font-mono text-gray-100 overflow-x-auto">
@@ -139,10 +139,10 @@ export default function SetupNotice() {
           </div>
 
           {/* Footer */}
-          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-green-900 dark:text-green-200">
-              <strong>Need help?</strong> Check the <code>SETUP_GUIDE.md</code> file 
+          <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-4 flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-primary-600 dark:text-primary-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-primary-900 dark:text-primary-200">
+              <strong>Need help?</strong> Check the <code>SETUP_GUIDE.md</code> file
               for detailed instructions and troubleshooting tips.
             </div>
           </div>

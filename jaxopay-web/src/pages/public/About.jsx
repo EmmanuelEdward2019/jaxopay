@@ -150,7 +150,7 @@ export default function About() {
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-8 flex items-center justify-center shadow-xl">
                   <FaUsers className="w-16 h-16 text-white" />
                 </div>
-                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-8 flex items-center justify-center shadow-xl">
+                <div className="bg-gradient-to-br from-sky-500 to-sky-600 rounded-2xl p-8 flex items-center justify-center shadow-xl">
                   <FaBolt className="w-16 h-16 text-white" />
                 </div>
                 <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-8 flex items-center justify-center shadow-xl">
@@ -364,7 +364,7 @@ export default function About() {
                 icon: FaArrowTrendUp,
                 title: 'Lowest Fees',
                 description: 'Save up to 25% on transaction fees compared to traditional banks.',
-                color: 'from-green-500 to-green-600'
+                color: 'from-sky-500 to-sky-600'
               },
               {
                 icon: FaGlobe,

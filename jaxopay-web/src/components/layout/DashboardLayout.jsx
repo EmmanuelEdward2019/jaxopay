@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -12,20 +12,29 @@ import {
   LogOut,
   Menu,
   X,
+  MessageSquare,
   Sun,
   Moon,
   Bell,
+  Shield,
+  LifeBuoy,
   User,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
+import NotificationDropdown from '../notifications/NotificationDropdown';
+import AnnouncementBanner from '../notifications/AnnouncementBanner';
 
 const DashboardLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuthStore();
-  const { theme, toggleTheme, isFeatureEnabled } = useAppStore();
+  const { theme, toggleTheme, isFeatureEnabled, fetchFeatureToggles } = useAppStore();
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    fetchFeatureToggles();
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -40,6 +49,13 @@ const DashboardLayout = () => {
     { name: 'Bill Payments', href: '/dashboard/bills', icon: Receipt, enabled: isFeatureEnabled('bill_payments') },
     { name: 'Flights', href: '/dashboard/flights', icon: Plane, enabled: isFeatureEnabled('flights') },
     { name: 'Gift Cards', href: '/dashboard/gift-cards', icon: Gift, enabled: isFeatureEnabled('gift_cards') },
+    { name: 'Bulk SMS', href: '/dashboard/sms', icon: MessageSquare, enabled: isFeatureEnabled('bulk_sms') },
+    { name: 'KYC Verification', href: '/dashboard/kyc', icon: Shield, enabled: true },
+    { name: 'Support', href: '/dashboard/support', icon: LifeBuoy, enabled: true },
+  ];
+
+  const adminNavigation = [
+    { name: 'Administration', href: '/admin', icon: Settings, enabled: ['admin', 'super_admin', 'compliance_officer'].includes(user?.role) },
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -64,7 +80,7 @@ const DashboardLayout = () => {
           <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <Link to="/dashboard" className="flex items-center space-x-2">
               <img
-                src={theme === 'dark' ? "/logo-white.png" : "/logo.png"}
+                src="/logo.png"
                 alt="JAXOPAY"
                 className="h-8 w-auto"
               />
@@ -96,6 +112,32 @@ const DashboardLayout = () => {
                 </Link>
               );
             })}
+
+            {/* Admin Section */}
+            {adminNavigation.some(item => item.enabled) && (
+              <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
+                <p className="px-4 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Administration
+                </p>
+                {adminNavigation.filter(item => item.enabled).map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.name}
+                      to={item.href}
+                      className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${isActive(item.href)
+                        ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      <Icon className="h-5 w-5" />
+                      <span className="font-medium">{item.name}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </nav>
 
           {/* Bottom section */}
@@ -120,7 +162,8 @@ const DashboardLayout = () => {
       </aside>
 
       {/* Main content */}
-      <div className="lg:pl-64">
+      <div className="lg:pl-64 flex flex-col min-h-screen">
+        <AnnouncementBanner />
         {/* Top bar */}
         <header className="sticky top-0 z-30 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-4">
@@ -144,10 +187,7 @@ const DashboardLayout = () => {
               >
                 {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
               </button>
-              <button className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full"></span>
-              </button>
+              <NotificationDropdown />
               <Link
                 to="/dashboard/profile"
                 className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"

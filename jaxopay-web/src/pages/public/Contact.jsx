@@ -78,8 +78,8 @@ export default function Contact() {
               </h2>
 
               {submitted && (
-                <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                  <p className="text-green-800 dark:text-green-200">
+                <div className="mb-6 p-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg">
+                  <p className="text-primary-800 dark:text-primary-200">
                     Thank you! Your message has been sent successfully. We'll get back to you soon.
                   </p>
                 </div>

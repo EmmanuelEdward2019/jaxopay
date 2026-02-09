@@ -34,11 +34,14 @@ const Cards = () => {
     const [actionLoading, setActionLoading] = useState(false);
 
     // Fetch cards and wallets on mount - run in parallel for speed
+    // Fetch cards and wallets on mount
     useEffect(() => {
         const loadData = async () => {
             setLoading(true);
-            await Promise.all([fetchCards(), fetchWallets()]);
+            await fetchCards();
             setLoading(false);
+            // Fetch wallets in background as they are only needed for funding
+            fetchWallets();
         };
         loadData();
     }, []);
@@ -284,7 +287,7 @@ const Cards = () => {
                                                 className="p-1 hover:bg-white/10 rounded transition-colors"
                                             >
                                                 {copiedField === `number-${card.id}` ? (
-                                                    <Check className="w-4 h-4 text-green-400" />
+                                                    <Check className="w-4 h-4 text-primary-400" />
                                                 ) : (
                                                     <Copy className="w-4 h-4" />
                                                 )}
@@ -316,7 +319,7 @@ const Cards = () => {
                                                     className="p-1 hover:bg-white/10 rounded transition-colors"
                                                 >
                                                     {copiedField === `cvv-${card.id}` ? (
-                                                        <Check className="w-3 h-3 text-green-400" />
+                                                        <Check className="w-3 h-3 text-primary-400" />
                                                     ) : (
                                                         <Copy className="w-3 h-3" />
                                                     )}
@@ -341,7 +344,7 @@ const Cards = () => {
                                             setShowFundModal(true);
                                         }}
                                         disabled={card.card_status === 'frozen' || card.card_type === 'single_use'}
-                                        className="flex-1 py-2 px-3 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 font-medium rounded-lg hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        className="flex-1 py-2 px-3 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 font-medium rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                     >
                                         <DollarSign className="w-4 h-4" />
                                         Fund
@@ -415,7 +418,7 @@ const Cards = () => {
                                         <p className="font-semibold text-gray-900 dark:text-white">
                                             -{formatCurrency(tx.amount, 'USD')}
                                         </p>
-                                        <p className={`text-sm ${tx.status === 'completed' ? 'text-green-600' : 'text-yellow-600'
+                                        <p className={`text-sm ${tx.status === 'completed' ? 'text-primary-600' : 'text-yellow-600'
                                             }`}>
                                             {tx.status}
                                         </p>

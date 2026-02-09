@@ -30,9 +30,9 @@ export default function Products() {
       ],
       image: 'https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=800&auto=format&fit=crop', // Higher res
       link: '/products/payments',
-      color: 'text-green-500',
-      bgColor: 'bg-green-50',
-      gradient: 'from-green-500 to-emerald-600'
+      color: 'text-primary-500',
+      bgColor: 'bg-primary-50',
+      gradient: 'from-primary-500 to-primary-600'
     },
     {
       id: 'cards',

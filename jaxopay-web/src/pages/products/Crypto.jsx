@@ -110,7 +110,7 @@ export default function Crypto() {
                   </span>
                   <span
                     className={`flex items-center text-sm font-medium ${crypto.price_change_percentage_24h >= 0
-                      ? 'text-green-400'
+                      ? 'text-primary-400'
                       : 'text-red-400'
                       }`}
                   >

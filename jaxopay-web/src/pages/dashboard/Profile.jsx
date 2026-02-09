@@ -100,7 +100,7 @@ const Profile = () => {
         const badges = {
             tier_0: { label: 'Unverified', color: 'bg-gray-100 text-gray-700' },
             tier_1: { label: 'Basic', color: 'bg-blue-100 text-blue-700' },
-            tier_2: { label: 'Verified', color: 'bg-green-100 text-green-700' },
+            tier_2: { label: 'Verified', color: 'bg-primary-100 text-primary-700' },
         };
         return badges[tier] || badges.tier_0;
     };
@@ -198,7 +198,7 @@ const Profile = () => {
                                         <button
                                             onClick={handleUpdateProfile}
                                             disabled={saving}
-                                            className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors disabled:opacity-50"
+                                            className="p-1.5 text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors disabled:opacity-50"
                                         >
                                             <Check className="w-5 h-5" />
                                         </button>
@@ -349,8 +349,8 @@ const Profile = () => {
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                                            <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+                                        <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
+                                            <TrendingUp className="w-5 h-5 text-primary-600 dark:text-primary-400" />
                                         </div>
                                         <span className="text-gray-600 dark:text-gray-400">Transactions</span>
                                     </div>

@@ -247,7 +247,7 @@ const Signup = () => {
                                                         key={i}
                                                         className={`h-1 flex-1 rounded ${i <= passwordStrength
                                                             ? passwordStrength <= 2 ? 'bg-red-500' :
-                                                                passwordStrength <= 3 ? 'bg-yellow-500' : 'bg-green-500'
+                                                                passwordStrength <= 3 ? 'bg-yellow-500' : 'bg-primary-500'
                                                             : 'bg-gray-200 dark:bg-gray-700'
                                                             }`}
                                                     />

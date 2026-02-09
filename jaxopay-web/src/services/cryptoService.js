@@ -16,8 +16,8 @@ const cryptoService = {
     try {
       const response = await apiClient.get('/crypto/rates', {
         params: {
-          from_currency: fromCurrency,
-          to_currency: toCurrency,
+          from: fromCurrency,
+          to: toCurrency,
           amount,
         },
       });
@@ -31,9 +31,9 @@ const cryptoService = {
   buyCrypto: async (cryptocurrency, amount, currency, walletId) => {
     try {
       const response = await apiClient.post('/crypto/buy', {
-        cryptocurrency,
-        amount,
-        currency,
+        crypto_currency: cryptocurrency,
+        fiat_amount: amount,
+        fiat_currency: currency,
         wallet_id: walletId,
       });
       return { success: true, data: response.data };
@@ -46,9 +46,9 @@ const cryptoService = {
   sellCrypto: async (cryptocurrency, amount, currency, walletId) => {
     try {
       const response = await apiClient.post('/crypto/sell', {
-        cryptocurrency,
-        amount,
-        currency,
+        crypto_currency: cryptocurrency,
+        crypto_amount: amount,
+        fiat_currency: currency,
         wallet_id: walletId,
       });
       return { success: true, data: response.data };

@@ -11,6 +11,10 @@ export const useAuthStore = create(
       isLoading: true,
       error: null,
 
+      requires2FA: false,
+      tempUserId: null,
+      twoFAMethod: null,
+
       setUser: (user) => set({ user, isAuthenticated: !!user }),
 
       setSession: (session) => set({ session }),
@@ -20,12 +24,23 @@ export const useAuthStore = create(
       setError: (error) => set({ error }),
 
       login: async (email, password) => {
-        set({ isLoading: true, error: null });
+        set({ isLoading: true, error: null, requires2FA: false, tempUserId: null });
         const result = await authService.login(email, password);
 
         if (!result.success) {
-          set({ error: result.error, isLoading: false });
-          return { success: false, error: result.error };
+          set({ error: result.message, isLoading: false });
+          return { success: false, error: result.message };
+        }
+
+        // Check for 2FA requirement
+        if (result.data.requires_2fa) {
+          set({
+            isLoading: false,
+            requires2FA: true,
+            tempUserId: result.data.user_id,
+            twoFAMethod: result.data.method
+          });
+          return { success: true, requires2FA: true, message: result.message };
         }
 
         // API returns { user: ..., session: { access_token, refresh_token, expires_in } }
@@ -42,6 +57,8 @@ export const useAuthStore = create(
           isAuthenticated: true,
           isLoading: false,
           error: null,
+          requires2FA: false,
+          tempUserId: null
         });
 
         return { success: true, data: result.data };
@@ -52,25 +69,36 @@ export const useAuthStore = create(
         const result = await authService.loginWithPhone(phone);
 
         if (!result.success) {
-          set({ error: result.error, isLoading: false });
-          return { success: false, error: result.error };
+          set({ error: result.message, isLoading: false });
+          return { success: false, error: result.message };
         }
 
         set({ isLoading: false });
+        // The backend likely returns requires_2fa here too if 2FA is enabled? 
+        // No, loginWithPhone sends an OTP. verifyOTP completes it. 
+        // But if user has 2FA enabled on top of phone login? 
+        // Current implementation assumes Phone Login IS the verification if 2FA is SMS.
+        // But if 2FA is Authenticator? 
+        // We'll leave this for now as user asked for Settings improvements.
         return { success: true, data: result.data };
       },
 
-      verifyOTP: async (phone, otp) => {
+      verifyOTP: async (otp, phone, userId) => {
         set({ isLoading: true, error: null });
-        const result = await authService.verifyOTP(phone, otp);
+        // Clean arguments to match service signature: verifyOTP(otp, phone, userId)
+        const result = await authService.verifyOTP(otp, phone, userId);
 
         if (!result.success) {
-          set({ error: result.error, isLoading: false });
-          return { success: false, error: result.error };
+          set({ error: result.message, isLoading: false });
+          return { success: false, error: result.message };
         }
 
-        const { user, access_token, refresh_token } = result.data;
-        const session = { access_token, refresh_token, user };
+        const { user, session: sessionData } = result.data;
+        const session = {
+          access_token: sessionData.access_token,
+          refresh_token: sessionData.refresh_token,
+          user
+        };
 
         set({
           user,
@@ -78,6 +106,8 @@ export const useAuthStore = create(
           isAuthenticated: true,
           isLoading: false,
           error: null,
+          requires2FA: false,
+          tempUserId: null
         });
 
         return { success: true, data: result.data };
@@ -88,8 +118,8 @@ export const useAuthStore = create(
         const result = await authService.signup(email, password, metadata);
 
         if (!result.success) {
-          set({ error: result.error, isLoading: false });
-          return { success: false, error: result.error };
+          set({ error: result.message, isLoading: false });
+          return { success: false, error: result.message };
         }
 
         // Auto-login after signup - API returns session with tokens
@@ -122,8 +152,8 @@ export const useAuthStore = create(
         const result = await authService.signup(email, password, metadata);
 
         if (!result.success) {
-          set({ error: result.error, isLoading: false });
-          return { success: false, error: result.error };
+          set({ error: result.message, isLoading: false });
+          return { success: false, error: result.message };
         }
 
         // Auto-login after signup - API returns session with tokens
@@ -154,8 +184,8 @@ export const useAuthStore = create(
         const result = await authService.requestPasswordReset(email);
 
         if (!result.success) {
-          set({ error: result.error, isLoading: false });
-          return { success: false, error: result.error };
+          set({ error: result.message, isLoading: false });
+          return { success: false, error: result.message };
         }
 
         set({ isLoading: false });
@@ -167,8 +197,8 @@ export const useAuthStore = create(
         const result = await authService.resetPassword(token, newPassword);
 
         if (!result.success) {
-          set({ error: result.error, isLoading: false });
-          return { success: false, error: result.error };
+          set({ error: result.message, isLoading: false });
+          return { success: false, error: result.message };
         }
 
         set({ isLoading: false });
@@ -180,8 +210,8 @@ export const useAuthStore = create(
         const result = await authService.verifyEmail(token);
 
         if (!result.success) {
-          set({ error: result.error, isLoading: false });
-          return { success: false, error: result.error };
+          set({ error: result.message, isLoading: false });
+          return { success: false, error: result.message };
         }
 
         set({ isLoading: false });
@@ -203,20 +233,22 @@ export const useAuthStore = create(
 
       logout: async () => {
         set({ isLoading: true });
-        const result = await authService.logout();
-
-        if (!result.success) {
-          set({ error: result.error, isLoading: false });
-          return { success: false, error: result.error };
+        try {
+          await authService.logout();
+        } catch (error) {
+          console.error('Logout API call failed:', error);
+        } finally {
+          // Always clear local state regardless of API success
+          set({
+            user: null,
+            session: null,
+            isAuthenticated: false,
+            isLoading: false,
+            error: null,
+          });
+          // Also clear any other persistent state if needed
+          localStorage.removeItem('jaxopay-auth');
         }
-
-        set({
-          user: null,
-          session: null,
-          isAuthenticated: false,
-          isLoading: false,
-          error: null,
-        });
 
         return { success: true };
       },

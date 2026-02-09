@@ -28,7 +28,7 @@ CREATE TYPE payment_method AS ENUM ('bank_transfer', 'card', 'crypto', 'wallet',
 CREATE TYPE two_fa_method AS ENUM ('sms', 'email', 'authenticator');
 CREATE TYPE feature_toggle AS ENUM (
   'crypto', 'virtual_cards', 'gift_cards', 'flights', 'utilities', 
-  'cross_border', 'bill_payments', 'wallet_transfers'
+  'cross_border', 'bill_payments', 'wallet_transfers', 'bulk_sms'
 );
 
 -- ============================================

@@ -43,7 +43,10 @@ const KYCReview = () => {
         });
         if (result.success) {
             setDocuments(result.data.documents || []);
-            setPagination(prev => ({ ...prev, total: result.data.total || 0 }));
+            setPagination(prev => ({
+                ...prev,
+                total: result.data.pagination?.total || 0
+            }));
         }
         setLoading(false);
     };
@@ -75,7 +78,7 @@ const KYCReview = () => {
                 </div>
                 <button
                     onClick={fetchPendingKYC}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
                 >
                     <RefreshCw className="w-4 h-4" />
                     Refresh
@@ -86,7 +89,7 @@ const KYCReview = () => {
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                 {loading ? (
                     <div className="flex items-center justify-center h-64">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
                     </div>
                 ) : documents.length === 0 ? (
                     <div className="text-center py-12">
@@ -132,7 +135,7 @@ const KYCReview = () => {
                                     </div>
                                     <button
                                         onClick={() => handleReviewDoc(doc)}
-                                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg"
+                                        className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
                                     >
                                         <Eye className="w-4 h-4" />
                                         Review
@@ -352,7 +355,7 @@ const KYCReviewModal = ({ document, onClose, onVerify, loading }) => {
                                 <button
                                     onClick={() => onVerify(document.id, 'approved')}
                                     disabled={loading}
-                                    className="flex-1 inline-flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl disabled:opacity-50"
+                                    className="flex-1 inline-flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl disabled:opacity-50"
                                 >
                                     <Check className="w-5 h-5" />
                                     {loading ? 'Approving...' : 'Approve'}

@@ -56,7 +56,7 @@ const VerifyEmail = () => {
                 {/* Logo */}
                 <div className="text-center mb-8">
                     <Link to="/" className="inline-flex items-center gap-2">
-                        <img src="/logo-icon.png" alt="JAXOPAY" className="w-12 h-12 object-contain" />
+                        <img src="/logo.png" alt="JAXOPAY" className="w-12 h-12 object-contain" />
                         <span className="text-2xl font-bold text-gray-900 dark:text-white">JAXOPAY</span>
                     </Link>
                 </div>
@@ -69,7 +69,7 @@ const VerifyEmail = () => {
                             animate={{ opacity: 1 }}
                         >
                             <div className="w-16 h-16 mx-auto mb-6">
-                                <div className="animate-spin rounded-full h-16 w-16 border-4 border-green-200 border-t-green-600" />
+                                <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary-200 border-t-primary-600" />
                             </div>
                             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
                                 Verifying your email...
@@ -86,8 +86,8 @@ const VerifyEmail = () => {
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                         >
-                            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <CheckCircle className="w-8 h-8 text-green-600" />
+                            <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <CheckCircle className="w-8 h-8 text-primary-600" />
                             </div>
                             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
                                 Email Verified!
@@ -100,7 +100,7 @@ const VerifyEmail = () => {
                             </p>
                             <Link
                                 to="/login"
-                                className="inline-block w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl"
+                                className="inline-block w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl"
                             >
                                 Go to Login
                             </Link>
@@ -125,7 +125,7 @@ const VerifyEmail = () => {
                             <div className="space-y-4">
                                 <button
                                     onClick={() => setStatus('resend')}
-                                    className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
+                                    className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
                                 >
                                     <RefreshCw className="w-5 h-5" />
                                     Request New Link
@@ -158,7 +158,7 @@ const VerifyEmail = () => {
 
                             {message && (
                                 <div className={`mb-4 p-4 rounded-xl text-sm ${message.includes('sent')
-                                    ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+                                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
                                     : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
                                     }`}>
                                     {message}
@@ -173,13 +173,13 @@ const VerifyEmail = () => {
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         placeholder="Enter your email"
-                                        className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                        className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                     />
                                 </div>
                                 <button
                                     onClick={handleResend}
                                     disabled={isLoading}
-                                    className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                                    className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
                                 >
                                     {isLoading ? (
                                         <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
@@ -197,7 +197,7 @@ const VerifyEmail = () => {
 
                 <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
                     Need help?{' '}
-                    <Link to="/contact" className="text-green-600 hover:text-green-700 font-medium">
+                    <Link to="/contact" className="text-primary-600 hover:text-primary-700 font-medium">
                         Contact Support
                     </Link>
                 </p>

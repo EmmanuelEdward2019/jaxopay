@@ -22,7 +22,7 @@ const BILL_CATEGORIES = [
     { id: 'electricity', name: 'Electricity', icon: Zap, color: 'bg-yellow-100 text-yellow-600' },
     { id: 'internet', name: 'Internet', icon: Wifi, color: 'bg-blue-100 text-blue-600' },
     { id: 'cable', name: 'Cable TV', icon: Tv, color: 'bg-purple-100 text-purple-600' },
-    { id: 'airtime', name: 'Airtime', icon: Phone, color: 'bg-green-100 text-green-600' },
+    { id: 'airtime', name: 'Airtime', icon: Phone, color: 'bg-primary-100 text-primary-600' },
     { id: 'water', name: 'Water', icon: Droplets, color: 'bg-cyan-100 text-cyan-600' },
 ];
 
@@ -156,13 +156,13 @@ const Bills = () => {
                         <div className="flex items-center gap-2 mb-6">
                             {['Category', 'Provider', 'Details', 'Confirm', 'Done'].map((label, index) => (
                                 <div key={label} className="flex items-center">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step > index + 1 ? 'bg-green-500 text-white' :
-                                            step === index + 1 ? 'bg-primary-600 text-white' :
-                                                'bg-gray-200 dark:bg-gray-700 text-gray-500'
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step > index + 1 ? 'bg-primary-500 text-white' :
+                                        step === index + 1 ? 'bg-primary-600 text-white' :
+                                            'bg-gray-200 dark:bg-gray-700 text-gray-500'
                                         }`}>
                                         {step > index + 1 ? <Check className="w-4 h-4" /> : index + 1}
                                     </div>
-                                    {index < 4 && <div className={`w-8 h-0.5 ${step > index + 1 ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-700'}`} />}
+                                    {index < 4 && <div className={`w-8 h-0.5 ${step > index + 1 ? 'bg-primary-500' : 'bg-gray-200 dark:bg-gray-700'}`} />}
                                 </div>
                             ))}
                         </div>
@@ -270,8 +270,8 @@ const Bills = () => {
                                     </div>
 
                                     {validatedAccount && (
-                                        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                                            <div className="flex items-center gap-2 text-green-700 dark:text-green-300 mb-2">
+                                        <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-4">
+                                            <div className="flex items-center gap-2 text-primary-700 dark:text-primary-300 mb-2">
                                                 <Check className="w-5 h-5" />
                                                 <span className="font-medium">Account Verified</span>
                                             </div>
@@ -375,8 +375,8 @@ const Bills = () => {
                         {/* Step 5: Success */}
                         {step === 5 && (
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8">
-                                <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <Check className="w-8 h-8 text-green-600" />
+                                <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Check className="w-8 h-8 text-primary-600" />
                                 </div>
                                 <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Payment Successful!</h2>
                                 <p className="text-gray-600 dark:text-gray-400 mb-6">
@@ -424,7 +424,7 @@ const Bills = () => {
                                             <p className="font-medium text-gray-900 dark:text-white text-sm">
                                                 {formatCurrency(payment.amount, payment.currency)}
                                             </p>
-                                            <span className={`text-xs px-1.5 py-0.5 rounded ${payment.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                                            <span className={`text-xs px-1.5 py-0.5 rounded ${payment.status === 'completed' ? 'bg-primary-100 text-primary-700' : 'bg-yellow-100 text-yellow-700'
                                                 }`}>
                                                 {payment.status}
                                             </span>

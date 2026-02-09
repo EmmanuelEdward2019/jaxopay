@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
+import apiClient from '../lib/apiClient';
 
 export const useAppStore = create(
   persist(
@@ -32,23 +33,19 @@ export const useAppStore = create(
 
       fetchFeatureToggles: async () => {
         set({ isLoading: true });
-        
-        const { data, error } = await supabase
-          .from('feature_toggles')
-          .select('*');
-        
-        if (error) {
+
+        try {
+          const response = await apiClient.get('/config/toggles');
+          if (response.success) {
+            set({ featureToggles: response.data, isLoading: false });
+          } else {
+            console.warn('Feature toggle fetch returned unsuccessful response');
+          }
+        } catch (error) {
           console.error('Error fetching feature toggles:', error);
+        } finally {
           set({ isLoading: false });
-          return;
         }
-        
-        const toggles = {};
-        data.forEach(toggle => {
-          toggles[toggle.feature_name] = toggle.is_enabled;
-        });
-        
-        set({ featureToggles: toggles, isLoading: false });
       },
 
       isFeatureEnabled: (featureName) => {

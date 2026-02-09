@@ -10,11 +10,13 @@ import {
   Receipt,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { useAppStore } from '../../store/appStore';
 import dashboardService from '../../services/dashboardService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
 const Dashboard = () => {
   const { user } = useAuthStore();
+  const { isFeatureEnabled } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [wallets, setWallets] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -25,13 +27,19 @@ const Dashboard = () => {
     active_cards: 0,
   });
 
+  const [error, setError] = useState(null);
+
   useEffect(() => {
     const loadData = async () => {
+      setLoading(true);
+      setError(null);
       const result = await dashboardService.getSummary();
       if (result.success) {
         setWallets(result.data.wallets || []);
         setTransactions(result.data.transactions || []);
         setStats(result.data.stats || {});
+      } else {
+        setError(result.error || 'Failed to load dashboard data');
       }
       setLoading(false);
     };
@@ -39,19 +47,20 @@ const Dashboard = () => {
   }, []);
 
   const quickActions = [
-    { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'bg-blue-500' },
-    { name: 'Receive', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-green-500' },
-    { name: 'Exchange', icon: ArrowLeftRight, href: '/dashboard/exchange', color: 'bg-purple-500' },
-    { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', color: 'bg-orange-500' },
-  ];
+    { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'bg-blue-500', enabled: true },
+    { name: 'Receive', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-primary-500', enabled: true },
+    { name: 'Exchange', icon: ArrowLeftRight, href: '/dashboard/exchange', color: 'bg-purple-500', enabled: isFeatureEnabled('crypto') },
+    { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', color: 'bg-orange-500', enabled: isFeatureEnabled('bill_payments') },
+  ].filter(action => action.enabled);
 
   const statsDisplay = [
     {
       name: 'Total Balance',
-      value: formatCurrency(stats.total_balance || 0, 'USD'),
+      value: user?.preferences?.show_balances === false ? '****' : formatCurrency(stats.total_balance || 0, 'USD'),
       icon: Wallet,
       change: '+12.5%',
       changeType: 'positive',
+      enabled: true,
     },
     {
       name: 'Active Wallets',
@@ -59,6 +68,7 @@ const Dashboard = () => {
       icon: Wallet,
       change: '+2',
       changeType: 'positive',
+      enabled: true,
     },
     {
       name: 'Transactions',
@@ -66,6 +76,7 @@ const Dashboard = () => {
       icon: TrendingUp,
       change: '+8',
       changeType: 'positive',
+      enabled: true,
     },
     {
       name: 'Virtual Cards',
@@ -73,8 +84,9 @@ const Dashboard = () => {
       icon: CreditCard,
       change: 'Active',
       changeType: 'neutral',
+      enabled: isFeatureEnabled('virtual_cards'),
     },
-  ];
+  ].filter(stat => stat.enabled);
 
   if (loading) {
     return (
@@ -86,11 +98,21 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Error Alert */}
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center justify-between">
+          <p className="text-red-700 dark:text-red-300">{error}</p>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-600 font-medium text-sm">
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Welcome Section */}
-      <div className="card bg-gradient-to-r from-primary-500 to-primary-700 text-white">
-        <h2 className="text-2xl font-bold mb-2">Welcome to JAXOPAY</h2>
-        <p className="text-primary-100">
-          Manage your finances across borders with ease
+      <div className="card bg-gradient-to-r from-primary-600 to-indigo-700 text-white border-none shadow-lg transform hover:scale-[1.01] transition-transform">
+        <h2 className="text-3xl font-bold mb-2">Welcome back, {user?.first_name || 'Champion'}!</h2>
+        <p className="text-primary-100/90 text-lg">
+          Your financial hub is up and running. Ready for some global transactions?
         </p>
       </div>
 
@@ -106,7 +128,7 @@ const Dashboard = () => {
                   <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
                     {stat.value}
                   </p>
-                  <p className={`text-sm mt-1 ${stat.changeType === 'positive' ? 'text-green-600' : 'text-gray-600'
+                  <p className={`text-sm mt-1 ${stat.changeType === 'positive' ? 'text-primary-600' : 'text-gray-600'
                     }`}>
                     {stat.change}
                   </p>
@@ -189,7 +211,7 @@ const Dashboard = () => {
                   <p className="font-semibold text-gray-900 dark:text-white">
                     {formatCurrency(transaction.from_amount, transaction.from_currency)}
                   </p>
-                  <p className={`text-sm ${transaction.status === 'completed' ? 'text-green-600' : 'text-yellow-600'
+                  <p className={`text-sm ${transaction.status === 'completed' ? 'text-primary-600' : 'text-yellow-600'
                     }`}>
                     {transaction.status}
                   </p>

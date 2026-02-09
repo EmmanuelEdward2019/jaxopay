@@ -104,7 +104,7 @@ const Transactions = () => {
 
     const getTransactionColor = (type, direction) => {
         if (direction === 'credit' || type === 'crypto_sell') {
-            return 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400';
+            return 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400';
         }
         return 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400';
     };
@@ -191,7 +191,7 @@ const Transactions = () => {
                     </div>
                     <div className="card">
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Completed</p>
-                        <p className="text-2xl font-bold text-green-600">{stats.completed_count || 0}</p>
+                        <p className="text-2xl font-bold text-primary-600">{stats.completed_count || 0}</p>
                     </div>
                     <div className="card">
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Pending</p>
@@ -216,8 +216,8 @@ const Transactions = () => {
                     <button
                         onClick={() => setShowFilters(!showFilters)}
                         className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors ${showFilters || typeFilter !== 'all' || statusFilter !== 'all'
-                                ? 'bg-primary-600 text-white'
-                                : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                            ? 'bg-primary-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
                             }`}
                     >
                         <Filter className="w-5 h-5" />
@@ -356,7 +356,7 @@ const Transactions = () => {
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className={`font-semibold ${tx.direction === 'credit' ? 'text-green-600' : 'text-gray-900 dark:text-white'
+                                        <p className={`font-semibold ${tx.direction === 'credit' ? 'text-primary-600' : 'text-gray-900 dark:text-white'
                                             }`}>
                                             {tx.direction === 'credit' ? '+' : '-'}
                                             {formatCurrency(tx.amount, tx.currency)}
@@ -437,7 +437,7 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
 
                 <div className="space-y-4">
                     <div className="text-center pb-4 border-b border-gray-200 dark:border-gray-700">
-                        <p className={`text-3xl font-bold ${transaction.direction === 'credit' ? 'text-green-600' : 'text-gray-900 dark:text-white'
+                        <p className={`text-3xl font-bold ${transaction.direction === 'credit' ? 'text-primary-600' : 'text-gray-900 dark:text-white'
                             }`}>
                             {transaction.direction === 'credit' ? '+' : '-'}
                             {formatCurrency(transaction.amount, transaction.currency)}

@@ -9,6 +9,7 @@ import DashboardLayout from './components/layout/DashboardLayout';
 
 // Components
 import SetupNotice from './components/SetupNotice';
+import FeatureGuard from './components/FeatureGuard';
 
 // Auth Pages
 import Login from './pages/auth/Login';
@@ -46,6 +47,8 @@ import Exchange from './pages/dashboard/Exchange';
 import DashboardGiftCards from './pages/dashboard/GiftCards';
 import KYC from './pages/dashboard/KYC';
 import DashboardFlights from './pages/dashboard/Flights';
+import BulkSMS from './pages/BulkSMS';
+import Support from './pages/dashboard/Support';
 
 // Admin Pages
 import AdminLayout from './pages/admin/AdminLayout';
@@ -53,6 +56,14 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import UserManagement from './pages/admin/UserManagement';
 import KYCReview from './pages/admin/KYCReview';
 import TransactionMonitor from './pages/admin/TransactionMonitor';
+import FeatureManagement from './pages/admin/FeatureManagement';
+import AuditLogs from './pages/admin/AuditLogs';
+import SystemManagement from './pages/admin/SystemManagement';
+import WalletManagement from './pages/admin/WalletManagement';
+import CardManagement from './pages/admin/CardManagement';
+import ProductManagement from './pages/admin/ProductManagement';
+import AMLCompliance from './pages/admin/AMLCompliance';
+import AnnouncementManagement from './pages/admin/AnnouncementManagement';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -94,6 +105,30 @@ const PublicRoute = ({ children }) => {
   return children;
 };
 
+// Role Protected Route Component
+const RoleProtectedRoute = ({ children, allowedRoles }) => {
+  const { user, isAuthenticated, isLoading } = useAuthStore();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user && !allowedRoles.includes(user.role)) {
+    // Redirect to base admin dashboard if they are an admin type, or main dashboard otherwise
+    return <Navigate to="/admin" replace />;
+  }
+
+  return children;
+};
+
 // Admin Route Component (requires admin role)
 const AdminRoute = ({ children }) => {
   const { isAuthenticated, isLoading, user } = useAuthStore();
@@ -101,7 +136,7 @@ const AdminRoute = ({ children }) => {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
       </div>
     );
   }
@@ -111,7 +146,7 @@ const AdminRoute = ({ children }) => {
   }
 
   // Check for admin role
-  if (user?.role !== 'admin' && user?.role !== 'super_admin') {
+  if (!['admin', 'super_admin', 'compliance_officer'].includes(user?.role)) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -212,17 +247,43 @@ function App() {
           >
             <Route index element={<Dashboard />} />
 
-            {/* Placeholder routes - to be implemented */}
+            {/* Dashboard Features */}
             <Route path="wallets" element={<Wallets />} />
-            <Route path="exchange" element={<Exchange />} />
-            <Route path="cards" element={<Cards />} />
-            <Route path="bills" element={<Bills />} />
-            <Route path="flights" element={<DashboardFlights />} />
-            <Route path="gift-cards" element={<DashboardGiftCards />} />
+            <Route path="exchange" element={
+              <FeatureGuard feature="crypto">
+                <Exchange />
+              </FeatureGuard>
+            } />
+            <Route path="cards" element={
+              <FeatureGuard feature="virtual_cards">
+                <Cards />
+              </FeatureGuard>
+            } />
+            <Route path="bills" element={
+              <FeatureGuard feature="bill_payments">
+                <Bills />
+              </FeatureGuard>
+            } />
+            <Route path="flights" element={
+              <FeatureGuard feature="flights">
+                <DashboardFlights />
+              </FeatureGuard>
+            } />
+            <Route path="gift-cards" element={
+              <FeatureGuard feature="gift_cards">
+                <DashboardGiftCards />
+              </FeatureGuard>
+            } />
             <Route path="settings" element={<Settings />} />
             <Route path="profile" element={<Profile />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="kyc" element={<KYC />} />
+            <Route path="sms" element={
+              <FeatureGuard feature="bulk_sms">
+                <BulkSMS />
+              </FeatureGuard>
+            } />
+            <Route path="support" element={<Support />} />
           </Route>
 
           {/* Admin Routes */}
@@ -235,18 +296,97 @@ function App() {
             }
           >
             <Route index element={<AdminDashboard />} />
+
+            {/* User Management - All Admins */}
             <Route path="users" element={<UserManagement />} />
-            <Route path="kyc" element={<KYCReview />} />
-            <Route path="transactions" element={<TransactionMonitor />} />
-            <Route path="wallets" element={<div className="card">Admin Wallets - Coming Soon</div>} />
-            <Route path="cards" element={<div className="card">Admin Cards - Coming Soon</div>} />
+
+            {/* KYC - Admin, Super Admin, Compliance */}
+            <Route path="kyc" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer']}>
+                <KYCReview />
+              </RoleProtectedRoute>
+            } />
+
+            {/* Transactions - Admin, Super Admin, Compliance */}
+            <Route path="transactions" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer']}>
+                <TransactionMonitor />
+              </RoleProtectedRoute>
+            } />
+
+            {/* AML/Compliance - Compliance Officer, Super Admin */}
+            <Route path="aml" element={
+              <RoleProtectedRoute allowedRoles={['super_admin', 'compliance_officer', 'admin']}>
+                <AMLCompliance />
+              </RoleProtectedRoute>
+            } />
+
+            {/* Features - SUPER ADMIN ONLY */}
+            <Route path="features" element={
+              <RoleProtectedRoute allowedRoles={['super_admin']}>
+                <FeatureManagement />
+              </RoleProtectedRoute>
+            } />
+
+            {/* Announcements - Admin & Compliance */}
+            <Route path="announcements" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer']}>
+                <AnnouncementManagement />
+              </RoleProtectedRoute>
+            } />
+
+            {/* Audit Logs - Super Admin, Compliance */}
+            <Route path="audit" element={
+              <RoleProtectedRoute allowedRoles={['super_admin', 'compliance_officer']}>
+                <AuditLogs />
+              </RoleProtectedRoute>
+            } />
+
+            {/* System Management - Admin, Super Admin */}
+            <Route path="system" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                <SystemManagement />
+              </RoleProtectedRoute>
+            } />
+
+            {/* Financial Products - Admin, Super Admin */}
+            <Route path="wallets" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                <WalletManagement />
+              </RoleProtectedRoute>
+            } />
+            <Route path="cards" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                <CardManagement />
+              </RoleProtectedRoute>
+            } />
+            <Route path="crypto" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                <ProductManagement />
+              </RoleProtectedRoute>
+            } />
+            <Route path="sms" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                <ProductManagement />
+              </RoleProtectedRoute>
+            } />
+            <Route path="giftcards" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                <ProductManagement />
+              </RoleProtectedRoute>
+            } />
+            <Route path="flights" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                <ProductManagement />
+              </RoleProtectedRoute>
+            } />
           </Route>
 
           {/* Catch all - redirect to home for unauthenticated, dashboard for authenticated */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
-    </QueryClientProvider>
+    </QueryClientProvider >
   );
 }
 

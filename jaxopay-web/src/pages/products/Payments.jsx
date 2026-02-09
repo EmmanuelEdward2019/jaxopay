@@ -165,13 +165,13 @@ export default function Payments() {
                 className="absolute -right-8 top-1/3 bg-white p-4 rounded-2xl shadow-xl border border-gray-100 z-30 max-w-[200px]"
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-green-100 overflow-hidden flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-primary-100 overflow-hidden flex-shrink-0">
                     <img src="https://i.pravatar.cc/100?img=12" alt="Daniel" />
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 font-medium mb-1">Money Received</div>
                     <div className="text-sm text-gray-900 font-bold leading-tight">
-                      You received <span className="text-green-600">$2,500</span> from Emmanuel Edward
+                      You received <span className="text-primary-600">$2,500</span> from Emmanuel Edward
                     </div>
                   </div>
                 </div>

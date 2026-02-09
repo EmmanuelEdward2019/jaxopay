@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import {
     Wallet,
     Plus,
@@ -15,7 +16,14 @@ import {
     X,
     ChevronDown,
     RefreshCw,
+    Copy,
+    QrCode,
+    Building2,
+    Check,
+    Info,
+    AlertCircle
 } from 'lucide-react';
+import { useAuthStore } from '../../store/authStore';
 import walletService from '../../services/walletService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
@@ -38,13 +46,17 @@ const CURRENCY_OPTIONS = {
 };
 
 const Wallets = () => {
+    const navigate = useNavigate();
+    const { user } = useAuthStore();
     const [wallets, setWallets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedWallet, setSelectedWallet] = useState(null);
     const [transactions, setTransactions] = useState([]);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showTransferModal, setShowTransferModal] = useState(false);
-    const [showBalances, setShowBalances] = useState(true);
+    const [showReceiveModal, setShowReceiveModal] = useState(false);
+    const [showFundModal, setShowFundModal] = useState(false);
+    const [showBalances, setShowBalances] = useState(user?.preferences?.show_balances ?? true);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState('all');
     const [error, setError] = useState(null);
@@ -205,23 +217,38 @@ const Wallets = () => {
             </div>
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <button
+                    onClick={() => setShowFundModal(true)}
+                    className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 transition-colors shadow-sm"
+                >
+                    <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
+                        <Plus className="w-6 h-6 text-green-600 dark:text-green-400" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">Fund</span>
+                </button>
                 <button
                     onClick={() => setShowTransferModal(true)}
-                    className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 transition-colors"
+                    className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 transition-colors shadow-sm"
                 >
                     <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
                         <ArrowUpRight className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                     </div>
                     <span className="text-sm font-medium text-gray-900 dark:text-white">Send</span>
                 </button>
-                <button className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 transition-colors">
-                    <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
-                        <ArrowDownLeft className="w-6 h-6 text-green-600 dark:text-green-400" />
+                <button
+                    onClick={() => setShowReceiveModal(true)}
+                    className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 transition-colors shadow-sm"
+                >
+                    <div className="p-3 bg-primary-100 dark:bg-primary-900/30 rounded-full">
+                        <ArrowDownLeft className="w-6 h-6 text-primary-600 dark:text-primary-400" />
                     </div>
                     <span className="text-sm font-medium text-gray-900 dark:text-white">Receive</span>
                 </button>
-                <button className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 transition-colors">
+                <button
+                    onClick={() => navigate('/dashboard/exchange')}
+                    className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 transition-colors shadow-sm"
+                >
                     <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
                         <ArrowLeftRight className="w-6 h-6 text-purple-600 dark:text-purple-400" />
                     </div>
@@ -362,7 +389,7 @@ const Wallets = () => {
                                             : handleFreezeWallet(wallet.id);
                                     }}
                                     className={`p-2 rounded-lg transition-colors ${!wallet.is_active
-                                        ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40'
+                                        ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/40'
                                         : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                                         }`}
                                 >
@@ -407,14 +434,14 @@ const Wallets = () => {
                                     <div className="flex items-center gap-3">
                                         <div
                                             className={`p-2 rounded-lg ${tx.transaction_type === 'credit'
-                                                ? 'bg-green-100 dark:bg-green-900/30'
+                                                ? 'bg-primary-100 dark:bg-primary-900/20'
                                                 : 'bg-red-100 dark:bg-red-900/30'
                                                 }`}
                                         >
                                             {tx.transaction_type === 'credit' ? (
                                                 <ArrowDownLeft
                                                     className={`w-5 h-5 ${tx.transaction_type === 'credit'
-                                                        ? 'text-green-600 dark:text-green-400'
+                                                        ? 'text-primary-600 dark:text-primary-400'
                                                         : 'text-red-600 dark:text-red-400'
                                                         }`}
                                                 />
@@ -434,7 +461,7 @@ const Wallets = () => {
                                     <div className="text-right">
                                         <p
                                             className={`font-semibold ${tx.transaction_type === 'credit'
-                                                ? 'text-green-600 dark:text-green-400'
+                                                ? 'text-primary-600 dark:text-primary-400'
                                                 : 'text-red-600 dark:text-red-400'
                                                 }`}
                                         >
@@ -443,7 +470,7 @@ const Wallets = () => {
                                         </p>
                                         <p
                                             className={`text-sm ${tx.status === 'completed'
-                                                ? 'text-green-600 dark:text-green-400'
+                                                ? 'text-primary-600 dark:text-primary-400'
                                                 : 'text-yellow-600 dark:text-yellow-400'
                                                 }`}
                                         >
@@ -479,6 +506,12 @@ const Wallets = () => {
                         loading={actionLoading}
                     />
                 )}
+            </AnimatePresence>
+
+            {/* Receive Modal */}
+            <AnimatePresence>
+                {showReceiveModal && <ReceiveModal wallets={wallets.filter((w) => w.is_active !== false)} onClose={() => setShowReceiveModal(false)} />}
+                {showFundModal && <FundModal wallets={wallets.filter((w) => w.is_active !== false)} onClose={() => setShowFundModal(false)} onRefresh={fetchWallets} />}
             </AnimatePresence>
         </div>
     );
@@ -723,6 +756,285 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
                         className="flex-1 py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? 'Transferring...' : 'Transfer'}
+                    </button>
+                </div>
+            </motion.div>
+        </motion.div>
+    );
+};
+
+const ReceiveModal = ({ onClose, wallets }) => {
+    const [selectedWalletId, setSelectedWalletId] = useState('');
+    const [copied, setCopied] = useState(false);
+
+    const selectedWallet = wallets.find(w => w.id === selectedWalletId);
+
+    const handleCopy = (text) => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    // Simulated deposit details (would come from specific endpoint in real app)
+    const getDepositDetails = (wallet) => {
+        if (!wallet) return null;
+        if (wallet.wallet_type === 'fiat') {
+            return {
+                accountName: 'John Doe', // Replace with dynamic user name
+                bankName: 'JAXOPAY Partner Bank',
+                accountNumber: `JX${wallet.id.slice(0, 8).toUpperCase()}`,
+                routingNumber: '021000021'
+            };
+        } else {
+            return {
+                address: `0x${wallet.id.replace(/-/g, '')}${wallet.user_id.slice(0, 8)}`,
+                network: 'Ethereum (ERC-20)'
+            };
+        }
+    };
+
+    const details = getDepositDetails(selectedWallet);
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            onClick={onClose}
+        >
+            <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Receive Funds</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                        <X className="w-5 h-5 text-gray-500" />
+                    </button>
+                </div>
+
+                <div className="space-y-6">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Balance to Fund</label>
+                        <select
+                            value={selectedWalletId}
+                            onChange={(e) => setSelectedWalletId(e.target.value)}
+                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        >
+                            <option value="">Select wallet...</option>
+                            {wallets.map(w => (
+                                <option key={w.id} value={w.id}>{w.currency} - {w.wallet_type.toUpperCase()}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {selectedWallet && details && (
+                        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                            {selectedWallet.wallet_type === 'fiat' ? (
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                                            <Building2 className="w-5 h-5 text-blue-600" />
+                                        </div>
+                                        <div>
+                                            <p className="font-medium text-gray-900 dark:text-white">Bank Transfer</p>
+                                            <p className="text-xs text-gray-500">Send money to these details</p>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3 text-sm">
+                                        <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
+                                            <span className="text-gray-500">Bank Name</span>
+                                            <span className="font-medium text-gray-900 dark:text-white">{details.bankName}</span>
+                                        </div>
+                                        <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
+                                            <span className="text-gray-500">Account Name</span>
+                                            <span className="font-medium text-gray-900 dark:text-white">{details.accountName}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500 block mb-1">Account Number</span>
+                                            <div className="flex items-center gap-2">
+                                                <code className="bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 text-lg font-mono flex-1">
+                                                    {details.accountNumber}
+                                                </code>
+                                                <button
+                                                    onClick={() => handleCopy(details.accountNumber)}
+                                                    className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg"
+                                                >
+                                                    {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-center space-y-4">
+                                    <div className="bg-white p-4 rounded-xl inline-block">
+                                        <QrCode className="w-32 h-32 text-gray-900" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-900 dark:text-white">Wallet Address</p>
+                                        <p className="text-xs text-gray-500 mb-2">Only send {selectedWallet.currency} to this address</p>
+                                        <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-2 rounded-lg border border-gray-200 dark:border-gray-600">
+                                            <code className="text-xs font-mono break-all flex-1 text-left">
+                                                {details.address}
+                                            </code>
+                                            <button
+                                                onClick={() => handleCopy(details.address)}
+                                                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg shrink-0"
+                                            >
+                                                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </motion.div>
+        </motion.div>
+    );
+};
+
+const FundModal = ({ onClose, wallets, onRefresh }) => {
+    const [selectedWalletId, setSelectedWalletId] = useState('');
+    const [amount, setAmount] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(false);
+
+    const fiatWallets = wallets.filter(w => w.wallet_type === 'fiat');
+
+    const handleFund = async () => {
+        if (!selectedWalletId || !amount || parseFloat(amount) <= 0) return;
+        setLoading(true);
+        setError(null);
+
+        const result = await walletService.addFunds(selectedWalletId, parseFloat(amount), 'Fiat deposit');
+        if (result.success) {
+            setSuccess(true);
+            setTimeout(() => {
+                onRefresh();
+                onClose();
+            }, 2000);
+        } else {
+            setError(result.error || 'Failed to fund wallet');
+        }
+        setLoading(false);
+    };
+
+    if (success) {
+        return (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            >
+                <motion.div
+                    initial={{ scale: 0.95 }}
+                    animate={{ scale: 1 }}
+                    className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-sm w-full text-center"
+                >
+                    <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Check className="w-10 h-10 text-green-600" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Deposit Successful!</h2>
+                    <p className="text-gray-500">Your wallet has been funded.</p>
+                </motion.div>
+            </motion.div>
+        );
+    }
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            onClick={onClose}
+        >
+            <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Fund Wallet</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                        <X className="w-5 h-5 text-gray-500" />
+                    </button>
+                </div>
+
+                {error && (
+                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 text-sm">
+                        {error}
+                    </div>
+                )}
+
+                <div className="space-y-6">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Currency</label>
+                        <div className="grid grid-cols-2 gap-3">
+                            {fiatWallets.map(w => (
+                                <button
+                                    key={w.id}
+                                    onClick={() => setSelectedWalletId(w.id)}
+                                    className={`p-3 rounded-xl border text-left transition-all ${selectedWalletId === w.id
+                                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/10 ring-2 ring-primary-500/20'
+                                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                                        }`}
+                                >
+                                    <p className="font-bold text-gray-900 dark:text-white">{w.currency}</p>
+                                    <p className="text-xs text-gray-500">Balance: {formatCurrency(w.balance, w.currency)}</p>
+                                </button>
+                            ))}
+                        </div>
+                        {fiatWallets.length === 0 && (
+                            <p className="text-sm text-gray-500 mt-2">No fiat wallets found. Please create one first.</p>
+                        )}
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Amount to Deposit</label>
+                        <div className="relative">
+                            <input
+                                type="number"
+                                value={amount}
+                                onChange={(e) => setAmount(e.target.value)}
+                                placeholder="0.00"
+                                className="w-full pl-10 pr-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:outline-none dark:text-white"
+                            />
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">
+                                {wallets.find(w => w.id === selectedWalletId)?.currency || '$'}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-primary-50 dark:bg-primary-900/10 rounded-xl border border-primary-100 dark:border-primary-900/20">
+                        <div className="flex gap-3">
+                            <Info className="w-5 h-5 text-primary-600 shrink-0" />
+                            <p className="text-xs text-primary-700 dark:text-primary-300">
+                                This is a simulated deposit. In production, this would redirect you to a payment gateway (e.g., Flutterwave or Stripe).
+                            </p>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleFund}
+                        disabled={loading || !selectedWalletId || !amount}
+                        className="w-full py-4 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl shadow-lg shadow-primary-200 dark:shadow-none transition-all disabled:opacity-50"
+                    >
+                        {loading ? (
+                            <span className="flex items-center justify-center gap-2">
+                                <RefreshCw className="w-5 h-5 animate-spin" /> Processing...
+                            </span>
+                        ) : 'Add Funds'}
                     </button>
                 </div>
             </motion.div>

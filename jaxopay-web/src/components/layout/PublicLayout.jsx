@@ -58,7 +58,7 @@ export default function PublicLayout({ children }) {
             {/* Logo - Made Prominent */}
             <Link to="/" className="flex items-center gap-3">
               <img
-                src={darkMode ? "/logo-white.png" : "/logo.png"}
+                src="/logo.png"
                 alt="JAXOPAY"
                 className="h-8 md:h-10 w-auto transition-all"
               />
@@ -235,7 +235,7 @@ export default function PublicLayout({ children }) {
             {/* Company Info */}
             <div className="lg:col-span-2">
               <div className="flex items-center gap-3 mb-6">
-                <img src="/logo-white.png" alt="JAXOPAY" className="h-8 md:h-10 w-auto" />
+                <img src="/logo.png" alt="JAXOPAY" className="h-8 md:h-10 w-auto" />
               </div>
               <p className="text-sm text-gray-400 mb-6 max-w-sm">
                 Your trusted partner for cross-border payments, crypto exchange, and financial services across Africa and beyond.

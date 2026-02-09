@@ -12,8 +12,10 @@ const loginSchema = z.object({
 });
 
 const Login = () => {
+  const [step, setStep] = useState('login'); // 'login' or '2fa'
+  const [otp, setOtp] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { login, isLoading, error } = useAuthStore();
+  const { login, verifyOTP, isLoading, error, tempUserId, twoFAMethod } = useAuthStore();
   const navigate = useNavigate();
 
   const {
@@ -27,9 +29,67 @@ const Login = () => {
   const onSubmit = async (data) => {
     const result = await login(data.email, data.password);
     if (result.success) {
+      if (result.requires2FA) {
+        setStep('2fa');
+      } else {
+        navigate('/dashboard');
+      }
+    }
+  };
+
+  const handleVerifyOTP = async (e) => {
+    e.preventDefault();
+    // Call verifyOTP(otp, phone, userId)
+    // Since this is email login, phone is null, use tempUserId
+    const result = await verifyOTP(otp, null, tempUserId);
+    if (result.success) {
       navigate('/dashboard');
     }
   };
+
+  if (step === '2fa') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100 dark:from-gray-900 dark:to-gray-800 px-4">
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Two-Factor Authentication</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">
+              Enter the code from {twoFAMethod === 'authenticator' ? 'your authenticator app' : 'your email/SMS'}.
+            </p>
+          </div>
+
+          <div className="card">
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-lg mb-4">
+                {error}
+              </div>
+            )}
+            <form onSubmit={handleVerifyOTP} className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Verification Code</label>
+                <input
+                  type="text"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  className="input-field text-center text-2xl tracking-widest"
+                  placeholder="000000"
+                  autoFocus
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isLoading || otp.length < 6}
+                className="w-full btn-primary flex items-center justify-center"
+              >
+                {isLoading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : 'Verify'}
+              </button>
+            </form>
+            <button onClick={() => setStep('login')} className="mt-4 text-sm text-center w-full text-gray-500 hover:text-gray-700">Back to Login</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100 dark:from-gray-900 dark:to-gray-800 px-4">
@@ -37,7 +97,7 @@ const Login = () => {
         {/* Logo */}
         <div className="text-center mb-8">
           <img
-            src={document.documentElement.classList.contains('dark') ? "/logo-white.png" : "/logo.png"}
+            src="/logo.png"
             alt="JAXOPAY"
             className="h-10 mx-auto mb-4"
           />

@@ -16,19 +16,22 @@ import {
     RefreshCw,
     ChevronLeft,
     ChevronRight,
+    Plus,
+    CheckCircle2
 } from 'lucide-react';
 import adminService from '../../services/adminService';
 import { formatDateTime } from '../../utils/formatters';
+import { useAuthStore } from '../../store/authStore';
 
 const KYC_TIERS = {
     0: { label: 'Unverified', color: 'bg-gray-100 text-gray-700' },
     1: { label: 'Basic', color: 'bg-blue-100 text-blue-700' },
-    2: { label: 'Verified', color: 'bg-green-100 text-green-700' },
+    2: { label: 'Verified', color: 'bg-primary-100 text-primary-700' },
     3: { label: 'Premium', color: 'bg-purple-100 text-purple-700' },
 };
 
 const STATUS_COLORS = {
-    active: 'bg-green-100 text-green-700',
+    active: 'bg-primary-100 text-primary-700',
     suspended: 'bg-red-100 text-red-700',
     inactive: 'bg-gray-100 text-gray-700',
 };
@@ -41,6 +44,7 @@ const UserManagement = () => {
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0 });
     const [selectedUser, setSelectedUser] = useState(null);
     const [showUserModal, setShowUserModal] = useState(false);
+    const [showCreateModal, setShowCreateModal] = useState(false);
     const [showSuspendModal, setShowSuspendModal] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
 
@@ -50,19 +54,32 @@ const UserManagement = () => {
 
     const fetchUsers = async () => {
         setLoading(true);
-        const result = await adminService.getUsers({
-            page: pagination.page,
-            limit: pagination.limit,
-            search: searchQuery || undefined,
-            kyc_tier: filters.kyc_tier || undefined,
-            status: filters.status || undefined,
-            role: filters.role || undefined,
-        });
-        if (result.success) {
-            setUsers(result.data.users || []);
-            setPagination(prev => ({ ...prev, total: result.data.total || 0 }));
+        try {
+            console.log('Fetching users with filters:', filters);
+            const result = await adminService.getUsers({
+                page: pagination.page,
+                limit: pagination.limit,
+                search: searchQuery || undefined,
+                kyc_tier: filters.kyc_tier || undefined,
+                status: filters.status || undefined,
+                role: filters.role || undefined,
+            });
+            console.log('GetUsers result:', result);
+            if (result.success) {
+                setUsers(result.data.users || []);
+                setPagination(prev => ({
+                    ...prev,
+                    total: result.data.pagination?.total || 0,
+                    pages: result.data.pagination?.pages || 0
+                }));
+            } else {
+                console.error('Failed to fetch users:', result.error);
+            }
+        } catch (err) {
+            console.error('Error in fetchUsers:', err);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const handleSearch = (e) => {
@@ -82,6 +99,16 @@ const UserManagement = () => {
         if (result.success) {
             fetchUsers();
             setShowUserModal(false);
+        }
+        setActionLoading(false);
+    };
+
+    const handleCreateUser = async (userData) => {
+        setActionLoading(true);
+        const result = await adminService.createUser(userData);
+        if (result.success) {
+            fetchUsers();
+            setShowCreateModal(false);
         }
         setActionLoading(false);
     };
@@ -107,13 +134,22 @@ const UserManagement = () => {
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h1>
                     <p className="text-gray-600 dark:text-gray-400">{pagination.total} total users</p>
                 </div>
-                <button
-                    onClick={fetchUsers}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg"
-                >
-                    <RefreshCw className="w-4 h-4" />
-                    Refresh
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 dark:bg-gray-700 text-white font-medium rounded-lg"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Add User
+                    </button>
+                    <button
+                        onClick={fetchUsers}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                        Refresh
+                    </button>
+                </div>
             </div>
 
             {/* Search & Filters */}
@@ -162,7 +198,7 @@ const UserManagement = () => {
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                 {loading ? (
                     <div className="flex items-center justify-center h-64">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
                     </div>
                 ) : users.length === 0 ? (
                     <div className="text-center py-12">
@@ -200,7 +236,7 @@ const UserManagement = () => {
                                     <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center text-white font-medium">
+                                                <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center text-white font-medium">
                                                     {user.email?.[0]?.toUpperCase() || 'U'}
                                                 </div>
                                                 <div>
@@ -292,8 +328,160 @@ const UserManagement = () => {
                         loading={actionLoading}
                     />
                 )}
+                {showCreateModal && (
+                    <CreateUserModal
+                        onClose={() => setShowCreateModal(false)}
+                        onSubmit={handleCreateUser}
+                        loading={actionLoading}
+                    />
+                )}
             </AnimatePresence>
         </div>
+    );
+};
+
+// Create User Modal
+const CreateUserModal = ({ onClose, onSubmit, loading }) => {
+    const [form, setForm] = useState({
+        email: '',
+        password: '',
+        phone: '',
+        first_name: '',
+        last_name: '',
+        role: 'end_user',
+        kyc_tier: 'tier_0'
+    });
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSubmit(form);
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            onClick={onClose}
+        >
+            <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add New User</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                        <X className="w-5 h-5 text-gray-500" />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">First Name</label>
+                            <input
+                                required
+                                type="text"
+                                value={form.first_name}
+                                onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Last Name</label>
+                            <input
+                                required
+                                type="text"
+                                value={form.last_name}
+                                onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email Address</label>
+                        <input
+                            required
+                            type="email"
+                            value={form.email}
+                            onChange={(e) => setForm({ ...form, email: e.target.value })}
+                            className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone Number</label>
+                        <input
+                            required
+                            type="tel"
+                            value={form.phone}
+                            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                            className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                        <input
+                            required
+                            type="password"
+                            value={form.password}
+                            onChange={(e) => setForm({ ...form, password: e.target.value })}
+                            className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+                            <select
+                                value={form.role}
+                                onChange={(e) => setForm({ ...form, role: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            >
+                                <option value="end_user">End User</option>
+                                <option value="admin">Admin</option>
+                                <option value="compliance_officer">Compliance</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">KYC Tier</label>
+                            <select
+                                value={form.kyc_tier}
+                                onChange={(e) => setForm({ ...form, kyc_tier: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            >
+                                <option value="tier_0">Tier 0 (Unverified)</option>
+                                <option value="tier_1">Tier 1 (Basic)</option>
+                                <option value="tier_2">Tier 2 (Verified)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-4">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-lg"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="flex-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg disabled:opacity-50"
+                        >
+                            {loading ? 'Creating...' : 'Create User'}
+                        </button>
+                    </div>
+                </form>
+            </motion.div>
+        </motion.div>
     );
 };
 
@@ -307,6 +495,49 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
     });
     const [suspendReason, setSuspendReason] = useState('');
     const [showSuspendForm, setShowSuspendForm] = useState(false);
+    const [userFeatures, setUserFeatures] = useState([]);
+    const [featuresLoading, setFeaturesLoading] = useState(false);
+    const { user: currentUser } = useAuthStore();
+
+    const availableProducts = [
+        'crypto', 'virtual_cards', 'gift_cards', 'flights', 'bill_payments', 'bulk_sms'
+    ];
+
+    useEffect(() => {
+        if (currentUser?.role === 'super_admin') {
+            fetchUserFeatures();
+        }
+    }, [user.id]);
+
+    const fetchUserFeatures = async () => {
+        setFeaturesLoading(true);
+        const result = await adminService.getUserFeatures(user.id);
+        if (result.success) {
+            setUserFeatures(result.data || []);
+        }
+        setFeaturesLoading(false);
+    };
+
+    const handleToggleFeature = async (featureName, isEnabled) => {
+        const result = await adminService.updateUserFeature(user.id, {
+            feature_name: featureName,
+            is_enabled: isEnabled
+        });
+        if (result.success) {
+            setUserFeatures(prev => {
+                const existing = prev.find(f => f.feature_name === featureName);
+                if (existing) {
+                    return prev.map(f => f.feature_name === featureName ? { ...f, is_enabled: isEnabled } : f);
+                }
+                return [...prev, { feature_name: featureName, is_enabled: isEnabled }];
+            });
+        }
+    };
+
+    const isProductEnabled = (productName) => {
+        const feat = userFeatures.find(f => f.feature_name === productName);
+        return feat ? feat.is_enabled : true; // Default to true if no override
+    };
 
     return (
         <motion.div
@@ -326,7 +557,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                     <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">
+                        <div className="w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">
                             {user.email?.[0]?.toUpperCase() || 'U'}
                         </div>
                         <div>
@@ -372,7 +603,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                             {!editMode && (
                                 <button
                                     onClick={() => setEditMode(true)}
-                                    className="text-sm text-green-600 hover:text-green-700"
+                                    className="text-sm text-primary-600 hover:text-primary-700"
                                 >
                                     Edit
                                 </button>
@@ -449,13 +680,43 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                                         setEditMode(false);
                                     }}
                                     disabled={loading}
-                                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg disabled:opacity-50"
+                                    className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg disabled:opacity-50"
                                 >
                                     {loading ? 'Saving...' : 'Save Changes'}
                                 </button>
                             </div>
                         )}
                     </div>
+
+                    {/* Product Access Control (Super Admin Only) */}
+                    {currentUser?.role === 'super_admin' && (
+                        <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+                            <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Granular Product Access</h3>
+                            {featuresLoading ? (
+                                <div className="flex justify-center p-4">
+                                    <RefreshCw className="w-5 h-5 animate-spin text-primary-500" />
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-3">
+                                    {availableProducts.map(product => (
+                                        <div key={product} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
+                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
+                                                {product.replace('_', ' ')}
+                                            </span>
+                                            <button
+                                                onClick={() => handleToggleFeature(product, !isProductEnabled(product))}
+                                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${isProductEnabled(product) ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
+                                                    }`}
+                                            >
+                                                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isProductEnabled(product) ? 'translate-x-5' : 'translate-x-1'
+                                                    }`} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Suspend User Section */}
                     {user.status !== 'suspended' && (

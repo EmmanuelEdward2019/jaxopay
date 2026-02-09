@@ -26,7 +26,7 @@ const userService = {
     try {
       const formData = new FormData();
       formData.append('avatar', file);
-      
+
       const response = await apiClient.post('/users/avatar', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -73,9 +73,21 @@ const userService = {
   },
 
   // Delete account
-  deleteAccount: async () => {
+  deleteAccount: async (password) => {
     try {
-      const response = await apiClient.delete('/users/account');
+      const response = await apiClient.delete('/users/account', {
+        data: { password }
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Update user settings
+  updateSettings: async (settings) => {
+    try {
+      const response = await apiClient.patch('/users/settings', settings);
       return { success: true, data: response.data };
     } catch (error) {
       return { success: false, error: error.message };

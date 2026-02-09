@@ -177,8 +177,8 @@ const Flights = () => {
                     <button
                         onClick={() => setShowBookingsTab(false)}
                         className={`px-4 py-2 rounded-lg font-medium ${!showBookingsTab
-                                ? 'bg-green-600 text-white'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                            ? 'bg-primary-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                             }`}
                     >
                         Book Flight
@@ -186,8 +186,8 @@ const Flights = () => {
                     <button
                         onClick={() => setShowBookingsTab(true)}
                         className={`px-4 py-2 rounded-lg font-medium ${showBookingsTab
-                                ? 'bg-green-600 text-white'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                            ? 'bg-primary-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                             }`}
                     >
                         My Bookings ({bookings.length})
@@ -218,7 +218,7 @@ const Flights = () => {
                             <p className="text-gray-500 mb-4">Book your first flight to get started</p>
                             <button
                                 onClick={() => setShowBookingsTab(false)}
-                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg"
+                                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
                             >
                                 Search Flights
                             </button>
@@ -232,8 +232,8 @@ const Flights = () => {
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-4">
-                                            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl">
-                                                <Plane className="w-6 h-6 text-green-600" />
+                                            <div className="p-3 bg-primary-100 dark:bg-primary-900/30 rounded-xl">
+                                                <Plane className="w-6 h-6 text-primary-600" />
                                             </div>
                                             <div>
                                                 <div className="flex items-center gap-2">
@@ -254,9 +254,9 @@ const Flights = () => {
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${booking.status === 'confirmed' ? 'bg-green-100 text-green-700' :
-                                                    booking.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-                                                        'bg-yellow-100 text-yellow-700'
+                                            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${booking.status === 'confirmed' ? 'bg-primary-100 text-primary-700' :
+                                                booking.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                                                    'bg-yellow-100 text-yellow-700'
                                                 }`}>
                                                 {booking.status}
                                             </span>
@@ -288,13 +288,13 @@ const Flights = () => {
                         <div className="flex items-center gap-2 mb-4">
                             {['Search', 'Results', 'Passengers', 'Payment'].map((label, idx) => (
                                 <div key={label} className="flex items-center gap-2">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step > idx + 1 ? 'bg-green-600 text-white' :
-                                            step === idx + 1 ? 'bg-green-600 text-white' :
-                                                'bg-gray-200 dark:bg-gray-700 text-gray-500'
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step > idx + 1 ? 'bg-primary-600 text-white' :
+                                        step === idx + 1 ? 'bg-primary-600 text-white' :
+                                            'bg-gray-200 dark:bg-gray-700 text-gray-500'
                                         }`}>
                                         {step > idx + 1 ? <Check className="w-4 h-4" /> : idx + 1}
                                     </div>
-                                    {idx < 3 && <div className={`w-12 h-0.5 ${step > idx + 1 ? 'bg-green-600' : 'bg-gray-200 dark:bg-gray-700'}`} />}
+                                    {idx < 3 && <div className={`w-12 h-0.5 ${step > idx + 1 ? 'bg-primary-600' : 'bg-gray-200 dark:bg-gray-700'}`} />}
                                 </div>
                             ))}
                         </div>
@@ -316,7 +316,7 @@ const Flights = () => {
                                         type="radio"
                                         checked={tripType === 'roundtrip'}
                                         onChange={() => setTripType('roundtrip')}
-                                        className="w-4 h-4 text-green-600"
+                                        className="w-4 h-4 text-primary-600"
                                     />
                                     <span className="text-gray-700 dark:text-gray-300">Round Trip</span>
                                 </label>
@@ -325,7 +325,7 @@ const Flights = () => {
                                         type="radio"
                                         checked={tripType === 'oneway'}
                                         onChange={() => setTripType('oneway')}
-                                        className="w-4 h-4 text-green-600"
+                                        className="w-4 h-4 text-primary-600"
                                     />
                                     <span className="text-gray-700 dark:text-gray-300">One Way</span>
                                 </label>
@@ -419,7 +419,7 @@ const Flights = () => {
                             <button
                                 onClick={handleSearch}
                                 disabled={loading}
-                                className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                                className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
                             >
                                 {loading ? (
                                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
@@ -440,7 +440,7 @@ const Flights = () => {
                                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                                     {flights.length} flight{flights.length !== 1 ? 's' : ''} found
                                 </h2>
-                                <button onClick={resetSearch} className="text-green-600 hover:text-green-700 font-medium">
+                                <button onClick={resetSearch} className="text-primary-600 hover:text-primary-700 font-medium">
                                     New Search
                                 </button>
                             </div>
@@ -449,7 +449,7 @@ const Flights = () => {
                                     <Plane className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                                     <h3 className="text-lg font-medium text-gray-900 dark:text-white">No flights found</h3>
                                     <p className="text-gray-500 mb-4">Try different dates or destinations</p>
-                                    <button onClick={resetSearch} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg">
+                                    <button onClick={resetSearch} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg">
                                         Modify Search
                                     </button>
                                 </div>
@@ -477,13 +477,13 @@ const Flights = () => {
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="text-xl font-bold text-green-600">
+                                                    <p className="text-xl font-bold text-primary-600">
                                                         {formatCurrency(flight.price, flight.currency || 'USD')}
                                                     </p>
                                                     <p className="text-sm text-gray-500">per person</p>
                                                     <button
                                                         onClick={() => handleSelectFlight(flight)}
-                                                        className="mt-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg"
+                                                        className="mt-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
                                                     >
                                                         Select
                                                     </button>
@@ -570,7 +570,7 @@ const Flights = () => {
 
                             <button
                                 onClick={handleProceedToPayment}
-                                className="w-full mt-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
+                                className="w-full mt-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
                             >
                                 Continue to Payment
                                 <ChevronRight className="w-5 h-5" />
@@ -592,7 +592,7 @@ const Flights = () => {
                             <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl mb-6">
                                 <h3 className="font-medium text-gray-900 dark:text-white mb-3">Flight Summary</h3>
                                 <div className="flex items-center gap-4">
-                                    <Plane className="w-6 h-6 text-green-600" />
+                                    <Plane className="w-6 h-6 text-primary-600" />
                                     <div>
                                         <p className="font-semibold text-gray-900 dark:text-white">
                                             {selectedFlight.origin} → {selectedFlight.destination}
@@ -634,7 +634,7 @@ const Flights = () => {
                             <button
                                 onClick={handleBookFlight}
                                 disabled={loading || !selectedWallet}
-                                className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                                className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
                             >
                                 {loading ? (
                                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
@@ -655,8 +655,8 @@ const Flights = () => {
                             animate={{ opacity: 1, scale: 1 }}
                             className="card text-center py-8"
                         >
-                            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Check className="w-8 h-8 text-green-600" />
+                            <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Check className="w-8 h-8 text-primary-600" />
                             </div>
                             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Booking Confirmed!</h2>
                             <p className="text-gray-600 dark:text-gray-400 mb-4">
@@ -674,7 +674,7 @@ const Flights = () => {
                                 </button>
                                 <button
                                     onClick={() => setShowBookingsTab(true)}
-                                    className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg"
+                                    className="px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
                                 >
                                     View My Bookings
                                 </button>

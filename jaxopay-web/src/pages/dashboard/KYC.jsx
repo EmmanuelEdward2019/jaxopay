@@ -30,7 +30,7 @@ const TIER_INFO = {
     },
     tier_2: {
         name: 'Verified',
-        color: 'bg-green-100 text-green-700',
+        color: 'bg-primary-100 text-primary-700',
         limits: { daily: 10000, monthly: 50000, card: true, crypto: true },
     },
 };
@@ -155,9 +155,9 @@ const KYC = () => {
                 </div>
             )}
             {success && (
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                    <p className="text-green-700 dark:text-green-300">{success}</p>
-                    <button onClick={() => setSuccess(null)} className="text-green-500 underline text-sm mt-1">Dismiss</button>
+                <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-4">
+                    <p className="text-primary-700 dark:text-primary-300">{success}</p>
+                    <button onClick={() => setSuccess(null)} className="text-primary-500 underline text-sm mt-1">Dismiss</button>
                 </div>
             )}
 
@@ -193,8 +193,8 @@ const KYC = () => {
                         <div
                             key={tier}
                             className={`p-4 rounded-xl border-2 ${currentTier === tier
-                                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                                    : 'border-gray-200 dark:border-gray-700'
+                                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                                : 'border-gray-200 dark:border-gray-700'
                                 }`}
                         >
                             <div className="flex items-center justify-between mb-3">
@@ -218,13 +218,13 @@ const KYC = () => {
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-gray-500">Virtual Cards</span>
-                                    <span className={info.limits.card ? 'text-green-600' : 'text-red-600'}>
+                                    <span className={info.limits.card ? 'text-primary-600' : 'text-red-600'}>
                                         {info.limits.card ? '✓' : '✗'}
                                     </span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-gray-500">Crypto Trading</span>
-                                    <span className={info.limits.crypto ? 'text-green-600' : 'text-red-600'}>
+                                    <span className={info.limits.crypto ? 'text-primary-600' : 'text-red-600'}>
                                         {info.limits.crypto ? '✓' : '✗'}
                                     </span>
                                 </div>
@@ -290,8 +290,8 @@ const KYC = () => {
                                         key={doc.id}
                                         onClick={() => setDocumentType(doc.id)}
                                         className={`p-4 rounded-xl border-2 text-center transition-colors ${documentType === doc.id
-                                                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                                                : 'border-gray-200 dark:border-gray-700'
+                                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                                            : 'border-gray-200 dark:border-gray-700'
                                             }`}
                                     >
                                         <doc.icon className={`w-6 h-6 mx-auto mb-2 ${documentType === doc.id ? 'text-primary-600' : 'text-gray-400'
@@ -325,11 +325,11 @@ const KYC = () => {
                                 </label>
                                 <div
                                     onClick={() => frontInputRef.current?.click()}
-                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentFront ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-300 hover:border-primary-500'
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentFront ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 hover:border-primary-500'
                                         }`}
                                 >
                                     {documentFront ? (
-                                        <div className="text-green-600">
+                                        <div className="text-primary-600">
                                             <Check className="w-8 h-8 mx-auto mb-2" />
                                             <p className="text-sm">{documentFront.name}</p>
                                         </div>
@@ -356,11 +356,11 @@ const KYC = () => {
                                 </label>
                                 <div
                                     onClick={() => backInputRef.current?.click()}
-                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentBack ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-300 hover:border-primary-500'
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentBack ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 hover:border-primary-500'
                                         }`}
                                 >
                                     {documentBack ? (
-                                        <div className="text-green-600">
+                                        <div className="text-primary-600">
                                             <Check className="w-8 h-8 mx-auto mb-2" />
                                             <p className="text-sm">{documentBack.name}</p>
                                         </div>
@@ -387,11 +387,11 @@ const KYC = () => {
                                 </label>
                                 <div
                                     onClick={() => selfieInputRef.current?.click()}
-                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${selfie ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-300 hover:border-primary-500'
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${selfie ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 hover:border-primary-500'
                                         }`}
                                 >
                                     {selfie ? (
-                                        <div className="text-green-600">
+                                        <div className="text-primary-600">
                                             <Check className="w-8 h-8 mx-auto mb-2" />
                                             <p className="text-sm">{selfie.name}</p>
                                         </div>
@@ -453,9 +453,9 @@ const KYC = () => {
                                         <p className="text-sm text-gray-500">{doc.document_number}</p>
                                     </div>
                                 </div>
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${doc.status === 'approved' ? 'bg-green-100 text-green-700' :
-                                        doc.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                                            'bg-yellow-100 text-yellow-700'
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${doc.status === 'approved' ? 'bg-primary-100 text-primary-700' :
+                                    doc.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                        'bg-yellow-100 text-yellow-700'
                                     }`}>
                                     {doc.status}
                                 </span>
