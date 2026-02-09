@@ -4,29 +4,29 @@ Follow these exact settings to deploy the JAXOPAY monorepo.
 
 ---
 
-## 1. BACKEND DEPLOYMENT (Railway - Recommended)
+## 1. BACKEND DEPLOYMENT (Koyeb - Recommended Alternative)
 
-**Service Path**: `jaxopay-backend`
-**Start Command**: `node src/server.js`
+**Work Directory**: `jaxopay-backend`
+**Build Command**: `npm install`
+**Run Command**: `node src/server.js`
 
-### **Critical Environment Variables (Railway Dashboard)**
+### **Critical Environment Variables (Koyeb Dashboard)**
 | Key | Value | Note |
 |-----|-------|------|
 | `NODE_ENV` | `production` | |
-| `PORT` | `3001` | Railway will assign this, but you can set it to 3001 |
+| `PORT` | `3001` | |
 | `DB_HOST` | `aws-1-eu-north-1.pooler.supabase.com` | |
 | `DB_PORT` | `6543` | |
 | `DB_USER` | `postgres.xfopdmkanqsggbzsfmbw` | |
 | `DB_PASSWORD` | `MyFintech@2026` | |
 | `DB_SSL` | `true` | |
 | `JWT_SECRET` | `[Secure Key Provided]` | |
-| `JWT_REFRESH_SECRET` | `[Secure Key Provided]` | |
 | `ENCRYPTION_KEY` | `[Secure Key Provided]` | |
 | `ALLOWED_ORIGINS` | `https://[your-vercel-domain].vercel.app` | |
 
 ---
 
-## 2. BACKEND DEPLOYMENT (Render - Alternative)
+## 2. BACKEND DEPLOYMENT (Railway)
 
 
 ---
