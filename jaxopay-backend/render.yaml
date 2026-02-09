@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: jaxopay-backend
+    env: node
+    rootDir: jaxopay-backend
+    buildCommand: npm install
+    startCommand: node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DB_SSL
+        value: "true"
+      - key: LOG_LEVEL
+        value: info
+    healthCheckPath: /health
