@@ -60,7 +60,7 @@ export default function PublicLayout({ children }) {
               <img
                 src="/logo.png"
                 alt="JAXOPAY"
-                className="h-8 md:h-10 w-auto transition-all"
+                className="h-12 md:h-16 w-auto transition-all"
               />
             </Link>
 
@@ -140,7 +140,7 @@ export default function PublicLayout({ children }) {
               </Link>
               <Link
                 to="/signup"
-                className="px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"
+                className="px-6 py-2.5 bg-accent-600 hover:bg-accent-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm shadow-accent-500/20"
               >
                 Get Started
               </Link>
@@ -212,7 +212,7 @@ export default function PublicLayout({ children }) {
                   <Link
                     to="/signup"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg text-center transition-colors"
+                    className="px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white text-sm font-medium rounded-lg text-center transition-colors"
                   >
                     Get Started
                   </Link>
@@ -235,7 +235,7 @@ export default function PublicLayout({ children }) {
             {/* Company Info */}
             <div className="lg:col-span-2">
               <div className="flex items-center gap-3 mb-6">
-                <img src="/logo.png" alt="JAXOPAY" className="h-8 md:h-10 w-auto" />
+                <img src="/logo.png" alt="JAXOPAY" className="h-12 md:h-16 w-auto" />
               </div>
               <p className="text-sm text-gray-400 mb-6 max-w-sm">
                 Your trusted partner for cross-border payments, crypto exchange, and financial services across Africa and beyond.

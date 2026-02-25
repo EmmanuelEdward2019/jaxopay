@@ -164,7 +164,7 @@ const Cards = () => {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-600"></div>
             </div>
         );
     }
@@ -179,7 +179,7 @@ const Cards = () => {
                 </div>
                 <button
                     onClick={() => setShowCreateModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors shadow-lg shadow-accent-500/20"
                 >
                     <Plus className="w-5 h-5" />
                     Create Card
@@ -216,7 +216,7 @@ const Cards = () => {
                         </p>
                         <button
                             onClick={() => setShowCreateModal(true)}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors"
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors"
                         >
                             <Plus className="w-5 h-5" />
                             Create Your First Card
@@ -228,14 +228,14 @@ const Cards = () => {
                             key={card.id}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className={`relative overflow-hidden rounded-2xl cursor-pointer transition-all ${selectedCard?.id === card.id ? 'ring-2 ring-primary-500' : ''
+                            className={`relative overflow-hidden rounded-2xl cursor-pointer transition-all ${selectedCard?.id === card.id ? 'ring-2 ring-accent-500' : ''
                                 }`}
                             onClick={() => handleSelectCard(card)}
                         >
                             {/* Card Visual */}
                             <div className={`p-6 bg-gradient-to-br ${card.card_type === 'single_use'
                                 ? 'from-slate-700 to-slate-900'
-                                : 'from-primary-600 to-primary-800'
+                                : 'from-accent-600 to-accent-800 shadow-lg shadow-accent-500/20'
                                 } text-white`}>
                                 <div className="flex items-start justify-between mb-8">
                                     <div>
@@ -287,7 +287,7 @@ const Cards = () => {
                                                 className="p-1 hover:bg-white/10 rounded transition-colors"
                                             >
                                                 {copiedField === `number-${card.id}` ? (
-                                                    <Check className="w-4 h-4 text-primary-400" />
+                                                    <Check className="w-4 h-4 text-accent-400" />
                                                 ) : (
                                                     <Copy className="w-4 h-4" />
                                                 )}
@@ -344,7 +344,7 @@ const Cards = () => {
                                             setShowFundModal(true);
                                         }}
                                         disabled={card.card_status === 'frozen' || card.card_type === 'single_use'}
-                                        className="flex-1 py-2 px-3 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 font-medium rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        className="flex-1 py-2 px-3 bg-accent-50 dark:bg-accent-900/20 text-accent-600 dark:text-accent-400 font-medium rounded-lg hover:bg-accent-100 dark:hover:bg-accent-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                     >
                                         <DollarSign className="w-4 h-4" />
                                         Fund
@@ -418,7 +418,7 @@ const Cards = () => {
                                         <p className="font-semibold text-gray-900 dark:text-white">
                                             -{formatCurrency(tx.amount, 'USD')}
                                         </p>
-                                        <p className={`text-sm ${tx.status === 'completed' ? 'text-primary-600' : 'text-yellow-600'
+                                        <p className={`text-sm ${tx.status === 'completed' ? 'text-accent-600' : 'text-yellow-600'
                                             }`}>
                                             {tx.status}
                                         </p>
@@ -496,11 +496,11 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
                         <button
                             onClick={() => setCardType('multi_use')}
                             className={`p-4 rounded-xl border-2 text-left transition-colors ${cardType === 'multi_use'
-                                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                                ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
                                 : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                                 }`}
                         >
-                            <CreditCard className={`w-8 h-8 mb-2 ${cardType === 'multi_use' ? 'text-primary-600' : 'text-gray-400'}`} />
+                            <CreditCard className={`w-8 h-8 mb-2 ${cardType === 'multi_use' ? 'text-accent-600' : 'text-gray-400'}`} />
                             <p className="font-semibold text-gray-900 dark:text-white">Multi-Use</p>
                             <p className="text-xs text-gray-500 dark:text-gray-400">Reloadable card for recurring payments</p>
                         </button>
@@ -564,7 +564,7 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
                     <button
                         onClick={() => onCreate({ card_type: cardType, currency: 'USD', brand })}
                         disabled={loading}
-                        className="flex-1 py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 py-3 px-4 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? 'Creating...' : 'Create Card'}
                     </button>
@@ -626,7 +626,7 @@ const FundCardModal = ({ card, wallets, onClose, onFund, loading }) => {
                         <select
                             value={selectedWallet}
                             onChange={(e) => setSelectedWallet(e.target.value)}
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500"
+                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
                         >
                             {wallets.map((w) => (
                                 <option key={w.id} value={w.id}>
@@ -653,7 +653,7 @@ const FundCardModal = ({ card, wallets, onClose, onFund, loading }) => {
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
                                 placeholder="0.00"
-                                className="w-full pl-8 pr-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                className="w-full pl-8 pr-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
                             />
                         </div>
                     </div>
@@ -670,7 +670,7 @@ const FundCardModal = ({ card, wallets, onClose, onFund, loading }) => {
                     <button
                         onClick={() => onFund(card.id, parseFloat(amount), selectedWallet)}
                         disabled={!amount || parseFloat(amount) <= 0 || loading}
-                        className="flex-1 py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 py-3 px-4 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? 'Funding...' : 'Fund Card'}
                     </button>

@@ -99,7 +99,7 @@ const Login = () => {
           <img
             src="/logo.png"
             alt="JAXOPAY"
-            className="h-10 mx-auto mb-4"
+            className="h-20 mx-auto mb-4"
           />
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Welcome Back</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
@@ -225,7 +225,7 @@ const Login = () => {
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Don't have an account?{' '}
-              <Link to="/signup" className="font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400">
+              <Link to="/signup" className="font-medium text-accent-600 hover:text-accent-500 dark:text-accent-400">
                 Sign up
               </Link>
             </p>

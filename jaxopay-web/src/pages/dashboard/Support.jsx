@@ -144,7 +144,7 @@ const Support = () => {
                 {!isAdmin && (
                     <button
                         onClick={() => setShowCreateModal(true)}
-                        className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-2xl transition-all shadow-lg shadow-primary-500/20"
+                        className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-2xl transition-all shadow-lg shadow-accent-500/20"
                     >
                         <Plus className="w-5 h-5" />
                         New Ticket
@@ -163,7 +163,7 @@ const Support = () => {
                                 placeholder="Search tickets..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700/50 border-none rounded-xl text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700/50 border-none rounded-xl text-sm focus:ring-2 focus:ring-accent-500 outline-none"
                             />
                         </div>
 
@@ -173,7 +173,7 @@ const Support = () => {
                                     key={status}
                                     onClick={() => setStatusFilter(status)}
                                     className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize whitespace-nowrap transition-colors ${statusFilter === status
-                                        ? 'bg-primary-600 text-white'
+                                        ? 'bg-accent-600 text-white shadow-sm'
                                         : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
                                         }`}
                                 >
@@ -199,7 +199,7 @@ const Support = () => {
                                     key={ticket.id}
                                     onClick={() => setSelectedTicket(ticket)}
                                     className={`w-full p-4 rounded-2xl text-left transition-all border ${selectedTicket?.id === ticket.id
-                                        ? 'bg-primary-50 dark:bg-primary-900/10 border-primary-200 dark:border-primary-800 shadow-md ring-1 ring-primary-500'
+                                        ? 'bg-accent-50 dark:bg-accent-900/10 border-accent-200 dark:border-accent-800 shadow-md ring-1 ring-accent-500'
                                         : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600 shadow-sm'
                                         }`}
                                 >
@@ -209,7 +209,7 @@ const Support = () => {
                                                 {ticket.status}
                                             </span>
                                             {isAdmin && (
-                                                <span className="text-[10px] text-primary-600 font-bold uppercase truncate max-w-[100px]">
+                                                <span className="text-[10px] text-accent-600 font-bold uppercase truncate max-w-[100px]">
                                                     {ticket.email}
                                                 </span>
                                             )}
@@ -260,7 +260,7 @@ const Support = () => {
                                     )}
                                     <button
                                         onClick={() => fetchTicketDetails(selectedTicket.id)}
-                                        className="p-2 text-gray-400 hover:text-primary-500 transition-colors"
+                                        className="p-2 text-gray-400 hover:text-accent-500 transition-colors"
                                     >
                                         <RefreshCw className="w-5 h-5" />
                                     </button>
@@ -277,14 +277,14 @@ const Support = () => {
                                         <div key={msg.id} className={`flex ${isFromUser ? 'justify-end' : 'justify-start'}`}>
                                             <div className={`max-w-[80%] flex gap-3 ${isFromUser ? 'flex-row-reverse' : 'flex-row'}`}>
                                                 <div className="shrink-0">
-                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isStaff ? 'bg-primary-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isStaff ? 'bg-accent-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'
                                                         }`}>
                                                         {isStaff ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
                                                     </div>
                                                 </div>
                                                 <div>
                                                     <div className={`p-4 rounded-2xl ${isFromUser
-                                                        ? 'bg-primary-600 text-white rounded-tr-none'
+                                                        ? 'bg-accent-600 text-white rounded-tr-none'
                                                         : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-100 dark:border-gray-700 rounded-tl-none shadow-sm'
                                                         }`}>
                                                         <p className="text-sm border-white leading-relaxed">{msg.message}</p>
@@ -311,7 +311,7 @@ const Support = () => {
                                             value={replyMessage}
                                             onChange={(e) => setReplyMessage(e.target.value)}
                                             placeholder="Write your reply here..."
-                                            className="w-full bg-gray-50 dark:bg-gray-700/50 border-none rounded-2xl p-4 pr-16 text-sm resize-none focus:ring-2 focus:ring-primary-500 outline-none h-24"
+                                            className="w-full bg-gray-50 dark:bg-gray-700/50 border-none rounded-xl p-4 pr-16 text-sm resize-none focus:ring-2 focus:ring-accent-500 outline-none h-24"
                                             disabled={isReplying}
                                         />
                                         <div className="absolute right-4 bottom-4 flex items-center gap-2">
@@ -324,7 +324,7 @@ const Support = () => {
                                             <button
                                                 type="submit"
                                                 disabled={isReplying || !replyMessage.trim()}
-                                                className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition-all disabled:opacity-50 disabled:scale-95"
+                                                className="p-2 bg-accent-600 hover:bg-accent-700 text-white rounded-xl transition-all disabled:opacity-50 disabled:scale-95"
                                             >
                                                 <Send className="w-5 h-5" />
                                             </button>
@@ -335,8 +335,8 @@ const Support = () => {
                         </div>
                     ) : (
                         <div className="h-[700px] bg-white dark:bg-gray-800 rounded-3xl border border-dashed border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center p-12 text-center">
-                            <div className="w-32 h-32 bg-primary-50 dark:bg-primary-900/10 rounded-full flex items-center justify-center mb-6">
-                                <MessageCircle className="w-16 h-16 text-primary-500" />
+                            <div className="w-32 h-32 bg-accent-50 dark:bg-accent-900/10 rounded-full flex items-center justify-center mb-6">
+                                <MessageCircle className="w-16 h-16 text-accent-500" />
                             </div>
                             <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Select a Ticket</h3>
                             <p className="text-gray-500 dark:text-gray-400 max-w-sm">
@@ -344,7 +344,7 @@ const Support = () => {
                             </p>
                             <button
                                 onClick={() => setShowCreateModal(true)}
-                                className="mt-8 px-8 py-3 bg-primary-600 text-white font-bold rounded-2xl hover:bg-primary-700 transition-all shadow-lg"
+                                className="mt-8 px-8 py-3 bg-accent-600 text-white font-bold rounded-2xl hover:bg-accent-700 transition-all shadow-lg shadow-accent-500/20"
                             >
                                 Create New Ticket
                             </button>
@@ -391,7 +391,7 @@ const Support = () => {
                                             <select
                                                 value={category}
                                                 onChange={(e) => setCategory(e.target.value)}
-                                                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-none rounded-2xl focus:ring-2 focus:ring-primary-500 outline-none"
+                                                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-none rounded-2xl focus:ring-2 focus:ring-accent-500 outline-none"
                                             >
                                                 <option value="technical">Technical Issue</option>
                                                 <option value="billing">Billing & Payouts</option>
@@ -405,7 +405,7 @@ const Support = () => {
                                             <select
                                                 value={priority}
                                                 onChange={(e) => setPriority(e.target.value)}
-                                                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-none rounded-2xl focus:ring-2 focus:ring-primary-500 outline-none"
+                                                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-none rounded-2xl focus:ring-2 focus:ring-accent-500 outline-none"
                                             >
                                                 <option value="low">Low</option>
                                                 <option value="medium">Medium</option>
@@ -426,9 +426,9 @@ const Support = () => {
                                         />
                                     </div>
 
-                                    <div className="bg-primary-50 dark:bg-primary-900/10 p-4 rounded-2xl flex items-start gap-3">
-                                        <Shield className="w-5 h-5 text-primary-600 mt-0.5" />
-                                        <p className="text-xs text-primary-700 dark:text-primary-300">
+                                    <div className="bg-accent-50 dark:bg-accent-900/10 p-4 rounded-2xl flex items-start gap-3">
+                                        <Shield className="w-5 h-5 text-accent-600 mt-0.5" />
+                                        <p className="text-xs text-accent-700 dark:text-accent-300">
                                             Our support team usually responds within 2-4 hours. For urgent matters, please use the high priority flag.
                                         </p>
                                     </div>
@@ -444,7 +444,7 @@ const Support = () => {
                                         <button
                                             type="submit"
                                             disabled={isSubmitting}
-                                            className="flex-1 py-4 bg-primary-600 text-white font-bold rounded-2xl hover:bg-primary-700 transition-all shadow-lg shadow-primary-500/20 disabled:opacity-50"
+                                            className="flex-1 py-4 bg-accent-600 text-white font-bold rounded-2xl hover:bg-accent-700 transition-all shadow-lg shadow-accent-500/20 disabled:opacity-50"
                                         >
                                             {isSubmitting ? 'Submitting...' : 'Submit Ticket'}
                                         </button>

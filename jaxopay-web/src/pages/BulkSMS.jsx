@@ -88,13 +88,13 @@ const BulkSMS = () => {
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Bulk SMS</h1>
                     <p className="text-gray-600 dark:text-gray-400">Reach thousands of people instantly</p>
                 </div>
-                <div className="bg-primary-50 dark:bg-primary-900/20 px-4 py-2 rounded-xl border border-primary-100 dark:border-primary-800 flex items-center gap-3">
-                    <div className="p-2 bg-primary-100 dark:bg-primary-800 rounded-lg text-primary-600">
+                <div className="bg-accent-50 dark:bg-accent-900/20 px-4 py-2 rounded-xl border border-accent-100 dark:border-accent-800 flex items-center gap-3">
+                    <div className="p-2 bg-accent-100 dark:bg-accent-800 rounded-lg text-accent-600">
                         <DollarSign className="w-5 h-5" />
                     </div>
                     <div>
-                        <p className="text-xs text-primary-700 dark:text-primary-300 font-medium">NGN Balance</p>
-                        <p className="text-lg font-bold text-primary-800 dark:text-white">{formatCurrency(ngnBalance, 'NGN')}</p>
+                        <p className="text-xs text-accent-700 dark:text-accent-300 font-medium">NGN Balance</p>
+                        <p className="text-lg font-bold text-accent-800 dark:text-white">{formatCurrency(ngnBalance, 'NGN')}</p>
                     </div>
                 </div>
             </div>
@@ -104,7 +104,7 @@ const BulkSMS = () => {
                 <div className="lg:col-span-2 space-y-6">
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
                         <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
-                            <MessageSquare className="w-5 h-5 text-primary-600" />
+                            <MessageSquare className="w-5 h-5 text-accent-600" />
                             <h2 className="text-lg font-bold text-gray-900 dark:text-white">Compose Message</h2>
                         </div>
                         <form onSubmit={handleSend} className="p-6 space-y-6">
@@ -116,7 +116,7 @@ const BulkSMS = () => {
                                     value={recipients}
                                     onChange={(e) => setRecipients(e.target.value)}
                                     placeholder="+2348012345678, +2348087654321..."
-                                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 min-h-[120px]"
+                                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 min-h-[120px]"
                                     required
                                 />
                             </div>
@@ -171,7 +171,7 @@ const BulkSMS = () => {
                             <button
                                 type="submit"
                                 disabled={loading || !ngnBalance || (estimate && ngnBalance < estimate.total_cost)}
-                                className="w-full py-4 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl shadow-lg shadow-primary-500/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-full py-4 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-xl shadow-lg shadow-accent-500/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {loading ? (
                                     <>
@@ -198,11 +198,11 @@ const BulkSMS = () => {
                         <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Guidelines</h3>
                         <ul className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
                             <li className="flex gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                                <CheckCircle2 className="w-4 h-4 text-accent-500 flex-shrink-0" />
                                 Sender ID must not exceed 11 characters.
                             </li>
                             <li className="flex gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-primary-500 flex-shrink-0" />
+                                <CheckCircle2 className="w-4 h-4 text-accent-500 flex-shrink-0" />
                                 1 SMS unit = 160 characters.
                             </li>
                             <li className="flex gap-2">
@@ -219,7 +219,7 @@ const BulkSMS = () => {
                     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-lg font-bold text-gray-900 dark:text-white">Recent Batches</h3>
-                            <button onClick={fetchData} className="text-primary-600 hover:text-primary-700 text-sm font-medium">Refresh</button>
+                            <button onClick={fetchData} className="text-accent-600 hover:text-accent-700 text-sm font-medium">Refresh</button>
                         </div>
                         <div className="space-y-4">
                             {history.length === 0 ? (
@@ -229,7 +229,7 @@ const BulkSMS = () => {
                                     <div key={batch.id} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
                                         <div className="flex justify-between items-start mb-1">
                                             <p className="text-sm font-bold text-gray-900 dark:text-white">{batch.total_recipients} Recipients</p>
-                                            <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${batch.status === 'completed' ? 'bg-primary-100 text-primary-700' : 'bg-yellow-100 text-yellow-700'
+                                            <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${batch.status === 'completed' ? 'bg-accent-100 text-accent-700' : 'bg-yellow-100 text-yellow-700'
                                                 }`}>
                                                 {batch.status}
                                             </span>

@@ -66,12 +66,12 @@ export default function Payments() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6 }}
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-50 text-primary-700 rounded-full text-sm font-semibold mb-6 border border-primary-100">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent-50 text-accent-700 rounded-full text-sm font-semibold mb-6 border border-accent-100">
                 <Send className="w-4 h-4" />
                 Instant Transfers
               </div>
               <h1 className="text-5xl md:text-6xl font-bold mb-6 text-gray-900 tracking-tight leading-tight">
-                Send Money Globally <span className="text-primary-600">in Seconds</span>
+                Send Money Globally <span className="text-accent-600">in Seconds</span>
               </h1>
               <p className="text-xl text-gray-600 mb-8 leading-relaxed">
                 Fast, secure, and affordable cross-border payments to 57+ countries.
@@ -80,7 +80,7 @@ export default function Payments() {
               <div className="flex flex-wrap gap-4">
                 <Link
                   to="/signup"
-                  className="px-8 py-4 bg-primary-600 text-white font-bold rounded-full hover:bg-primary-700 transition-all shadow-lg hover:shadow-primary-500/30 inline-flex items-center gap-2"
+                  className="px-8 py-4 bg-accent-600 text-white font-bold rounded-full hover:bg-accent-700 transition-all shadow-lg hover:shadow-accent-500/30 inline-flex items-center gap-2"
                 >
                   Get Started Free
                   <ArrowRight className="w-5 h-5" />
@@ -102,7 +102,7 @@ export default function Payments() {
               className="relative flex items-center justify-center min-h-[500px]"
             >
               {/* Decorative background blob */}
-              <div className="absolute w-[500px] h-[500px] bg-primary-100 rounded-full blur-3xl opacity-50" />
+              <div className="absolute w-[500px] h-[500px] bg-accent-100 rounded-full blur-3xl opacity-50" />
 
               {/* Phone Frame */}
               <div className="relative bg-gray-900 rounded-[2.5rem] border-[8px] border-gray-900 overflow-hidden shadow-2xl h-[580px] w-[300px] ring-4 ring-gray-100/50">
@@ -136,15 +136,15 @@ export default function Payments() {
                       initial={{ scale: 0.8, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ delay: 0.5 }}
-                      className="bg-primary-50 rounded-2xl p-4 ml-auto w-5/6 border border-primary-100"
+                      className="bg-accent-50 rounded-2xl p-4 ml-auto w-5/6 border border-accent-100"
                     >
                       <div className="flex items-center gap-3 mb-2">
-                        <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600">
+                        <div className="w-8 h-8 rounded-full bg-accent-100 flex items-center justify-center text-accent-600">
                           <Send className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="text-xs text-primary-800 font-bold">Transfer Sent</div>
-                          <div className="text-[10px] text-primary-600">Just now</div>
+                          <div className="text-xs text-accent-800 font-bold">Transfer Sent</div>
+                          <div className="text-[10px] text-accent-600">Just now</div>
                         </div>
                       </div>
                       <div className="text-2xl font-bold text-gray-900 mb-1">$2,500.00</div>
@@ -165,13 +165,13 @@ export default function Payments() {
                 className="absolute -right-8 top-1/3 bg-white p-4 rounded-2xl shadow-xl border border-gray-100 z-30 max-w-[200px]"
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary-100 overflow-hidden flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-accent-100 overflow-hidden flex-shrink-0">
                     <img src="https://i.pravatar.cc/100?img=12" alt="Daniel" />
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 font-medium mb-1">Money Received</div>
                     <div className="text-sm text-gray-900 font-bold leading-tight">
-                      You received <span className="text-primary-600">$2,500</span> from Emmanuel Edward
+                      You received <span className="text-accent-600">$2,500</span> from Emmanuel Edward
                     </div>
                   </div>
                 </div>
@@ -183,7 +183,7 @@ export default function Payments() {
                 transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
                 className="absolute -left-12 bottom-1/4 bg-white p-3 rounded-2xl shadow-xl border border-gray-100 z-30 flex items-center gap-3"
               >
-                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+                <div className="w-10 h-10 rounded-full bg-accent-600 flex items-center justify-center text-white shadow-lg shadow-accent-500/30">
                   <Send className="w-5 h-5" />
                 </div>
                 <div className="font-bold text-gray-900 pr-2">
@@ -223,8 +223,8 @@ export default function Payments() {
                 transition={{ delay: index * 0.1 }}
                 className="p-6 bg-gray-50 dark:bg-gray-800 rounded-xl hover:shadow-lg transition-shadow"
               >
-                <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center mb-4">
-                  <feature.icon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+                <div className="w-12 h-12 bg-accent-100 dark:bg-accent-900/30 rounded-lg flex items-center justify-center mb-4">
+                  <feature.icon className="w-6 h-6 text-accent-600 dark:text-accent-400" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
                   {feature.title}
@@ -302,7 +302,7 @@ export default function Payments() {
                 className="relative"
               >
                 <div className="text-center">
-                  <div className="w-16 h-16 bg-primary-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-4">
+                  <div className="w-16 h-16 bg-accent-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-4">
                     {index + 1}
                   </div>
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -322,17 +322,17 @@ export default function Payments() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 bg-gradient-to-br from-primary-600 to-primary-800 text-white">
+      <section className="py-20 bg-gradient-to-br from-accent-600 to-emerald-800 text-white">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-4xl font-bold mb-6">
             Ready to Send Money Globally?
           </h2>
-          <p className="text-xl text-primary-100 mb-8">
+          <p className="text-xl text-accent-100 mb-8">
             Join thousands of users who trust JAXOPAY for fast, secure cross-border payments
           </p>
           <Link
             to="/signup"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-primary-600 font-semibold rounded-lg hover:bg-gray-100 transition-colors"
+            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-accent-600 font-semibold rounded-lg hover:bg-gray-100 transition-colors"
           >
             Create Free Account
             <ArrowRight className="w-5 h-5" />
@@ -342,4 +342,3 @@ export default function Payments() {
     </PublicLayout>
   );
 }
-

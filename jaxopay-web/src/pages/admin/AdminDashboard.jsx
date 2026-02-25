@@ -33,7 +33,7 @@ const StatCard = ({ title, value, icon: Icon, trend, trendValue, color, linkTo }
                     <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
                     {trend && (
-                        <div className={`flex items-center gap-1 mt-2 text-sm ${trend === 'up' ? 'text-primary-600' : 'text-red-600'
+                        <div className={`flex items-center gap-1 mt-2 text-sm ${trend === 'up' ? 'text-accent-600' : 'text-red-600'
                             }`}>
                             {trend === 'up' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                             <span>{trendValue}</span>
@@ -92,7 +92,7 @@ const AdminDashboard = () => {
     if (loading || !stats) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-500"></div>
             </div>
         );
     }
@@ -111,7 +111,7 @@ const AdminDashboard = () => {
                 </div>
                 <button
                     onClick={fetchStats}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-medium rounded-lg"
                 >
                     <RefreshCw className="w-4 h-4" />
                     Refresh
@@ -131,7 +131,7 @@ const AdminDashboard = () => {
                     title="Total Wallets"
                     value={formatNumber(stats.total_wallets)}
                     icon={Wallet}
-                    color="bg-primary-500 transition-all duration-300"
+                    color="bg-accent-500 transition-all duration-300"
                     linkTo="/admin/wallets"
                 />
                 <StatCard
@@ -208,8 +208,8 @@ const AdminDashboard = () => {
                             to="/admin/transactions"
                             className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                         >
-                            <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
-                                <Activity className="w-5 h-5 text-primary-600" />
+                            <div className="p-2 bg-accent-100 dark:bg-accent-900/30 rounded-lg">
+                                <Activity className="w-5 h-5 text-accent-600" />
                             </div>
                             <div>
                                 <p className="font-medium text-gray-900 dark:text-white">Transactions</p>
@@ -299,7 +299,7 @@ const AdminDashboard = () => {
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">AML High Risk Alerts</h3>
-                        <Link to="/admin/aml" className="text-sm text-primary-600 hover:text-primary-700 font-medium">View All</Link>
+                        <Link to="/admin/aml" className="text-sm text-accent-600 hover:text-accent-700 font-medium">View All</Link>
                     </div>
                     <div className="space-y-3">
                         <HighRiskWidget />
@@ -351,13 +351,13 @@ const AdminDashboard = () => {
                         )}
 
                         {stats.pending_kyc === 0 && stats.suspended_users === 0 && (
-                            <div className="flex items-center gap-3 p-4 bg-primary-50 dark:bg-primary-900/20 rounded-xl">
-                                <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-full">
-                                    <TrendingUp className="w-5 h-5 text-primary-600" />
+                            <div className="flex items-center gap-3 p-4 bg-accent-50 dark:bg-accent-900/20 rounded-xl">
+                                <div className="p-2 bg-accent-100 dark:bg-accent-900/30 rounded-full">
+                                    <TrendingUp className="w-5 h-5 text-accent-600" />
                                 </div>
                                 <div>
-                                    <p className="font-medium text-primary-800 dark:text-primary-200">All Clear!</p>
-                                    <p className="text-sm text-primary-600 dark:text-primary-400">
+                                    <p className="font-medium text-accent-800 dark:text-accent-200">All Clear!</p>
+                                    <p className="text-sm text-accent-600 dark:text-accent-400">
                                         No pending actions required
                                     </p>
                                 </div>
@@ -390,9 +390,9 @@ const HighRiskWidget = () => {
 
     if (highRiskUsers.length === 0) {
         return (
-            <div className="flex items-center gap-3 p-4 bg-primary-50 dark:bg-primary-900/20 rounded-xl">
-                <Shield className="w-5 h-5 text-primary-600" />
-                <p className="text-sm text-primary-700 dark:text-primary-300 font-medium">No high risk users detected</p>
+            <div className="flex items-center gap-3 p-4 bg-accent-50 dark:bg-accent-900/20 rounded-xl">
+                <Shield className="w-5 h-5 text-accent-600" />
+                <p className="text-sm text-accent-700 dark:text-accent-300 font-medium">No high risk users detected</p>
             </div>
         );
     }

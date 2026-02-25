@@ -48,7 +48,7 @@ const Dashboard = () => {
 
   const quickActions = [
     { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'bg-blue-500', enabled: true },
-    { name: 'Receive', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-primary-500', enabled: true },
+    { name: 'Receive', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-accent-500', enabled: true },
     { name: 'Exchange', icon: ArrowLeftRight, href: '/dashboard/exchange', color: 'bg-purple-500', enabled: isFeatureEnabled('crypto') },
     { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', color: 'bg-orange-500', enabled: isFeatureEnabled('bill_payments') },
   ].filter(action => action.enabled);
@@ -91,7 +91,7 @@ const Dashboard = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-600"></div>
       </div>
     );
   }
@@ -109,9 +109,9 @@ const Dashboard = () => {
       )}
 
       {/* Welcome Section */}
-      <div className="card bg-gradient-to-r from-primary-600 to-indigo-700 text-white border-none shadow-lg transform hover:scale-[1.01] transition-transform">
+      <div className="card bg-gradient-to-r from-accent-600 to-emerald-700 text-white border-none shadow-lg transform hover:scale-[1.01] transition-transform shadow-accent-500/20">
         <h2 className="text-3xl font-bold mb-2">Welcome back, {user?.first_name || 'Champion'}!</h2>
-        <p className="text-primary-100/90 text-lg">
+        <p className="text-accent-50 text-lg">
           Your financial hub is up and running. Ready for some global transactions?
         </p>
       </div>
@@ -128,13 +128,13 @@ const Dashboard = () => {
                   <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
                     {stat.value}
                   </p>
-                  <p className={`text-sm mt-1 ${stat.changeType === 'positive' ? 'text-primary-600' : 'text-gray-600'
+                  <p className={`text-sm mt-1 ${stat.changeType === 'positive' ? 'text-accent-600' : 'text-gray-600'
                     }`}>
                     {stat.change}
                   </p>
                 </div>
-                <div className="p-3 bg-primary-100 dark:bg-primary-900/20 rounded-lg">
-                  <Icon className="h-6 w-6 text-primary-600 dark:text-primary-400" />
+                <div className="p-3 bg-accent-100 dark:bg-accent-900/20 rounded-lg">
+                  <Icon className="h-6 w-6 text-accent-600 dark:text-accent-400" />
                 </div>
               </div>
             </div>
@@ -154,7 +154,7 @@ const Dashboard = () => {
               <Link
                 key={action.name}
                 to={action.href}
-                className="flex flex-col items-center p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
+                className="flex flex-col items-center p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-accent-500 dark:hover:border-accent-500 transition-colors"
               >
                 <div className={`${action.color} p-3 rounded-full mb-2`}>
                   <Icon className="h-6 w-6 text-white" />
@@ -176,7 +176,7 @@ const Dashboard = () => {
           </h3>
           <Link
             to="/dashboard/transactions"
-            className="text-sm text-primary-600 hover:text-primary-500 dark:text-primary-400 font-medium"
+            className="text-sm text-accent-600 hover:text-accent-500 dark:text-accent-400 font-medium"
           >
             View all
           </Link>
@@ -211,7 +211,7 @@ const Dashboard = () => {
                   <p className="font-semibold text-gray-900 dark:text-white">
                     {formatCurrency(transaction.from_amount, transaction.from_currency)}
                   </p>
-                  <p className={`text-sm ${transaction.status === 'completed' ? 'text-primary-600' : 'text-yellow-600'
+                  <p className={`text-sm ${transaction.status === 'completed' ? 'text-accent-600' : 'text-yellow-600'
                     }`}>
                     {transaction.status}
                   </p>

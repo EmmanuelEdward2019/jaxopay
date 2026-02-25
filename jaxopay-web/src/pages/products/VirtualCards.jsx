@@ -61,9 +61,9 @@ export default function VirtualCards() {
   ];
 
   const cardTypes = [
-    { name: 'Standard Card', fee: '$2', limit: '$500/month', color: 'from-blue-500 to-blue-600' },
-    { name: 'Premium Card', fee: '$5', limit: '$2,000/month', color: 'from-purple-500 to-purple-600' },
-    { name: 'Business Card', fee: '$10', limit: '$10,000/month', color: 'from-gray-700 to-gray-900' }
+    { name: 'Standard Card', fee: '$2', limit: '$500/month', color: 'from-accent-500 to-accent-600' },
+    { name: 'Premium Card', fee: '$5', limit: '$2,000/month', color: 'from-accent-600 to-emerald-700' },
+    { name: 'Business Card', fee: '$10', limit: '$10,000/month', color: 'from-gray-800 to-black' }
   ];
 
   return (
@@ -79,12 +79,12 @@ export default function VirtualCards() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6 }}
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-50 text-primary-700 rounded-full text-sm font-semibold mb-6 border border-primary-100">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent-50 text-accent-700 rounded-full text-sm font-semibold mb-6 border border-accent-100">
                 <FaGlobe className="w-4 h-4" />
                 Global Virtual Cards
               </div>
               <h1 className="text-5xl md:text-6xl font-bold mb-6 text-gray-900 tracking-tight leading-tight">
-                Virtual USD Cards for <span className="text-primary-600">Global Payments</span>
+                Virtual USD Cards for <span className="text-accent-600">Global Payments</span>
               </h1>
               <p className="text-xl text-gray-600 mb-8 leading-relaxed">
                 Get instant virtual cards for online shopping, subscriptions, and digital services.
@@ -93,7 +93,7 @@ export default function VirtualCards() {
               <div className="flex flex-wrap gap-4">
                 <Link
                   to="/signup"
-                  className="px-8 py-4 bg-primary-600 text-white font-bold rounded-full hover:bg-primary-700 transition-all shadow-lg hover:shadow-primary-500/30 inline-flex items-center gap-2"
+                  className="px-8 py-4 bg-accent-600 text-white font-bold rounded-full hover:bg-accent-700 transition-all shadow-lg hover:shadow-accent-500/30 inline-flex items-center gap-2"
                 >
                   Get Your Card
                   <FaArrowRight className="w-5 h-5" />
@@ -115,7 +115,7 @@ export default function VirtualCards() {
               className="relative flex items-center justify-center min-h-[400px] perspective-1000"
             >
               {/* Decorative background blob */}
-              <div className="absolute w-[400px] h-[400px] bg-primary-100 rounded-full blur-3xl opacity-50" />
+              <div className="absolute w-[400px] h-[400px] bg-accent-100 rounded-full blur-3xl opacity-50" />
 
               {/* Card 1 - Back */}
               <motion.div
@@ -137,7 +137,7 @@ export default function VirtualCards() {
               <motion.div
                 animate={{ y: [0, 10, 0], rotate: [3, 5, 3] }}
                 transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-                className="absolute w-[360px] h-[225px] bg-gradient-to-br from-[#4f46e5] to-[#7c3aed] text-white rounded-2xl shadow-2xl z-20 rotate-3 transform translate-x-4 -translate-y-4 p-8 flex flex-col justify-between"
+                className="absolute w-[360px] h-[225px] bg-gradient-to-br from-accent-600 to-emerald-700 text-white rounded-2xl shadow-2xl z-20 rotate-3 transform translate-x-4 -translate-y-4 p-8 flex flex-col justify-between"
               >
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-2">
@@ -198,8 +198,8 @@ export default function VirtualCards() {
                 transition={{ delay: index * 0.1 }}
                 className="p-6 bg-gray-50 dark:bg-gray-800 rounded-xl hover:shadow-lg transition-shadow"
               >
-                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center mb-4">
-                  <feature.icon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                <div className="w-12 h-12 bg-accent-100 dark:bg-accent-900/30 rounded-lg flex items-center justify-center mb-4">
+                  <feature.icon className="w-6 h-6 text-accent-600 dark:text-accent-400" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
                   {feature.title}
@@ -307,17 +307,17 @@ export default function VirtualCards() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 bg-gradient-to-br from-blue-600 to-purple-800 text-white">
+      <section className="py-20 bg-gradient-to-br from-accent-600 to-emerald-800 text-white">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-4xl font-bold mb-6">
             Get Your Virtual Card Today
           </h2>
-          <p className="text-xl text-blue-100 mb-8">
+          <p className="text-xl text-accent-100 mb-8">
             Start shopping globally with instant virtual cards. No credit check required.
           </p>
           <Link
             to="/signup"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-blue-600 font-semibold rounded-lg hover:bg-gray-100 transition-colors"
+            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-accent-600 font-semibold rounded-lg hover:bg-gray-100 transition-colors"
           >
             Create Free Account
             <FaArrowRight className="w-5 h-5" />

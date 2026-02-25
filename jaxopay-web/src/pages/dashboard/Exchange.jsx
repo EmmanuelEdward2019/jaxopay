@@ -185,7 +185,7 @@ const Exchange = () => {
                     <button
                         onClick={() => { setMode('buy'); setPayAmount(''); setReceiveAmount(''); }}
                         className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${mode === 'buy'
-                            ? 'bg-white dark:bg-gray-700 text-primary-600 shadow-sm'
+                            ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-sm'
                             : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-300'
                             }`}
                     >
@@ -240,7 +240,7 @@ const Exchange = () => {
 
                         {/* Pay Section */}
                         <div className="space-y-4">
-                            <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors border border-transparent focus-within:border-primary-500/50 focus-within:ring-2 focus-within:ring-primary-500/20">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors border border-transparent focus-within:border-accent-500/50 focus-within:ring-2 focus-within:ring-accent-500/20">
                                 <div className="flex justify-between mb-2">
                                     <label className="text-sm font-medium text-gray-500 dark:text-gray-400">You Pay</label>
                                     <div className="flex items-center gap-2">
@@ -250,7 +250,7 @@ const Exchange = () => {
                                         </span>
                                         <button
                                             onClick={handleMax}
-                                            className="text-xs font-bold text-primary-600 hover:text-primary-700 px-1.5 py-0.5 bg-primary-50 dark:bg-primary-900/20 rounded uppercase transition-colors"
+                                            className="text-xs font-bold text-accent-600 hover:text-accent-700 px-1.5 py-0.5 bg-accent-50 dark:bg-accent-900/20 rounded uppercase transition-colors"
                                         >
                                             Max
                                         </button>
@@ -267,7 +267,7 @@ const Exchange = () => {
                                     {mode === 'buy' ? (
                                         <button
                                             onClick={() => { setTokenModalType('fiat'); setShowTokenModal(true); }}
-                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-primary-500 hover:ring-2 hover:ring-primary-100 dark:hover:ring-primary-900/20 transition-all min-w-[140px]"
+                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-accent-500 hover:ring-2 hover:ring-accent-100 dark:hover:ring-accent-900/20 transition-all min-w-[140px]"
                                         >
                                             {selectedWallet ? (
                                                 <>
@@ -285,7 +285,7 @@ const Exchange = () => {
                                     ) : (
                                         <button
                                             onClick={() => { setTokenModalType('crypto'); setShowTokenModal(true); }}
-                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-primary-500 hover:ring-2 hover:ring-primary-100 dark:hover:ring-primary-900/20 transition-all min-w-[140px]"
+                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-accent-500 hover:ring-2 hover:ring-accent-100 dark:hover:ring-accent-900/20 transition-all min-w-[140px]"
                                         >
                                             <span className="text-xl">{CRYPTO_DATA[selectedCrypto]?.icon}</span>
                                             <span className="font-bold text-gray-900 dark:text-white">{selectedCrypto}</span>
@@ -327,7 +327,7 @@ const Exchange = () => {
                                     {mode === 'buy' ? (
                                         <button
                                             onClick={() => { setTokenModalType('crypto'); setShowTokenModal(true); }}
-                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-primary-500 hover:ring-2 hover:ring-primary-100 dark:hover:ring-primary-900/20 transition-all min-w-[140px]"
+                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-accent-500 hover:ring-2 hover:ring-accent-100 dark:hover:ring-accent-900/20 transition-all min-w-[140px]"
                                         >
                                             <span className="text-xl">{CRYPTO_DATA[selectedCrypto]?.icon}</span>
                                             <span className="font-bold text-gray-900 dark:text-white">{selectedCrypto}</span>
@@ -336,7 +336,7 @@ const Exchange = () => {
                                     ) : (
                                         <button
                                             onClick={() => { setTokenModalType('fiat'); setShowTokenModal(true); }}
-                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-primary-500 hover:ring-2 hover:ring-primary-100 dark:hover:ring-primary-900/20 transition-all min-w-[140px]"
+                                            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 hover:border-accent-500 hover:ring-2 hover:ring-accent-100 dark:hover:ring-accent-900/20 transition-all min-w-[140px]"
                                         >
                                             {selectedWallet ? (
                                                 <>
@@ -380,7 +380,7 @@ const Exchange = () => {
                             onClick={handleExchange}
                             disabled={!payAmount || parseFloat(payAmount) <= 0 || loading || loadingRates}
                             className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:shadow-none ${mode === 'buy'
-                                ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-primary-200 dark:shadow-none'
+                                ? 'bg-accent-600 hover:bg-accent-700 text-white shadow-accent-200 dark:shadow-none'
                                 : 'bg-red-600 hover:bg-red-700 text-white shadow-red-200 dark:shadow-none'
                                 }`}
                         >
@@ -423,7 +423,7 @@ const Exchange = () => {
                                         </div>
                                         <div className="text-right">
                                             <p className="font-bold text-gray-900 dark:text-white">{Number(w.balance || 0).toFixed(6)}</p>
-                                            <p className="text-xs text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity">Click to Sell</p>
+                                            <p className="text-xs text-accent-600 opacity-0 group-hover:opacity-100 transition-opacity">Click to Sell</p>
                                         </div>
                                     </button>
                                 ))}
@@ -434,7 +434,7 @@ const Exchange = () => {
                     <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="font-bold text-gray-900 dark:text-white">Recent Trades</h3>
-                            <button onClick={fetchHistory} className="text-primary-600 hover:text-primary-700">
+                            <button onClick={fetchHistory} className="text-accent-600 hover:text-accent-700">
                                 <RefreshCw className="w-4 h-4" />
                             </button>
                         </div>
@@ -445,7 +445,7 @@ const Exchange = () => {
                                 history.map(trade => (
                                     <div key={trade.id} className="flex items-center justify-between">
                                         <div className="flex items-center gap-3">
-                                            <div className={`p-2 rounded-full ${trade.type === 'buy' ? 'bg-primary-50 text-primary-600' : 'bg-red-50 text-red-600'}`}>
+                                            <div className={`p-2 rounded-full ${trade.type === 'buy' ? 'bg-accent-50 text-accent-600' : 'bg-red-50 text-red-600'}`}>
                                                 {trade.type === 'buy' ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />}
                                             </div>
                                             <div>
@@ -457,7 +457,7 @@ const Exchange = () => {
                                                 </p>
                                             </div>
                                         </div>
-                                        <span className={`text-sm font-bold ${trade.type === 'buy' ? 'text-primary-600' : 'text-gray-900 dark:text-white'}`}>
+                                        <span className={`text-sm font-bold ${trade.type === 'buy' ? 'text-accent-600' : 'text-gray-900 dark:text-white'}`}>
                                             {trade.type === 'buy' ? '+' : '-'}{Number(trade.crypto_amount || 0).toFixed(4)}
                                         </span>
                                     </div>
@@ -531,7 +531,7 @@ const Exchange = () => {
                                                             setSelectedFiatWallet(wallet.id);
                                                             setShowTokenModal(false);
                                                         }}
-                                                        className={`w-full flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors group ${selectedFiatWallet === wallet.id ? 'bg-primary-50 dark:bg-primary-900/10 ring-1 ring-primary-500' : ''}`}
+                                                        className={`w-full flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors group ${selectedFiatWallet === wallet.id ? 'bg-accent-50 dark:bg-accent-900/10 ring-1 ring-accent-500' : ''}`}
                                                     >
                                                         <div className="flex items-center gap-3">
                                                             <span className="text-2xl">{CURRENCY_OPTIONS.fiat.find(c => c.code === wallet.currency)?.flag || '💰'}</span>
@@ -541,7 +541,7 @@ const Exchange = () => {
                                                             </div>
                                                         </div>
                                                         {selectedFiatWallet === wallet.id && (
-                                                            <Check className="w-5 h-5 text-primary-600" />
+                                                            <Check className="w-5 h-5 text-accent-600" />
                                                         )}
                                                     </button>
                                                 ))
@@ -590,7 +590,7 @@ const Exchange = () => {
                                                 key={val}
                                                 onClick={() => setSlippage(val)}
                                                 className={`py-2 px-1 text-sm font-medium rounded-lg transition-colors ${slippage === val
-                                                    ? 'bg-primary-600 text-white'
+                                                    ? 'bg-accent-600 text-white'
                                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                                                     }`}
                                             >
@@ -603,8 +603,8 @@ const Exchange = () => {
                                                 placeholder="Custom"
                                                 value={!([0.1, 0.5, 1.0].includes(slippage)) ? slippage : ''}
                                                 onChange={(e) => setSlippage(parseFloat(e.target.value))}
-                                                className={`w-full py-2 px-2 text-sm text-center rounded-lg border focus:ring-2 focus:ring-primary-500 focus:outline-none ${!([0.1, 0.5, 1.0].includes(slippage))
-                                                    ? 'border-primary-500 bg-white dark:bg-gray-800 text-primary-600'
+                                                className={`w-full py-2 px-2 text-sm text-center rounded-lg border focus:ring-2 focus:ring-accent-500 focus:outline-none ${!([0.1, 0.5, 1.0].includes(slippage))
+                                                    ? 'border-accent-500 bg-white dark:bg-gray-800 text-accent-600'
                                                     : 'border-transparent bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
                                                     }`}
                                             />

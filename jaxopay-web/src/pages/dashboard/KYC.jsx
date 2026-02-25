@@ -30,7 +30,7 @@ const TIER_INFO = {
     },
     tier_2: {
         name: 'Verified',
-        color: 'bg-primary-100 text-primary-700',
+        color: 'bg-accent-100 text-accent-700',
         limits: { daily: 10000, monthly: 50000, card: true, crypto: true },
     },
 };
@@ -134,7 +134,7 @@ const KYC = () => {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-600"></div>
             </div>
         );
     }
@@ -155,14 +155,14 @@ const KYC = () => {
                 </div>
             )}
             {success && (
-                <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-4">
-                    <p className="text-primary-700 dark:text-primary-300">{success}</p>
-                    <button onClick={() => setSuccess(null)} className="text-primary-500 underline text-sm mt-1">Dismiss</button>
+                <div className="bg-accent-50 dark:bg-accent-900/20 border border-accent-200 dark:border-accent-800 rounded-lg p-4">
+                    <p className="text-accent-700 dark:text-accent-300">{success}</p>
+                    <button onClick={() => setSuccess(null)} className="text-accent-500 underline text-sm mt-1">Dismiss</button>
                 </div>
             )}
 
             {/* Current Status Card */}
-            <div className="card bg-gradient-to-br from-primary-500 to-primary-700 text-white">
+            <div className="card bg-gradient-to-br from-accent-600 to-emerald-700 text-white shadow-lg shadow-accent-500/20">
                 <div className="flex items-start justify-between">
                     <div>
                         <p className="text-primary-100 text-sm mb-1">Current Verification Level</p>
@@ -193,7 +193,7 @@ const KYC = () => {
                         <div
                             key={tier}
                             className={`p-4 rounded-xl border-2 ${currentTier === tier
-                                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                                ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
                                 : 'border-gray-200 dark:border-gray-700'
                                 }`}
                         >
@@ -201,7 +201,7 @@ const KYC = () => {
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${info.color}`}>
                                     {info.name}
                                 </span>
-                                {currentTier === tier && <Check className="w-5 h-5 text-primary-600" />}
+                                {currentTier === tier && <Check className="w-5 h-5 text-accent-600" />}
                             </div>
                             <div className="space-y-2 text-sm">
                                 <div className="flex justify-between">
@@ -218,7 +218,7 @@ const KYC = () => {
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-gray-500">Virtual Cards</span>
-                                    <span className={info.limits.card ? 'text-primary-600' : 'text-red-600'}>
+                                    <span className={info.limits.crypto ? 'text-accent-600' : 'text-red-600'}>
                                         {info.limits.card ? '✓' : '✗'}
                                     </span>
                                 </div>
@@ -250,7 +250,7 @@ const KYC = () => {
                         </div>
                         <button
                             onClick={() => setShowUploadForm(true)}
-                            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
+                            className="px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-medium rounded-lg shadow-lg shadow-accent-500/20"
                         >
                             Start Verification
                         </button>
@@ -290,11 +290,11 @@ const KYC = () => {
                                         key={doc.id}
                                         onClick={() => setDocumentType(doc.id)}
                                         className={`p-4 rounded-xl border-2 text-center transition-colors ${documentType === doc.id
-                                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                                            ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
                                             : 'border-gray-200 dark:border-gray-700'
                                             }`}
                                     >
-                                        <doc.icon className={`w-6 h-6 mx-auto mb-2 ${documentType === doc.id ? 'text-primary-600' : 'text-gray-400'
+                                        <doc.icon className={`w-6 h-6 mx-auto mb-2 ${documentType === doc.id ? 'text-accent-600' : 'text-gray-400'
                                             }`} />
                                         <p className="text-sm font-medium">{doc.name}</p>
                                     </button>
@@ -325,11 +325,11 @@ const KYC = () => {
                                 </label>
                                 <div
                                     onClick={() => frontInputRef.current?.click()}
-                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentFront ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 hover:border-primary-500'
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentFront ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20' : 'border-gray-300 hover:border-accent-500'
                                         }`}
                                 >
                                     {documentFront ? (
-                                        <div className="text-primary-600">
+                                        <div className="text-accent-600">
                                             <Check className="w-8 h-8 mx-auto mb-2" />
                                             <p className="text-sm">{documentFront.name}</p>
                                         </div>
@@ -429,7 +429,7 @@ const KYC = () => {
                         <button
                             onClick={handleSubmitKYC}
                             disabled={!documentType || !documentNumber || !documentFront || submitting}
-                            className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg disabled:opacity-50"
+                            className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg disabled:opacity-50 shadow-lg shadow-accent-500/20"
                         >
                             {submitting ? 'Submitting...' : 'Submit for Verification'}
                         </button>
@@ -453,7 +453,7 @@ const KYC = () => {
                                         <p className="text-sm text-gray-500">{doc.document_number}</p>
                                     </div>
                                 </div>
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${doc.status === 'approved' ? 'bg-primary-100 text-primary-700' :
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${doc.status === 'approved' ? 'bg-accent-100 text-accent-700' :
                                     doc.status === 'rejected' ? 'bg-red-100 text-red-700' :
                                         'bg-yellow-100 text-yellow-700'
                                     }`}>

@@ -122,8 +122,7 @@ const Signup = () => {
             <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary-600 to-primary-800 p-12 flex-col justify-between">
                 <div>
                     <Link to="/" className="flex items-center gap-3">
-                        <img src="/logo-icon.png" alt="JAXOPAY" className="w-12 h-12 object-contain" />
-                        <span className="text-2xl font-bold text-white">JAXOPAY</span>
+                        <img src="/logo.png" alt="JAXOPAY" className="h-16 w-auto object-contain" />
                     </Link>
                 </div>
                 <div>
@@ -173,8 +172,7 @@ const Signup = () => {
                     {/* Mobile Logo */}
                     <div className="lg:hidden text-center mb-8">
                         <Link to="/" className="inline-flex items-center gap-2">
-                            <img src="/logo-icon.png" alt="JAXOPAY" className="w-10 h-10 object-contain" />
-                            <span className="text-xl font-bold text-gray-900 dark:text-white">JAXOPAY</span>
+                            <img src="/logo.png" alt="JAXOPAY" className="h-12 w-auto object-contain" />
                         </Link>
                     </div>
 

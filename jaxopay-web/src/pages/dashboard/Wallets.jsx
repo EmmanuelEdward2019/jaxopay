@@ -160,7 +160,7 @@ const Wallets = () => {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-600"></div>
             </div>
         );
     }
@@ -193,7 +193,7 @@ const Wallets = () => {
             )}
 
             {/* Total Balance Card */}
-            <div className="card bg-gradient-to-br from-primary-500 to-primary-700 text-white">
+            <div className="card bg-gradient-to-br from-accent-500 to-accent-700 text-white shadow-lg shadow-accent-500/20">
                 <div className="flex items-center justify-between">
                     <div>
                         <p className="text-primary-100 text-sm mb-1">Total Balance</p>
@@ -272,7 +272,7 @@ const Wallets = () => {
                     <button
                         onClick={() => setFilterType('all')}
                         className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterType === 'all'
-                            ? 'bg-primary-600 text-white'
+                            ? 'bg-accent-600 text-white'
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
                             }`}
                     >
@@ -281,7 +281,7 @@ const Wallets = () => {
                     <button
                         onClick={() => setFilterType('fiat')}
                         className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterType === 'fiat'
-                            ? 'bg-primary-600 text-white'
+                            ? 'bg-accent-600 text-white'
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
                             }`}
                     >
@@ -290,7 +290,7 @@ const Wallets = () => {
                     <button
                         onClick={() => setFilterType('crypto')}
                         className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterType === 'crypto'
-                            ? 'bg-primary-600 text-white'
+                            ? 'bg-accent-600 text-white'
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
                             }`}
                     >
@@ -319,7 +319,7 @@ const Wallets = () => {
                         {wallets.length === 0 && (
                             <button
                                 onClick={() => setShowCreateModal(true)}
-                                className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors"
+                                className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors"
                             >
                                 <Plus className="w-5 h-5" />
                                 Create Your First Wallet
@@ -332,7 +332,7 @@ const Wallets = () => {
                             key={wallet.id}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className={`card cursor-pointer hover:shadow-lg transition-all ${selectedWallet?.id === wallet.id ? 'ring-2 ring-primary-500' : ''
+                            className={`card cursor-pointer hover:shadow-lg transition-all ${selectedWallet?.id === wallet.id ? 'ring-2 ring-accent-500' : ''
                                 } ${!wallet.is_active ? 'opacity-75' : ''}`}
                             onClick={() => handleSelectWallet(wallet)}
                         >
@@ -441,7 +441,7 @@ const Wallets = () => {
                                             {tx.transaction_type === 'credit' ? (
                                                 <ArrowDownLeft
                                                     className={`w-5 h-5 ${tx.transaction_type === 'credit'
-                                                        ? 'text-primary-600 dark:text-primary-400'
+                                                        ? 'text-accent-600 dark:text-accent-400'
                                                         : 'text-red-600 dark:text-red-400'
                                                         }`}
                                                 />
@@ -616,7 +616,7 @@ const CreateWalletModal = ({ onClose, onCreate, loading, existingCurrencies }) =
                     <button
                         onClick={() => onCreate(selectedCurrency, walletType)}
                         disabled={!selectedCurrency || loading}
-                        className="flex-1 py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 py-3 px-4 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? 'Creating...' : 'Create Wallet'}
                     </button>

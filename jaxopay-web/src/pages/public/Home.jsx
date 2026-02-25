@@ -188,19 +188,10 @@ export default function Home() {
               transition={{ duration: 0.8 }}
               className="max-w-2xl"
             >
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.2 }}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary-50 text-primary-700 rounded-full text-sm font-semibold mb-6 border border-primary-100"
-              >
-                <Globe className="w-4 h-4" />
-                Trusted by 100,000+ users globally
-              </motion.div>
 
               <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 leading-tight tracking-tight text-gray-900">
                 The better way to
-                <span className="block text-primary-600 mt-1">send money.</span>
+                <span className="block text-accent-600 mt-1">send money.</span>
               </h1>
 
               <p className="text-xl text-gray-600 mb-8 leading-relaxed max-w-lg">
@@ -210,7 +201,7 @@ export default function Home() {
               <div className="flex flex-col sm:flex-row gap-4 mb-10">
                 <Link
                   to="/signup"
-                  className="inline-flex items-center justify-center px-8 py-4 bg-primary-600 text-white font-bold rounded-full hover:bg-primary-700 transition-all hover:scale-105 shadow-lg shadow-primary-500/30 gap-2"
+                  className="inline-flex items-center justify-center px-8 py-4 bg-accent-600 text-white font-bold rounded-full hover:bg-accent-700 transition-all hover:scale-105 shadow-lg shadow-accent-500/30 gap-2"
                 >
                   Get Started
                   <ArrowRight className="w-5 h-5" />
@@ -273,7 +264,7 @@ export default function Home() {
                     </div>
 
                     {/* Balance Card */}
-                    <div className="bg-primary-600 rounded-3xl p-6 text-white text-center mb-8 shadow-lg shadow-primary-500/30 relative overflow-hidden">
+                    <div className="bg-accent-600 rounded-3xl p-6 text-white text-center mb-8 shadow-lg shadow-accent-500/30 relative overflow-hidden">
                       <div className="absolute -right-10 -top-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
                       <div className="absolute -left-10 -bottom-10 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl"></div>
 
@@ -346,7 +337,7 @@ export default function Home() {
                   transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 1 }}
                   className="absolute -right-4 md:-right-12 top-1/4 bg-white p-4 rounded-xl shadow-xl border border-gray-100 flex items-center gap-3 z-20"
                 >
-                  <div className="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center text-white">
+                  <div className="w-10 h-10 bg-accent-600 rounded-full flex items-center justify-center text-white">
                     <CheckCircle className="w-6 h-6" />
                   </div>
                   <div>
@@ -362,7 +353,7 @@ export default function Home() {
                   className="absolute -left-4 md:-left-12 bottom-1/4 bg-[#0f172a] p-5 rounded-xl shadow-xl border border-gray-700 w-60 z-20"
                 >
                   <div className="flex justify-between items-start mb-6">
-                    <img src="/logo.png" alt="JAXOPAY" className="h-6 w-auto" />
+                    <img src="/logo.png" alt="JAXOPAY" className="h-10 w-auto" />
                     <div className="w-8 h-5 bg-white/20 rounded-md flex items-center justify-center">
                       <div className="w-4 h-3 border border-white/40 rounded-sm"></div>
                     </div>
@@ -403,7 +394,7 @@ export default function Home() {
                 transition={{ delay: index * 0.1 }}
                 className="text-center"
               >
-                <div className="text-3xl md:text-4xl font-bold text-primary-600 dark:text-primary-400 mb-2">
+                <div className="text-3xl md:text-4xl font-bold text-accent-600 dark:text-accent-400 mb-2">
                   {stat.value}
                 </div>
                 <div className="text-sm text-gray-600 dark:text-gray-400">

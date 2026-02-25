@@ -176,11 +176,11 @@ const Settings = () => {
                                 key={section.id}
                                 onClick={() => setActiveSection(section.id)}
                                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all ${activeSection === section.id
-                                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 font-medium'
+                                    ? 'bg-accent-50 dark:bg-accent-900/20 text-accent-600 dark:text-accent-400 font-medium'
                                     : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-400'
                                     }`}
                             >
-                                <section.icon className={`w-5 h-5 ${activeSection === section.id ? 'text-primary-600' : 'text-gray-400'}`} />
+                                <section.icon className={`w-5 h-5 ${activeSection === section.id ? 'text-accent-600' : 'text-gray-400'}`} />
                                 <span>{section.label}</span>
                             </button>
                         ))}
@@ -242,7 +242,7 @@ const Settings = () => {
                                         setLanguage(e.target.value);
                                         handleUpdateSettings({ preferred_language: e.target.value });
                                     }}
-                                    className="px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-medium focus:ring-2 focus:ring-primary-500 outline-none"
+                                    className="px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-medium focus:ring-2 focus:ring-accent-500 outline-none"
                                 >
                                     <option value="en">English</option>
                                     <option value="fr">Français</option>
@@ -402,7 +402,7 @@ const Settings = () => {
                                                         }}
                                                         className="sr-only peer"
                                                     />
-                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-accent-300 dark:peer-focus:ring-accent-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-600"></div>
                                                 </label>
                                             </div>
                                         ))}
@@ -453,7 +453,7 @@ const Settings = () => {
                         >
                             <div className="flex items-center justify-between mb-6">
                                 <h2 className="text-lg font-bold text-gray-900 dark:text-white">Active Sessions</h2>
-                                <button onClick={fetchSessions} className="text-primary-600 text-sm font-medium hover:underline flex items-center gap-1">
+                                <button onClick={fetchSessions} className="text-accent-600 text-sm font-medium hover:underline flex items-center gap-1">
                                     <RefreshCw className="w-3.5 h-3.5" /> Refresh
                                 </button>
                             </div>
@@ -562,7 +562,7 @@ const ChangePasswordModal = ({ onClose }) => {
                                     type={showPasswords[field] ? 'text' : 'password'}
                                     value={form[field]}
                                     onChange={(e) => setForm({ ...form, [field]: e.target.value })}
-                                    className="w-full px-4 py-3 pr-12 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none"
+                                    className="w-full px-4 py-3 pr-12 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 outline-none"
                                     required
                                 />
                                 <button
@@ -579,7 +579,7 @@ const ChangePasswordModal = ({ onClose }) => {
                         <button type="button" onClick={onClose} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold rounded-xl">
                             Cancel
                         </button>
-                        <button type="submit" disabled={loading} className="flex-1 py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl disabled:opacity-50 shadow-lg shadow-primary-200">
+                        <button type="submit" disabled={loading} className="flex-1 py-3 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-xl disabled:opacity-50 shadow-lg shadow-accent-200">
                             {loading ? 'Saving...' : 'Update Password'}
                         </button>
                     </div>
@@ -690,7 +690,7 @@ const TwoFactorModal = ({ onClose, user, setUser }) => {
                         <button
                             onClick={handleStartSetup}
                             disabled={loading}
-                            className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl shadow-lg shadow-primary-200"
+                            className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-xl shadow-lg shadow-accent-200"
                         >
                             {loading ? 'Starting...' : 'Setup Authenticator'}
                         </button>
@@ -712,13 +712,13 @@ const TwoFactorModal = ({ onClose, user, setUser }) => {
                                 value={code}
                                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                                 placeholder="000 000"
-                                className="w-32 text-center text-2xl font-bold tracking-widest px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                                className="w-32 text-center text-2xl font-bold tracking-widest px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
                             />
                         </div>
                         <button
                             onClick={handleVerify}
                             disabled={code.length !== 6 || loading}
-                            className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl shadow-lg shadow-primary-200 disabled:opacity-50"
+                            className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-xl shadow-lg shadow-accent-200 disabled:opacity-50"
                         >
                             {loading ? 'Verifying...' : 'Verify & Enable'}
                         </button>

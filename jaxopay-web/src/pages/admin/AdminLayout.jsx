@@ -77,7 +77,7 @@ const AdminLayout = () => {
         switch (role) {
             case 'super_admin': return 'text-red-400';
             case 'compliance_officer': return 'text-orange-400';
-            default: return 'text-primary-400';
+            default: return 'text-accent-400';
         }
     };
 
@@ -100,7 +100,7 @@ const AdminLayout = () => {
                 <div className="h-16 flex items-center justify-between px-4 border-b border-gray-700 shrink-0">
                     {sidebarOpen && (
                         <div className="flex items-center gap-3">
-                            <img src="/logo.png" alt="JAXOPAY" className="w-10 h-10 object-contain" />
+                            <img src="/logo.png" alt="JAXOPAY" className="w-12 h-12 object-contain" />
                             <div>
                                 <h1 className="text-white font-bold text-lg leading-none">JAXOPAY</h1>
                                 <span className={`text-[10px] font-semibold uppercase tracking-wider ${getRoleColor(user?.role)}`}>
@@ -128,7 +128,7 @@ const AdminLayout = () => {
                                 end={item.exact}
                                 className={({ isActive }) =>
                                     `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${isActive
-                                        ? 'bg-primary-500/20 text-primary-400 border-l-4 border-primary-500 shadow-lg shadow-primary-500/10'
+                                        ? 'bg-accent-500/20 text-accent-400 border-l-4 border-accent-500 shadow-lg shadow-accent-500/10'
                                         : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
                                     }`
                                 }
@@ -187,7 +187,7 @@ const AdminLayout = () => {
                                 onClick={() => setUserMenuOpen(!userMenuOpen)}
                                 className="flex items-center gap-3 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                             >
-                                <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center text-white font-medium text-sm">
+                                <div className="w-8 h-8 bg-gradient-to-br from-accent-500 to-accent-600 rounded-full flex items-center justify-center text-white font-medium text-sm">
                                     {user?.email?.[0]?.toUpperCase() || 'A'}
                                 </div>
                                 <div className="text-left hidden sm:block">

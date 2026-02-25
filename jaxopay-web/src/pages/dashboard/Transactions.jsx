@@ -104,7 +104,7 @@ const Transactions = () => {
 
     const getTransactionColor = (type, direction) => {
         if (direction === 'credit' || type === 'crypto_sell') {
-            return 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400';
+            return 'bg-accent-100 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400';
         }
         return 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400';
     };
@@ -191,7 +191,7 @@ const Transactions = () => {
                     </div>
                     <div className="card">
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Completed</p>
-                        <p className="text-2xl font-bold text-primary-600">{stats.completed_count || 0}</p>
+                        <p className="text-2xl font-bold text-accent-600">{stats.completed_count || 0}</p>
                     </div>
                     <div className="card">
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Pending</p>
@@ -209,14 +209,14 @@ const Transactions = () => {
                         placeholder="Search transactions..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-accent-500"
                     />
                 </div>
                 <div className="flex gap-2">
                     <button
                         onClick={() => setShowFilters(!showFilters)}
                         className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors ${showFilters || typeFilter !== 'all' || statusFilter !== 'all'
-                            ? 'bg-primary-600 text-white'
+                            ? 'bg-accent-600 text-white shadow-lg shadow-accent-500/20'
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
                             }`}
                     >
@@ -306,7 +306,7 @@ const Transactions = () => {
                     <div className="flex justify-end mt-4">
                         <button
                             onClick={clearFilters}
-                            className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                            className="text-sm text-accent-600 hover:text-accent-700 font-medium"
                         >
                             Clear all filters
                         </button>
@@ -318,7 +318,7 @@ const Transactions = () => {
             <div className="card">
                 {loading ? (
                     <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent-600"></div>
                     </div>
                 ) : filteredTransactions.length === 0 ? (
                     <div className="text-center py-12">
@@ -437,7 +437,7 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
 
                 <div className="space-y-4">
                     <div className="text-center pb-4 border-b border-gray-200 dark:border-gray-700">
-                        <p className={`text-3xl font-bold ${transaction.direction === 'credit' ? 'text-primary-600' : 'text-gray-900 dark:text-white'
+                        <p className={`text-3xl font-bold ${transaction.direction === 'credit' ? 'text-accent-600' : 'text-gray-900 dark:text-white'
                             }`}>
                             {transaction.direction === 'credit' ? '+' : '-'}
                             {formatCurrency(transaction.amount, transaction.currency)}

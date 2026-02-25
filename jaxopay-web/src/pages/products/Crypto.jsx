@@ -52,18 +52,18 @@ export default function Crypto() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
             <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6 }}>
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-700 rounded-full text-sm font-semibold mb-6 border border-orange-100">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent-50 text-accent-700 rounded-full text-sm font-semibold mb-6 border border-accent-100">
                 <FaArrowTrendUp className="w-4 h-4" />
                 Crypto Exchange
               </div>
               <h1 className="text-5xl md:text-6xl font-bold mb-6 text-gray-900 tracking-tight leading-tight">
-                Trade Crypto with <span className="text-orange-600">Confidence</span>
+                Trade Crypto with <span className="text-accent-600">Confidence</span>
               </h1>
               <p className="text-xl text-gray-600 mb-8 leading-relaxed">
                 Buy, sell, and swap cryptocurrencies at competitive rates. Secure, fast, and easy.
               </p>
               <div className="flex flex-wrap gap-4">
-                <Link to="/signup" className="px-8 py-4 bg-orange-600 text-white font-bold rounded-full hover:bg-orange-700 transition-all shadow-lg hover:shadow-orange-500/30 inline-flex items-center gap-2">
+                <Link to="/signup" className="px-8 py-4 bg-accent-600 text-white font-bold rounded-full hover:bg-accent-700 transition-all shadow-lg hover:shadow-accent-500/30 inline-flex items-center gap-2">
                   Start Trading <FaArrowRight className="w-5 h-5" />
                 </Link>
                 <Link to="/contact" className="px-8 py-4 bg-white text-gray-900 font-bold rounded-full border-2 border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-all">
@@ -110,7 +110,7 @@ export default function Crypto() {
                   </span>
                   <span
                     className={`flex items-center text-sm font-medium ${crypto.price_change_percentage_24h >= 0
-                      ? 'text-primary-400'
+                      ? 'text-accent-400'
                       : 'text-red-400'
                       }`}
                   >
@@ -139,8 +139,8 @@ export default function Crypto() {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {features.map((feature, index) => (
               <motion.div key={feature.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: index * 0.1 }} className="p-6 bg-gray-50 dark:bg-gray-800 rounded-xl hover:shadow-lg transition-shadow">
-                <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center mb-4">
-                  <feature.icon className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                <div className="w-12 h-12 bg-accent-100 dark:bg-accent-900/30 rounded-lg flex items-center justify-center mb-4">
+                  <feature.icon className="w-6 h-6 text-accent-600 dark:text-accent-400" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">{feature.title}</h3>
                 <p className="text-gray-600 dark:text-gray-400">{feature.description}</p>
@@ -165,7 +165,7 @@ export default function Crypto() {
                 <div className="p-6">
                   <div className="font-bold text-gray-900 dark:text-white text-lg">{crypto.name}</div>
                   <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">{crypto.symbol}</div>
-                  <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{crypto.price}</div>
+                  <div className="text-2xl font-bold text-accent-600 dark:text-accent-400">{crypto.price}</div>
                 </div>
               </motion.div>
             ))}
@@ -174,11 +174,11 @@ export default function Crypto() {
       </section>
 
       {/* CTA */}
-      <section className="py-20 bg-gradient-to-br from-orange-600 to-yellow-600 text-white">
+      <section className="py-20 bg-gradient-to-br from-accent-600 to-emerald-700 text-white">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-4xl font-bold mb-6">Start Trading Crypto Today</h2>
-          <p className="text-xl text-orange-100 mb-8">Join thousands of traders who trust JAXOPAY for secure crypto trading</p>
-          <Link to="/signup" className="inline-flex items-center gap-2 px-8 py-4 bg-white text-orange-600 font-semibold rounded-lg hover:bg-gray-100 transition-colors">
+          <p className="text-xl text-accent-100 mb-8">Join thousands of traders who trust JAXOPAY for secure crypto trading</p>
+          <Link to="/signup" className="inline-flex items-center gap-2 px-8 py-4 bg-white text-accent-600 font-semibold rounded-lg hover:bg-gray-100 transition-colors">
             Create Free Account <FaArrowRight className="w-5 h-5" />
           </Link>
         </div>

@@ -82,7 +82,7 @@ const DashboardLayout = () => {
               <img
                 src="/logo.png"
                 alt="JAXOPAY"
-                className="h-8 w-auto"
+                className="h-12 w-auto"
               />
             </Link>
             <button
@@ -102,7 +102,7 @@ const DashboardLayout = () => {
                   key={item.name}
                   to={item.href}
                   className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${isActive(item.href)
-                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                    ? 'bg-accent-50 dark:bg-accent-900/20 text-accent-600 dark:text-accent-400'
                     : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   onClick={() => setSidebarOpen(false)}
