@@ -30,9 +30,9 @@ export default function Products() {
       ],
       image: 'https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=800&auto=format&fit=crop', // Higher res
       link: '/products/payments',
-      color: 'text-primary-500',
-      bgColor: 'bg-primary-50',
-      gradient: 'from-primary-500 to-primary-600'
+      color: 'text-accent-600',
+      bgColor: 'bg-accent-50',
+      gradient: 'from-accent-500 to-accent-600'
     },
     {
       id: 'cards',
@@ -47,9 +47,9 @@ export default function Products() {
       ],
       image: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&auto=format&fit=crop',
       link: '/products/cards',
-      color: 'text-blue-500',
-      bgColor: 'bg-blue-50',
-      gradient: 'from-blue-500 to-indigo-600'
+      color: 'text-emerald-500',
+      bgColor: 'bg-emerald-50',
+      gradient: 'from-emerald-500 to-accent-600'
     },
     {
       id: 'crypto',
@@ -116,9 +116,9 @@ export default function Products() {
       {/* Hero Section */}
       <section className="relative bg-white pt-32 pb-20 lg:pt-40 lg:pb-32 overflow-hidden">
         {/* Background Gradients */}
-        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-primary-50 to-transparent opacity-60 skew-x-12" />
-        <div className="absolute top-20 left-10 w-96 h-96 bg-purple-100 rounded-full blur-3xl opacity-30 mix-blend-multiply filter blur-[100px]" />
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-blue-100 rounded-full blur-3xl opacity-30 mix-blend-multiply filter blur-[100px]" />
+        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-accent-50 to-transparent opacity-60 skew-x-12" />
+        <div className="absolute top-20 left-10 w-96 h-96 bg-emerald-100 rounded-full blur-3xl opacity-30 mix-blend-multiply filter blur-[100px]" />
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-accent-100 rounded-full blur-3xl opacity-30 mix-blend-multiply filter blur-[100px]" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <motion.div
@@ -127,14 +127,14 @@ export default function Products() {
             transition={{ duration: 0.8 }}
             className="text-center max-w-4xl mx-auto"
           >
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-white shadow-md text-primary-700 rounded-full text-sm font-bold mb-8 border border-gray-100 animate-fade-in-up">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-white shadow-md text-accent-700 rounded-full text-sm font-bold mb-8 border border-gray-100 animate-fade-in-up">
               <FaGlobe className="w-4 h-4" />
               Comprehensive Financial Ecosystem
             </div>
 
             <h1 className="text-5xl md:text-7xl font-bold mb-8 text-gray-900 tracking-tight leading-tight">
               One Platform. <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-indigo-600">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent-600 to-emerald-600">
                 Limitless Possibilities.
               </span>
             </h1>
@@ -153,7 +153,7 @@ export default function Products() {
                   transition={{ delay: 0.5 + i * 0.1 }}
                   className="flex flex-col items-center gap-2 p-4 bg-gray-50 rounded-2xl border border-gray-100"
                 >
-                  <feat.icon className="w-6 h-6 text-primary-600" />
+                  <feat.icon className="w-6 h-6 text-accent-600" />
                   <span className="font-semibold text-sm text-gray-700">{feat.label}</span>
                 </motion.div>
               ))}
@@ -257,7 +257,7 @@ export default function Products() {
             Join over 100,000+ happy users managing their money with JAXOPAY. No hidden fees, just seamless transactions.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/signup" className="px-10 py-5 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-full text-lg shadow-xl hover:shadow-2xl hover:shadow-primary-600/30 transition-all transform hover:-translate-y-1">
+            <Link to="/signup" className="px-10 py-5 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-full text-lg shadow-xl hover:shadow-2xl hover:shadow-accent-600/30 transition-all transform hover:-translate-y-1">
               Create Free Account
             </Link>
             <Link to="/contact" className="px-10 py-5 bg-white text-gray-900 font-bold rounded-full text-lg border-2 border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-all">

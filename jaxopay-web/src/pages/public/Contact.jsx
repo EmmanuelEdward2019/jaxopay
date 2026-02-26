@@ -54,7 +54,7 @@ export default function Contact() {
       <section className="bg-white pt-32 pb-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-50 text-primary-700 rounded-full text-sm font-semibold mb-6 border border-primary-100">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent-50 text-accent-700 rounded-full text-sm font-semibold mb-6 border border-accent-100">
               Support Center
             </div>
             <h1 className="text-4xl md:text-5xl font-bold mb-6 text-gray-900 tracking-tight">
@@ -78,8 +78,8 @@ export default function Contact() {
               </h2>
 
               {submitted && (
-                <div className="mb-6 p-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg">
-                  <p className="text-primary-800 dark:text-primary-200">
+                <div className="mb-6 p-4 bg-accent-50 dark:bg-accent-900/20 border border-accent-200 dark:border-accent-800 rounded-lg">
+                  <p className="text-accent-800 dark:text-accent-200">
                     Thank you! Your message has been sent successfully. We'll get back to you soon.
                   </p>
                 </div>
@@ -97,7 +97,7 @@ export default function Contact() {
                     value={formData.name}
                     onChange={handleChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                     placeholder="John Doe"
                   />
                 </div>
@@ -113,7 +113,7 @@ export default function Contact() {
                     value={formData.email}
                     onChange={handleChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                     placeholder="john@example.com"
                   />
                 </div>
@@ -129,7 +129,7 @@ export default function Contact() {
                     value={formData.subject}
                     onChange={handleChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                     placeholder="How can we help?"
                   />
                 </div>
@@ -145,14 +145,14 @@ export default function Contact() {
                     onChange={handleChange}
                     required
                     rows={6}
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white resize-none"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white resize-none"
                     placeholder="Tell us more about your inquiry..."
                   />
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="w-full px-6 py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   <Send className="w-5 h-5" />
                   Send Message
@@ -170,8 +170,8 @@ export default function Contact() {
                 {contactInfo.map((info, index) => (
                   <div key={index} className="flex gap-4">
                     <div className="flex-shrink-0">
-                      <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center">
-                        <info.icon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+                      <div className="w-12 h-12 bg-accent-100 dark:bg-accent-900/30 rounded-lg flex items-center justify-center">
+                        <info.icon className="w-6 h-6 text-accent-600 dark:text-accent-400" />
                       </div>
                     </div>
                     <div>
@@ -198,7 +198,7 @@ export default function Contact() {
                 </p>
                 <a
                   href="#"
-                  className="text-primary-600 dark:text-primary-400 hover:underline font-medium"
+                  className="text-accent-600 dark:text-accent-400 hover:underline font-medium"
                 >
                   Visit FAQ →
                 </a>

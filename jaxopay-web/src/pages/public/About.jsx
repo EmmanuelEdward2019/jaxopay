@@ -38,7 +38,7 @@ export default function About() {
       {/* Hero Section with Image */}
       <section className="relative bg-white pt-32 pb-20 overflow-hidden">
         {/* Background Pattern */}
-        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-primary-50 to-transparent opacity-60 skew-x-12" />
+        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-accent-50 to-transparent opacity-60 skew-x-12" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
@@ -47,12 +47,12 @@ export default function About() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.8 }}
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-50 text-primary-700 rounded-full text-sm font-semibold mb-6 border border-primary-100">
-                <FaStar className="w-4 h-4 text-primary-600" />
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent-50 text-accent-700 rounded-full text-sm font-semibold mb-6 border border-accent-100">
+                <FaStar className="w-4 h-4 text-accent-600" />
                 About JAXOPAY
               </div>
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight text-gray-900 tracking-tight">
-                Building the Future of <span className="text-primary-600">African Finance</span>
+                Building the Future of <span className="text-accent-600">African Finance</span>
               </h1>
               <p className="text-xl text-gray-600 mb-8 leading-relaxed">
                 JAXOPAY is on a mission to make financial services accessible, affordable, and seamless for everyone across Africa and beyond.
@@ -165,11 +165,11 @@ export default function About() {
               <motion.div
                 animate={{ y: [0, -10, 0] }}
                 transition={{ duration: 3, repeat: Infinity }}
-                className="absolute -bottom-6 -right-6 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 border-4 border-primary-500"
+                className="absolute -bottom-6 -right-6 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 border-4 border-accent-500"
               >
                 <div className="text-center">
                   <div className="flex justify-center mb-2">
-                    <FaArrowTrendUp className="w-10 h-10 text-primary-600 dark:text-primary-400" />
+                    <FaArrowTrendUp className="w-10 h-10 text-accent-600 dark:text-accent-400" />
                   </div>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">100K+</div>
                   <div className="text-sm text-gray-600 dark:text-gray-400">Happy Users</div>
@@ -189,10 +189,10 @@ export default function About() {
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
               whileHover={{ scale: 1.02 }}
-              className="p-8 bg-gradient-to-br from-white to-primary-50 dark:from-gray-900 dark:to-primary-900/20 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl"
+              className="p-8 bg-gradient-to-br from-white to-accent-50 dark:from-gray-900 dark:to-accent-900/20 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl"
             >
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-20 h-20 bg-gradient-to-br from-primary-500 to-primary-700 rounded-2xl flex items-center justify-center shadow-lg">
+                <div className="w-20 h-20 bg-gradient-to-br from-accent-500 to-accent-700 rounded-2xl flex items-center justify-center shadow-lg">
                   <FaBullseye className="w-10 h-10 text-white" />
                 </div>
               </div>
@@ -258,7 +258,7 @@ export default function About() {
                 className="text-center p-6 bg-gradient-to-br from-gray-50 to-white dark:from-gray-800 dark:to-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-2xl transition-all"
               >
                 <div className="mb-6 flex justify-center">
-                  <value.icon className="w-12 h-12 text-[#5e43f3] group-hover:scale-110 transition-transform duration-300" />
+                  <value.icon className="w-12 h-12 text-accent-600 group-hover:scale-110 transition-transform duration-300" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
                   {value.title}
@@ -311,7 +311,7 @@ export default function About() {
                   <motion.div
                     whileHover={{ scale: 1.1, rotate: 360 }}
                     transition={{ type: 'spring' }}
-                    className="w-20 h-20 bg-gradient-to-br from-primary-600 to-primary-800 text-white rounded-full flex items-center justify-center font-bold text-lg shadow-xl"
+                    className="w-20 h-20 bg-gradient-to-br from-accent-600 to-emerald-800 text-white rounded-full flex items-center justify-center font-bold text-lg shadow-xl"
                   >
                     {milestone.year === 'Future' ? '🔮' : milestone.year}
                   </motion.div>
@@ -394,7 +394,7 @@ export default function About() {
                 className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-xl transition-shadow"
               >
                 <div className="mb-6">
-                  <feature.icon className="w-12 h-12 text-[#5e43f3] group-hover:scale-110 transition-transform duration-300" />
+                  <feature.icon className="w-12 h-12 text-accent-600 group-hover:scale-110 transition-transform duration-300" />
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
                   {feature.title}

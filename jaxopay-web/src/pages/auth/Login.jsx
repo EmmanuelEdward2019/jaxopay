@@ -49,7 +49,7 @@ const Login = () => {
 
   if (step === '2fa') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100 dark:from-gray-900 dark:to-gray-800 px-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-accent-50 to-accent-100 dark:from-gray-900 dark:to-gray-800 px-4">
         <div className="max-w-md w-full">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Two-Factor Authentication</h1>
@@ -92,7 +92,7 @@ const Login = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100 dark:from-gray-900 dark:to-gray-800 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-accent-50 to-accent-100 dark:from-gray-900 dark:to-gray-800 px-4">
       <div className="max-w-md w-full">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -178,7 +178,7 @@ const Login = () => {
                 <input
                   id="remember-me"
                   type="checkbox"
-                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                  className="h-4 w-4 text-accent-600 focus:ring-accent-500 border-gray-300 rounded"
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                   Remember me
@@ -186,7 +186,7 @@ const Login = () => {
               </div>
               <Link
                 to="/forgot-password"
-                className="text-sm font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400"
+                className="text-sm font-medium text-accent-600 hover:text-accent-500 dark:text-accent-400"
               >
                 Forgot password?
               </Link>

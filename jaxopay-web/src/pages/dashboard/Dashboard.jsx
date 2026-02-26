@@ -47,10 +47,10 @@ const Dashboard = () => {
   }, []);
 
   const quickActions = [
-    { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'bg-blue-500', enabled: true },
-    { name: 'Receive', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-accent-500', enabled: true },
-    { name: 'Exchange', icon: ArrowLeftRight, href: '/dashboard/exchange', color: 'bg-purple-500', enabled: isFeatureEnabled('crypto') },
-    { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', color: 'bg-orange-500', enabled: isFeatureEnabled('bill_payments') },
+    { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'bg-accent-600', enabled: true },
+    { name: 'Receive', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-emerald-600', enabled: true },
+    { name: 'Exchange', icon: ArrowLeftRight, href: '/dashboard/exchange', color: 'bg-accent-800', enabled: isFeatureEnabled('crypto') },
+    { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', color: 'bg-emerald-800', enabled: isFeatureEnabled('bill_payments') },
   ].filter(action => action.enabled);
 
   const statsDisplay = [

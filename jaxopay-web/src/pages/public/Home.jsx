@@ -58,13 +58,13 @@ export default function Home() {
       icon: FaPaperPlane,
       title: 'Payments',
       description: 'Send and receive money from friends and family at affordable rates. We aim to drive the cost of payments to zero.',
-      color: 'text-primary-500' // Blue
+      color: 'text-accent-500' // Green
     },
     {
       icon: FaCreditCard,
       title: 'Virtual Cards',
       description: 'Hold and exchange multiple currencies at fair and transparent exchange rates. We are constantly adding new currencies.',
-      color: 'text-[#3B82F6]' // Blue
+      color: 'text-accent-600' // Green
     },
     {
       icon: FaBitcoin,
@@ -175,9 +175,9 @@ export default function Home() {
       {/* Hero Section - Modern Light Theme */}
       <section className="relative bg-white pt-16 pb-12 lg:pt-20 lg:pb-16 overflow-hidden">
         {/* Background Gradients/Shapes */}
-        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-primary-50 to-transparent opacity-60 skew-x-12" />
-        <div className="absolute top-20 left-10 w-72 h-72 bg-purple-100 rounded-full blur-3xl opacity-40 mix-blend-multiply animate-blob" />
-        <div className="absolute top-40 right-10 w-72 h-72 bg-primary-100 rounded-full blur-3xl opacity-40 mix-blend-multiply animate-blob animation-delay-2000" />
+        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-accent-50 to-transparent opacity-60 skew-x-12" />
+        <div className="absolute top-20 left-10 w-72 h-72 bg-emerald-100 rounded-full blur-3xl opacity-40 mix-blend-multiply animate-blob" />
+        <div className="absolute top-40 right-10 w-72 h-72 bg-accent-100 rounded-full blur-3xl opacity-40 mix-blend-multiply animate-blob animation-delay-2000" />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-8 items-center">
@@ -237,7 +237,7 @@ export default function Home() {
               className="relative lg:h-auto flex items-center justify-center lg:justify-end lg:pl-12"
             >
               {/* Abstract decorative circle */}
-              <div className="absolute w-[500px] h-[500px] bg-primary-50 rounded-full blur-3xl opacity-50 -z-10" />
+              <div className="absolute w-[500px] h-[500px] bg-accent-50 rounded-full blur-3xl opacity-50 -z-10" />
 
               <div className="relative z-10 w-full max-w-sm mx-auto">
                 {/* Phone Frame */}
@@ -268,7 +268,7 @@ export default function Home() {
                       <div className="absolute -right-10 -top-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
                       <div className="absolute -left-10 -bottom-10 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl"></div>
 
-                      <div className="text-sm text-primary-100 mb-2 font-medium">Total Balance</div>
+                      <div className="text-sm text-accent-100 mb-2 font-medium">Total Balance</div>
                       <div className="text-4xl font-bold mb-6">$24,500.00</div>
                       <div className="flex justify-center gap-4">
                         <button className="flex flex-col items-center gap-1 group">
@@ -302,13 +302,13 @@ export default function Home() {
                     <div>
                       <div className="flex justify-between items-center mb-4">
                         <h3 className="font-bold text-gray-900">Recent Activity</h3>
-                        <a href="#" className="text-sm text-primary-600 font-semibold">See All</a>
+                        <a href="#" className="text-sm text-accent-600 font-semibold">See All</a>
                       </div>
                       <div className="space-y-4">
                         {[
                           { name: 'Netflix Subscription', date: 'Today, 9:41 AM', amount: '-$14.99', icon: 'N', color: 'bg-red-100 text-red-600' },
-                          { name: 'Spotify Premium', date: 'Yesterday, 2:30 PM', amount: '-$9.99', icon: 'S', color: 'bg-primary-100 text-primary-600' },
-                          { name: 'Salary Deposit', date: 'Oct 24, 10:00 AM', amount: '+$4,500.00', icon: '💰', color: 'bg-blue-100 text-blue-600' },
+                          { name: 'Spotify Premium', date: 'Yesterday, 2:30 PM', amount: '-$9.99', icon: 'S', color: 'bg-accent-100 text-accent-600' },
+                          { name: 'Salary Deposit', date: 'Oct 24, 10:00 AM', amount: '+$4,500.00', icon: '💰', color: 'bg-emerald-100 text-emerald-600' },
                           { name: 'Uber Ride', date: 'Oct 23, 8:15 PM', amount: '-$24.50', icon: 'U', color: 'bg-black text-white' },
                         ].map((tx, i) => (
                           <div key={i} className="flex items-center justify-between">
@@ -321,7 +321,7 @@ export default function Home() {
                                 <div className="text-xs text-gray-500">{tx.date}</div>
                               </div>
                             </div>
-                            <div className={`font-bold text-sm ${tx.amount.startsWith('+') ? 'text-primary-600' : 'text-gray-900'}`}>
+                            <div className={`font-bold text-sm ${tx.amount.startsWith('+') ? 'text-accent-600' : 'text-gray-900'}`}>
                               {tx.amount}
                             </div>
                           </div>
@@ -509,13 +509,13 @@ export default function Home() {
               className="bg-[#F3F4F6] text-gray-900 rounded-[2.5rem] p-10 flex flex-col items-center justify-center min-h-[320px] shadow-sm hover:shadow-md transition-all text-center group cursor-pointer"
             >
               <Link to="/products" className="flex flex-col items-center justify-center h-full w-full">
-                <div className="w-20 h-20 bg-primary-600 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg">
+                <div className="w-20 h-20 bg-accent-600 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg">
                   <ArrowRight className="w-8 h-8 text-white" />
                 </div>
                 <h3 className="text-2xl font-bold mb-1">
                   Explore All
                 </h3>
-                <h3 className="text-2xl font-bold text-primary-600">
+                <h3 className="text-2xl font-bold text-accent-600">
                   Products
                 </h3>
               </Link>
@@ -548,7 +548,7 @@ export default function Home() {
               >
                 <div className="mb-6">
                   {/* Solid Icon Styling - Indigo/Purple shade */}
-                  <feature.icon className="w-10 h-10 text-[#5e43f3] group-hover:scale-110 transition-transform duration-300" />
+                  <feature.icon className="w-10 h-10 text-accent-600 group-hover:scale-110 transition-transform duration-300" />
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
                   {feature.title}
@@ -568,7 +568,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="bg-gray-50 dark:bg-gray-800 rounded-[2.5rem] p-8 md:p-16 flex flex-col lg:flex-row items-center gap-12 lg:gap-20 relative overflow-hidden">
             {/* Background Blob */}
-            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary-100 dark:bg-primary-900/20 rounded-full blur-3xl opacity-50 -translate-y-1/2 translate-x-1/2" />
+            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-accent-100 dark:bg-accent-900/20 rounded-full blur-3xl opacity-50 -translate-y-1/2 translate-x-1/2" />
 
             {/* Left Images - Stacked Cards */}
             <div className="relative w-full lg:w-1/2 min-h-[400px] flex items-center justify-center perspective-1000">
@@ -597,7 +597,7 @@ export default function Home() {
                 transition={{ duration: 0.8, delay: 0.1, type: "spring", bounce: 0.4 }}
                 viewport={{ once: true }}
                 whileHover={{ scale: 1.05, rotate: 0 }}
-                className="absolute w-[300px] sm:w-[340px] h-[190px] sm:h-[210px] bg-gradient-to-br from-[#4f46e5] to-[#7c3aed] text-white rounded-2xl shadow-2xl z-20 rotate-3 transform translate-x-4 -translate-y-4 p-7 flex flex-col justify-between cursor-pointer"
+                className="absolute w-[300px] sm:w-[340px] h-[190px] sm:h-[210px] bg-gradient-to-br from-accent-600 to-emerald-700 text-white rounded-2xl shadow-2xl z-20 rotate-3 transform translate-x-4 -translate-y-4 p-7 flex flex-col justify-between cursor-pointer"
               >
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-2">
@@ -637,7 +637,7 @@ export default function Home() {
                 Banks in Africa charge you up to 15% in hidden foreign exchange fees when you pay online with your local currency bank card. Use JAXOPAY USD virtual cards to save up to 13%.
               </p>
 
-              <Link to="/products/cards" className="text-primary-600 dark:text-primary-400 font-bold text-lg hover:text-primary-700 dark:hover:text-primary-300 inline-flex items-center gap-2 group transition-colors">
+              <Link to="/products/cards" className="text-accent-600 dark:text-accent-400 font-bold text-lg hover:text-accent-700 dark:hover:text-accent-300 inline-flex items-center gap-2 group transition-colors">
                 Learn more about cards
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Link>
@@ -671,8 +671,8 @@ export default function Home() {
                 transition={{ delay: index * 0.1 }}
                 className="relative z-10 flex flex-col items-center text-center"
               >
-                <div className="w-20 h-20 bg-white border-4 border-gray-50 rounded-full flex items-center justify-center shadow-lg mb-6 group cursor-default transition-all hover:border-primary-100 hover:scale-110">
-                  <div className="w-10 h-10 bg-primary-600 rounded-full text-white flex items-center justify-center font-bold text-lg">
+                <div className="w-20 h-20 bg-white border-4 border-gray-50 rounded-full flex items-center justify-center shadow-lg mb-6 group cursor-default transition-all hover:border-accent-100 hover:scale-110">
+                  <div className="w-10 h-10 bg-accent-600 rounded-full text-white flex items-center justify-center font-bold text-lg">
                     {item.step}
                   </div>
                 </div>
@@ -691,8 +691,8 @@ export default function Home() {
 
 
 
-      {/* Our Impact Section - Yellow Theme */}
-      <section className="py-20 bg-gradient-to-br from-yellow-600 via-yellow-700 to-yellow-800 text-white relative overflow-hidden">
+      {/* Our Impact Section - Green Theme */}
+      <section className="py-20 bg-gradient-to-br from-accent-600 via-accent-700 to-emerald-800 text-white relative overflow-hidden">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute inset-0" style={{
@@ -709,7 +709,7 @@ export default function Home() {
             className="text-center mb-16"
           >
             <h2 className="text-4xl md:text-5xl font-bold mb-4">Our Impact</h2>
-            <p className="text-xl text-yellow-100 max-w-2xl mx-auto">
+            <p className="text-xl text-accent-100 max-w-2xl mx-auto">
               Empowering millions across Africa with accessible financial services
             </p>
           </motion.div>
@@ -725,7 +725,7 @@ export default function Home() {
               <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20">
                 <div className="text-6xl font-bold mb-2">25%</div>
                 <div className="text-xl font-semibold mb-2">Lower Transaction Fees</div>
-                <p className="text-purple-100">
+                <p className="text-accent-100">
                   We've helped our users save millions in transaction fees compared to traditional banks
                 </p>
               </div>
@@ -733,7 +733,7 @@ export default function Home() {
               <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20">
                 <div className="text-6xl font-bold mb-2">98%</div>
                 <div className="text-xl font-semibold mb-2">Customer Satisfaction</div>
-                <p className="text-purple-100">
+                <p className="text-accent-100">
                   Our users love the speed, security, and simplicity of our platform
                 </p>
               </div>
@@ -741,7 +741,7 @@ export default function Home() {
               <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20">
                 <div className="text-6xl font-bold mb-2">24/7</div>
                 <div className="text-xl font-semibold mb-2">Support Available</div>
-                <p className="text-purple-100">
+                <p className="text-accent-100">
                   Round-the-clock customer support in multiple languages
                 </p>
               </div>
@@ -825,8 +825,8 @@ export default function Home() {
       <section className="py-20 bg-white dark:bg-gray-900 relative overflow-hidden">
         {/* Decorative background elements */}
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden opacity-30 pointer-events-none">
-          <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] bg-primary-50 rounded-full blur-3xl" />
-          <div className="absolute bottom-[0%] right-[0%] w-[40%] h-[40%] bg-blue-50 rounded-full blur-3xl opacity-50" />
+          <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] bg-accent-50 rounded-full blur-3xl" />
+          <div className="absolute bottom-[0%] right-[0%] w-[40%] h-[40%] bg-emerald-50 rounded-full blur-3xl opacity-50" />
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -838,13 +838,13 @@ export default function Home() {
               viewport={{ once: true }}
               className="max-w-2xl"
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-50 text-primary-700 rounded-full text-sm font-semibold mb-6 border border-primary-100">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent-50 text-accent-700 rounded-full text-sm font-semibold mb-6 border border-accent-100">
                 <Globe className="w-4 h-4" />
                 Global Impact
               </div>
               <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-6 leading-tight">
                 Connecting People <br />
-                <span className="text-primary-600">Across Borders</span>
+                <span className="text-accent-600">Across Borders</span>
               </h2>
               <p className="text-lg text-gray-600 dark:text-gray-400 mb-8 leading-relaxed">
                 We've built a financial network that spans continents, empowering millions to send money, trade, and grow their wealth without boundaries.
@@ -884,10 +884,10 @@ export default function Home() {
 
                 {/* Center Hub */}
                 <div className="w-32 h-32 bg-white dark:bg-gray-900 rounded-full shadow-2xl flex items-center justify-center z-10 relative">
-                  <div className="w-24 h-24 bg-primary-50 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
+                  <div className="w-24 h-24 bg-accent-50 dark:bg-accent-900/30 rounded-full flex items-center justify-center">
                     <img src="/logo-icon.png" alt="JAXOPAY" className="w-12 opacity-80" onError={(e) => { e.target.style.display = 'none'; e.target.parentElement.innerHTML = '🌍' }} />
                   </div>
-                  <div className="absolute inset-0 border-2 border-primary-100 rounded-full animate-ping opacity-20" />
+                  <div className="absolute inset-0 border-2 border-accent-100 rounded-full animate-ping opacity-20" />
                 </div>
 
                 {/* Floating Avatars / Flags */}
@@ -1048,7 +1048,7 @@ export default function Home() {
 
       {/* Newsletter Section */}
       <section className="py-20 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white overflow-hidden relative">
-        <div className="absolute top-0 right-0 w-1/3 h-full bg-gradient-to-l from-primary-50 to-transparent opacity-60 skew-x-12 pointer-events-none" />
+        <div className="absolute top-0 right-0 w-1/3 h-full bg-gradient-to-l from-accent-50 to-transparent opacity-60 skew-x-12 pointer-events-none" />
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <motion.div
@@ -1069,11 +1069,11 @@ export default function Home() {
                 <input
                   type="email"
                   placeholder="Enter your email"
-                  className="flex-1 px-6 py-4 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="flex-1 px-6 py-4 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-500"
                 />
                 <button
                   type="submit"
-                  className="px-8 py-4 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30"
+                  className="px-8 py-4 bg-accent-600 text-white font-semibold rounded-lg hover:bg-accent-700 transition-colors shadow-lg shadow-accent-500/30"
                 >
                   Subscribe
                 </button>
@@ -1087,17 +1087,17 @@ export default function Home() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 bg-gradient-to-br from-primary-600 to-primary-800 text-white">
+      <section className="py-20 bg-gradient-to-br from-accent-600 to-emerald-800 text-white">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl md:text-4xl font-bold mb-6">
             Ready to Transform Your Financial Life?
           </h2>
-          <p className="text-lg text-primary-100 mb-8">
+          <p className="text-lg text-accent-100 mb-8">
             Join JAXOPAY today and experience the future of cross-border payments.
           </p>
           <Link
             to="/signup"
-            className="inline-flex items-center justify-center px-8 py-4 bg-white text-primary-600 font-semibold rounded-lg hover:bg-primary-50 transition-colors gap-2"
+            className="inline-flex items-center justify-center px-8 py-4 bg-white text-accent-600 font-semibold rounded-lg hover:bg-primary-50 transition-colors gap-2"
           >
             Create Free Account
             <ArrowRight className="w-5 h-5" />

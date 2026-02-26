@@ -356,7 +356,7 @@ const Transactions = () => {
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className={`font-semibold ${tx.direction === 'credit' ? 'text-primary-600' : 'text-gray-900 dark:text-white'
+                                        <p className={`font-semibold ${tx.direction === 'credit' ? 'text-accent-600' : 'text-gray-900 dark:text-white'
                                             }`}>
                                             {tx.direction === 'credit' ? '+' : '-'}
                                             {formatCurrency(tx.amount, tx.currency)}

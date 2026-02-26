@@ -119,32 +119,37 @@ const Signup = () => {
     return (
         <div className="min-h-screen flex">
             {/* Left Panel - Branding */}
-            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary-600 to-primary-800 p-12 flex-col justify-between">
-                <div>
+            <div className="hidden lg:flex lg:w-1/2 bg-gray-950 p-12 flex-col justify-between relative overflow-hidden">
+                {/* Subtle Brand Accent Gradient */}
+                <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-accent-600/20 via-transparent to-transparent pointer-events-none" />
+
+                <div className="relative z-10">
                     <Link to="/" className="flex items-center gap-3">
                         <img src="/logo.png" alt="JAXOPAY" className="h-16 w-auto object-contain" />
                     </Link>
                 </div>
-                <div>
-                    <h1 className="text-4xl font-bold text-white mb-4">
+
+                <div className="relative z-10">
+                    <h2 className="text-4xl font-bold text-white mb-4">
                         Start your financial journey today
-                    </h1>
-                    <p className="text-primary-100 text-lg">
+                    </h2>
+                    <p className="text-gray-400 text-lg">
                         Join thousands of users managing their money smarter with JAXOPAY.
                     </p>
                 </div>
-                <div className="flex gap-8">
+
+                <div className="flex gap-8 relative z-10">
                     <div>
                         <p className="text-3xl font-bold text-white">100K+</p>
-                        <p className="text-primary-200">Active Users</p>
+                        <p className="text-gray-500">Active Users</p>
                     </div>
                     <div>
                         <p className="text-3xl font-bold text-white">$50M+</p>
-                        <p className="text-primary-200">Transactions</p>
+                        <p className="text-gray-500">Transactions</p>
                     </div>
                     <div>
                         <p className="text-3xl font-bold text-white">150+</p>
-                        <p className="text-primary-200">Countries</p>
+                        <p className="text-gray-500">Countries</p>
                     </div>
                 </div>
             </div>
@@ -156,14 +161,14 @@ const Signup = () => {
                     <div className="flex items-center justify-center gap-4 mb-8">
                         {[1, 2, 3].map((s) => (
                             <div key={s} className="flex items-center gap-2">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-medium ${step > s ? 'bg-primary-600 text-white' :
-                                    step === s ? 'bg-primary-600 text-white' :
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-medium ${step > s ? 'bg-accent-600 text-white' :
+                                    step === s ? 'bg-accent-600 text-white' :
                                         'bg-gray-200 dark:bg-gray-700 text-gray-500'
                                     }`}>
                                     {step > s ? <Check className="w-5 h-5" /> : s}
                                 </div>
                                 {s < 3 && (
-                                    <div className={`w-8 h-0.5 ${step > s ? 'bg-primary-600' : 'bg-gray-200 dark:bg-gray-700'}`} />
+                                    <div className={`w-8 h-0.5 ${step > s ? 'bg-accent-600' : 'bg-gray-200 dark:bg-gray-700'}`} />
                                 )}
                             </div>
                         ))}
@@ -209,7 +214,7 @@ const Signup = () => {
                                             value={formData.email}
                                             onChange={handleChange}
                                             placeholder="you@example.com"
-                                            className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                            className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
                                         />
                                     </div>
                                 </div>
@@ -226,7 +231,7 @@ const Signup = () => {
                                             value={formData.password}
                                             onChange={handleChange}
                                             placeholder="Create a strong password"
-                                            className="w-full pl-12 pr-12 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                            className="w-full pl-12 pr-12 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
                                         />
                                         <button
                                             type="button"
@@ -245,7 +250,7 @@ const Signup = () => {
                                                         key={i}
                                                         className={`h-1 flex-1 rounded ${i <= passwordStrength
                                                             ? passwordStrength <= 2 ? 'bg-red-500' :
-                                                                passwordStrength <= 3 ? 'bg-yellow-500' : 'bg-primary-500'
+                                                                passwordStrength <= 3 ? 'bg-yellow-500' : 'bg-accent-500'
                                                             : 'bg-gray-200 dark:bg-gray-700'
                                                             }`}
                                                     />
@@ -270,7 +275,7 @@ const Signup = () => {
                                             value={formData.confirmPassword}
                                             onChange={handleChange}
                                             placeholder="Confirm your password"
-                                            className="w-full pl-12 pr-12 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                            className="w-full pl-12 pr-12 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
                                         />
                                         <button
                                             type="button"
@@ -284,7 +289,7 @@ const Signup = () => {
 
                                 <button
                                     onClick={handleNextStep}
-                                    className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
+                                    className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
                                 >
                                     Continue
                                     <ArrowRight className="w-5 h-5" />
@@ -293,7 +298,7 @@ const Signup = () => {
 
                             <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
                                 Already have an account?{' '}
-                                <Link to="/login" className="text-primary-600 hover:text-primary-700 font-medium">
+                                <Link to="/login" className="text-accent-600 hover:text-accent-700 font-medium">
                                     Sign in
                                 </Link>
                             </p>
@@ -334,7 +339,7 @@ const Signup = () => {
                                                 value={formData.firstName}
                                                 onChange={handleChange}
                                                 placeholder="John"
-                                                className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                                className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
                                             />
                                         </div>
                                     </div>
@@ -348,7 +353,7 @@ const Signup = () => {
                                             value={formData.lastName}
                                             onChange={handleChange}
                                             placeholder="Doe"
-                                            className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                            className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
                                         />
                                     </div>
                                 </div>
@@ -365,7 +370,7 @@ const Signup = () => {
                                             value={formData.phone}
                                             onChange={handleChange}
                                             placeholder="+1 234 567 8900"
-                                            className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                            className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
                                         />
                                     </div>
                                 </div>
@@ -376,15 +381,15 @@ const Signup = () => {
                                         name="acceptTerms"
                                         checked={formData.acceptTerms}
                                         onChange={handleChange}
-                                        className="w-5 h-5 mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                        className="w-5 h-5 mt-0.5 rounded border-gray-300 text-accent-600 focus:ring-accent-500"
                                     />
                                     <span className="text-sm text-gray-600 dark:text-gray-400">
                                         I agree to the{' '}
-                                        <Link to="/terms" className="text-primary-600 hover:text-primary-700">
+                                        <Link to="/terms" className="text-accent-600 hover:text-accent-700">
                                             Terms of Service
                                         </Link>{' '}
                                         and{' '}
-                                        <Link to="/privacy" className="text-primary-600 hover:text-primary-700">
+                                        <Link to="/privacy" className="text-accent-600 hover:text-accent-700">
                                             Privacy Policy
                                         </Link>
                                     </span>
@@ -400,7 +405,7 @@ const Signup = () => {
                                     <button
                                         onClick={handleNextStep}
                                         disabled={isLoading}
-                                        className="flex-1 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                                        className="flex-1 py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
                                     >
                                         {isLoading ? (
                                             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
@@ -423,8 +428,8 @@ const Signup = () => {
                             animate={{ opacity: 1, scale: 1 }}
                             className="text-center"
                         >
-                            <div className="w-20 h-20 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <Mail className="w-10 h-10 text-primary-600" />
+                            <div className="w-20 h-20 bg-accent-100 dark:bg-accent-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <Mail className="w-10 h-10 text-accent-600" />
                             </div>
                             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
                                 Check your email
@@ -439,13 +444,13 @@ const Signup = () => {
                             <div className="space-y-4">
                                 <button
                                     onClick={() => navigate('/login')}
-                                    className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl"
+                                    className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl"
                                 >
                                     Go to Login
                                 </button>
                                 <p className="text-sm text-gray-500">
                                     Didn't receive the email?{' '}
-                                    <button className="text-primary-600 hover:text-primary-700 font-medium">
+                                    <button className="text-accent-600 hover:text-accent-700 font-medium">
                                         Resend
                                     </button>
                                 </p>
