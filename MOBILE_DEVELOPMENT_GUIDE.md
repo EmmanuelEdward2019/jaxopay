@@ -41,7 +41,7 @@ npx expo install react-native-screens react-native-safe-area-context
 npx expo install expo-secure-store expo-local-authentication
 npx expo install axios zustand
 npx expo install react-native-reanimated react-native-gesture-handler
-npx expo install lucide-react-native expo-linear-gradient
+npx expo install lucide-react-native expo-linear-gradient expo-haptics
 ```
 
 ### 2. Recommended Directory Structure
@@ -138,7 +138,8 @@ The mobile app does not need to call Resend directly. The backend orchestration 
 
 1. **Biometrics**: Always gate the "Transfer" and "View Card Details" actions behind `expo-local-authentication`.
 2. **Secure Store**: Never store JWTs in plain `AsyncStorage`. Use `expo-secure-store`.
-3. **Obfuscation**: Use ProGuard (Android) and ensure sensitive data is not logged in production.
+3. **Currency Handling**: Always use `parseFloat()` when calculating sums of balances (like Total Balance) to prevent `NaN` or string concatenation errors.
+4. **Obfuscation**: Use ProGuard (Android) and ensure sensitive data is not logged in production.
 
 ---
 

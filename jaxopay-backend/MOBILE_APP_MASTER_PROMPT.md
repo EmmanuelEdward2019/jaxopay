@@ -19,6 +19,7 @@ JAXOPAY is a "Premium Fintech Super App". The UI should be:
     - **Security**: Mandatory `X-Device-Fingerprint` header.
 - **Persistence**: `expo-secure-store` (Tokens) and `AsyncStorage` (Cache).
 - **Icons**: `lucide-react-native` or `react-native-vector-icons`.
+- **Haptics**: `expo-haptics` for tactile premium feedback.
 - **UI Components**: `react-native-reanimated` for premium animations.
 
 ## 3. Global Configuration
@@ -53,7 +54,8 @@ Refer to `jaxopay-backend/MOBILE_API_DOCUMENTATION.md` for specific endpoints.
 When working with this project, ensure:
 1. **No Placeholders**: If a service is called, implement the actual API logic according to the documentation.
 2. **Error Handling**: Use consistent error mapping (Validation, Auth, Server failures).
-3. **Resend Integration**: All financial actions automatically trigger email workflows; ensure the app reflects the status of these notifications where applicable.
+3. **Currency Precision**: Always parse balances using `parseFloat()` and perform arithmetic before formatting to avoid `NaN` string errors.
+4. **Resend Integration**: All financial actions automatically trigger email workflows; ensure the app reflects the status of these notifications where applicable.
 
 ---
 **Initial Command**: "Execute `npx create-expo-app jaxopay_mobile`, set up the Zustand store architecture, configure the Axios client with the production Railway URL, and build the High-Fidelity Splash and Login systems."
