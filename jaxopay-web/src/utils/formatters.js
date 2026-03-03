@@ -8,10 +8,14 @@ export const formatCurrency = (amount, currencyCode, showSymbol = true) => {
   const currency = ALL_CURRENCIES.find(c => c.code === currencyCode);
   const symbol = currency?.symbol || currencyCode;
 
+  // Ensure amount is a valid number
+  let numericAmount = parseFloat(amount);
+  if (isNaN(numericAmount)) numericAmount = 0;
+
   const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 8,
-  }).format(amount || 0);
+  }).format(numericAmount);
 
   return showSymbol ? `${symbol}${formatted}` : formatted;
 };

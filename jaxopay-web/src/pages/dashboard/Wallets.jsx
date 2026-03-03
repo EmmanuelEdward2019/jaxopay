@@ -154,7 +154,8 @@ const Wallets = () => {
     // Calculate total balance in USD (simplified)
     const totalBalance = wallets.reduce((sum, wallet) => {
         // This is a simplified conversion - in production, use real exchange rates
-        return sum + (wallet.balance || 0);
+        const bal = parseFloat(wallet.balance);
+        return sum + (isNaN(bal) ? 0 : bal);
     }, 0);
 
     if (loading) {

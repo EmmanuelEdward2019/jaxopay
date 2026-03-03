@@ -106,12 +106,15 @@ export const sendTransactionEmails = async (transactionData, userData) => {
     });
 
     // 2. Send to Admin
-    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminEmailsRaw = process.env.ADMIN_EMAIL;
     let adminEmailPromise = Promise.resolve();
 
-    if (adminEmail) {
+    if (adminEmailsRaw) {
+      // Split by comma and trim whitespace to support multiple emails
+      const adminEmails = adminEmailsRaw.split(',').map(email => email.trim());
+
       adminEmailPromise = sendEmail({
-        to: adminEmail,
+        to: adminEmails,
         subject: `[ADMIN ALERT] New ${type} Transaction: ${currency} ${amount}`,
         template: 'adminTransactionAlert',
         data: {
