@@ -11,6 +11,12 @@ This document provides the complete API reference for all **18+ modules** in the
   - `X-Device-Fingerprint: <secure_hash>`
   - `Content-Type: application/json`
 
+## 2. Notification System (Resend API)
+The platform uses **Resend** for high-deliverability transactional emails.
+- **Triggers**: All financial movements (Wallets, Cards, Bills, Crypto) automatically trigger receipts to the user and alerts to admin.
+- **Templates**: Professional HTML templates are used for Signup, Password Resets, and Receipts.
+- **Configuration**: Managed via `RESEND_API_KEY` on the backend orchestration layer.
+
 ---
 
 ## 2. Authentication (`/auth`)

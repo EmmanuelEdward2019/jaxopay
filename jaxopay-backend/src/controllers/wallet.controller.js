@@ -1,6 +1,7 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import emailService from '../services/email.service.js';
 
 // Get all user wallets
 export const getWallets = catchAsync(async (req, res) => {
@@ -137,6 +138,22 @@ export const transferBetweenWallets = catchAsync(async (req, res) => {
     amount,
     currency,
   });
+
+  // 5. Send Email Notifications
+  const userProfile = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
+  const firstName = userProfile.rows[0]?.first_name || 'User';
+
+  emailService.sendTransactionEmails({
+    id: result.transactionId,
+    type: 'Transfer',
+    amount,
+    currency,
+    reference: result.transactionId,
+    description: description || 'Internal wallet transfer'
+  }, {
+    name: firstName,
+    email: req.user.email
+  }).catch(err => logger.error('Failed to send transfer email:', err));
 
   res.status(200).json({
     success: true,
@@ -333,6 +350,22 @@ export const addFunds = catchAsync(async (req, res) => {
     walletId,
     amount,
   });
+
+  // 5. Send Notification
+  const userProfile = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
+  const firstName = userProfile.rows[0]?.first_name || 'User';
+
+  emailService.sendTransactionEmails({
+    id: 'DEP-' + Date.now(),
+    type: 'Wallet Top Up',
+    amount,
+    currency: result.currency,
+    reference: 'REF-' + Date.now(),
+    description
+  }, {
+    name: firstName,
+    email: req.user.email
+  }).catch(err => logger.error('Failed to send deposit email:', err));
 
   res.status(200).json({
     success: true,

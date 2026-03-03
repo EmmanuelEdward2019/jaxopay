@@ -1,150 +1,138 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import logger from '../utils/logger.js';
+import templates from '../utils/email-templates.js';
 
-// Create transporter (lazy initialization to avoid crashes if nodemailer not configured)
-let transporter = null;
+// Initialize Resend with lazy loading
+let resendInstance = null;
 
-const getTransporter = () => {
-  if (!transporter) {
-    // Check if credentials are actually configured
-    const isConfigured = process.env.SMTP_USER &&
-      process.env.SMTP_PASS &&
-      process.env.SMTP_USER !== 'your-email@gmail.com';
-
-    if (!isConfigured) {
-      logger.warn('📧 Email service not configured - using development mode (emails will be logged to console)');
+const getResend = () => {
+  if (!resendInstance) {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey || apiKey === '') {
+      logger.warn('📧 Resend API Key not found. Email service will run in development mode (logged to console).');
       return null;
     }
-
-    try {
-      transporter = nodemailer.createTransporter({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: parseInt(process.env.SMTP_PORT) || 587,
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-    } catch (error) {
-      logger.warn('Email service configuration error:', error.message);
-      return null;
-    }
+    resendInstance = new Resend(apiKey);
   }
-  return transporter;
+  return resendInstance;
 };
 
-// Email templates
-const templates = {
-  'email-verification': (data) => `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2>Welcome to JAXOPAY, ${data.name}!</h2>
-      <p>Thank you for signing up. Please verify your email address by clicking the button below:</p>
-      <a href="${data.verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #6366f1; color: white; text-decoration: none; border-radius: 6px; margin: 20px 0;">
-        Verify Email
-      </a>
-      <p>Or copy and paste this link into your browser:</p>
-      <p style="color: #666;">${data.verificationLink}</p>
-      <p>This link will expire in 24 hours.</p>
-      <p>If you didn't create an account, please ignore this email.</p>
-    </div>
-  `,
-
-  '2fa-code': (data) => `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2>Your JAXOPAY Login Code</h2>
-      <p>Use the code below to complete your login:</p>
-      <div style="background-color: #f3f4f6; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 20px 0;">
-        ${data.code}
-      </div>
-      <p>This code will expire in 5 minutes.</p>
-      <p>If you didn't request this code, please secure your account immediately.</p>
-    </div>
-  `,
-
-  'password-reset': (data) => `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2>Reset Your Password</h2>
-      <p>Hi ${data.name},</p>
-      <p>You requested to reset your password. Click the button below to proceed:</p>
-      <a href="${data.resetLink}" style="display: inline-block; padding: 12px 24px; background-color: #6366f1; color: white; text-decoration: none; border-radius: 6px; margin: 20px 0;">
-        Reset Password
-      </a>
-      <p>Or copy and paste this link into your browser:</p>
-      <p style="color: #666;">${data.resetLink}</p>
-      <p>This link will expire in 1 hour.</p>
-      <p>If you didn't request this, please ignore this email and your password will remain unchanged.</p>
-    </div>
-  `,
-
-  'transaction-receipt': (data) => `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2>Transaction Receipt</h2>
-      <p>Hi ${data.name},</p>
-      <p>Your transaction was successful!</p>
-      <div style="background-color: #f3f4f6; padding: 20px; margin: 20px 0;">
-        <p><strong>Transaction ID:</strong> ${data.transactionId}</p>
-        <p><strong>Amount:</strong> ${data.amount} ${data.currency}</p>
-        <p><strong>Type:</strong> ${data.type}</p>
-        <p><strong>Date:</strong> ${data.date}</p>
-        <p><strong>Status:</strong> ${data.status}</p>
-      </div>
-      <p>Thank you for using JAXOPAY!</p>
-    </div>
-  `,
-};
-
-// Send email function
-export const sendEmail = async ({ to, subject, template, data }) => {
+/**
+ * Send a single email using Resend
+ */
+export const sendEmail = async ({ to, subject, template, data, html }) => {
   try {
-    const emailTransporter = getTransporter();
+    const resend = getResend();
+    const from = `${process.env.FROM_NAME || 'JAXOPAY'} <${process.env.FROM_EMAIL || 'noreply@jaxopay.com'}>`;
 
-    if (!emailTransporter) {
-      // Development mode - log email details to console
+    // Get HTML content from template or raw html
+    const htmlContent = template && templates[template]
+      ? templates[template](data)
+      : (html || data?.html);
+
+    if (!resend) {
+      // Development mode
       logger.info('📧 [DEV MODE] Email would be sent:');
       logger.info(`   To: ${to}`);
       logger.info(`   Subject: ${subject}`);
-      if (data.verificationLink) {
-        logger.info(`   🔗 Verification Link: ${data.verificationLink}`);
-      }
-      if (data.resetLink) {
-        logger.info(`   🔗 Reset Link: ${data.resetLink}`);
-      }
-      if (data.code) {
-        logger.info(`   🔢 Code: ${data.code}`);
-      }
-      return { messageId: 'dev-mode-email-logged' };
+      logger.info(`   Template: ${template || 'Custom HTML'}`);
+      if (data?.verificationLink) logger.info(`   🔗 Link: ${data.verificationLink}`);
+      if (data?.resetLink) logger.info(`   🔗 Reset: ${data.resetLink}`);
+      return { id: 'dev-mode-id', mock: true };
     }
 
-    const htmlContent = templates[template] ? templates[template](data) : data.html;
-
-    const mailOptions = {
-      from: `${process.env.FROM_NAME || 'JAXOPAY'} <${process.env.FROM_EMAIL}>`,
+    const response = await resend.emails.send({
+      from,
       to,
       subject,
       html: htmlContent,
-    };
+    });
 
-    const info = await emailTransporter.sendMail(mailOptions);
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
 
     logger.info('Email sent successfully:', {
       to,
       subject,
-      messageId: info.messageId,
+      id: response.data.id,
     });
 
-    return info;
+    return response.data;
   } catch (error) {
     logger.error('Email sending failed:', {
       to,
       subject,
       error: error.message,
     });
+    // Don't throw in production if it's a notification to prevent breaking the main flow
+    if (process.env.NODE_ENV === 'production') {
+      return { error: error.message };
+    }
     throw error;
+  }
+};
+
+/**
+ * Send transaction notification to both user and admin
+ */
+export const sendTransactionEmails = async (transactionData, userData) => {
+  try {
+    const {
+      type,
+      amount,
+      currency,
+      reference,
+      details,
+      id
+    } = transactionData;
+
+    const { name, email } = userData;
+
+    // 1. Send to User
+    const userEmailPromise = sendEmail({
+      to: email,
+      subject: `Transaction Receipt: ${type} - ${currency} ${amount}`,
+      template: 'transaction',
+      data: {
+        name,
+        type,
+        amount,
+        currency,
+        reference,
+        details,
+        date: new Date().toLocaleString()
+      }
+    });
+
+    // 2. Send to Admin
+    const adminEmail = process.env.ADMIN_EMAIL;
+    let adminEmailPromise = Promise.resolve();
+
+    if (adminEmail) {
+      adminEmailPromise = sendEmail({
+        to: adminEmail,
+        subject: `[ADMIN ALERT] New ${type} Transaction: ${currency} ${amount}`,
+        template: 'adminTransactionAlert',
+        data: {
+          id,
+          userName: name,
+          userEmail: email,
+          type,
+          amount,
+          currency,
+          reference
+        }
+      });
+    }
+
+    return await Promise.all([userEmailPromise, adminEmailPromise]);
+  } catch (error) {
+    logger.error('Failed to send transaction emails:', error);
   }
 };
 
 export default {
   sendEmail,
+  sendTransactionEmails,
 };
-

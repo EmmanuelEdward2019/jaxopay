@@ -1,6 +1,7 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import emailService from '../services/email.service.js';
 
 // Get bill providers
 export const getBillProviders = catchAsync(async (req, res) => {
@@ -197,6 +198,22 @@ export const payBill = catchAsync(async (req, res) => {
       fee,
     };
   });
+
+  // 4. Send Notification
+  const userProfile = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
+  const firstName = userProfile.rows[0]?.first_name || 'User';
+
+  emailService.sendTransactionEmails({
+    id: result.billPaymentId,
+    type: 'Bill Payment',
+    amount,
+    currency: currency.toUpperCase(),
+    reference: result.billPaymentId,
+    details: `Provider: ${provider_id}, Account: ${account_number}`
+  }, {
+    name: firstName,
+    email: req.user.email
+  }).catch(err => logger.error('Failed to send bill payment email:', err));
 
   logger.info('Bill payment processed:', {
     userId: req.user.id,
