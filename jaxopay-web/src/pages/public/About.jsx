@@ -1,4 +1,5 @@
 import { FaBullseye, FaEye, FaHeart, FaUsers, FaGlobe, FaShieldHalved, FaBolt, FaArrowTrendUp, FaStar, FaAward, FaCircleCheck } from 'react-icons/fa6';
+import { Target, Compass } from 'lucide-react';
 import PublicLayout from '../../components/layout/PublicLayout';
 import { motion } from 'framer-motion';
 
@@ -180,7 +181,7 @@ export default function About() {
               transition={{ duration: 0.6 }}
             >
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-6">
-                Our Story 📖
+                Our Story
               </h2>
               <div className="space-y-4 text-gray-600 dark:text-gray-400 text-lg leading-relaxed">
                 <p>
@@ -199,30 +200,23 @@ export default function About() {
               initial={{ opacity: 0, x: 50 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
+              transition={{ duration: 0.8 }}
               className="relative"
             >
-              {/* Team/Happy Customers Imagery */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-8 flex items-center justify-center shadow-xl">
-                  <FaUsers className="w-16 h-16 text-white" />
-                </div>
-                <div className="bg-gradient-to-br from-sky-500 to-sky-600 rounded-2xl p-8 flex items-center justify-center shadow-xl">
-                  <FaBolt className="w-16 h-16 text-white" />
-                </div>
-                <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-8 flex items-center justify-center shadow-xl">
-                  <FaShieldHalved className="w-16 h-16 text-white" />
-                </div>
-                <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-8 flex items-center justify-center shadow-xl">
-                  <FaGlobe className="w-16 h-16 text-white" />
-                </div>
+              <div className="relative rounded-[2rem] overflow-hidden shadow-2xl border-4 border-white dark:border-gray-800 group">
+                <img
+                  src="/images/team-story.png"
+                  alt="Our Team"
+                  className="w-full h-auto object-cover transform group-hover:scale-105 transition-transform duration-700"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-gray-900/40 via-transparent to-transparent opacity-60" />
               </div>
 
               {/* Floating Badge */}
               <motion.div
                 animate={{ y: [0, -10, 0] }}
                 transition={{ duration: 3, repeat: Infinity }}
-                className="absolute -bottom-6 -right-6 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 border-4 border-accent-500"
+                className="absolute -bottom-6 -right-6 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 border-4 border-accent-500 z-10"
               >
                 <div className="text-center">
                   <div className="flex justify-center mb-2">
@@ -246,11 +240,11 @@ export default function About() {
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
               whileHover={{ scale: 1.02 }}
-              className="p-8 bg-gradient-to-br from-white to-accent-50 dark:from-gray-900 dark:to-accent-900/20 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl"
+              className="p-8 bg-white dark:bg-gray-900 rounded-[2rem] border border-gray-100 dark:border-gray-800 shadow-xl"
             >
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-20 h-20 bg-gradient-to-br from-accent-500 to-accent-700 rounded-2xl flex items-center justify-center shadow-lg">
-                  <FaBullseye className="w-10 h-10 text-white" />
+              <div className="mb-6">
+                <div className="w-16 h-16 bg-accent-50 dark:bg-accent-950/30 rounded-2xl flex items-center justify-center">
+                  <Target className="w-8 h-8 text-accent-600" />
                 </div>
               </div>
               <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
@@ -267,13 +261,12 @@ export default function About() {
               viewport={{ once: true }}
               transition={{ delay: 0.2 }}
               whileHover={{ scale: 1.02 }}
-              className="p-8 bg-gradient-to-br from-white to-blue-50 dark:from-gray-900 dark:to-blue-900/20 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl"
+              className="p-8 bg-white dark:bg-gray-900 rounded-[2rem] border border-gray-100 dark:border-gray-800 shadow-xl"
             >
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center shadow-lg">
-                  <FaEye className="w-10 h-10 text-white" />
+              <div className="mb-6">
+                <div className="w-16 h-16 bg-blue-50 dark:bg-blue-950/30 rounded-2xl flex items-center justify-center">
+                  <Compass className="w-8 h-8 text-blue-600" />
                 </div>
-                <div className="text-5xl">👁️</div>
               </div>
               <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
                 Our Vision
