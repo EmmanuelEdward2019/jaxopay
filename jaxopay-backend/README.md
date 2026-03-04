@@ -132,6 +132,7 @@ All other module endpoints are placeholder routes ready for implementation:
 - `/api/v1/flights` - Flight booking
 - `/api/v1/gift-cards` - Gift card marketplace
 - `/api/v1/admin` - Admin operations
+- `/api/v1/webhooks` - Provider webhooks
 
 ## 🔒 Authentication
 

@@ -281,6 +281,7 @@
 **Features:**
 - ✅ Get all users with filters (search, KYC tier, status, role)
 - ✅ Get single user details with wallets and KYC docs
+- ✅ Various endpoints for Admins to manage users/KYC directly from mobile (if role is admin).
 - ✅ Update user (KYC tier, status, role)
 - ✅ Suspend user account
 - ✅ Verify KYC documents (approve/reject)
@@ -300,6 +301,24 @@
 
 ---
 
+### 13. **Webhooks (Internal & Provider)** ✅
+**Status:** COMPLETE
+**Files:** `webhook.controller.js`, `webhook.routes.js`
+
+**Features:**
+- ✅ Handle incoming webhooks from payment providers (Flutterwave, Paystack, Sudo)
+- ✅ Verify webhook signatures for security
+- ✅ Process transaction status updates (success, failure, pending)
+- ✅ Update internal transaction records and user wallets
+- ✅ Trigger post-transaction actions (e.g., send notifications, update order status)
+- ✅ Internal webhooks for system events (e.g., KYC status change, new user registration)
+
+**Endpoints:**
+- `POST /webhooks/:provider` - Receive incoming webhooks from external providers
+- `POST /webhooks/internal/:event` - Receive internal system event webhooks
+
+---
+
 ## 📊 Implementation Summary
 
 | Module | Status | Endpoints | Controllers | Routes |
@@ -316,9 +335,10 @@
 | Flight Booking | ✅ COMPLETE | 5 | ✅ | ✅ |
 | Gift Cards | ✅ COMPLETE | 6 | ✅ | ✅ |
 | Admin | ✅ COMPLETE | 7 | ✅ | ✅ |
+| Webhooks | ✅ COMPLETE | 2 | ✅ | ✅ |
 
-**Total Progress:** 12/12 modules complete (100%) 🎉
-**Total Endpoints Implemented:** 88+
+**Total Progress:** 13/13 modules complete (100%) 🎉
+**Total Endpoints Implemented:** 90+
 
 ---
 
@@ -326,88 +346,92 @@
 
 You can currently:
 
-1. **User Authentication**
-   - Sign up with email/password
-   - Login with email/password or phone/OTP
-   - Verify email
-   - Reset password
-   - Enable 2FA
-   - Manage devices and sessions
+1.  **User Authentication**
+    -   Sign up with email/password
+    -   Login with email/password or phone/OTP
+    -   Verify email
+    -   Reset password
+    -   Enable 2FA
+    -   Manage devices and sessions
 
-2. **Wallet Operations**
-   - Create wallets for any currency
-   - View all wallet balances
-   - Transfer money between users
-   - View transaction history
-   - Freeze/unfreeze wallets
+2.  **Wallet Operations**
+    -   Create wallets for any currency
+    -   View all wallet balances
+    -   Transfer money between users
+    -   View transaction history
+    -   Freeze/unfreeze wallets
 
-3. **User Profile**
-   - View and update profile
-   - Change avatar
-   - Update contact information
-   - View account statistics
-   - Search for other users
+3.  **User Profile**
+    -   View and update profile
+    -   Change avatar
+    -   Update contact information
+    -   View account statistics
+    -   Search for other users
 
-4. **Transactions**
-   - View all transactions with filters
-   - Get transaction details
-   - View transaction statistics
+4.  **Transactions**
+    -   View all transactions with filters
+    -   Get transaction details
+    -   View transaction statistics
 
-5. **KYC Verification**
-   - Submit KYC documents
-   - Check verification status
-   - View tier limits
-   - Request tier upgrades
+5.  **KYC Verification**
+    -   Submit KYC documents
+    -   Check verification status
+    -   View tier limits
+    -   Request tier upgrades
 
-6. **Virtual Cards**
-   - Create virtual USD cards
-   - Fund cards from wallet
-   - Freeze/unfreeze cards
-   - View card transactions
-   - Update spending limits
-   - Terminate cards
+6.  **Virtual Cards**
+    -   Create virtual USD cards
+    -   Fund cards from wallet
+    -   Freeze/unfreeze cards
+    -   View card transactions
+    -   Update spending limits
+    -   Terminate cards
 
-7. **Crypto Exchange**
-   - Buy crypto with fiat
-   - Sell crypto for fiat
-   - View exchange rates
-   - View exchange history
-   - Support for 10+ cryptocurrencies
+7.  **Crypto Exchange**
+    -   Buy crypto with fiat
+    -   Sell crypto for fiat
+    -   View exchange rates
+    -   View exchange history
+    -   Support for 10+ cryptocurrencies
 
-8. **Cross-Border Payments**
-   - Send money internationally
-   - Manage beneficiaries
-   - Get FX quotes
-   - View payment history
-   - Multiple payment corridors
+8.  **Cross-Border Payments**
+    -   Send money internationally
+    -   Manage beneficiaries
+    -   Get FX quotes
+    -   View payment history
+    -   Multiple payment corridors
 
-9. **Bill Payments**
-   - Pay utility bills
-   - Validate bill accounts
-   - View bill providers
-   - Payment history
-   - Multiple categories
+9.  **Bill Payments**
+    -   Pay utility bills
+    -   Validate bill accounts
+    -   View bill providers
+    -   Payment history
+    -   Multiple categories
 
 10. **Flight Booking**
-   - Search flights
-   - Book flights
-   - View bookings
-   - Cancel bookings
-   - Automatic refunds
+    -   Search flights
+    -   Book flights
+    -   View bookings
+    -   Cancel bookings
+    -   Automatic refunds
 
 11. **Gift Card Marketplace**
-   - Buy gift cards
-   - Sell gift cards
-   - Redeem gift cards
-   - Browse categories
-   - View owned cards
+    -   Buy gift cards
+    -   Sell gift cards
+    -   Redeem gift cards
+    -   Browse categories
+    -   View owned cards
 
 12. **Admin Dashboard**
-   - Manage users
-   - Verify KYC documents
-   - View system statistics
-   - Suspend accounts
-   - Monitor platform
+    -   Manage users
+    -   Verify KYC documents
+    -   View system statistics
+    -   Suspend accounts
+    -   Monitor platform
+
+13. **Webhooks**
+    -   Receive and process webhooks from payment providers
+    -   Handle internal system event webhooks
 
 ---
 
@@ -415,18 +439,6 @@ You can currently:
 
 All core modules are now complete! To take the backend to production:
 
-1. **Add Integration Layer**
-   - Integrate with Sudo Africa for virtual cards
-   - Integrate with Binance/Coinbase for crypto exchange
-   - Integrate with Flutterwave/Paystack for payments
-   - Integrate with Amadeus for flight booking
-   - Add webhook handlers for all providers
-
-2. **Testing**
-   - Write unit tests for all controllers
-   - Write integration tests for critical flows
-   - Write API tests for all endpoints
-   - Load testing and performance optimization
 
 3. **Deployment**
     - Docker configuration

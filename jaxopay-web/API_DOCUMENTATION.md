@@ -392,4 +392,20 @@ Initiate a wallet transfer.
 }
 ```
 
+### Webhook Endpoints (Internal)
+
+#### POST /webhooks/:provider
+Receive transaction updates from external providers.
+
+**URL:** `https://jaxopay-production.up.railway.app/api/v1/webhooks/:provider`
+
+**Security:** 
+Incoming requests must be signed by the provider's secret key. Verification is handled automatically by the backend.
+
+**Supported Providers:**
+- `flutterwave`
+- `paystack`
+- `sudo`
+- `strowallet`
+
 

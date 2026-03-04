@@ -112,6 +112,63 @@ export default function About() {
         </div>
       </section>
 
+      {/* New Section 1: Vision of Innovation - Dark Premium */}
+      <section className="py-24 bg-[#0A0D0C] text-white overflow-hidden relative">
+        <div className="absolute inset-0 opacity-20 pointer-events-none">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-accent-500/10 rounded-full blur-[160px]" />
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
+            <motion.div
+              initial={{ opacity: 0, x: -50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="w-full lg:w-1/2"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent-500/10 border border-accent-500/20 text-accent-400 text-sm font-bold mb-6 uppercase tracking-widest">
+                <FaBolt className="w-4 h-4" />
+                Next-Gen Vision
+              </div>
+              <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-8 leading-tight tracking-tight">
+                Pioneering the <br />
+                <span className="text-accent-500 italic">Digital Frontier</span>
+              </h2>
+              <p className="text-xl text-gray-400 leading-relaxed mb-10">
+                At JAXOPAY, we don't just follow trends—we set them. Our engineering core is dedicated to building a borderless financial ecosystem that empowers every African to participate in the global economy.
+              </p>
+              <div className="space-y-6">
+                <div className="flex gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+                  <div className="w-12 h-12 rounded-full bg-accent-500/20 flex items-center justify-center flex-shrink-0">
+                    <FaAward className="w-6 h-6 text-accent-500" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold mb-1">Advanced Ledger Tech</h4>
+                    <p className="text-sm text-gray-500">Immutable, secure, and lightning-fast transaction processing.</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="w-full lg:w-1/2 relative"
+            >
+              <div className="absolute -inset-4 bg-accent-500/20 rounded-full blur-[80px] animate-pulse" />
+              <img
+                src="/images/innovation-vision.png"
+                alt="Innovation Vision"
+                className="relative z-10 w-full h-auto drop-shadow-[0_20px_50px_rgba(16,185,129,0.3)]"
+              />
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
       {/* Story Section with Images */}
       <section className="py-20 bg-white dark:bg-gray-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -224,6 +281,56 @@ export default function About() {
               <p className="text-gray-600 dark:text-gray-400 text-lg leading-relaxed">
                 To become the leading fintech super app in Africa, connecting millions of people to global financial opportunities and driving economic growth across the continent.
               </p>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* New Section 2: Global Collaboration - High-End Aesthetic */}
+      <section className="py-24 bg-white relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col lg:flex-row-reverse items-center gap-16 lg:gap-24">
+            <motion.div
+              initial={{ opacity: 0, x: 50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="w-full lg:w-1/2"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-sm font-bold mb-6 uppercase tracking-widest">
+                <FaUsers className="w-4 h-4" />
+                Global Partnerships
+              </div>
+              <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-8 leading-tight tracking-tight text-gray-900">
+                Unity in <span className="text-indigo-600 italic">Diversity</span>
+              </h2>
+              <p className="text-xl text-gray-600 leading-relaxed mb-10">
+                Collaboration is our superpower. We partner with global banks, local merchants, and tech giants to ensure your financial reach spans continents without friction.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-6 rounded-2xl bg-gray-50 border border-gray-100">
+                  <div className="text-3xl font-bold text-gray-900 mb-1">500+</div>
+                  <div className="text-sm text-gray-500 font-medium">Platform Partners</div>
+                </div>
+                <div className="p-6 rounded-2xl bg-gray-50 border border-gray-100">
+                  <div className="text-3xl font-bold text-gray-900 mb-1">12+</div>
+                  <div className="text-sm text-gray-500 font-medium">Core Currencies</div>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: -100 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 1, ease: "circOut" }}
+              className="w-full lg:w-1/2"
+            >
+              <img
+                src="/images/global-collaboration.png"
+                alt="Global Collaboration 3D"
+                className="w-full h-auto drop-shadow-2xl"
+              />
             </motion.div>
           </div>
         </div>

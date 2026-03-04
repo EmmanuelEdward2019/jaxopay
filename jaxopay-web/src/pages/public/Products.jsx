@@ -245,6 +245,110 @@ export default function Products() {
         </div>
       </section>
 
+      {/* New Section 1: Financial Breakthrough - Dark Premium */}
+      <section className="py-24 bg-[#0A0D0C] text-white overflow-hidden relative">
+        <div className="absolute inset-0 opacity-20 pointer-events-none">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-accent-500 rounded-full blur-[120px]" />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-500 rounded-full blur-[120px]" />
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
+            <motion.div
+              initial={{ opacity: 0, x: -50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="w-full lg:w-1/2"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent-500/10 border border-accent-500/20 text-accent-400 text-sm font-bold mb-6 uppercase tracking-widest">
+                <FaCreditCard className="w-4 h-4" />
+                Virtual Card Power
+              </div>
+              <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-8 leading-tight tracking-tight">
+                Unlock <br />
+                <span className="text-accent-500 italic">Global Commerce</span>
+              </h2>
+              <p className="text-xl text-gray-400 leading-relaxed mb-10">
+                Our virtual cards are designed for a borderless world. Instantly issue USD cards that work everywhere—from Silicon Valley SaaS to local African marketplaces. No more FX friction.
+              </p>
+              <div className="grid grid-cols-2 gap-8">
+                <div>
+                  <div className="text-3xl font-bold text-white mb-2">99.9%</div>
+                  <div className="text-sm text-gray-500 uppercase tracking-wider font-semibold">Acceptance Rate</div>
+                </div>
+                <div>
+                  <div className="text-3xl font-bold text-white mb-2">&lt; 30s</div>
+                  <div className="text-sm text-gray-500 uppercase tracking-wider font-semibold">Card Issuance</div>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="w-full lg:w-1/2 relative"
+            >
+              <div className="absolute -inset-10 bg-accent-500/15 rounded-full blur-[100px] animate-pulse" />
+              <img
+                src="/images/virtual-cards-3d.png"
+                alt="Virtual Cards 3D Breakthrough"
+                className="relative z-10 w-full h-auto drop-shadow-[0_20px_50px_rgba(16,185,129,0.3)]"
+              />
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* New Section 2: The Digital Future - Light Theme */}
+      <section className="py-24 bg-white relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col lg:flex-row-reverse items-center gap-16 lg:gap-24">
+            <motion.div
+              initial={{ opacity: 0, x: 50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="w-full lg:w-1/2"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-50 border border-purple-100 text-purple-600 text-sm font-bold mb-6 uppercase tracking-widest">
+                <FaBitcoin className="w-4 h-4" />
+                Crypto Ecosystem
+              </div>
+              <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-8 leading-tight tracking-tight text-gray-900">
+                Bridge to the <span className="text-purple-600 italic">Decentralized World</span>
+              </h2>
+              <p className="text-xl text-gray-600 leading-relaxed mb-10">
+                Seamlessly swap between fiat and crypto. Our institutional-grade exchange ensures you always get the best market rates with military-grade security at every step.
+              </p>
+              <div className="flex flex-wrap gap-4">
+                {['Direct Fiat Ramps', 'Multi-Asset Support', 'Self-Custody Options', 'Real-Time Audits'].map((tag, i) => (
+                  <div key={i} className="px-5 py-2 rounded-full bg-gray-50 border border-gray-100 text-gray-700 font-semibold text-sm">
+                    {tag}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 1, ease: "circOut" }}
+              className="w-full lg:w-1/2"
+            >
+              <img
+                src="/images/crypto-ecosystem-3d.png"
+                alt="Crypto Ecosystem 3D"
+                className="w-full h-auto drop-shadow-2xl"
+              />
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
       {/* CTA Section */}
       <section className="py-24 bg-white dark:bg-black overflow-hidden relative">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-grid-slate-100 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] dark:[mask-image:linear-gradient(0deg,rgba(255,255,255,0.1),rgba(255,255,255,0.5))]" />

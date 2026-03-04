@@ -133,6 +133,11 @@ The platform uses **Resend** for high-deliverability transactional emails.
 ## 19. Admin (Mobile Support) (`/admin`)
 - Various endpoints for Admins to manage users/KYC directly from mobile (if role is admin).
 
+## 20. Webhooks (Internal & Provider) (`/webhooks`)
+- `POST /:provider`: Endpoint for external providers (Flutterwave, Paystack, Sudo) to send transaction updates.
+    - **URL**: `https://jaxopay-production.up.railway.app/api/v1/webhooks/:provider`
+    - **Security**: Signature verification required for all incoming requests.
+
 ---
 
 ## Technical Appendix

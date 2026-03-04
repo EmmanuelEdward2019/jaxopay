@@ -562,6 +562,63 @@ export default function Home() {
         </div>
       </section>
 
+      {/* New Section 1: Global Connectivity - Dark Premium */}
+      <section className="py-24 bg-[#0A0D0C] text-white overflow-hidden relative">
+        {/* Subtle background nodes */}
+        <div className="absolute inset-0 opacity-20 pointer-events-none">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-accent-500 rounded-full blur-[120px]" />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500 rounded-full blur-[120px]" />
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
+            <motion.div
+              initial={{ opacity: 0, x: -50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="w-full lg:w-1/2"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent-500/10 border border-accent-500/20 text-accent-400 text-sm font-bold mb-6 uppercase tracking-widest">
+                <Globe className="w-4 h-4" />
+                Global Connectivity
+              </div>
+              <h2 className="text-4xl md:text-6xl font-bold mb-8 leading-tight">
+                Connecting Africa to the <span className="text-accent-500 italic">Global Economy</span>
+              </h2>
+              <p className="text-xl text-gray-400 leading-relaxed mb-10">
+                Bridge the gap between local and international markets. Our advanced network architecture ensures your cross-border transactions are processed with bank-grade reliability and lightning speed.
+              </p>
+              <div className="grid grid-cols-2 gap-8">
+                <div>
+                  <div className="text-3xl font-bold text-white mb-2">57+</div>
+                  <div className="text-sm text-gray-500 uppercase tracking-wider">Trading Corridors</div>
+                </div>
+                <div>
+                  <div className="text-3xl font-bold text-white mb-2">24/7</div>
+                  <div className="text-sm text-gray-500 uppercase tracking-wider">Active Monitoring</div>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="w-full lg:w-1/2 relative"
+            >
+              <div className="absolute -inset-4 bg-accent-500/20 rounded-full blur-[80px] animate-pulse" />
+              <img
+                src="/images/global-globe.png"
+                alt="Global Digital Connectivity"
+                className="relative z-10 w-full h-auto drop-shadow-[0_20px_50px_rgba(16,185,129,0.3)]"
+              />
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
 
       {/* Virtual Cards Feature Section */}
       <section className="py-24 bg-white overflow-hidden">
@@ -646,6 +703,56 @@ export default function Home() {
         </div>
       </section>
 
+      {/* New Section 2: Premium Mobile Experience - Light Theme */}
+      <section className="py-24 bg-white relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col lg:flex-row-reverse items-center gap-16 lg:gap-24">
+            <motion.div
+              initial={{ opacity: 0, x: 50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="w-full lg:w-1/2"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-sm font-bold mb-6 uppercase tracking-widest">
+                <Zap className="w-4 h-4" />
+                Next-Gen Experience
+              </div>
+              <h2 className="text-4xl md:text-6xl font-bold mb-8 leading-tight text-gray-900">
+                A Finance App that <span className="text-indigo-600">Feels Premium</span>
+              </h2>
+              <p className="text-xl text-gray-600 leading-relaxed mb-10">
+                Experience financial management like never before. JAXOPAY is designed for the modern user—fast, intuitive, and visually stunning. From real-time portfolio tracking to one-tap payment requests.
+              </p>
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center gap-3 bg-gray-50 px-6 py-3 rounded-2xl border border-gray-100">
+                  <CheckCircle className="w-5 h-5 text-accent-600" />
+                  <span className="font-semibold text-gray-700">Dark Mode Optimized</span>
+                </div>
+                <div className="flex items-center gap-3 bg-gray-50 px-6 py-3 rounded-2xl border border-gray-100">
+                  <CheckCircle className="w-5 h-5 text-accent-600" />
+                  <span className="font-semibold text-gray-700">Real-Time Insights</span>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 100 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 1, ease: "circOut" }}
+              className="w-full lg:w-1/2"
+            >
+              <img
+                src="/images/app-interface.png"
+                alt="JAXOPAY Premium Mobile Interface"
+                className="w-full h-auto drop-shadow-2xl"
+              />
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
       {/* How It Works Section - Minimalist Steps */}
       <section className="py-24 bg-white dark:bg-gray-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -688,12 +795,78 @@ export default function Home() {
         </div>
       </section>
 
+      {/* New Section 3: Security & Trust - Dark Premium */}
+      <section className="py-24 bg-[#0A0D0C] text-white overflow-hidden relative">
+        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-gray-800 to-transparent" />
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="w-full lg:w-1/2 flex justify-center"
+            >
+              <div className="relative group">
+                <div className="absolute -inset-10 bg-accent-500/10 rounded-full blur-[100px] group-hover:bg-accent-500/20 transition-all duration-500" />
+                <img
+                  src="/images/shield-security.png"
+                  alt="Bank-Grade Security"
+                  className="relative z-10 w-full max-w-[450px] h-auto drop-shadow-[0_20px_50px_rgba(16,185,129,0.2)]"
+                />
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: 50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="w-full lg:w-1/2"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent-500/10 border border-accent-500/20 text-accent-400 text-sm font-bold mb-6 uppercase tracking-widest">
+                <Shield className="w-4 h-4" />
+                Security First
+              </div>
+              <h2 className="text-4xl md:text-6xl font-bold mb-8 leading-tight">
+                Fortified by <span className="text-accent-500">Uncompromising Security</span>
+              </h2>
+              <p className="text-xl text-gray-400 leading-relaxed mb-10">
+                Your trust is our most valuable asset. We employ military-grade encryption, multi-factor authentication, and proactive fraud detection systems to ensure your wealth is protected 24/7.
+              </p>
+
+              <ul className="space-y-4">
+                {[
+                  'AES-256 Bit Encryption',
+                  'Biometric Authentication Support',
+                  'ISO/IEC 27001 Compliant Infrastructure',
+                  'Immutable Transaction Ledgers'
+                ].map((item, i) => (
+                  <motion.li
+                    key={i}
+                    initial={{ opacity: 0, x: 20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.4 + (i * 0.1) }}
+                    className="flex items-center gap-3 text-gray-300 font-medium"
+                  >
+                    <div className="w-2 h-2 rounded-full bg-accent-500" />
+                    {item}
+                  </motion.li>
+                ))}
+              </ul>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
 
 
 
       {/* Our Impact Section - Green Theme */}
+      {/* 
       <section className="py-20 bg-gradient-to-br from-accent-600 via-accent-700 to-emerald-800 text-white relative overflow-hidden">
-        {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute inset-0" style={{
             backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
@@ -715,7 +888,6 @@ export default function Home() {
           </motion.div>
 
           <div className="grid md:grid-cols-2 gap-12 items-center mb-16">
-            {/* Left - Statistics */}
             <motion.div
               initial={{ opacity: 0, x: -30 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -747,7 +919,6 @@ export default function Home() {
               </div>
             </motion.div>
 
-            {/* Right - Photo Grid */}
             <motion.div
               initial={{ opacity: 0, x: 30 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -757,15 +928,15 @@ export default function Home() {
               <div className="space-y-4">
                 <div className="rounded-2xl overflow-hidden shadow-2xl">
                   <img
-                    src="https://images.unsplash.com/photo-1531545514256-b1400bc00f31?w=400&auto=format&fit=crop&q=80"
-                    alt="Happy customer"
+                    src="/images/entrepreneur-success.png"
+                    alt="Joyful Entrepreneur"
                     className="w-full h-64 object-cover hover:scale-110 transition-transform duration-300"
                   />
                 </div>
                 <div className="rounded-2xl overflow-hidden shadow-2xl">
                   <img
-                    src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&auto=format&fit=crop&q=80"
-                    alt="Business owner"
+                    src="/images/market-connectivity.png"
+                    alt="Market Connectivity"
                     className="w-full h-48 object-cover hover:scale-110 transition-transform duration-300"
                   />
                 </div>
@@ -773,15 +944,15 @@ export default function Home() {
               <div className="space-y-4 pt-8">
                 <div className="rounded-2xl overflow-hidden shadow-2xl">
                   <img
-                    src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80"
-                    alt="Young professional"
+                    src="/images/wallet-success.png"
+                    alt="Digital Success"
                     className="w-full h-48 object-cover hover:scale-110 transition-transform duration-300"
                   />
                 </div>
                 <div className="rounded-2xl overflow-hidden shadow-2xl">
                   <img
-                    src="https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&auto=format&fit=crop&q=80"
-                    alt="Entrepreneur"
+                    src="/images/community-impact.png"
+                    alt="Community Connectivity"
                     className="w-full h-64 object-cover hover:scale-110 transition-transform duration-300"
                   />
                 </div>
@@ -790,6 +961,7 @@ export default function Home() {
           </div>
         </div>
       </section>
+      */}
 
       {/* Video Section - Dark Background */}
       <section className="py-20 bg-gray-900 dark:bg-gray-950">

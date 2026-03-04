@@ -17,6 +17,7 @@ import smsRoutes from './sms.routes.js';
 import notificationRoutes from './notification.routes.js';
 import announcementRoutes from './announcement.routes.js';
 import ticketRoutes from './ticket.routes.js';
+import webhookRoutes from './webhook.routes.js';
 
 const router = express.Router();
 
@@ -45,6 +46,7 @@ router.get('/', (req, res) => {
       notifications: '/notifications',
       announcements: '/announcements',
       tickets: '/tickets',
+      webhooks: '/webhooks',
     },
   });
 });
@@ -68,6 +70,7 @@ router.use('/sms', smsRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/announcements', announcementRoutes);
 router.use('/tickets', ticketRoutes);
+router.use('/webhooks', webhookRoutes);
 
 export default router;
 
