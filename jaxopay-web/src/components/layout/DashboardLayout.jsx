@@ -6,19 +6,19 @@ import {
   ArrowLeftRight,
   CreditCard,
   Receipt,
-  Plane,
   Gift,
   Settings,
   LogOut,
   Menu,
   X,
-  MessageSquare,
   Sun,
   Moon,
   Bell,
   Shield,
   LifeBuoy,
   User,
+  Send,
+  Globe,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
@@ -44,12 +44,13 @@ const DashboardLayout = () => {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home, enabled: true },
     { name: 'Wallets', href: '/dashboard/wallets', icon: Wallet, enabled: true },
+    { name: 'Bank Transfer', href: '/dashboard/transfer', icon: Send, enabled: true },
+    { name: 'Global Pay', href: '/dashboard/cross-border', icon: Globe, enabled: true },
     { name: 'Exchange', href: '/dashboard/exchange', icon: ArrowLeftRight, enabled: isFeatureEnabled('crypto') },
     { name: 'Virtual Cards', href: '/dashboard/cards', icon: CreditCard, enabled: isFeatureEnabled('virtual_cards') },
     { name: 'Bill Payments', href: '/dashboard/bills', icon: Receipt, enabled: isFeatureEnabled('bill_payments') },
-    { name: 'Flights', href: '/dashboard/flights', icon: Plane, enabled: isFeatureEnabled('flights') },
     { name: 'Gift Cards', href: '/dashboard/gift-cards', icon: Gift, enabled: isFeatureEnabled('gift_cards') },
-    { name: 'Bulk SMS', href: '/dashboard/sms', icon: MessageSquare, enabled: isFeatureEnabled('bulk_sms') },
+
     { name: 'KYC Verification', href: '/dashboard/kyc', icon: Shield, enabled: true },
     { name: 'Support', href: '/dashboard/support', icon: LifeBuoy, enabled: true },
   ];

@@ -2,12 +2,15 @@ import providerRegistry from './registry/ProviderRegistry.js';
 import routingEngine from './routing/RoutingEngine.js';
 import failoverManager from './failover/FailoverManager.js';
 import ledgerService from './ledger/LedgerService.js';
+import PaymentService from './services/PaymentService.js';
 
 // Import Adapters
 import SafeHavenAdapter from './adapters/payments/SafeHavenAdapter.js';
 import KorapayAdapter from './adapters/payments/KorapayAdapter.js';
 import StrowalletAdapter from './adapters/cards/StrowalletAdapter.js';
+import GraphAdapter from './adapters/cards/GraphAdapter.js';
 import VTpassAdapter from './adapters/utilities/VTpassAdapter.js';
+import ReloadlyAdapter from './adapters/digital/ReloadlyAdapter.js';
 
 // Initialize and Register Providers
 // In a real app, this would be done via environment configs or dependency injection
@@ -17,12 +20,16 @@ const initOrchestration = () => {
     providerRegistry.register('payment', 'korapay', new KorapayAdapter());
 
     // Cards
+    providerRegistry.register('card', 'graph', new GraphAdapter());
     providerRegistry.register('card', 'strowallet', new StrowalletAdapter());
 
     // Utilities
     providerRegistry.register('utility', 'vtpass', new VTpassAdapter());
 
-    console.log('✅ Orchestration Layer Initialized');
+    // Digital Goods
+    providerRegistry.register('digital', 'reloadly', new ReloadlyAdapter());
+
+    console.log('✅ Orchestration Layer Initialized (Graph, Korapay, VTpass, Reloadly)');
 };
 
 /**
@@ -71,4 +78,4 @@ class OrchestrationLayer {
 }
 
 export default new OrchestrationLayer();
-export { ledgerService, routingEngine, providerRegistry };
+export { ledgerService, routingEngine, providerRegistry, PaymentService };

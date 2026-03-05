@@ -2,39 +2,60 @@ import express from 'express';
 import { verifyToken, requireKYCTier } from '../middleware/auth.js';
 import { requireFeature } from '../middleware/featureGuard.js';
 import { validate } from '../middleware/validator.js';
-import { body, query } from 'express-validator';
+import { body, query, param } from 'express-validator';
 import {
   getGiftCards,
+  getGiftCardProduct,
+  getGiftCardCategories,
+  getGiftCardCountries,
+  getGiftCardDiscounts,
   buyGiftCard,
   getMyGiftCards,
   sellGiftCard,
   redeemGiftCard,
-  getGiftCardCategories,
+  getReloadlyBalance,
 } from '../controllers/giftCard.controller.js';
 
 const router = express.Router();
 
 // All gift card routes require authentication
 router.use(verifyToken);
-router.use(requireFeature('gift_cards'));
 
-// Get gift card categories
+// ─── Read-only endpoints ──────────────────────────────────────────
+
+// Get supported countries
+router.get('/countries', getGiftCardCountries);
+
+// Get curated categories
 router.get('/categories', getGiftCardCategories);
 
-// Get available gift cards
+// Get gift card products from Reloadly
 router.get(
   '/',
-  query('category').optional().isString(),
   query('country').optional().isString(),
-  query('min_price').optional().isFloat({ min: 0 }),
-  query('max_price').optional().isFloat({ min: 0 }),
+  query('search').optional().isString(),
   query('page').optional().isInt({ min: 1 }),
-  query('limit').optional().isInt({ min: 1, max: 100 }),
+  query('size').optional().isInt({ min: 1, max: 100 }),
   validate,
   getGiftCards
 );
 
-// Get user's gift cards
+// Get single product details
+router.get(
+  '/products/:productId',
+  param('productId').isNumeric(),
+  validate,
+  getGiftCardProduct
+);
+
+// Get reseller discounts
+router.get('/discounts', getGiftCardDiscounts);
+
+// Reloadly wallet balance (useful for admin monitoring)
+router.get('/balance', getReloadlyBalance);
+
+// ─── User's purchased cards ──────────────────────────────────────
+
 router.get(
   '/my-cards',
   query('status').optional().isString(),
@@ -44,39 +65,36 @@ router.get(
   getMyGiftCards
 );
 
-// Buy gift card (requires KYC Tier 1+)
+// ─── Purchase & Redeem ───────────────────────────────────────────
+
+// Buy gift card via Reloadly
 router.post(
   '/buy',
-  requireKYCTier(1),
-  body('gift_card_id').isUUID(),
-  body('quantity').isInt({ min: 1, max: 10 }),
-  body('currency').isString().isLength({ min: 3, max: 3 }),
+  body('productId').notEmpty().withMessage('productId is required'),
+  body('amount').isFloat({ min: 0.01 }).withMessage('amount must be positive'),
+  body('quantity').optional().isInt({ min: 1, max: 10 }),
+  body('currency').optional().isString().isLength({ min: 3, max: 3 }),
+  body('countryCode').optional().isString(),
+  body('recipientEmail').optional().isEmail(),
   validate,
   buyGiftCard
 );
 
-// Sell gift card (requires KYC Tier 1+)
+// Sell gift card (stub — future feature)
 router.post(
   '/sell',
-  requireKYCTier(1),
   body('brand').isString(),
-  body('category').isString(),
-  body('denomination').isFloat({ min: 1 }),
-  body('price').isFloat({ min: 1 }),
-  body('currency').isString().isLength({ min: 3, max: 3 }),
   body('code').isString(),
-  body('country').isString(),
   validate,
   sellGiftCard
 );
 
-// Redeem gift card
-router.post(
-  '/redeem',
-  body('code').isString(),
+// Redeem / get gift card code
+router.get(
+  '/redeem/:transactionRef',
+  param('transactionRef').notEmpty(),
   validate,
   redeemGiftCard
 );
 
 export default router;
-

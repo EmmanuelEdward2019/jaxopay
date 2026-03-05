@@ -30,7 +30,7 @@ import Cookies from './pages/public/Cookies';
 import Payments from './pages/products/Payments';
 import VirtualCards from './pages/products/VirtualCards';
 import Crypto from './pages/products/Crypto';
-import Flights from './pages/products/Flights';
+
 import GiftCards from './pages/products/GiftCards';
 import Blog from './pages/public/Blog';
 import Careers from './pages/public/Careers';
@@ -46,9 +46,10 @@ import Bills from './pages/dashboard/Bills';
 import Exchange from './pages/dashboard/Exchange';
 import DashboardGiftCards from './pages/dashboard/GiftCards';
 import KYC from './pages/dashboard/KYC';
-import DashboardFlights from './pages/dashboard/Flights';
-import BulkSMS from './pages/BulkSMS';
+import CrossBorder from './pages/dashboard/CrossBorder';
+
 import Support from './pages/dashboard/Support';
+import Transfer from './pages/dashboard/Transfer';
 
 // Admin Pages
 import AdminLayout from './pages/admin/AdminLayout';
@@ -207,7 +208,7 @@ function App() {
           <Route path="/products/payments" element={<Payments />} />
           <Route path="/products/cards" element={<VirtualCards />} />
           <Route path="/products/crypto" element={<Crypto />} />
-          <Route path="/products/flights" element={<Flights />} />
+
           <Route path="/products/giftcards" element={<GiftCards />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
@@ -264,11 +265,7 @@ function App() {
                 <Bills />
               </FeatureGuard>
             } />
-            <Route path="flights" element={
-              <FeatureGuard feature="flights">
-                <DashboardFlights />
-              </FeatureGuard>
-            } />
+
             <Route path="gift-cards" element={
               <FeatureGuard feature="gift_cards">
                 <DashboardGiftCards />
@@ -278,12 +275,10 @@ function App() {
             <Route path="profile" element={<Profile />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="kyc" element={<KYC />} />
-            <Route path="sms" element={
-              <FeatureGuard feature="bulk_sms">
-                <BulkSMS />
-              </FeatureGuard>
-            } />
+
             <Route path="support" element={<Support />} />
+            <Route path="transfer" element={<Transfer />} />
+            <Route path="cross-border" element={<CrossBorder />} />
           </Route>
 
           {/* Admin Routes */}
@@ -365,21 +360,13 @@ function App() {
                 <ProductManagement />
               </RoleProtectedRoute>
             } />
-            <Route path="sms" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                <ProductManagement />
-              </RoleProtectedRoute>
-            } />
+
             <Route path="giftcards" element={
               <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
                 <ProductManagement />
               </RoleProtectedRoute>
             } />
-            <Route path="flights" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                <ProductManagement />
-              </RoleProtectedRoute>
-            } />
+
           </Route>
 
           {/* Catch all - redirect to home for unauthenticated, dashboard for authenticated */}

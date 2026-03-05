@@ -17,6 +17,14 @@ The platform uses **Resend** for high-deliverability transactional emails.
 - **Templates**: Professional HTML templates are used for Signup, Password Resets, and Receipts.
 - **Configuration**: Managed via `RESEND_API_KEY` on the backend orchestration layer.
 
+## 3. Infrastructure Providers (Orchestration Layer)
+The backend uses a distributed orchestration layer to route requests to the best available provider:
+- **Payments & Payouts**: Korapay (Primary), SafeHaven (Secondary).
+- **Virtual USD Cards**: Graph Finance (Primary), Strowallet.
+- **Bills & Utilities**: VTpass (MTN, Glo, Airtel, DSTV, GOtv, Startimes, Electricity).
+- **Bulk SMS**: VTpass.
+- **Crypto Exchange**: Binance / Coinbase / Yellow Card integration.
+
 ---
 
 ## 2. Authentication (`/auth`)

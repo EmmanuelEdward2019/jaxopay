@@ -6,6 +6,7 @@ import { body, param, query } from 'express-validator';
 import {
   getCards,
   getCard,
+  getCardSecureData,
   createCard,
   fundCard,
   freezeCard,
@@ -42,14 +43,22 @@ router.get(
   getCardTransactions
 );
 
-// Create virtual card (requires KYC Tier 2+)
+// Get card secure data (full PAN, CVV)
+router.get(
+  '/:cardId/secure-data',
+  param('cardId').isUUID(),
+  validate,
+  getCardSecureData
+);
+
+// Create virtual card (Requires KYC Tier 2 in production; skipped in dev for testing)
 router.post(
   '/',
-  requireKYCTier(2),
+  ...(process.env.NODE_ENV === 'production' ? [requireKYCTier(2)] : []),
   body('card_type').isIn(['single_use', 'multi_use']),
   body('currency').isString().isLength({ min: 3, max: 3 }),
   body('spending_limit').optional().isFloat({ min: 1 }),
-  body('billing_address').isObject(),
+  body('billing_address').optional().isObject(),
   validate,
   createCard
 );

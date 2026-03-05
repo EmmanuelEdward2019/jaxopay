@@ -62,10 +62,41 @@ const Wallets = () => {
     const [error, setError] = useState(null);
     const [actionLoading, setActionLoading] = useState(false);
 
+    const [depositVerifying, setDepositVerifying] = useState(false);
+    const [depositMessage, setDepositMessage] = useState(null);
+
+    // Handle Korapay redirect return — verify payment and credit wallet
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const depositStatus = params.get('deposit');
+        const ref = params.get('ref');
+
+        if (depositStatus === 'pending' && ref) {
+            // Clean the URL
+            window.history.replaceState({}, '', '/dashboard/wallets');
+            setDepositVerifying(true);
+            setDepositMessage('Verifying your payment...');
+
+            walletService.verifyDeposit(ref).then(result => {
+                setDepositVerifying(false);
+                if (result.success && result.data?.status === 'completed') {
+                    setDepositMessage('✅ Payment confirmed! Your wallet has been credited.');
+                    fetchWallets();
+                } else if (result.data?.status === 'pending' || result.data?.status === 'processing') {
+                    setDepositMessage('⏳ Payment is still processing. Your wallet will be credited shortly.');
+                } else {
+                    setDepositMessage('❌ ' + (result.error || result.data?.message || 'Payment could not be confirmed. Please contact support.'));
+                }
+                setTimeout(() => setDepositMessage(null), 8000);
+            });
+        }
+    }, []);
+
     // Fetch wallets on mount
     useEffect(() => {
         fetchWallets();
     }, []);
+
 
     const fetchWallets = async () => {
         setLoading(true);
@@ -192,6 +223,29 @@ const Wallets = () => {
                     </button>
                 </div>
             )}
+
+            {/* Deposit Verification Banner */}
+            {depositMessage && (
+                <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`rounded-lg p-4 flex items-center gap-3 ${depositMessage.startsWith('✅')
+                        ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                        : depositMessage.startsWith('⏳')
+                            ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+                            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                        }`}
+                >
+                    {depositVerifying && <RefreshCw className="w-5 h-5 animate-spin text-blue-600 shrink-0" />}
+                    <p className={`font-medium ${depositMessage.startsWith('✅') ? 'text-green-700 dark:text-green-300' : depositMessage.startsWith('⏳') ? 'text-blue-700 dark:text-blue-300' : 'text-red-700 dark:text-red-300'}`}>
+                        {depositMessage}
+                    </p>
+                    <button onClick={() => setDepositMessage(null)} className="ml-auto text-gray-400 hover:text-gray-600">
+                        <X className="w-4 h-4" />
+                    </button>
+                </motion.div>
+            )}
+
 
             {/* Total Balance Card */}
             <div className="card bg-gradient-to-br from-accent-500 to-accent-700 text-white shadow-lg shadow-accent-500/20">
@@ -764,6 +818,9 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
 const ReceiveModal = ({ onClose, wallets }) => {
     const [selectedWalletId, setSelectedWalletId] = useState('');
     const [copied, setCopied] = useState(false);
+    const [vbaDetails, setVbaDetails] = useState(null);
+    const [vbaLoading, setVbaLoading] = useState(false);
+    const [vbaError, setVbaError] = useState(null);
 
     const selectedWallet = wallets.find(w => w.id === selectedWalletId);
 
@@ -773,25 +830,39 @@ const ReceiveModal = ({ onClose, wallets }) => {
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Simulated deposit details (would come from specific endpoint in real app)
-    const getDepositDetails = (wallet) => {
-        if (!wallet) return null;
-        if (wallet.wallet_type === 'fiat') {
-            return {
-                accountName: 'John Doe', // Replace with dynamic user name
-                bankName: 'JAXOPAY Partner Bank',
-                accountNumber: `JX${wallet.id.slice(0, 8).toUpperCase()}`,
-                routingNumber: '021000021'
-            };
-        } else {
-            return {
-                address: `0x${wallet.id.replace(/-/g, '')}${wallet.user_id.slice(0, 8)}`,
-                network: 'Ethereum (ERC-20)'
-            };
+    // Fetch or create VBA when wallet is selected
+    useEffect(() => {
+        if (!selectedWalletId || !selectedWallet) {
+            setVbaDetails(null);
+            setVbaError(null);
+            return;
         }
-    };
+        // Only fiat wallets get VBA
+        if (selectedWallet.wallet_type !== 'fiat') return;
 
-    const details = getDepositDetails(selectedWallet);
+        let cancelled = false;
+        const fetchVBA = async () => {
+            setVbaLoading(true);
+            setVbaError(null);
+            setVbaDetails(null);
+            try {
+                const res = await walletService.getVBA(selectedWalletId);
+                if (!cancelled && res.success) {
+                    setVbaDetails(res.data);
+                } else if (!cancelled) {
+                    setVbaError(res.message || 'Could not get account details');
+                }
+            } catch (e) {
+                if (!cancelled) {
+                    setVbaError(e?.message || 'Could not generate account. Please try again.');
+                }
+            } finally {
+                if (!cancelled) setVbaLoading(false);
+            }
+        };
+        fetchVBA();
+        return () => { cancelled = true; };
+    }, [selectedWalletId]);
 
     return (
         <motion.div
@@ -817,7 +888,7 @@ const ReceiveModal = ({ onClose, wallets }) => {
 
                 <div className="space-y-6">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Balance to Fund</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Wallet to Fund</label>
                         <select
                             value={selectedWalletId}
                             onChange={(e) => setSelectedWalletId(e.target.value)}
@@ -825,71 +896,95 @@ const ReceiveModal = ({ onClose, wallets }) => {
                         >
                             <option value="">Select wallet...</option>
                             {wallets.map(w => (
-                                <option key={w.id} value={w.id}>{w.currency} - {w.wallet_type.toUpperCase()}</option>
+                                <option key={w.id} value={w.id}>{w.currency} - {w.wallet_type?.toUpperCase()}</option>
                             ))}
                         </select>
                     </div>
 
-                    {selectedWallet && details && (
-                        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                            {selectedWallet.wallet_type === 'fiat' ? (
-                                <div className="space-y-4">
-                                    <div className="flex items-center gap-3 mb-2">
-                                        <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                                            <Building2 className="w-5 h-5 text-blue-600" />
-                                        </div>
-                                        <div>
-                                            <p className="font-medium text-gray-900 dark:text-white">Bank Transfer</p>
-                                            <p className="text-xs text-gray-500">Send money to these details</p>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-3 text-sm">
-                                        <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
-                                            <span className="text-gray-500">Bank Name</span>
-                                            <span className="font-medium text-gray-900 dark:text-white">{details.bankName}</span>
-                                        </div>
-                                        <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
-                                            <span className="text-gray-500">Account Name</span>
-                                            <span className="font-medium text-gray-900 dark:text-white">{details.accountName}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500 block mb-1">Account Number</span>
-                                            <div className="flex items-center gap-2">
-                                                <code className="bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 text-lg font-mono flex-1">
-                                                    {details.accountNumber}
-                                                </code>
-                                                <button
-                                                    onClick={() => handleCopy(details.accountNumber)}
-                                                    className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg"
-                                                >
-                                                    {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
+                    {/* Loading */}
+                    {vbaLoading && (
+                        <div className="flex flex-col items-center justify-center py-8">
+                            <RefreshCw className="w-8 h-8 text-primary-500 animate-spin mb-3" />
+                            <p className="text-sm text-gray-500">Generating your account details...</p>
+                        </div>
+                    )}
+
+                    {/* Error */}
+                    {vbaError && !vbaLoading && (
+                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+                            <div className="flex items-start gap-3">
+                                <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="text-sm text-red-700 dark:text-red-400">{vbaError}</p>
+                                    <button
+                                        onClick={() => setSelectedWalletId(prev => { setSelectedWalletId(''); setTimeout(() => setSelectedWalletId(prev), 100); return prev; })}
+                                        className="text-sm text-red-600 underline mt-1"
+                                    >
+                                        Retry
+                                    </button>
                                 </div>
-                            ) : (
-                                <div className="text-center space-y-4">
-                                    <div className="bg-white p-4 rounded-xl inline-block">
-                                        <QrCode className="w-32 h-32 text-gray-900" />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Fiat VBA Details */}
+                    {selectedWallet && vbaDetails && !vbaLoading && selectedWallet.wallet_type === 'fiat' && (
+                        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                                        <Building2 className="w-5 h-5 text-blue-600" />
                                     </div>
                                     <div>
-                                        <p className="font-medium text-gray-900 dark:text-white">Wallet Address</p>
-                                        <p className="text-xs text-gray-500 mb-2">Only send {selectedWallet.currency} to this address</p>
-                                        <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-2 rounded-lg border border-gray-200 dark:border-gray-600">
-                                            <code className="text-xs font-mono break-all flex-1 text-left">
-                                                {details.address}
+                                        <p className="font-medium text-gray-900 dark:text-white">Bank Transfer</p>
+                                        <p className="text-xs text-gray-500">Send money to these details to fund your wallet</p>
+                                    </div>
+                                </div>
+                                <div className="space-y-3 text-sm">
+                                    <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
+                                        <span className="text-gray-500">Bank Name</span>
+                                        <span className="font-medium text-gray-900 dark:text-white">{vbaDetails.bank_name}</span>
+                                    </div>
+                                    <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
+                                        <span className="text-gray-500">Account Name</span>
+                                        <span className="font-medium text-gray-900 dark:text-white">{vbaDetails.account_name}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500 block mb-1">Account Number</span>
+                                        <div className="flex items-center gap-2">
+                                            <code className="bg-white dark:bg-gray-800 px-3 py-2 rounded border border-gray-200 dark:border-gray-600 text-lg font-mono flex-1 tracking-wider text-gray-900 dark:text-white">
+                                                {vbaDetails.account_number}
                                             </code>
                                             <button
-                                                onClick={() => handleCopy(details.address)}
-                                                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg shrink-0"
+                                                onClick={() => handleCopy(vbaDetails.account_number)}
+                                                className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
                                             >
                                                 {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
                                             </button>
                                         </div>
                                     </div>
                                 </div>
-                            )}
+
+                                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 mt-3">
+                                    <p className="text-xs text-blue-700 dark:text-blue-400 flex items-start gap-1.5">
+                                        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                        This is your unique account number. Any transfer to this account will automatically fund your {selectedWallet.currency} wallet.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Crypto wallet (placeholder) */}
+                    {selectedWallet && selectedWallet.wallet_type !== 'fiat' && !vbaLoading && (
+                        <div className="text-center space-y-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                            <div className="bg-white p-4 rounded-xl inline-block">
+                                <QrCode className="w-32 h-32 text-gray-900" />
+                            </div>
+                            <div>
+                                <p className="font-medium text-gray-900 dark:text-white">Crypto Deposit</p>
+                                <p className="text-xs text-gray-500 mb-2">Coming soon — crypto deposits are being set up</p>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -903,45 +998,121 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [success, setSuccess] = useState(false);
+    const [stage, setStage] = useState('form'); // 'form' | 'processing' | 'awaiting' | 'success'
+    const [checkoutRef, setCheckoutRef] = useState(null);
 
     const fiatWallets = wallets.filter(w => w.wallet_type === 'fiat');
+    const selectedWallet = fiatWallets.find(w => w.id === selectedWalletId);
 
     const handleFund = async () => {
         if (!selectedWalletId || !amount || parseFloat(amount) <= 0) return;
         setLoading(true);
         setError(null);
+        setStage('processing');
 
-        const result = await walletService.addFunds(selectedWalletId, parseFloat(amount), 'Fiat deposit');
-        if (result.success) {
-            setSuccess(true);
-            setTimeout(() => {
-                onRefresh();
-                onClose();
-            }, 2000);
-        } else {
-            setError(result.error || 'Failed to fund wallet');
+        try {
+            const result = await walletService.initializeDeposit(
+                selectedWalletId,
+                parseFloat(amount),
+                selectedWallet?.currency || 'NGN'
+            );
+
+            if (result.success) {
+                const { checkout_url, reference, mode } = result.data;
+                setCheckoutRef(reference);
+
+                if (mode === 'simulation') {
+                    // Dev mode — add funds directly
+                    const addResult = await walletService.addFunds(selectedWalletId, parseFloat(amount), 'Manual deposit');
+                    if (addResult.success) {
+                        setStage('success');
+                        setTimeout(() => { onRefresh(); onClose(); }, 2500);
+                    } else {
+                        setError(addResult.error || 'Deposit failed');
+                        setStage('form');
+                    }
+                } else if (checkout_url) {
+                    // Open in SAME tab so Korapay's redirect_url brings user back to this app
+                    window.location.href = checkout_url;
+                    return; // page will navigate away, no further state update needed
+                } else {
+                    setError('No checkout URL returned. Please try again.');
+                    setStage('form');
+                }
+            } else {
+                setError(result.error || 'Failed to initialize deposit');
+                setStage('form');
+            }
+        } catch (err) {
+            setError(err.message || 'Something went wrong');
+            setStage('form');
         }
         setLoading(false);
     };
 
-    if (success) {
+    if (stage === 'success') {
         return (
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
             >
-                <motion.div
-                    initial={{ scale: 0.95 }}
-                    animate={{ scale: 1 }}
-                    className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-sm w-full text-center"
-                >
+                <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-sm w-full text-center">
                     <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Check className="w-10 h-10 text-green-600" />
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Deposit Successful!</h2>
-                    <p className="text-gray-500">Your wallet has been funded.</p>
+                    <p className="text-gray-500 dark:text-gray-400">Your wallet balance will be updated shortly.</p>
+                </motion.div>
+            </motion.div>
+        );
+    }
+
+    if (stage === 'awaiting') {
+        return (
+            <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            >
+                <motion.div
+                    initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                    className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-8 text-center"
+                >
+                    <div className="w-16 h-16 bg-accent-100 dark:bg-accent-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <RefreshCw className="w-8 h-8 text-accent-600 animate-spin" />
+                    </div>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Complete Your Payment</h2>
+                    <p className="text-gray-600 dark:text-gray-400 mb-2">
+                        A Korapay payment page has opened in a new tab. Complete your payment there.
+                    </p>
+                    <p className="text-xs text-gray-400 mb-6">
+                        Ref: <code className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded font-mono">{checkoutRef}</code>
+                    </p>
+                    <div className="space-y-3">
+                        <button
+                            onClick={async () => {
+                                setLoading(true);
+                                const result = await walletService.verifyDeposit(checkoutRef);
+                                setLoading(false);
+                                if (result.success && (result.data?.status === 'completed' || result.data?.status === 'success')) {
+                                    setStage('success');
+                                    setTimeout(() => { onRefresh(); onClose(); }, 2500);
+                                } else if (result.data?.status === 'pending' || result.data?.status === 'processing') {
+                                    setError('Payment is still processing. Please wait a moment and try again, or check your wallet balance.');
+                                } else {
+                                    setError(result.error || result.data?.message || 'Could not confirm payment. Please contact support.');
+                                    setStage('form');
+                                }
+                            }}
+                            disabled={loading}
+                            className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            {loading ? <><RefreshCw className="w-4 h-4 animate-spin" /> Verifying...</> : '✓ I\'ve Completed Payment'}
+                        </button>
+                        <button onClick={onClose} className="w-full py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-xl">
+                            Cancel
+                        </button>
+                    </div>
                 </motion.div>
             </motion.div>
         );
@@ -949,16 +1120,12 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
 
     return (
         <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
             onClick={onClose}
         >
             <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
+                initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
                 className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
                 onClick={(e) => e.stopPropagation()}
             >
@@ -970,69 +1137,72 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                 </div>
 
                 {error && (
-                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 text-sm">
+                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-300 text-sm">
                         {error}
                     </div>
                 )}
 
-                <div className="space-y-6">
+                <div className="space-y-5">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Currency</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Wallet</label>
                         <div className="grid grid-cols-2 gap-3">
                             {fiatWallets.map(w => (
                                 <button
                                     key={w.id}
                                     onClick={() => setSelectedWalletId(w.id)}
                                     className={`p-3 rounded-xl border text-left transition-all ${selectedWalletId === w.id
-                                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/10 ring-2 ring-primary-500/20'
-                                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                                        ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/10 ring-2 ring-accent-500/20'
+                                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                                         }`}
                                 >
                                     <p className="font-bold text-gray-900 dark:text-white">{w.currency}</p>
-                                    <p className="text-xs text-gray-500">Balance: {formatCurrency(w.balance, w.currency)}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">Bal: {formatCurrency(w.balance, w.currency)}</p>
                                 </button>
                             ))}
                         </div>
                         {fiatWallets.length === 0 && (
-                            <p className="text-sm text-gray-500 mt-2">No fiat wallets found. Please create one first.</p>
+                            <p className="text-sm text-gray-500 mt-2">No fiat wallets found. Create one first.</p>
                         )}
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Amount to Deposit</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Deposit Amount</label>
                         <div className="relative">
                             <input
                                 type="number"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
                                 placeholder="0.00"
-                                className="w-full pl-10 pr-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:outline-none dark:text-white"
+                                min="1"
+                                className="w-full pl-14 pr-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white text-lg font-medium"
                             />
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">
-                                {wallets.find(w => w.id === selectedWalletId)?.currency || '$'}
+                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-semibold text-sm">
+                                {selectedWallet?.currency || 'NGN'}
                             </div>
                         </div>
                     </div>
 
-                    <div className="p-4 bg-primary-50 dark:bg-primary-900/10 rounded-xl border border-primary-100 dark:border-primary-900/20">
-                        <div className="flex gap-3">
-                            <Info className="w-5 h-5 text-primary-600 shrink-0" />
-                            <p className="text-xs text-primary-700 dark:text-primary-300">
-                                This is a simulated deposit. In production, this would redirect you to a payment gateway (e.g., Flutterwave or Stripe).
-                            </p>
+                    {/* Payment Methods Banner */}
+                    <div className="p-4 bg-gradient-to-r from-accent-50 to-emerald-50 dark:from-accent-900/10 dark:to-emerald-900/10 rounded-xl border border-accent-100 dark:border-accent-800/30">
+                        <p className="text-xs font-semibold text-accent-700 dark:text-accent-300 mb-2">Accepted Payment Methods</p>
+                        <div className="flex gap-2 flex-wrap">
+                            {['💳 Debit Card', '🏦 Bank Transfer', '📱 USSD', '🏧 Pay With Bank'].map(m => (
+                                <span key={m} className="px-2 py-1 bg-white dark:bg-gray-800 rounded-md text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">{m}</span>
+                            ))}
                         </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">🔒 Secured by Korapay — PCI-DSS compliant</p>
                     </div>
 
                     <button
                         onClick={handleFund}
-                        disabled={loading || !selectedWalletId || !amount}
-                        className="w-full py-4 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl shadow-lg shadow-primary-200 dark:shadow-none transition-all disabled:opacity-50"
+                        disabled={loading || !selectedWalletId || !amount || parseFloat(amount) <= 0}
+                        className="w-full py-4 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-xl shadow-lg shadow-accent-200 dark:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                         {loading ? (
-                            <span className="flex items-center justify-center gap-2">
-                                <RefreshCw className="w-5 h-5 animate-spin" /> Processing...
-                            </span>
-                        ) : 'Add Funds'}
+                            <><RefreshCw className="w-5 h-5 animate-spin" /> Initializing...</>
+                        ) : (
+                            `Proceed to Pay${amount && selectedWallet ? ` ${formatCurrency(parseFloat(amount), selectedWallet.currency)}` : ''}`
+                        )}
                     </button>
                 </div>
             </motion.div>
@@ -1041,3 +1211,4 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
 };
 
 export default Wallets;
+

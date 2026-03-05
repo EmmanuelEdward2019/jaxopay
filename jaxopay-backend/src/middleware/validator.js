@@ -10,7 +10,7 @@ export const validate = (req, res, next) => {
       message: err.msg,
       value: err.value,
     }));
-    
+
     throw new AppError(
       JSON.stringify(errorMessages),
       400
@@ -61,8 +61,13 @@ export const otpRequestValidation = [
 
 export const otpVerifyValidation = [
   body('phone')
+    .optional({ nullable: true, checkFalsy: true })
     .isMobilePhone()
     .withMessage('Please provide a valid phone number'),
+  body('userId')
+    .optional({ nullable: true, checkFalsy: true })
+    .isUUID()
+    .withMessage('Invalid User ID'),
   body('otp')
     .isLength({ min: 6, max: 6 })
     .isNumeric()

@@ -8,16 +8,18 @@ import cardRoutes from './card.routes.js';
 import cryptoRoutes from './crypto.routes.js';
 import paymentRoutes from './payment.routes.js';
 import billRoutes from './bill.routes.js';
-import flightRoutes from './flight.routes.js';
+import crossBorderRoutes from './cross_border.routes.js';
+
 import giftCardRoutes from './giftCard.routes.js';
 import adminRoutes from './admin.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import configRoutes from './config.routes.js';
-import smsRoutes from './sms.routes.js';
+
 import notificationRoutes from './notification.routes.js';
 import announcementRoutes from './announcement.routes.js';
 import ticketRoutes from './ticket.routes.js';
 import webhookRoutes from './webhook.routes.js';
+import transferRoutes from './transfer.routes.js';
 
 const router = express.Router();
 
@@ -38,14 +40,16 @@ router.get('/', (req, res) => {
       crypto: '/crypto',
       payments: '/payments',
       bills: '/bills',
-      flights: '/flights',
+      fx: '/fx',
+
       giftCards: '/gift-cards',
       admin: '/admin',
       dashboard: '/dashboard',
-      sms: '/sms',
+
       notifications: '/notifications',
       announcements: '/announcements',
       tickets: '/tickets',
+      transfers: '/transfers',
       webhooks: '/webhooks',
     },
   });
@@ -61,16 +65,18 @@ router.use('/cards', cardRoutes);
 router.use('/crypto', cryptoRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/bills', billRoutes);
-router.use('/flights', flightRoutes);
+router.use('/fx', crossBorderRoutes);
+
 router.use('/gift-cards', giftCardRoutes);
 router.use('/admin', adminRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/config', configRoutes);
-router.use('/sms', smsRoutes);
+
 router.use('/notifications', notificationRoutes);
 router.use('/announcements', announcementRoutes);
 router.use('/tickets', ticketRoutes);
 router.use('/webhooks', webhookRoutes);
+router.use('/transfers', transferRoutes);
 
 export default router;
 

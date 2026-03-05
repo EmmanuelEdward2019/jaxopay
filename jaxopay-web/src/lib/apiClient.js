@@ -87,7 +87,8 @@ apiClient.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config;
-    const serverMessage = error.response?.data?.message;
+    // Backend errorHandler sends the real message inside data.error.message in development mode
+    const serverMessage = error.response?.data?.message || error.response?.data?.error?.message;
     const status = error.response?.status;
 
     // Handle 401 Unauthorized - Token expired (Skip for auth endpoints)

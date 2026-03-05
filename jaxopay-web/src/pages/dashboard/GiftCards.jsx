@@ -12,6 +12,7 @@ import {
     Filter,
     Copy,
     Eye,
+    EyeOff,
 } from 'lucide-react';
 import giftCardService from '../../services/giftCardService';
 import walletService from '../../services/walletService';
@@ -40,16 +41,17 @@ const GiftCards = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
+    const [revealedCodes, setRevealedCodes] = useState({});
 
     useEffect(() => {
         fetchGiftCards();
         fetchMyCards();
         fetchWallets();
-    }, []);
+    }, [searchQuery]); // auto fetch when search query changes (with debounce in a real app)
 
     const fetchGiftCards = async () => {
         setLoading(true);
-        const result = await giftCardService.getGiftCards();
+        const result = await giftCardService.getGiftCards(searchQuery ? { search: searchQuery } : {});
         if (result.success) {
             setGiftCards(result.data.gift_cards || []);
         }
@@ -74,13 +76,15 @@ const GiftCards = () => {
         }
     };
 
-    const handleBuyCard = async (cardId, denomination) => {
+    const handleBuyCard = async (card, amount) => {
         setLoading(true);
         setError(null);
+        const wallet = wallets.find(w => w.id === selectedWallet);
         const result = await giftCardService.buyGiftCard({
-            gift_card_id: cardId,
-            denomination,
-            wallet_id: selectedWallet,
+            productId: card.productId,
+            amount: amount,
+            currency: wallet?.currency || card.currency || 'USD',
+            countryCode: card.countryCode,
         });
         if (result.success) {
             setSuccess('Gift card purchased successfully!');
@@ -93,13 +97,27 @@ const GiftCards = () => {
         setLoading(false);
     };
 
-    const filteredCards = giftCards.filter(card => {
-        const matchesCategory = selectedCategory === 'all' || card.category === selectedCategory;
-        const matchesSearch = !searchQuery ||
-            card.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            card.brand?.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchesCategory && matchesSearch;
-    });
+    const handleRevealCode = async (transactionRef) => {
+        if (revealedCodes[transactionRef]) {
+            // toggle off
+            setRevealedCodes(prev => {
+                const newCodes = { ...prev };
+                delete newCodes[transactionRef];
+                return newCodes;
+            });
+            return;
+        }
+
+        const result = await giftCardService.redeemGiftCard(transactionRef);
+        if (result.success) {
+            setRevealedCodes(prev => ({
+                ...prev,
+                [transactionRef]: result.data
+            }));
+        } else {
+            setError(result.error);
+        }
+    };
 
     return (
         <div className="space-y-6">
@@ -107,7 +125,7 @@ const GiftCards = () => {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Gift Cards</h1>
-                    <p className="text-gray-600 dark:text-gray-400">Buy, sell, and manage gift cards</p>
+                    <p className="text-gray-600 dark:text-gray-400">Buy, sell, and manage gift cards from global brands</p>
                 </div>
                 <button
                     onClick={() => setShowSellModal(true)}
@@ -197,7 +215,7 @@ const GiftCards = () => {
                         <div className="flex justify-center py-12">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
                         </div>
-                    ) : filteredCards.length === 0 ? (
+                    ) : giftCards.length === 0 ? (
                         <div className="text-center py-12">
                             <Gift className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No gift cards found</h3>
@@ -205,9 +223,9 @@ const GiftCards = () => {
                         </div>
                     ) : (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                            {filteredCards.map((card) => (
+                            {giftCards.map((card) => (
                                 <motion.div
-                                    key={card.id}
+                                    key={card.productId}
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     className="card overflow-hidden cursor-pointer hover:shadow-lg transition-all group"
@@ -217,21 +235,23 @@ const GiftCards = () => {
                                     }}
                                 >
                                     <div className="aspect-[3/2] bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
-                                        {card.image ? (
-                                            <img src={card.image} alt={card.name} className="w-full h-full object-cover" />
+                                        {card.image_url ? (
+                                            <img src={card.image_url} alt={card.productName} className="w-full h-full object-contain bg-white" />
                                         ) : (
                                             <Gift className="w-12 h-12 text-white/50" />
                                         )}
                                     </div>
-                                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 transition-colors">
-                                        {card.name}
+                                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 transition-colors line-clamp-1 text-sm">
+                                        {card.productName}
                                     </h3>
-                                    <p className="text-sm text-gray-500 mb-2">{card.brand}</p>
+                                    <p className="text-xs text-gray-500 mb-2">{card.countryCode} • {card.currency}</p>
                                     <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium text-primary-600">
-                                            From {formatCurrency(card.min_amount || 10, 'USD')}
+                                        <span className="text-xs font-medium text-primary-600">
+                                            {card.denominationType === 'FIXED'
+                                                ? `From ${formatCurrency(card.fixedDenominations[0] || card.minAmount, card.currency)}`
+                                                : `Up to ${formatCurrency(card.maxAmount, card.currency)}`
+                                            }
                                         </span>
-                                        <Tag className="w-4 h-4 text-gray-400" />
                                     </div>
                                 </motion.div>
                             ))}
@@ -257,43 +277,72 @@ const GiftCards = () => {
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {myCards.map((card) => (
-                                <div key={card.id} className="card">
-                                    <div className="flex gap-4">
-                                        <div className="w-24 h-16 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center shrink-0">
-                                            <Gift className="w-8 h-8 text-white/50" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <h3 className="font-semibold text-gray-900 dark:text-white">{card.name}</h3>
-                                            <p className="text-xl font-bold text-primary-600 mt-1">
-                                                {formatCurrency(card.balance || card.amount, 'USD')}
-                                            </p>
-                                            {card.code && (
-                                                <div className="flex items-center gap-2 mt-2">
-                                                    <code className="text-sm bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded font-mono">
-                                                        {card.show_code ? card.code : '•••• •••• ••••'}
-                                                    </code>
-                                                    <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-                                                        <Copy className="w-4 h-4 text-gray-500" />
-                                                    </button>
-                                                    <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-                                                        <Eye className="w-4 h-4 text-gray-500" />
-                                                    </button>
+                            {myCards.map((card) => {
+                                const revealData = revealedCodes[card.transaction_ref];
+                                return (
+                                    <div key={card.id} className="card">
+                                        <div className="flex gap-4">
+                                            <div className="w-24 h-16 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center shrink-0">
+                                                <Gift className="w-8 h-8 text-white/50" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <h3 className="font-semibold text-gray-900 dark:text-white">{card.product_name || card.brand_name}</h3>
+                                                <p className="text-xl font-bold text-primary-600 mt-1">
+                                                    {formatCurrency(card.amount, card.currency)}
+                                                </p>
+
+                                                <div className="mt-2">
+                                                    {revealData ? (
+                                                        <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <span className="text-xs text-gray-500">Card Code</span>
+                                                                <div className="flex gap-2">
+                                                                    <button onClick={() => {
+                                                                        navigator.clipboard.writeText(revealData.code);
+                                                                        setSuccess('Code copied to clipboard!');
+                                                                    }} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded">
+                                                                        <Copy className="w-3 h-3 text-gray-500" />
+                                                                    </button>
+                                                                    <button onClick={() => handleRevealCode(card.transaction_ref)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded">
+                                                                        <EyeOff className="w-3 h-3 text-gray-500" />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <code className="text-sm font-mono text-gray-900 dark:text-white break-all">
+                                                                {revealData.code}
+                                                            </code>
+                                                            {revealData.pin && (
+                                                                <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                                                                    <span className="text-xs text-gray-500 block mb-1">PIN</span>
+                                                                    <code className="text-sm font-mono text-gray-900 dark:text-white break-all">
+                                                                        {revealData.pin}
+                                                                    </code>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleRevealCode(card.transaction_ref)}
+                                                            className="text-sm flex items-center gap-1 text-primary-600 hover:text-primary-700 font-medium"
+                                                        >
+                                                            <Eye className="w-4 h-4" /> Reveal Code
+                                                        </button>
+                                                    )}
                                                 </div>
-                                            )}
+                                            </div>
+                                        </div>
+                                        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-sm">
+                                            <span className="text-gray-500">Purchased {formatDateTime(card.created_at)}</span>
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${card.status === 'completed' ? 'bg-primary-100 text-primary-700' :
+                                                card.status === 'failed' ? 'bg-red-100 text-red-700' :
+                                                    'bg-yellow-100 text-yellow-700'
+                                                }`}>
+                                                {card.status}
+                                            </span>
                                         </div>
                                     </div>
-                                    <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-sm">
-                                        <span className="text-gray-500">Purchased {formatDateTime(card.created_at)}</span>
-                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${card.status === 'active' ? 'bg-primary-100 text-primary-700' :
-                                            card.status === 'redeemed' ? 'bg-gray-100 text-gray-700' :
-                                                'bg-yellow-100 text-yellow-700'
-                                            }`}>
-                                            {card.status}
-                                        </span>
-                                    </div>
-                                </div>
-                            ))}
+                                )
+                            })}
                         </div>
                     )}
                 </div>
@@ -335,7 +384,17 @@ const GiftCards = () => {
 
 // Buy Gift Card Modal
 const BuyGiftCardModal = ({ card, wallets, selectedWallet, setSelectedWallet, onClose, onBuy, loading }) => {
-    const [denomination, setDenomination] = useState(card.denominations?.[0] || card.min_amount || 25);
+    // If FIXED, show dropdown. If RANGE, show input.
+    const isFixed = card.denominationType === 'FIXED';
+    const denominations = isFixed ? card.fixedDenominations : [];
+
+    // Default selected amount
+    const [amount, setAmount] = useState(
+        isFixed
+            ? (denominations[0] || card.minAmount || 25)
+            : (card.minAmount || 25)
+    );
+
     const wallet = wallets.find(w => w.id === selectedWallet);
 
     return (
@@ -361,38 +420,57 @@ const BuyGiftCardModal = ({ card, wallets, selectedWallet, setSelectedWallet, on
                 </div>
 
                 {/* Card Preview */}
-                <div className="aspect-[3/2] bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl mb-6 flex items-center justify-center">
-                    <div className="text-center text-white">
-                        <Gift className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                        <p className="font-bold text-lg">{card.name}</p>
-                    </div>
+                <div className="aspect-[3/2] bg-white border border-gray-100 dark:border-gray-700 rounded-xl mb-6 flex items-center justify-center overflow-hidden p-4">
+                    {card.image_url ? (
+                        <img src={card.image_url} alt={card.productName} className="object-contain max-h-full" />
+                    ) : (
+                        <div className="text-center text-gray-400">
+                            <Gift className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                            <p className="font-bold text-sm text-gray-600 dark:text-gray-300">{card.productName}</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Denomination Selection */}
                 <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                        Select Amount
+                        Select Amount ({card.currency})
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
-                        {(card.denominations || [25, 50, 100, 200, 500]).map((amount) => (
-                            <button
-                                key={amount}
-                                onClick={() => setDenomination(amount)}
-                                className={`py-3 rounded-lg font-semibold transition-colors ${denomination === amount
-                                    ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                                    }`}
-                            >
-                                {formatCurrency(amount, 'USD')}
-                            </button>
-                        ))}
-                    </div>
+                    {isFixed ? (
+                        <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                            {denominations.map((denom) => (
+                                <button
+                                    key={denom}
+                                    onClick={() => setAmount(denom)}
+                                    className={`py-3 rounded-lg font-semibold transition-colors ${amount === denom
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                                        }`}
+                                >
+                                    {formatCurrency(denom, card.currency)}
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <div>
+                            <input
+                                type="number"
+                                min={card.minAmount}
+                                max={card.maxAmount}
+                                value={amount}
+                                onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
+                                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-lg font-medium"
+                                placeholder={`Enter amount (${card.minAmount} - ${card.maxAmount})`}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Specify an amount between {formatCurrency(card.minAmount, card.currency)} - {formatCurrency(card.maxAmount, card.currency)}</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Wallet Selection */}
                 <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Pay From
+                        Pay From Wallet
                     </label>
                     <select
                         value={selectedWallet}
@@ -413,11 +491,16 @@ const BuyGiftCardModal = ({ card, wallets, selectedWallet, setSelectedWallet, on
                         Cancel
                     </button>
                     <button
-                        onClick={() => onBuy(card.id, denomination)}
-                        disabled={loading || !wallet || (wallet.balance || 0) < denomination}
+                        onClick={() => onBuy(card, amount)}
+                        disabled={
+                            loading ||
+                            !wallet ||
+                            !amount ||
+                            (wallet.currency !== card.currency ? false : (wallet.balance || 0) < amount)
+                        }
                         className="flex-1 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg disabled:opacity-50"
                     >
-                        {loading ? 'Processing...' : `Buy for ${formatCurrency(denomination, 'USD')}`}
+                        {loading ? 'Processing...' : `Buy for ${formatCurrency(amount, card.currency)}`}
                     </button>
                 </div>
             </motion.div>

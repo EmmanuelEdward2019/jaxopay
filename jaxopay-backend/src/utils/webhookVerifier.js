@@ -25,11 +25,14 @@ class WebhookVerifier {
                 return this._verifySafeHaven(headers, payload);
             case 'sudo':
                 return this._verifySudo(headers, payload);
+            case 'vtpass':
+                return this._verifyVTpass(headers, payload);
+            case 'graph':
+            case 'graph_finance':
+                return this._verifyGraph(headers, payload);
             default:
-                logger.warn(`[WEBHOOK] No verification logic implemented for provider: ${provider}`);
-                // In development, we might want to return true for testing if secret is not set
-                if (process.env.NODE_ENV === 'development') return true;
-                return false;
+                logger.warn(`[WEBHOOK] No verification for: ${provider}`);
+                return process.env.NODE_ENV === 'development';
         }
     }
 
@@ -88,6 +91,25 @@ class WebhookVerifier {
             .update(payload)
             .digest('base64');
 
+        return hash === signature;
+    }
+
+    _verifyVTpass(headers, payload) {
+        // VTpass sends a shared secret in the 'x-vtpass-secret' header
+        const secret = process.env.VTPASS_SECRET_KEY;
+        const incoming = headers['x-vtpass-secret'];
+        if (!secret) return process.env.NODE_ENV === 'development';
+        return incoming === secret;
+    }
+
+    _verifyGraph(headers, payload) {
+        // Graph Finance sends HMAC-SHA256 in 'x-graph-signature'
+        const secret = process.env.GRAPH_WEBHOOK_SECRET || process.env.GRAPH_API_KEY;
+        const signature = headers['x-graph-signature'];
+        if (!secret) return process.env.NODE_ENV === 'development';
+        if (!signature) return false;
+
+        const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
         return hash === signature;
     }
 }

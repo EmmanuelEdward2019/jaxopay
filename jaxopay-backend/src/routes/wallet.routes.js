@@ -8,12 +8,15 @@ import {
   getWallet,
   getWalletByCurrency,
   createWallet,
+  initializeDeposit,
+  verifyDeposit,
   transferBetweenWallets,
   getBalance,
   getAllBalances,
   toggleWalletStatus,
   getWalletTransactions,
   addFunds,
+  getOrCreateVBA,
 } from '../controllers/wallet.controller.js';
 
 const router = express.Router();
@@ -26,6 +29,14 @@ router.get('/', getWallets);
 
 // Get all balances summary
 router.get('/balances', getAllBalances);
+
+// Get or create Virtual Bank Account (VBA) for receiving funds
+router.get(
+  '/vba/:walletId',
+  param('walletId').isUUID(),
+  validate,
+  getOrCreateVBA
+);
 
 // Get wallet by currency
 router.get(
@@ -82,6 +93,24 @@ router.post(
   validate,
   useIdempotency,
   transferBetweenWallets
+);
+
+// Initialize Korapay deposit (returns checkout URL)
+router.post(
+  '/deposit/initialize',
+  body('wallet_id').isUUID(),
+  body('amount').isFloat({ min: 1 }),
+  body('currency').optional().isString().isLength({ min: 3, max: 3 }),
+  validate,
+  initializeDeposit
+);
+
+// Verify Korapay deposit after payment (checks status and credits wallet)
+router.post(
+  '/deposit/verify',
+  body('reference').isString().notEmpty(),
+  validate,
+  verifyDeposit
 );
 
 // Add funds to wallet (for testing)
