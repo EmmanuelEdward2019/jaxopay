@@ -32,6 +32,8 @@ const GiftCards = () => {
     const [giftCards, setGiftCards] = useState([]);
     const [myCards, setMyCards] = useState([]);
     const [wallets, setWallets] = useState([]);
+    const [countries, setCountries] = useState([]);
+    const [selectedCountry, setSelectedCountry] = useState('US');
     const [selectedWallet, setSelectedWallet] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
@@ -44,14 +46,31 @@ const GiftCards = () => {
     const [revealedCodes, setRevealedCodes] = useState({});
 
     useEffect(() => {
+        fetchInitialData();
+    }, []);
+
+    useEffect(() => {
         fetchGiftCards();
+    }, [searchQuery, selectedCountry]);
+
+    const fetchInitialData = async () => {
         fetchMyCards();
         fetchWallets();
-    }, [searchQuery]); // auto fetch when search query changes (with debounce in a real app)
+        const countriesRes = await giftCardService.getCountries();
+        if (countriesRes.success) {
+            setCountries(countriesRes.data || []);
+        }
+    };
 
     const fetchGiftCards = async () => {
         setLoading(true);
-        const result = await giftCardService.getGiftCards(searchQuery ? { search: searchQuery } : {});
+        const params = {
+            country: selectedCountry,
+            size: 50
+        };
+        if (searchQuery) params.search = searchQuery;
+
+        const result = await giftCardService.getGiftCards(params);
         if (result.success) {
             setGiftCards(result.data.gift_cards || []);
         }
@@ -83,7 +102,8 @@ const GiftCards = () => {
         const result = await giftCardService.buyGiftCard({
             productId: card.productId,
             amount: amount,
-            currency: wallet?.currency || card.currency || 'USD',
+            currency: wallet?.currency || 'USD',
+            cardCurrency: card.currency || 'USD',
             countryCode: card.countryCode,
         });
         if (result.success) {
@@ -185,23 +205,36 @@ const GiftCards = () => {
                                 className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
                             />
                         </div>
+                        <div className="sm:w-48">
+                            <select
+                                value={selectedCountry}
+                                onChange={(e) => setSelectedCountry(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg appearance-none cursor-pointer"
+                            >
+                                {countries.map((c) => (
+                                    <option key={c.isoName} value={c.isoName}>
+                                        {c.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                         <button
                             onClick={fetchGiftCards}
-                            className="p-2.5 bg-gray-100 dark:bg-gray-800 rounded-lg"
+                            className="p-2.5 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                         >
-                            <RefreshCw className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                            <RefreshCw className={`w-5 h-5 text-gray-600 dark:text-gray-400 ${loading ? 'animate-spin' : ''}`} />
                         </button>
                     </div>
 
                     {/* Category Pills */}
-                    <div className="flex gap-2 overflow-x-auto pb-2">
+                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                         {CATEGORIES.map((cat) => (
                             <button
                                 key={cat.id}
                                 onClick={() => setSelectedCategory(cat.id)}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium whitespace-nowrap transition-colors ${selectedCategory === cat.id
-                                    ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                                className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium whitespace-nowrap transition-all ${selectedCategory === cat.id
+                                    ? 'bg-primary-600 text-white shadow-md scale-105'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                                     }`}
                             >
                                 <span>{cat.icon}</span>
@@ -223,38 +256,40 @@ const GiftCards = () => {
                         </div>
                     ) : (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                            {giftCards.map((card) => (
-                                <motion.div
-                                    key={card.productId}
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    className="card overflow-hidden cursor-pointer hover:shadow-lg transition-all group"
-                                    onClick={() => {
-                                        setSelectedCard(card);
-                                        setShowBuyModal(true);
-                                    }}
-                                >
-                                    <div className="aspect-[3/2] bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
-                                        {card.image_url ? (
-                                            <img src={card.image_url} alt={card.productName} className="w-full h-full object-contain bg-white" />
-                                        ) : (
-                                            <Gift className="w-12 h-12 text-white/50" />
-                                        )}
-                                    </div>
-                                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 transition-colors line-clamp-1 text-sm">
-                                        {card.productName}
-                                    </h3>
-                                    <p className="text-xs text-gray-500 mb-2">{card.countryCode} • {card.currency}</p>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-medium text-primary-600">
-                                            {card.denominationType === 'FIXED'
-                                                ? `From ${formatCurrency(card.fixedDenominations[0] || card.minAmount, card.currency)}`
-                                                : `Up to ${formatCurrency(card.maxAmount, card.currency)}`
-                                            }
-                                        </span>
-                                    </div>
-                                </motion.div>
-                            ))}
+                            {giftCards
+                                .filter(card => selectedCategory === 'all' || card.productName.toLowerCase().includes(selectedCategory.toLowerCase()))
+                                .map((card) => (
+                                    <motion.div
+                                        key={card.productId}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="card overflow-hidden cursor-pointer hover:shadow-lg transition-all group"
+                                        onClick={() => {
+                                            setSelectedCard(card);
+                                            setShowBuyModal(true);
+                                        }}
+                                    >
+                                        <div className="aspect-[3/2] bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
+                                            {card.image_url ? (
+                                                <img src={card.image_url} alt={card.productName} className="w-full h-full object-contain bg-white" />
+                                            ) : (
+                                                <Gift className="w-12 h-12 text-white/50" />
+                                            )}
+                                        </div>
+                                        <h3 className="font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 transition-colors line-clamp-1 text-sm">
+                                            {card.productName}
+                                        </h3>
+                                        <p className="text-xs text-gray-500 mb-2">{card.countryCode} • {card.currency}</p>
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-medium text-primary-600">
+                                                {card.denominationType === 'FIXED'
+                                                    ? `From ${formatCurrency(card.fixedDenominations[0] || card.minAmount, card.currency)}`
+                                                    : `Up to ${formatCurrency(card.maxAmount, card.currency)}`
+                                                }
+                                            </span>
+                                        </div>
+                                    </motion.div>
+                                ))}
                         </div>
                     )}
                 </>

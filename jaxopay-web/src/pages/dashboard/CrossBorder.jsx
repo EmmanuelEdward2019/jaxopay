@@ -18,6 +18,7 @@ import {
 import fxService from '../../services/fxService';
 import walletService from '../../services/walletService';
 import { formatCurrency } from '../../utils/formatters';
+import { useRecentInputs } from '../../hooks/useRecentInputs';
 
 const CrossBorder = () => {
     const [activeTab, setActiveTab] = useState('swap'); // 'swap' | 'transfer'
@@ -25,6 +26,8 @@ const CrossBorder = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [step, setStep] = useState(1);
+
+    const { recentInputs: recentAccounts, addRecentInput: addRecentAccount } = useRecentInputs('cross_border_accounts');
 
     // Swap State
     const [swapData, setSwapData] = useState({
@@ -80,6 +83,7 @@ const CrossBorder = () => {
         try {
             const res = await fxService.sendInternationalPayment(transferData);
             if (res.success) {
+                addRecentAccount(transferData.accountNumber);
                 setStep(3);
                 fetchWallets();
             }
@@ -116,7 +120,7 @@ const CrossBorder = () => {
                         Global Finance Hub
                     </h1>
                     <p className="text-accent-100 max-w-md">
-                        Swap currencies instantly and send bank transfers to over 50 countries with the best real-time rates.
+                        Swap currencies instantly and make international payments to over 50 countries with the best real-time rates.
                     </p>
                 </div>
 
@@ -287,11 +291,19 @@ const CrossBorder = () => {
                                                     <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                                     <input
                                                         type="text"
+                                                        list="recent-global-accounts"
                                                         value={transferData.accountNumber}
                                                         onChange={(e) => setTransferData(prev => ({ ...prev, accountNumber: e.target.value }))}
                                                         placeholder="Account Details"
                                                         className="w-full pl-11 pr-4 py-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-accent-500 transition-all dark:text-white"
                                                     />
+                                                    {recentAccounts.length > 0 && (
+                                                        <datalist id="recent-global-accounts">
+                                                            {recentAccounts.map((val, idx) => (
+                                                                <option key={`${val}-${idx}`} value={val} />
+                                                            ))}
+                                                        </datalist>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>

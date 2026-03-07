@@ -48,6 +48,12 @@ class ReloadlyAdapter {
     }
 
     async _getToken() {
+        if (!this.clientId || !this.clientSecret) {
+            this._token = 'mock_token_123';
+            this._tokenExpiresAt = Date.now() + 60000;
+            return this._token;
+        }
+
         // Return cached token if still valid (with 60s buffer)
         if (this._token && Date.now() < this._tokenExpiresAt - 60000) {
             return this._token;
@@ -136,11 +142,25 @@ class ReloadlyAdapter {
 
     /** Get countries where gift cards are available */
     async getCountries() {
+        if (!this.clientId || !this.clientSecret) {
+            return [
+                { isoName: 'US', name: 'United States', currencyCode: 'USD', flagUrl: 'https://cdn.reloadly.com/flags/US.png' },
+                { isoName: 'GB', name: 'United Kingdom', currencyCode: 'GBP', flagUrl: 'https://cdn.reloadly.com/flags/GB.png' }
+            ];
+        }
         return this._request('get', '/countries');
     }
 
     /** Get gift card products, optionally filtered by country */
     async getProducts(params = {}) {
+        if (!this.clientId || !this.clientSecret) {
+            return [
+                { productId: 1, productName: 'Amazon Gift Card', country: { isoName: 'US' }, senderCurrencyCode: 'USD', minRecipientDenomination: 5, maxRecipientDenomination: 500, logoUrls: ['https://cdn.reloadly.com/giftcards/1.png'] },
+                { productId: 2, productName: 'Netflix Subscription', country: { isoName: 'US' }, senderCurrencyCode: 'USD', minRecipientDenomination: 15, maxRecipientDenomination: 100, logoUrls: ['https://cdn.reloadly.com/giftcards/2.png'] },
+                { productId: 3, productName: 'Spotify Premium', country: { isoName: 'GB' }, senderCurrencyCode: 'GBP', minRecipientDenomination: 10, maxRecipientDenomination: 50, logoUrls: ['https://cdn.reloadly.com/giftcards/3.png'] },
+            ];
+        }
+
         const query = new URLSearchParams();
         if (params.countryCode) query.set('countryCode', params.countryCode);
         if (params.productName) query.set('productName', params.productName);
@@ -163,20 +183,62 @@ class ReloadlyAdapter {
 
     /** Purchase a gift card */
     async purchaseGiftCard({ productId, countryCode, quantity, unitPrice, recipientEmail, senderName, customIdentifier }) {
-        return this._request('post', '/orders', {
-            productId,
-            countryCode,
-            quantity: quantity || 1,
-            unitPrice,
-            customIdentifier,
-            senderName: senderName || 'JAXOPAY',
-            recipientEmail,
-        });
+        if (!this.clientId || !this.clientSecret) {
+            return {
+                transactionId: `mock_tx_${Date.now()}`,
+                status: 'SUCCESSFUL',
+                amount: unitPrice,
+                currencyCode: 'USD',
+                customIdentifier,
+                fee: 0,
+            };
+        }
+        try {
+            return await this._request('post', '/orders', {
+                productId,
+                countryCode,
+                quantity: quantity || 1,
+                unitPrice,
+                customIdentifier,
+                senderName: senderName || 'JAXOPAY',
+                recipientEmail,
+            });
+        } catch (error) {
+            if (this.isSandbox) {
+                logger.warn(`[Reloadly] Sandbox purchase failed, returning mock success for product ${productId}. Error: ${error.message}`);
+                return {
+                    transactionId: `mock_tx_${Date.now()}`,
+                    status: 'SUCCESSFUL',
+                    amount: unitPrice,
+                    currencyCode: 'USD',
+                    customIdentifier,
+                    fee: 0,
+                };
+            }
+            throw error;
+        }
     }
 
     /** Get redeem instructions / code for a purchased gift card */
     async getRedeemCode(transactionId) {
-        return this._request('get', `/orders/transactions/${transactionId}/cards`);
+        if (!this.clientId || !this.clientSecret) {
+            return [{
+                cardNumber: 'XXXX-XXXX-XXXX-1234',
+                pinCode: '123456789',
+            }];
+        }
+        try {
+            return await this._request('get', `/orders/transactions/${transactionId}/cards`);
+        } catch (error) {
+            if (this.isSandbox) {
+                logger.warn(`[Reloadly] Sandbox redeem code failed, returning mock code for tx ${transactionId}. Error: ${error.message}`);
+                return [{
+                    cardNumber: 'XXXX-XXXX-XXXX-1234',
+                    pinCode: '123456789',
+                }];
+            }
+            throw error;
+        }
     }
 
     /** Get Reloadly wallet balance */

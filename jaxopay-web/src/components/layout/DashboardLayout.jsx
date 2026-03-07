@@ -44,7 +44,6 @@ const DashboardLayout = () => {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home, enabled: true },
     { name: 'Wallets', href: '/dashboard/wallets', icon: Wallet, enabled: true },
-    { name: 'Bank Transfer', href: '/dashboard/transfer', icon: Send, enabled: true },
     { name: 'Global Pay', href: '/dashboard/cross-border', icon: Globe, enabled: true },
     { name: 'Exchange', href: '/dashboard/exchange', icon: ArrowLeftRight, enabled: isFeatureEnabled('crypto') },
     { name: 'Virtual Cards', href: '/dashboard/cards', icon: CreditCard, enabled: isFeatureEnabled('virtual_cards') },

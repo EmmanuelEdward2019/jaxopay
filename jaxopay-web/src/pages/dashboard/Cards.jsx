@@ -215,7 +215,7 @@ const Cards = () => {
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                 <div>
-                    <p className="text-blue-800 dark:text-blue-200 font-medium">USD Virtual Cards — Powered by Graph Finance</p>
+                    <p className="text-blue-800 dark:text-blue-200 font-medium">USD Virtual Cards</p>
                     <p className="text-blue-700 dark:text-blue-300 text-sm">
                         Create reloadable or single-use USD virtual cards accepted worldwide. Cards are linked to your USD wallet.
                     </p>
@@ -674,7 +674,7 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
                 {/* Info */}
                 <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-5">
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                        <strong>USD Virtual Card</strong> powered by Graph Finance. Accepted worldwide for online payments.
+                        <strong>USD Virtual Card</strong>. Accepted worldwide for online payments.
                         {cardType === 'single_use' && ' This card terminates after one transaction.'}
                     </p>
                 </div>

@@ -56,7 +56,12 @@ const Dashboard = () => {
   const statsDisplay = [
     {
       name: 'Total Balance',
-      value: user?.preferences?.show_balances === false ? '****' : formatCurrency(stats.total_balance || 0, 'USD'),
+      value: user?.preferences?.show_balances === false ? '****' :
+        (typeof stats.total_balance === 'object' && stats.total_balance !== null
+          ? Object.keys(stats.total_balance).length > 0
+            ? Object.entries(stats.total_balance).map(([c, v]) => formatCurrency(v, c)).join(' • ')
+            : '$0.00'
+          : formatCurrency(stats.total_balance || 0, 'USD')),
       icon: Wallet,
       change: '+12.5%',
       changeType: 'positive',

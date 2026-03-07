@@ -158,17 +158,15 @@ const Wallets = () => {
         setActionLoading(false);
     };
 
-    const handleTransfer = async (fromWalletId, toWalletId, amount, description) => {
+    const handleTransfer = async (recipientEmail, amount, currency, description) => {
         setActionLoading(true);
-        const result = await walletService.transfer(fromWalletId, toWalletId, amount, description);
-        if (result.success) {
-            await fetchWallets();
-            if (selectedWallet) {
-                await fetchWalletTransactions(selectedWallet.id);
-            }
+        const res = await walletService.transfer(recipientEmail, amount, currency, description);
+        if (res.success) {
             setShowTransferModal(false);
+            fetchWallets();
+            fetchWalletTransactions(selectedWallet.id); // Assuming selectedWallet is still relevant for transactions
         } else {
-            setError(result.error);
+            alert(res.error || 'Transfer failed');
         }
         setActionLoading(false);
     };
@@ -182,12 +180,12 @@ const Wallets = () => {
         return matchesSearch && matchesType;
     });
 
-    // Calculate total balance in USD (simplified)
-    const totalBalance = wallets.reduce((sum, wallet) => {
-        // This is a simplified conversion - in production, use real exchange rates
-        const bal = parseFloat(wallet.balance);
-        return sum + (isNaN(bal) ? 0 : bal);
-    }, 0);
+    // Calculate total balance grouped by currency
+    const totalBalances = wallets.reduce((acc, wallet) => {
+        const bal = parseFloat(wallet.balance) || 0;
+        acc[wallet.currency] = (acc[wallet.currency] || 0) + bal;
+        return acc;
+    }, {});
 
     if (loading) {
         return (
@@ -252,9 +250,14 @@ const Wallets = () => {
                 <div className="flex items-center justify-between">
                     <div>
                         <p className="text-accent-100 text-sm mb-1">Total Balance</p>
-                        <div className="flex items-center gap-3">
-                            <h2 className="text-3xl font-bold">
-                                {showBalances ? formatCurrency(totalBalance, 'USD') : '••••••'}
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <h2 className="text-3xl font-bold flex flex-wrap gap-x-4">
+                                {showBalances
+                                    ? Object.keys(totalBalances).length > 0
+                                        ? Object.entries(totalBalances).map(([c, v]) => <span key={c}>{formatCurrency(v, c)}</span>)
+                                        : '$0.00'
+                                    : '••••••'
+                                }
                             </h2>
                             <button
                                 onClick={() => setShowBalances(!showBalances)}
@@ -681,7 +684,7 @@ const CreateWalletModal = ({ onClose, onCreate, loading, existingCurrencies }) =
 // Transfer Modal Component
 const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
     const [fromWallet, setFromWallet] = useState('');
-    const [toWallet, setToWallet] = useState('');
+    const [recipientEmail, setRecipientEmail] = useState('');
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
 
@@ -703,7 +706,7 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Transfer Funds</h2>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Send Funds</h2>
                     <button
                         onClick={onClose}
                         className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -716,7 +719,7 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
                     {/* From Wallet */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            From Wallet
+                            Select Wallet
                         </label>
                         <select
                             value={fromWallet}
@@ -732,25 +735,18 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
                         </select>
                     </div>
 
-                    {/* To Wallet */}
+                    {/* Recipient */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            To Wallet
+                            Recipient Email
                         </label>
-                        <select
-                            value={toWallet}
-                            onChange={(e) => setToWallet(e.target.value)}
+                        <input
+                            type="email"
+                            value={recipientEmail}
+                            onChange={(e) => setRecipientEmail(e.target.value)}
+                            placeholder="user@example.com"
                             className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
-                        >
-                            <option value="">Select wallet...</option>
-                            {wallets
-                                .filter((w) => w.id !== fromWallet)
-                                .map((w) => (
-                                    <option key={w.id} value={w.id}>
-                                        {w.currency} - {formatCurrency(w.balance || 0, w.currency)}
-                                    </option>
-                                ))}
-                        </select>
+                        />
                     </div>
 
                     {/* Amount */}
@@ -803,11 +799,11 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
                         Cancel
                     </button>
                     <button
-                        onClick={() => onTransfer(fromWallet, toWallet, parseFloat(amount), description)}
-                        disabled={!fromWallet || !toWallet || !amount || parseFloat(amount) <= 0 || loading}
+                        onClick={() => onTransfer(recipientEmail, parseFloat(amount), fromWalletData?.currency, description)}
+                        disabled={!fromWallet || !recipientEmail || !amount || parseFloat(amount) <= 0 || loading || parseFloat(amount) > parseFloat(fromWalletData?.balance || 0)}
                         className="flex-1 py-3 px-4 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {loading ? 'Transferring...' : 'Transfer'}
+                        {loading ? 'Sending...' : 'Send'}
                     </button>
                 </div>
             </motion.div>
@@ -1083,7 +1079,7 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                     </div>
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Complete Your Payment</h2>
                     <p className="text-gray-600 dark:text-gray-400 mb-2">
-                        A Korapay payment page has opened in a new tab. Complete your payment there.
+                        A secure payment page has opened in a new tab. Complete your payment there.
                     </p>
                     <p className="text-xs text-gray-400 mb-6">
                         Ref: <code className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded font-mono">{checkoutRef}</code>
@@ -1190,7 +1186,7 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                                 <span key={m} className="px-2 py-1 bg-white dark:bg-gray-800 rounded-md text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">{m}</span>
                             ))}
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">🔒 Secured by Korapay — PCI-DSS compliant</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">🔒 Secured by PCI-DSS compliant payment processing</p>
                     </div>
 
                     <button

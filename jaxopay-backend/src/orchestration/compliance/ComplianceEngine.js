@@ -32,9 +32,8 @@ class ComplianceEngine {
 
     async _getUserComplianceState(userId) {
         const res = await query(
-            `SELECT u.id, u.kyc_tier, u.is_active, up.country_code, ars.risk_score 
+            `SELECT u.id, u.kyc_tier, u.is_active, u.country_code, ars.risk_score 
        FROM users u 
-       JOIN user_profiles up ON u.id = up.user_id 
        LEFT JOIN aml_risk_scores ars ON u.id = ars.user_id
        WHERE u.id = $1`,
             [userId]

@@ -34,12 +34,6 @@ const ProductManagement = () => {
         } else if (path.includes('giftcards')) {
             setPageTitle('Gift Card Trade Registry');
             setProductType('gift_card');
-        } else if (path.includes('flights')) {
-            setPageTitle('Flight Booking Monitor');
-            setProductType('flight');
-        } else if (path.includes('sms')) {
-            setPageTitle('System SMS Logs');
-            setProductType('bulk_sms');
         }
     }, [location]);
 
@@ -78,8 +72,6 @@ const ProductManagement = () => {
         switch (productType) {
             case 'crypto': return <TrendingUp className="w-6 h-6 text-orange-500" />;
             case 'gift_card': return <Gift className="w-6 h-6 text-purple-500" />;
-            case 'flight': return <Plane className="w-6 h-6 text-blue-500" />;
-            case 'sms': return <MessageSquare className="w-6 h-6 text-primary-500" />;
             default: return <Activity className="w-6 h-6 text-gray-500" />;
         }
     };

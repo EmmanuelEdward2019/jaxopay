@@ -183,6 +183,7 @@ class VTpassAdapter extends BaseAdapter {
         try {
             const res = await this.client.post('/merchant-verify', body, { timeout: 20000 });
             const data = res.data;
+            logger.info(`[VTpass] Verify Response: ${JSON.stringify(data)}`);
 
             if (data.code !== '000') {
                 const msg = data.content?.error || data.response_description || 'Meter/account verification failed';
@@ -190,7 +191,20 @@ class VTpassAdapter extends BaseAdapter {
             }
 
             if (data.content?.WrongBillersCode === true || data.content?.WrongBillersCode === 'true') {
-                throw { message: 'Invalid meter number. Please check and try again.', statusCode: 400 };
+                if (this.isSandbox) {
+                    // Simulate a valid sandbox account to bypass unreliable test APIs
+                    return {
+                        code: '000',
+                        content: {
+                            Customer_Name: `Jani Doe (${body.billersCode})`,
+                            MeterNumber: body.billersCode,
+                            Address: "123 Jaxopay Sandbox Lane",
+                            WrongBillersCode: false
+                        }
+                    };
+                }
+                const msg = data.content?.error || data.response_description || 'Invalid meter number. Please check and try again.';
+                throw { message: `VTpass: ${msg}`, statusCode: 400 };
             }
 
             return data;

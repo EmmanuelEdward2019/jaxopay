@@ -39,13 +39,13 @@ const walletService = {
     }
   },
 
-  // Internal transfer between wallets
-  transfer: async (fromWalletId, toWalletId, amount, description = '') => {
+  // P2P transfer between users
+  transfer: async (recipientEmail, amount, currency, description = '') => {
     try {
       const response = await apiClient.post('/wallets/transfer', {
-        from_wallet_id: fromWalletId,
-        to_wallet_id: toWalletId,
+        recipient_email: recipientEmail,
         amount,
+        currency,
         description,
       });
       return { success: true, data: response.data ?? response };

@@ -2,6 +2,7 @@ import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import ReloadlyAdapter from '../orchestration/adapters/digital/ReloadlyAdapter.js';
+import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
 
 const reloadly = new ReloadlyAdapter();
 
@@ -143,6 +144,7 @@ export const buyGiftCard = catchAsync(async (req, res) => {
     amount,
     quantity = 1,
     currency = 'USD',
+    cardCurrency = 'USD',
     recipientEmail,
   } = req.body;
 
@@ -151,7 +153,18 @@ export const buyGiftCard = catchAsync(async (req, res) => {
   }
 
   const reference = `JAXO-GC-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-  const totalCost = parseFloat(amount) * parseInt(quantity);
+  const totalCostInCardCurrency = parseFloat(amount) * parseInt(quantity);
+  let totalCostInWalletCurrency = totalCostInCardCurrency;
+  let exchangeRate = 1.0;
+
+  // 0. Handle Currency Conversion if needed
+  if (cardCurrency.toUpperCase() !== currency.toUpperCase()) {
+    logger.info(`[GiftCards] FX required: ${cardCurrency} -> ${currency}`);
+    const rateData = await fxService.getExchangeRate(cardCurrency, currency);
+    exchangeRate = rateData.rate;
+    totalCostInWalletCurrency = totalCostInCardCurrency * exchangeRate;
+    logger.info(`[GiftCards] Converted: ${totalCostInCardCurrency} ${cardCurrency} = ${totalCostInWalletCurrency} ${currency} (rate: ${exchangeRate})`);
+  }
 
   // 1. Deduct wallet balance
   const deductResult = await transaction(async (client) => {
@@ -166,9 +179,9 @@ export const buyGiftCard = catchAsync(async (req, res) => {
       throw new AppError(`No ${currency} wallet found. Please create one first.`, 404);
     }
 
-    if (parseFloat(wallet.rows[0].balance) < totalCost) {
+    if (parseFloat(wallet.rows[0].balance) < totalCostInWalletCurrency) {
       throw new AppError(
-        `Insufficient balance. You need ${currency} ${totalCost.toLocaleString()} but have ${currency} ${parseFloat(wallet.rows[0].balance).toLocaleString()}.`,
+        `Insufficient balance. You need ${currency} ${totalCostInWalletCurrency.toLocaleString()} but have ${currency} ${parseFloat(wallet.rows[0].balance).toLocaleString()}.`,
         400
       );
     }
@@ -176,7 +189,7 @@ export const buyGiftCard = catchAsync(async (req, res) => {
     // Deduct
     await client.query(
       'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
-      [totalCost, wallet.rows[0].id]
+      [totalCostInWalletCurrency, wallet.rows[0].id]
     );
 
     // Create pending digital_transaction
@@ -187,7 +200,7 @@ export const buyGiftCard = catchAsync(async (req, res) => {
        VALUES ($1, $2, 'reloadly', 'giftcard', $3, $4, $5, $6, $7, $8, $9, 'pending')`,
       [
         req.user.id, wallet.rows[0].id, String(productId), countryCode || '',
-        totalCost, currency.toUpperCase(), quantity,
+        totalCostInWalletCurrency, currency.toUpperCase(), quantity,
         recipientEmail || req.user.email, reference,
       ]
     );
@@ -199,8 +212,8 @@ export const buyGiftCard = catchAsync(async (req, res) => {
           net_amount, fee_amount, status, description, reference)
        VALUES ($1, $2, 'gift_card_purchase', $3, $4, $3, 0, 'pending', $5, $6)`,
       [
-        req.user.id, wallet.rows[0].id, totalCost, currency.toUpperCase(),
-        `Gift card purchase (Reloadly)`, reference,
+        req.user.id, wallet.rows[0].id, totalCostInWalletCurrency, currency.toUpperCase(),
+        `Gift card purchase: ${amount} ${cardCurrency} (Reloadly)`, reference,
       ]
     );
 

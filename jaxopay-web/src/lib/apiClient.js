@@ -44,22 +44,23 @@ apiClient.interceptors.request.use(
 
 // User-friendly error messages based on status codes
 const getErrorMessage = (status, serverMessage) => {
-  // If server provides a clear message, use it
-  if (serverMessage && !serverMessage.includes('status code')) {
+  // If server provides a clear message, ALWAYS use it instead of hiding it
+  if (serverMessage && typeof serverMessage === 'string' && !serverMessage.includes('status code')) {
     return serverMessage;
   }
 
+  // Fallback generic messages only if the server responds with nothing
   const errorMessages = {
     400: 'The information you provided is invalid. Please check and try again.',
-    401: 'Your session has expired. Please log in again to continue.',
+    401: 'Your session has expired. Please log in again.',
     403: 'You don\'t have permission to perform this action.',
     404: 'The requested resource was not found.',
     409: 'This information already exists. Please use different details.',
     422: 'Please check that all fields are filled in correctly.',
     429: 'Too many requests. Please wait a moment and try again.',
-    500: 'Something went wrong on our end. Please try again later.',
-    502: 'Our servers are temporarily unavailable. Please try again in a few minutes.',
-    503: 'Service is temporarily unavailable. Please try again later.',
+    500: 'Internal server error. Please try again later.',
+    502: 'Gateway error from payment provider. Please try again.',
+    503: 'Service API is temporarily unavailable.',
   };
 
   return errorMessages[status] || 'Something went wrong. Please try again.';

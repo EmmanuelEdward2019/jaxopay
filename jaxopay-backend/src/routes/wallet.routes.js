@@ -86,7 +86,7 @@ router.post(
 // Transfer between wallets
 router.post(
   '/transfer',
-  body('recipient_id').isUUID(),
+  body('recipient_email').isEmail(),
   body('amount').isFloat({ min: 0.01 }),
   body('currency').isString().isLength({ min: 3, max: 3 }),
   body('description').optional().isString(),

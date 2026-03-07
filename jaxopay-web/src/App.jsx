@@ -49,7 +49,6 @@ import KYC from './pages/dashboard/KYC';
 import CrossBorder from './pages/dashboard/CrossBorder';
 
 import Support from './pages/dashboard/Support';
-import Transfer from './pages/dashboard/Transfer';
 
 // Admin Pages
 import AdminLayout from './pages/admin/AdminLayout';
@@ -277,7 +276,6 @@ function App() {
             <Route path="kyc" element={<KYC />} />
 
             <Route path="support" element={<Support />} />
-            <Route path="transfer" element={<Transfer />} />
             <Route path="cross-border" element={<CrossBorder />} />
           </Route>
 

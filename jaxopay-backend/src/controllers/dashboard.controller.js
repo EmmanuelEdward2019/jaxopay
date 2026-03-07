@@ -35,11 +35,12 @@ export const getDashboardSummary = catchAsync(async (req, res) => {
         ),
     ]);
 
-    // Calculate total balance (simplified - in production would use exchange rates)
-    const totalBalance = walletsResult.rows.reduce((sum, wallet) => {
-        const bal = parseFloat(wallet.balance);
-        return sum + (isNaN(bal) ? 0 : bal);
-    }, 0);
+    // Calculate total balance separated by currency
+    const totalBalance = walletsResult.rows.reduce((acc, wallet) => {
+        const bal = parseFloat(wallet.balance) || 0;
+        acc[wallet.currency] = (acc[wallet.currency] || 0) + bal;
+        return acc;
+    }, {});
 
     res.status(200).json({
         success: true,

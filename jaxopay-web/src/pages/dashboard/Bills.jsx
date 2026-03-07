@@ -7,6 +7,7 @@ import {
 import billService from '../../services/billService';
 import walletService from '../../services/walletService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
+import { useRecentInputs } from '../../hooks/useRecentInputs';
 
 // Each category defines its own field label and whether verification is needed
 const BILL_CATEGORIES = [
@@ -83,6 +84,7 @@ const Bills = () => {
     const [error, setError] = useState(null);
     const [paymentResult, setPaymentResult] = useState(null);
     const [meterType, setMeterType] = useState('prepaid'); // prepaid | postpaid (electricity)
+    const { recentInputs, addRecentInput } = useRecentInputs(selectedCategory?.id);
 
     useEffect(() => {
         fetchWallets();
@@ -142,6 +144,7 @@ const Bills = () => {
         const result = await billService.validateAccount(selectedProvider.id, accountNumber, billType);
         if (result.success) {
             setValidatedAccount(result.data?.data || result.data);
+            addRecentInput(accountNumber);
         } else {
             setError(result.message || result.error || 'Could not verify. Check the number and try again.');
         }
@@ -179,6 +182,7 @@ const Bills = () => {
 
         if (result.success) {
             setPaymentResult(result.data?.data || result.data);
+            addRecentInput(accountNumber);
             setStep(5);
             fetchHistory();
         } else {
@@ -238,13 +242,13 @@ const Bills = () => {
                         <div className="flex items-center gap-2 mb-6">
                             {['Category', 'Provider', 'Details', 'Confirm', 'Done'].map((label, index) => (
                                 <div key={label} className="flex items-center">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step > index + 1 ? 'bg-accent-500 text-white' :
+                                    <div className={`w - 8 h - 8 rounded - full flex items - center justify - center text - sm font - medium ${step > index + 1 ? 'bg-accent-500 text-white' :
                                         step === index + 1 ? 'bg-accent-600 text-white' :
                                             'bg-gray-200 dark:bg-gray-700 text-gray-500'
-                                        }`}>
+                                        } `}>
                                         {step > index + 1 ? <Check className="w-4 h-4" /> : index + 1}
                                     </div>
-                                    {index < 4 && <div className={`w-8 h-0.5 ${step > index + 1 ? 'bg-accent-500' : 'bg-gray-200 dark:bg-gray-700'}`} />}
+                                    {index < 4 && <div className={`w - 8 h - 0.5 ${step > index + 1 ? 'bg-accent-500' : 'bg-gray-200 dark:bg-gray-700'} `} />}
                                 </div>
                             ))}
                         </div>
@@ -260,7 +264,7 @@ const Bills = () => {
                                             onClick={() => handleCategorySelect(category)}
                                             className="p-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-accent-500 dark:hover:border-accent-500 transition-all text-center group"
                                         >
-                                            <div className={`w-12 h-12 rounded-xl ${category.color} flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform`}>
+                                            <div className={`w - 12 h - 12 rounded - xl ${category.color} flex items - center justify - center mx - auto mb - 3 group - hover: scale - 110 transition - transform`}>
                                                 <category.icon className="w-6 h-6" />
                                             </div>
                                             <p className="font-medium text-gray-900 dark:text-white">{category.name}</p>
@@ -285,7 +289,7 @@ const Bills = () => {
                                 {loading ? (
                                     <div className="flex flex-col items-center py-12 gap-3">
                                         <RefreshCw className="w-8 h-8 text-accent-600 animate-spin" />
-                                        <p className="text-gray-500 text-sm">Loading providers from VTpass...</p>
+                                        <p className="text-gray-500 text-sm">Loading providers...</p>
                                     </div>
                                 ) : error ? (
                                     <div className="text-center py-8">
@@ -354,10 +358,10 @@ const Bills = () => {
                                                     key={type}
                                                     type="button"
                                                     onClick={() => { setMeterType(type); setValidatedAccount(null); }}
-                                                    className={`py-3 rounded-lg border-2 font-medium capitalize transition-all ${meterType === type
+                                                    className={`py - 3 rounded - lg border - 2 font - medium capitalize transition - all ${meterType === type
                                                         ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20 text-accent-700 dark:text-accent-300'
                                                         : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent-400'
-                                                        }`}
+                                                        } `}
                                                 >
                                                     {type === 'prepaid' ? '🔆 Prepaid' : '📋 Postpaid'}
                                                 </button>
@@ -375,11 +379,19 @@ const Bills = () => {
                                     <div className="flex gap-2">
                                         <input
                                             type={selectedCategory?.fieldType || 'text'}
+                                            list={`recent-accounts-${selectedCategory?.id}`}
                                             value={accountNumber}
                                             onChange={(e) => { setAccountNumber(e.target.value); setValidatedAccount(null); }}
                                             placeholder={selectedCategory?.fieldPlaceholder}
                                             className="flex-1 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
                                         />
+                                        {recentInputs.length > 0 && (
+                                            <datalist id={`recent-accounts-${selectedCategory?.id}`}>
+                                                {recentInputs.map((val, idx) => (
+                                                    <option key={`${val}-${idx}`} value={val} />
+                                                ))}
+                                            </datalist>
+                                        )}
                                         {needsValidation && (
                                             <button
                                                 onClick={handleValidateAccount}
@@ -426,10 +438,10 @@ const Bills = () => {
                                                 <button
                                                     key={v.variation_code}
                                                     onClick={() => { setSelectedVariation(v); setAmount(String(v.variation_amount || v.price || '')); }}
-                                                    className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border-2 transition-all text-left ${selectedVariation?.variation_code === v.variation_code
+                                                    className={`w - full flex items - center justify - between px - 4 py - 3 rounded - lg border - 2 transition - all text - left ${selectedVariation?.variation_code === v.variation_code
                                                         ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
                                                         : 'border-gray-200 dark:border-gray-700 hover:border-accent-400'
-                                                        }`}
+                                                        } `}
                                                 >
                                                     <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{v.name}</span>
                                                     {(v.variation_amount || v.price) && (
@@ -454,7 +466,7 @@ const Bills = () => {
                                         onChange={(e) => { setAmount(e.target.value); if (hasVariations) setSelectedVariation(null); }}
                                         placeholder="0.00"
                                         readOnly={hasVariations && !!selectedVariation}
-                                        className={`w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none ${hasVariations && selectedVariation ? 'font-semibold text-accent-700 dark:text-accent-300' : ''}`}
+                                        className={`w - full px - 4 py - 3 bg - white dark: bg - gray - 700 border border - gray - 200 dark: border - gray - 600 rounded - lg focus: ring - 2 focus: ring - accent - 500 outline - none ${hasVariations && selectedVariation ? 'font-semibold text-accent-700 dark:text-accent-300' : ''} `}
                                     />
                                 </div>
 
@@ -575,10 +587,10 @@ const Bills = () => {
                                         </div>
                                         <div className="text-right">
                                             <p className="font-medium text-gray-900 dark:text-white text-sm">{formatCurrency(payment.amount, payment.currency)}</p>
-                                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${payment.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                            <span className={`text - xs px - 1.5 py - 0.5 rounded font - medium ${payment.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
                                                 payment.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
                                                     'bg-yellow-100 text-yellow-700'
-                                                }`}>{payment.status}</span>
+                                                } `}>{payment.status}</span>
                                         </div>
                                     </div>
                                 ))}
