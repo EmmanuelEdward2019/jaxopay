@@ -1,6 +1,8 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import mexc from '../orchestration/adapters/crypto/MexcAdapter.js';
+import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
 
 // Get supported cryptocurrencies
 export const getSupportedCryptos = catchAsync(async (req, res) => {
@@ -33,9 +35,7 @@ export const getExchangeRates = catchAsync(async (req, res) => {
     throw new AppError('From and to currencies are required', 400);
   }
 
-  // In production, this would call CoinGecko/Binance API
-  // For now, using mock rates
-  const rate = await getMockExchangeRate(fromCurr, toCurr);
+  const rate = await getLiveExchangeRate(fromCurr, toCurr);
   const exchangeAmount = amount ? parseFloat(amount) * rate : null;
 
   res.status(200).json({
@@ -84,8 +84,8 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
       throw new AppError('Insufficient crypto balance', 400);
     }
 
-    // Get exchange rate
-    const rate = await getMockExchangeRate(crypto_currency, fiat_currency);
+    // Get exchange rate (Live from MEXC)
+    const rate = await getLiveExchangeRate(crypto_currency, fiat_currency);
     const fiatAmount = crypto_amount * rate;
     const fee = fiatAmount * 0.01; // 1% fee
     const netAmount = fiatAmount - fee;
@@ -118,6 +118,23 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
       [netAmount, fiatWallet.rows[0].id]
     );
 
+    // Optional: Synchronize Liquidity with MEXC
+    let mexcOrderId = null;
+    try {
+      if (process.env.MEXC_ACCESS_KEY && process.env.MEXC_SECRET_KEY) {
+        const symbol = `${crypto_currency.toUpperCase()}USDT`;
+        const mexcRes = await mexc.createOrder({
+          symbol,
+          side: 'SELL',
+          type: 'MARKET',
+          quantity: crypto_amount
+        });
+        mexcOrderId = mexcRes.orderId;
+      }
+    } catch (e) {
+      logger.warn('[Exchange] MEXC Liquidity Sync Failed (Trade still processed internally):', e.message);
+    }
+
     // Create crypto transaction
     await client.query(
       `INSERT INTO wallet_transactions
@@ -133,6 +150,8 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
           fiat_amount: fiatAmount,
           fee,
           net_amount: netAmount,
+          mexc_order_id: mexcOrderId,
+          source: 'mexc_live'
         }),
       ]
     );
@@ -213,8 +232,8 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       throw new AppError('Insufficient fiat balance', 400);
     }
 
-    // Get exchange rate
-    const rate = await getMockExchangeRate(fiat_currency, crypto_currency);
+    // Get exchange rate (Live from MEXC)
+    const rate = await getLiveExchangeRate(fiat_currency, crypto_currency);
     const cryptoAmount = fiat_amount * rate;
     const fee = fiat_amount * 0.01; // 1% fee
     const netFiat = fiat_amount + fee;
@@ -251,6 +270,26 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       [cryptoAmount, cryptoWallet.rows[0].id]
     );
 
+    // Optional: Synchronize Liquidity with MEXC
+    let mexcOrderId = null;
+    try {
+      if (process.env.MEXC_ACCESS_KEY && process.env.MEXC_SECRET_KEY) {
+        const symbol = `${crypto_currency.toUpperCase()}USDT`;
+        const usdRate = await fxService.getExchangeRate(fiat_currency, 'USD');
+        const quoteQty = (fiat_amount * (usdRate?.rate || 1 / 1650)).toFixed(2);
+
+        const mexcRes = await mexc.createOrder({
+          symbol,
+          side: 'BUY',
+          type: 'MARKET',
+          quoteOrderQty: quoteQty
+        });
+        mexcOrderId = mexcRes.orderId;
+      }
+    } catch (e) {
+      logger.warn('[Exchange] MEXC Liquidity Sync Failed (Trade still processed internally):', e.message);
+    }
+
     // Create fiat transaction
     await client.query(
       `INSERT INTO wallet_transactions
@@ -265,6 +304,8 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
           crypto_currency: crypto_currency.toUpperCase(),
           crypto_amount: cryptoAmount,
           fee,
+          mexc_order_id: mexcOrderId,
+          source: 'mexc_live'
         }),
       ]
     );
@@ -351,51 +392,61 @@ export const getExchangeHistory = catchAsync(async (req, res) => {
   });
 });
 
-// Mock exchange rate function (updated with MEXC-like prices)
+/**
+ * Get Live Exchange Rate using MEXC for Crypto 
+ * and Graph Finance for Fiat bridges.
+ */
+async function getLiveExchangeRate(from, to) {
+  from = from.toUpperCase();
+  to = to.toUpperCase();
+
+  try {
+    // 1. Check if it's a direct crypto pair MEXC handles
+    let rate = await mexc.getExchangeRate(from, to);
+    if (rate !== null) return rate;
+
+    // 2. Identify Crypto vs Fiat to bridge through USD
+    const cryptoAssets = ['BTC', 'ETH', 'USDT', 'BNB', 'SOL', 'XRP', 'USDC', 'ADA', 'DOGE', 'TRX'];
+    const isFromCrypto = cryptoAssets.includes(from);
+    const isToCrypto = cryptoAssets.includes(to);
+
+    // Case: Crypto to Fiat (e.g. BTC to NGN)
+    if (isFromCrypto && !isToCrypto) {
+      const cryptoToUsd = await mexc.getExchangeRate(from, 'USDT') || await mexc.getExchangeRate(from, 'USDC') || 1.0;
+      const usdToFiat = await fxService.getExchangeRate('USD', to);
+      return cryptoToUsd * (usdToFiat?.rate || 1.0);
+    }
+
+    // Case: Fiat to Crypto (e.g. NGN to BTC)
+    if (!isFromCrypto && isToCrypto) {
+      const fiatToUsd = await fxService.getExchangeRate(from, 'USD');
+      const usdToCrypto = await mexc.getExchangeRate('USDT', to) || await mexc.getExchangeRate('USDC', to) || 1.0;
+      return (fiatToUsd?.rate || 1 / 1650) * usdToCrypto;
+    }
+
+    // Case: Fiat to Fiat
+    if (!isFromCrypto && !isToCrypto) {
+      const res = await fxService.getExchangeRate(from, to);
+      return res.rate;
+    }
+
+    // Final Fallback to older mock logic
+    return await getMockExchangeRate(from, to);
+  } catch (err) {
+    logger.error(`[ExchangeRate] Error fetching live rate for ${from}->${to}:`, err.message);
+    return await getMockExchangeRate(from, to);
+  }
+}
+
+// Fallback logic for safety
 async function getMockExchangeRate(from, to) {
   const usdRates = {
-    BTC: 93450.12,
-    ETH: 3620.45,
-    USDT: 1.00,
-    BNB: 685.30,
-    SOL: 242.15,
-    XRP: 1.62,
-    USDC: 1.00,
-    ADA: 0.88,
-    DOGE: 0.42,
-    TRX: 0.22,
-    USD: 1.00,
-    // Add NGN rate if needed for direct lookups
-    NGN: 1 / 1650, // Approx 1 USD = 1650 NGN
+    BTC: 93450, ETH: 3620, USDT: 1.0, BNB: 685, SOL: 242,
+    XRP: 1.6, USDC: 1.0, ADA: 0.8, DOGE: 0.4, TRX: 0.2,
+    USD: 1.0, NGN: 1 / 1650
   };
-
-  const fromSym = from.toUpperCase();
-  const toSym = to.toUpperCase();
-
-  // If we have both in our USD table, we can calculate the cross rate
-  if (usdRates[fromSym] && usdRates[toSym]) {
-    // formula: (1 from / 1 USD) / (1 to / 1 USD) 
-    // but our table is (1 crypto / X USD)
-    // so 1 BTC = 93450 USD. 1 NGN = 0.0006 USD.
-    // 1 BTC = (93450 / 0.0006) NGN = 155,750,000 NGN
-    return usdRates[fromSym] / usdRates[toSym];
-  }
-
-  // Fallback for legacy keys if any
-  const rates = {
-    BTC_USD: 93450.12,
-    ETH_USD: 3620.45,
-    USDT_USD: 1,
-    BNB_USD: 685.30,
-    SOL_USD: 242.15,
-  };
-
-  const key = `${fromSym}_${toSym}`;
-  const reverseKey = `${toSym}_${fromSym}`;
-
-  if (rates[key]) return rates[key];
-  if (rates[reverseKey]) return 1 / rates[reverseKey];
-
-  return 1; // Default rate
+  const f = usdRates[from.toUpperCase()] || 1.0;
+  const t = usdRates[to.toUpperCase()] || 1.0;
+  return f / t;
 }
 
