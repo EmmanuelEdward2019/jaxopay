@@ -44,7 +44,7 @@ const layout = (content) => `
 `;
 
 export const templates = {
-    signup: (data) => layout(`
+  signup: (data) => layout(`
     <h1 style="margin-top: 0;">Welcome to JAXOPAY! 🚀</h1>
     <p>Hi ${data.name},</p>
     <p>We're excited to have you join our global fintech community. To get started, please confirm your email address.</p>
@@ -57,7 +57,7 @@ export const templates = {
     <p>Need help? Our support team is always here for you.</p>
   `),
 
-    forgotPassword: (data) => layout(`
+  forgotPassword: (data) => layout(`
     <h1 style="margin-top: 0;">Reset Your Password</h1>
     <p>Hi ${data.name},</p>
     <p>You recently requested to reset your password for your JAXOPAY account. Click the button below to set a new password:</p>
@@ -69,7 +69,7 @@ export const templates = {
     <p>For your security, never share this link with anyone.</p>
   `),
 
-    transaction: (data) => layout(`
+  transaction: (data) => layout(`
     <h1 style="margin-top: 0;">Transaction Notification</h1>
     <p>Hello ${data.name},</p>
     <p>Your recent <span class="highlight">${data.type}</span> transaction has been processed successfully.</p>
@@ -102,7 +102,7 @@ export const templates = {
     <p>Thank you for choosing JAXOPAY for your global transactions.</p>
   `),
 
-    adminTransactionAlert: (data) => layout(`
+  adminTransactionAlert: (data) => layout(`
     <h1 style="margin-top: 0; color: #111827;">System Alert: New Transaction</h1>
     <p>An important transaction has occurred on the platform:</p>
     
@@ -126,11 +126,11 @@ export const templates = {
     </div>
 
     <div style="text-align: center;">
-      <a href="${process.env.FRONTEND_URL}/admin/transactions/${data.id}" class="button" style="background-color: #111827;">View in Admin Panel</a>
+      <a href="${data.frontendUrl || 'http://localhost:5173'}/admin/transactions/${data.id}" class="button" style="background-color: #111827;">View in Admin Panel</a>
     </div>
   `),
 
-    genericNotification: (data) => layout(`
+  genericNotification: (data) => layout(`
     <h1 style="margin-top: 0;">${data.subject}</h1>
     <p>Hello ${data.name},</p>
     <p>${data.message}</p>

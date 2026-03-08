@@ -79,7 +79,7 @@ export const getGiftCards = catchAsync(async (req, res) => {
       senderMaxAmount: p.maxSenderDenomination,
       fixedSenderDenominations: p.fixedSenderDenominations || [],
       discount: p.discountPercentage || 0,
-      image_url: p.logoUrls?.[0] || p.brand?.brandName ? `https://cdn.reloadly.com/giftcards/${p.productId}.png` : null,
+      image_url: p.logoUrls?.[0] || (p.brand?.brandName ? `https://cdn.reloadly.com/giftcards/${p.productId}.png` : null),
       redeemInstructions: p.redeemInstruction?.verbose || '',
     }));
 
@@ -265,12 +265,27 @@ export const buyGiftCard = catchAsync(async (req, res) => {
         reference,
         providerTxnId,
         productId,
-        amount: totalCost,
+        amount: totalCostInWalletCurrency,
         currency: currency.toUpperCase(),
         quantity,
         status: 'completed',
       },
     });
+
+    // ── 3. Send Notification ──────────────────────────────────────────
+    const userProfile = await client.query('SELECT first_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
+    emailService.sendTransactionEmails({
+      id: reference, // Fallback to reference as ID
+      type: 'Gift Card Purchase',
+      amount: totalCostInWalletCurrency,
+      currency: currency.toUpperCase(),
+      reference,
+      details: `${quantity}x ${reloadlyResult?.product?.productName || productId}`
+    }, {
+      name: userProfile.rows[0]?.first_name || 'User',
+      email: req.user.email
+    }).catch(err => logger.error('Failed to send gift card email:', err));
+
 
   } catch (purchaseErr) {
     // Reloadly purchase failed — refund wallet
@@ -278,7 +293,7 @@ export const buyGiftCard = catchAsync(async (req, res) => {
 
     await query(
       'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
-      [totalCost, deductResult.walletId]
+      [totalCostInWalletCurrency, deductResult.walletId]
     );
     await query(
       `UPDATE digital_transactions SET status = 'failed', metadata = $1, updated_at = NOW() WHERE transaction_ref = $2`,

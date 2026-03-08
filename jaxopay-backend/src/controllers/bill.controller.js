@@ -3,6 +3,7 @@ import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import emailService from '../services/email.service.js';
 import VTpassAdapter from '../orchestration/adapters/utilities/VTpassAdapter.js';
+import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
 
 const vtpass = new VTpassAdapter();
 
@@ -152,6 +153,19 @@ export const payBill = catchAsync(async (req, res) => {
   }
 
   const reference = `JAXO-BILL-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  let billingAmountInNaira = parseFloat(amount);
+  let totalDebitInWalletCurrency = billingAmountInNaira;
+  const targetCurrency = currency.toUpperCase();
+
+  // 0. Handle FX if paying from non-NGN wallet
+  // (Assuming VTpass always expects NGN amount)
+  if (targetCurrency !== 'NGN') {
+    logger.info(`[Bills] FX required: NGN -> ${targetCurrency}`);
+    // We need rate for 1 NGN in targetCurrency
+    const rateData = await fxService.getExchangeRate('NGN', targetCurrency);
+    totalDebitInWalletCurrency = billingAmountInNaira * rateData.rate;
+    logger.info(`[Bills] Converted: ${billingAmountInNaira} NGN = ${totalDebitInWalletCurrency} ${targetCurrency} (rate: ${rateData.rate})`);
+  }
 
   // ── 1. Deduct wallet balance in DB transaction ──────────────────
   const result = await transaction(async (client) => {
@@ -164,19 +178,19 @@ export const payBill = catchAsync(async (req, res) => {
 
     if (wallet.rows.length === 0) throw new AppError(`No ${currency} wallet found`, 404);
 
-    const fee = parseFloat(amount) * 0.005; // 0.5%
-    const totalDebit = parseFloat(amount) + fee;
+    const fee = totalDebitInWalletCurrency * 0.005; // 0.5%
+    const finalDebit = totalDebitInWalletCurrency + fee;
 
-    if (parseFloat(wallet.rows[0].balance) < totalDebit) {
+    if (parseFloat(wallet.rows[0].balance) < finalDebit) {
       throw new AppError(
-        `Insufficient balance. Need ₦${totalDebit.toFixed(2)}, have ₦${parseFloat(wallet.rows[0].balance).toFixed(2)}`,
+        `Insufficient balance. Need ${targetCurrency} ${finalDebit.toFixed(2)}, have ${targetCurrency} ${parseFloat(wallet.rows[0].balance).toFixed(2)}`,
         400
       );
     }
 
     await client.query(
       'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
-      [totalDebit, wallet.rows[0].id]
+      [finalDebit, wallet.rows[0].id]
     );
 
     const billPayment = await client.query(
@@ -186,9 +200,9 @@ export const payBill = catchAsync(async (req, res) => {
        RETURNING id, created_at`,
       [
         req.user.id, provider_id, metadata?.category || 'utility', account_number,
-        parseFloat(amount), currency.toUpperCase(),
+        totalDebitInWalletCurrency, targetCurrency,
         fee, reference,
-        JSON.stringify({ ...metadata, variation_code, reference }),
+        JSON.stringify({ ...metadata, variation_code, naira_amount: billingAmountInNaira, reference }),
       ]
     );
 
@@ -237,7 +251,7 @@ export const payBill = catchAsync(async (req, res) => {
     if (!vtResult.success) {
       await query(
         'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
-        [parseFloat(amount) + result.fee, result.walletId]
+        [finalDebit, result.walletId]
       );
       await query(
         `UPDATE bill_payments SET status = 'refunded' WHERE id = $1`,

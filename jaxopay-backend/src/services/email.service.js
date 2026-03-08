@@ -118,13 +118,14 @@ export const sendTransactionEmails = async (transactionData, userData) => {
         subject: `[ADMIN ALERT] New ${type} Transaction: ${currency} ${amount}`,
         template: 'adminTransactionAlert',
         data: {
-          id,
+          id: id || reference || 'N/A',
           userName: name,
           userEmail: email,
           type,
           amount,
           currency,
-          reference
+          reference,
+          frontendUrl: process.env.FRONTEND_URL
         }
       });
     }

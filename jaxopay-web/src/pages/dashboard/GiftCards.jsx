@@ -87,7 +87,9 @@ const GiftCards = () => {
     const fetchWallets = async () => {
         const result = await walletService.getWallets();
         if (result.success) {
-            const activeWallets = result.data.wallets?.filter(w => w.status !== 'frozen') || [];
+            // Updated to handle both array directly or wrapped in data.wallets
+            const arr = Array.isArray(result.data) ? result.data : (result.data?.wallets || []);
+            const activeWallets = arr.filter(w => w.is_active !== false && w.status !== 'frozen');
             setWallets(activeWallets);
             if (activeWallets.length > 0) {
                 setSelectedWallet(activeWallets[0].id);
@@ -257,7 +259,19 @@ const GiftCards = () => {
                     ) : (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                             {giftCards
-                                .filter(card => selectedCategory === 'all' || card.productName.toLowerCase().includes(selectedCategory.toLowerCase()))
+                                .filter(card => {
+                                    if (selectedCategory === 'all') return true;
+                                    const name = card.productName.toLowerCase();
+                                    const catMap = {
+                                        shopping: ['amazon', 'walmart', 'ebay', 'target', 'best buy', 'nike', 'adidas', 'shopping', 'retail'],
+                                        entertainment: ['netflix', 'spotify', 'hulu', 'itunes', 'google play', 'streaming', 'showtime', 'paramount'],
+                                        gaming: ['xbox', 'playstation', 'psn', 'nintendo', 'steam', 'roblox', 'pubg', 'fortnite', 'gaming', 'razer'],
+                                        food: ['uber eats', 'door dash', 'starbucks', 'domino', 'restaurant', 'food', 'dining'],
+                                        travel: ['uber', 'airbnb', 'hotel', 'flight', 'travel', 'expedia'],
+                                    };
+                                    const keywords = catMap[selectedCategory] || [selectedCategory];
+                                    return keywords.some(k => name.includes(k));
+                                })
                                 .map((card) => (
                                     <motion.div
                                         key={card.productId}

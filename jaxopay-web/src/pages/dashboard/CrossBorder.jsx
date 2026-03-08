@@ -54,6 +54,29 @@ const CrossBorder = () => {
         fetchWallets();
     }, []);
 
+    const [quoteExpiry, setQuoteExpiry] = useState(0);
+
+    useEffect(() => {
+        let timer;
+        if (quoteExpiry > 0) {
+            timer = setInterval(() => setQuoteExpiry(prev => prev - 1), 1000);
+        }
+        return () => clearInterval(timer);
+    }, [quoteExpiry]);
+
+    // Debounce FX rate fetching
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (swapData.amount && parseFloat(swapData.amount) > 0) {
+                fetchRate(swapData.fromCurrency, swapData.toCurrency, swapData.amount);
+            } else {
+                setSwapData(prev => ({ ...prev, receiveAmount: '', rate: 0 }));
+                setQuoteExpiry(0);
+            }
+        }, 650);
+        return () => clearTimeout(timer);
+    }, [swapData.amount, swapData.fromCurrency, swapData.toCurrency]);
+
     const fetchWallets = async () => {
         const res = await walletService.getWallets();
         if (res.success) {
@@ -96,6 +119,7 @@ const CrossBorder = () => {
 
     const fetchRate = async (from, to, amount) => {
         if (!amount || amount <= 0) return;
+        setLoading(true);
         try {
             const res = await fxService.getRates(from, to);
             if (res.success) {
@@ -104,9 +128,12 @@ const CrossBorder = () => {
                     rate: res.data.rate,
                     receiveAmount: amount * res.data.rate
                 }));
+                setQuoteExpiry(30);
             }
         } catch (e) {
             console.error(e);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -169,7 +196,7 @@ const CrossBorder = () => {
                                                         onChange={(e) => {
                                                             const val = e.target.value;
                                                             setSwapData(prev => ({ ...prev, amount: val }));
-                                                            fetchRate(swapData.fromCurrency, swapData.toCurrency, val);
+                                                            // Removed direct fetchRate call to use debounced useEffect
                                                         }}
                                                         placeholder="0.00"
                                                         className="w-full bg-transparent text-3xl font-bold outline-none dark:text-white border-none focus:ring-0"
@@ -220,14 +247,31 @@ const CrossBorder = () => {
                                         </div>
 
                                         {swapData.rate > 0 && (
-                                            <div className="p-4 bg-accent-50 dark:bg-accent-900/10 rounded-2xl flex items-center justify-between border border-accent-100 dark:border-accent-900/20">
-                                                <div className="flex items-center gap-2 text-accent-700 dark:text-accent-400">
-                                                    <TrendingUp className="w-4 h-4" />
-                                                    <span className="text-sm font-medium">Guaranteed Rate</span>
+                                            <div className="p-4 bg-accent-50 dark:bg-accent-900/10 rounded-2xl space-y-2 border border-accent-100 dark:border-accent-900/20">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2 text-accent-700 dark:text-accent-400">
+                                                        <TrendingUp className="w-4 h-4 text-green-500" />
+                                                        <span className="text-sm font-medium">Guaranteed Rate</span>
+                                                    </div>
+                                                    <span className="font-bold text-accent-700 dark:text-accent-400">
+                                                        1 {swapData.fromCurrency} = {Number(swapData.rate).toFixed(4)} {swapData.toCurrency}
+                                                    </span>
                                                 </div>
-                                                <span className="font-bold text-accent-700 dark:text-accent-400">
-                                                    1 {swapData.fromCurrency} = {Number(swapData.rate).toFixed(4)} {swapData.toCurrency}
-                                                </span>
+                                                <div className="flex items-center justify-between text-xs">
+                                                    <span className="text-gray-500 dark:text-gray-400">Quote valid for</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`font-bold ${quoteExpiry < 10 ? 'text-red-500 animate-pulse' : 'text-accent-600'}`}>
+                                                            {quoteExpiry}s
+                                                        </span>
+                                                        <button
+                                                            onClick={(e) => { e.preventDefault(); fetchRate(swapData.fromCurrency, swapData.toCurrency, swapData.amount); }}
+                                                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-accent-600 transition-colors"
+                                                            title="Refresh Rate"
+                                                        >
+                                                            <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
 

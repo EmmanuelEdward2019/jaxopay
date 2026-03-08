@@ -351,33 +351,50 @@ export const getExchangeHistory = catchAsync(async (req, res) => {
   });
 });
 
-// Mock exchange rate function (replace with real API in production)
+// Mock exchange rate function (updated with MEXC-like prices)
 async function getMockExchangeRate(from, to) {
-  const rates = {
-    BTC_USD: 45000,
-    ETH_USD: 2500,
-    USDT_USD: 1,
-    BNB_USD: 300,
-    SOL_USD: 100,
-    XRP_USD: 0.5,
-    USDC_USD: 1,
-    ADA_USD: 0.4,
-    DOGE_USD: 0.08,
-    TRX_USD: 0.1,
-    USD_BTC: 1 / 45000,
-    USD_ETH: 1 / 2500,
-    USD_BNB: 1 / 300,
-    USD_SOL: 1 / 100,
+  const usdRates = {
+    BTC: 93450.12,
+    ETH: 3620.45,
+    USDT: 1.00,
+    BNB: 685.30,
+    SOL: 242.15,
+    XRP: 1.62,
+    USDC: 1.00,
+    ADA: 0.88,
+    DOGE: 0.42,
+    TRX: 0.22,
+    USD: 1.00,
+    // Add NGN rate if needed for direct lookups
+    NGN: 1 / 1650, // Approx 1 USD = 1650 NGN
   };
 
-  const key = `${from.toUpperCase()}_${to.toUpperCase()}`;
-  const reverseKey = `${to.toUpperCase()}_${from.toUpperCase()}`;
+  const fromSym = from.toUpperCase();
+  const toSym = to.toUpperCase();
 
-  if (rates[key]) {
-    return rates[key];
-  } else if (rates[reverseKey]) {
-    return 1 / rates[reverseKey];
+  // If we have both in our USD table, we can calculate the cross rate
+  if (usdRates[fromSym] && usdRates[toSym]) {
+    // formula: (1 from / 1 USD) / (1 to / 1 USD) 
+    // but our table is (1 crypto / X USD)
+    // so 1 BTC = 93450 USD. 1 NGN = 0.0006 USD.
+    // 1 BTC = (93450 / 0.0006) NGN = 155,750,000 NGN
+    return usdRates[fromSym] / usdRates[toSym];
   }
+
+  // Fallback for legacy keys if any
+  const rates = {
+    BTC_USD: 93450.12,
+    ETH_USD: 3620.45,
+    USDT_USD: 1,
+    BNB_USD: 685.30,
+    SOL_USD: 242.15,
+  };
+
+  const key = `${fromSym}_${toSym}`;
+  const reverseKey = `${toSym}_${fromSym}`;
+
+  if (rates[key]) return rates[key];
+  if (rates[reverseKey]) return 1 / rates[reverseKey];
 
   return 1; // Default rate
 }

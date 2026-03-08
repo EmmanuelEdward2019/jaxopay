@@ -55,6 +55,16 @@ const Exchange = () => {
     const searchInputRef = useRef(null);
 
     // Debounce for rate fetching
+    const [quoteExpiry, setQuoteExpiry] = useState(0);
+
+    useEffect(() => {
+        let timer;
+        if (quoteExpiry > 0) {
+            timer = setInterval(() => setQuoteExpiry(prev => prev - 1), 1000);
+        }
+        return () => clearInterval(timer);
+    }, [quoteExpiry]);
+
     useEffect(() => {
         const timer = setTimeout(() => {
             if (payAmount && parseFloat(payAmount) > 0) {
@@ -62,8 +72,9 @@ const Exchange = () => {
             } else {
                 setReceiveAmount('');
                 setRates(null);
+                setQuoteExpiry(0);
             }
-        }, 500); // 500ms debounce
+        }, 600);
 
         return () => clearTimeout(timer);
     }, [payAmount, selectedCrypto, selectedFiatWallet, mode]);
@@ -98,7 +109,9 @@ const Exchange = () => {
 
         if (result.success) {
             setRates(result.data);
-            setReceiveAmount(result.data.converted_amount ? Number(result.data.converted_amount).toFixed(mode === 'buy' ? 6 : 2) : '');
+            const amt = result.data.exchange_amount || result.data.converted_amount;
+            setReceiveAmount(amt ? Number(amt).toFixed(mode === 'buy' ? 6 : 2) : '');
+            setQuoteExpiry(30); // Quote valid for 30 seconds
         }
         setLoadingRates(false);
     };
@@ -360,12 +373,30 @@ const Exchange = () => {
                         {rates && (
                             <div className="mb-6 p-4 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 space-y-2">
                                 <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">Rate</span>
+                                    <div className="flex items-center gap-1.5 text-gray-500">
+                                        <TrendingUp className="w-3.5 h-3.5 text-green-500" />
+                                        <span>Guaranteed Rate</span>
+                                    </div>
                                     <span className="font-medium text-gray-900 dark:text-white">
                                         1 {selectedCrypto} = {formatCurrency(rates.rate, selectedWallet?.currency)}
                                     </span>
                                 </div>
                                 <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Quote expires in</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`font-bold ${quoteExpiry < 10 ? 'text-red-500 animate-pulse' : 'text-accent-600'}`}>
+                                            {quoteExpiry}s
+                                        </span>
+                                        <button
+                                            onClick={(e) => { e.preventDefault(); fetchRates(); }}
+                                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-accent-600 transition-colors"
+                                            title="Refresh Rate"
+                                        >
+                                            <RefreshCw className={`w-3 h-3 ${loadingRates ? 'animate-spin' : ''}`} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex justify-between text-sm pt-2 border-t border-gray-100 dark:border-gray-700">
                                     <span className="text-gray-500">Network Fee</span>
                                     <span className="font-medium text-gray-900 dark:text-white flex items-center gap-1">
                                         <span className="w-2 h-2 rounded-full bg-green-500"></span>

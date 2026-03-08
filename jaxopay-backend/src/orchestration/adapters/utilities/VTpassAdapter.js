@@ -27,9 +27,14 @@ class VTpassAdapter extends BaseAdapter {
         super(config);
         this.name = 'VTpass';
         this.publicKey = process.env.VTPASS_PUBLIC_KEY;
-        this.apiKey = process.env.VTPASS_API_KEY;
-        this.publicKey = process.env.VTPASS_PUBLIC_KEY;
         this.secretKey = process.env.VTPASS_SECRET_KEY;
+        this.apiKey = process.env.VTPASS_API_KEY;
+
+        this.cache = {
+            services: {},
+            variations: {},
+            lastFetched: {}
+        };
 
         const isProd = process.env.NODE_ENV === 'production';
         const baseURL = isProd
@@ -102,6 +107,12 @@ class VTpassAdapter extends BaseAdapter {
 
     /* ─── Internal: Fetch services from VTpass ─────────────────── */
     async _getServices(identifier) {
+        const cacheKey = identifier;
+        const now = Date.now();
+        if (this.cache.services[cacheKey] && (now - (this.cache.lastFetched[cacheKey] || 0) < 3600000)) {
+            return this.cache.services[cacheKey];
+        }
+
         const res = await this.client.get('/services', {
             params: { identifier },
             timeout: 12000,
@@ -109,17 +120,26 @@ class VTpassAdapter extends BaseAdapter {
         if (res.data?.response_description !== '000' && res.data?.code !== '000') {
             throw new Error(`VTpass /services error: ${res.data?.response_description}`);
         }
-        return Array.isArray(res.data?.content) ? res.data.content : [];
+        const services = Array.isArray(res.data?.content) ? res.data.content : [];
+        this.cache.services[cacheKey] = services;
+        this.cache.lastFetched[cacheKey] = now;
+        return services;
     }
 
     /* ─── Internal: Fetch variations for a service ─────────────── */
     async _getVariations(serviceID) {
+        if (this.cache.variations[serviceID]) {
+            return this.cache.variations[serviceID];
+        }
+
         try {
             const res = await this.client.get('/service-variations', {
                 params: { serviceID },
                 timeout: 12000,
             });
-            return res.data?.content?.variations || [];
+            const variations = res.data?.content?.variations || [];
+            this.cache.variations[serviceID] = variations;
+            return variations;
         } catch (err) {
             logger.warn(`[VTpass] _getVariations(${serviceID}) failed:`, err.message);
             return [];
