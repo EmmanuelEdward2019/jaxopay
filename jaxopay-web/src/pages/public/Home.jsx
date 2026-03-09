@@ -57,13 +57,13 @@ export default function Home() {
     {
       icon: FaPaperPlane,
       title: 'Global Payments',
-      description: 'Send and receive money from family and friends internationally at an affordable rate....',
+      description: 'Send and receive money from family and friends internationally at an affordable rate. Experience instant cross-border transfers with total transparency and zero hidden fees.',
       color: 'text-accent-500' // Green
     },
     {
       icon: FaCreditCard,
       title: 'Virtual Cards',
-      description: 'Create virtual cards for international shopping over millions of online stores. Fund it with USD or stable coins',
+      description: 'Create virtual cards for international shopping across millions of online stores. Effortlessly fund your cards with USD or stablecoins for secure, borderless transactions.',
       color: 'text-accent-600' // Green
     },
     {
@@ -1094,30 +1094,30 @@ export default function Home() {
           <div className="grid md:grid-cols-2 gap-8 mb-12">
             {[
               {
-                name: 'Sarah Johnson',
+                name: 'Adebayo Abraham',
                 role: 'Small Business Owner',
-                image: 'https://images.unsplash.com/photo-1531123897727-8f129e16fd3c?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
                 text: 'JAXOPAY has transformed how I manage my international payments. The fees are incredibly low and transfers are instant!',
                 rating: 5
               },
               {
                 name: 'Michael Chen',
                 role: 'Freelance Developer',
-                image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?w=150&auto=format&fit=crop&q=80',
                 text: 'As a freelancer working with global clients, JAXOPAY makes receiving payments seamless. Best financial app I\'ve used!',
                 rating: 5
               },
               {
                 name: 'Amara Okafor',
                 role: 'E-commerce Entrepreneur',
-                image: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1531123897727-8f129e16fd3c?w=150&auto=format&fit=crop&q=80',
                 text: 'The virtual cards feature is a game-changer for my online business. Secure, fast, and reliable!',
                 rating: 5
               },
               {
                 name: 'David Martinez',
                 role: 'Digital Nomad',
-                image: 'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150&auto=format&fit=crop&q=80',
                 text: 'Managing multiple currencies while traveling has never been easier. JAXOPAY is my go-to financial companion!',
                 rating: 5
               }
@@ -1150,7 +1150,8 @@ export default function Home() {
                   </div>
                 </div>
               </motion.div>
-            ))}
+            ))
+            }
           </div>
         </div>
       </section>

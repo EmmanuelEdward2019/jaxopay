@@ -21,7 +21,7 @@ export default function Products() {
       id: 'payments',
       icon: FaGlobe, // Changed to Globe to match screenshot for Cross-Border
       title: 'Global Payments',
-      description: 'Send and receive money to 57+ countries instantly with the lowest fees in the market.',
+      description: 'Send and receive money to 57+ countries instantly with the lowest fees in the market. Experience instant cross-border transfers with total transparency.',
       features: [
         'Real-time transfers to bank accounts',
         'Support for 8 fiat currencies',
@@ -38,7 +38,7 @@ export default function Products() {
       id: 'cards',
       icon: FaCreditCard,
       title: 'Virtual USD Cards',
-      description: 'Get instant virtual cards for online shopping and subscriptions worldwide.',
+      description: 'Create virtual cards for international shopping across millions of online stores. Effortlessly fund your cards with USD or stablecoins for secure, borderless transactions.',
       features: [
         'Instant card issuance',
         'Use for Netflix, Spotify, Amazon, etc.',
