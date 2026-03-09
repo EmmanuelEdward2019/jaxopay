@@ -37,11 +37,6 @@ export default function Contact() {
       details: ['+234 800 JAXOPAY', '+1 (555) 123-4567'],
     },
     {
-      icon: MapPin,
-      title: 'Visit Us',
-      details: ['Lagos, Nigeria', 'Nairobi, Kenya', 'Accra, Ghana'],
-    },
-    {
       icon: Clock,
       title: 'Business Hours',
       details: ['Mon - Fri: 8:00 AM - 6:00 PM WAT', 'Sat: 9:00 AM - 2:00 PM WAT'],

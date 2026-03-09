@@ -56,14 +56,14 @@ export default function Home() {
   const products = [
     {
       icon: FaPaperPlane,
-      title: 'Payments',
-      description: 'Send and receive money from friends and family at affordable rates. We aim to drive the cost of payments to zero.',
+      title: 'Global Payments',
+      description: 'Send and receive money from family and friends internationally at an affordable rate....',
       color: 'text-accent-500' // Green
     },
     {
       icon: FaCreditCard,
       title: 'Virtual Cards',
-      description: 'Hold and exchange multiple currencies at fair and transparent exchange rates. We are constantly adding new currencies.',
+      description: 'Create virtual cards for international shopping over millions of online stores. Fund it with USD or stable coins',
       color: 'text-accent-600' // Green
     },
     {
@@ -71,12 +71,6 @@ export default function Home() {
       title: 'Crypto',
       description: 'Buy, sell, and exchange cryptocurrencies with ease. Secure, fast, and reliable crypto transactions.',
       color: 'text-[#8B5CF6]' // Purple
-    },
-    {
-      icon: FaPlane,
-      title: 'Flight Booking',
-      description: 'Book flights globally with competitive rates. Travel the world without payment barriers.',
-      color: 'text-[#F472B6]' // Pink
     },
     {
       icon: FaGift,
@@ -121,9 +115,9 @@ export default function Home() {
 
   const stats = [
     { value: '57+', label: 'Countries Supported' },
-    { value: '12', label: 'Currencies Available' },
-    { value: '99.9%', label: 'Uptime Guarantee' },
-    { value: '<1min', label: 'Average Transfer Time' },
+    { value: '100k', label: 'Happy Users' },
+    { value: '$1M+', label: 'Volume Processed' },
+    { value: '99.9%', label: 'Uptime' },
   ];
 
   const howItWorks = [
@@ -199,19 +193,7 @@ export default function Home() {
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 mb-10">
-                <Link
-                  to="/signup"
-                  className="inline-flex items-center justify-center px-8 py-4 bg-accent-600 text-white font-bold rounded-full hover:bg-accent-700 transition-all hover:scale-105 shadow-lg shadow-accent-500/30 gap-2"
-                >
-                  Get Started
-                  <ArrowRight className="w-5 h-5" />
-                </Link>
-                <Link
-                  to="/about"
-                  className="inline-flex items-center justify-center px-8 py-4 bg-white text-gray-900 font-bold rounded-full border-2 border-gray-100 hover:border-gray-300 hover:bg-gray-50 transition-all"
-                >
-                  How it works
-                </Link>
+                {/* Hero buttons removed per request */}
               </div>
 
               {/* App Store Links */}
@@ -761,7 +743,7 @@ export default function Home() {
               Get started in minutes
             </h2>
             <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-              Join over 100,000+ people who get the best exchange rates with JAXOPAY.
+              Join over 100,000+ people who trust JAXOPAY.
             </p>
           </div>
 
@@ -1028,11 +1010,11 @@ export default function Home() {
                   <div className="text-sm text-gray-500 uppercase tracking-wider font-semibold">Countries</div>
                 </div>
                 <div>
-                  <div className="text-4xl font-bold text-gray-900 dark:text-white mb-1">2M+</div>
+                  <div className="text-4xl font-bold text-gray-900 dark:text-white mb-1">100k</div>
                   <div className="text-sm text-gray-500 uppercase tracking-wider font-semibold">Happy Users</div>
                 </div>
                 <div>
-                  <div className="text-4xl font-bold text-gray-900 dark:text-white mb-1">$500M</div>
+                  <div className="text-4xl font-bold text-gray-900 dark:text-white mb-1">$1M</div>
                   <div className="text-sm text-gray-500 uppercase tracking-wider font-semibold">Processed/Year</div>
                 </div>
                 <div>
@@ -1101,7 +1083,7 @@ export default function Home() {
               Trusted Worldwide
             </div>
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
-              Loved by 40 Million Users
+              Loved by 100k Users
             </h2>
             <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
               Join millions of satisfied customers who trust JAXOPAY for their financial needs
@@ -1114,14 +1096,14 @@ export default function Home() {
               {
                 name: 'Sarah Johnson',
                 role: 'Small Business Owner',
-                image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1531123897727-8f129e16fd3c?w=150&auto=format&fit=crop&q=80',
                 text: 'JAXOPAY has transformed how I manage my international payments. The fees are incredibly low and transfers are instant!',
                 rating: 5
               },
               {
                 name: 'Michael Chen',
                 role: 'Freelance Developer',
-                image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150&auto=format&fit=crop&q=80',
                 text: 'As a freelancer working with global clients, JAXOPAY makes receiving payments seamless. Best financial app I\'ve used!',
                 rating: 5
               },
@@ -1135,7 +1117,7 @@ export default function Home() {
               {
                 name: 'David Martinez',
                 role: 'Digital Nomad',
-                image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?w=150&auto=format&fit=crop&q=80',
                 text: 'Managing multiple currencies while traveling has never been easier. JAXOPAY is my go-to financial companion!',
                 rating: 5
               }

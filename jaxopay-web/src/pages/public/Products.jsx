@@ -20,8 +20,8 @@ export default function Products() {
     {
       id: 'payments',
       icon: FaGlobe, // Changed to Globe to match screenshot for Cross-Border
-      title: 'Cross-Border Payments',
-      description: 'Send money to 57+ countries instantly with the lowest fees in the market.',
+      title: 'Global Payments',
+      description: 'Send and receive money to 57+ countries instantly with the lowest fees in the market.',
       features: [
         'Real-time transfers to bank accounts',
         'Support for 8 fiat currencies',
@@ -67,23 +67,6 @@ export default function Products() {
       color: 'text-purple-500',
       bgColor: 'bg-purple-50',
       gradient: 'from-purple-500 to-violet-600'
-    },
-    {
-      id: 'flights',
-      icon: FaPlane,
-      title: 'Flight Booking',
-      description: 'Book flights to any destination worldwide with flexible payment options.',
-      features: [
-        'Access to 500+ airlines',
-        'Best price guarantee',
-        'Pay with crypto or fiat',
-        '24/7 customer support',
-      ],
-      image: 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=800&auto=format&fit=crop',
-      link: '/products/flights',
-      color: 'text-pink-500',
-      bgColor: 'bg-pink-50',
-      gradient: 'from-pink-500 to-rose-600'
     },
     {
       id: 'giftcards',

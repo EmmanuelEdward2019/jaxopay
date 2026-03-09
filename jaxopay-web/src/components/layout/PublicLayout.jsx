@@ -37,7 +37,7 @@ export default function PublicLayout({ children }) {
   ];
 
   const products = [
-    { name: 'Payments', href: '/products/payments', description: 'Cross-border money transfers' },
+    { name: 'Global Payments', href: '/products/payments', description: 'Cross-border money transfers' },
     { name: 'Virtual Cards', href: '/products/cards', description: 'USD virtual cards' },
     { name: 'Crypto Exchange', href: '/products/crypto', description: 'Buy & sell crypto' },
     { name: 'Gift Cards', href: '/products/giftcards', description: 'Trade gift cards' },
@@ -275,7 +275,7 @@ export default function PublicLayout({ children }) {
                 {products.map((product) => (
                   <li key={product.name}>
                     <Link to={product.href} className="text-sm hover:text-accent-400 transition-colors">
-                      {product.name}
+                      {product.name === 'Global Payments' ? 'CrossBorder Payments' : product.name}
                     </Link>
                   </li>
                 ))}
