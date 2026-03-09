@@ -114,7 +114,7 @@ export const initializeDeposit = catchAsync(async (req, res) => {
   const depositCurrency = wallet.currency; // Use the wallet's own currency
   const reference = `DEP-${req.user.id.slice(0, 8)}-${Date.now()}`;
   const korapaySecret = process.env.KORAPAY_SECRET_KEY;
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const frontendUrl = process.env.FRONTEND_URL || 'https://jaxopay.com';
 
   // Record a pending deposit transaction in DB so we can verify it later
   await query(

@@ -126,7 +126,7 @@ export const templates = {
     </div>
 
     <div style="text-align: center;">
-      <a href="${data.frontendUrl || 'http://localhost:5173'}/admin/transactions/${data.id}" class="button" style="background-color: #111827;">View in Admin Panel</a>
+      <a href="${data.frontendUrl || 'https://jaxopay.com'}/admin/transactions/${data.id}" class="button" style="background-color: #111827;">View in Admin Panel</a>
     </div>
   `),
 
