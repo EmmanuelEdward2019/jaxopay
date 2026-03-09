@@ -1094,14 +1094,14 @@ export default function Home() {
           <div className="grid md:grid-cols-2 gap-8 mb-12">
             {[
               {
-                name: 'Emmanuel Chibuike',
+                name: 'Emmanuel Jordan',
                 role: 'Small Business Owner',
                 image: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
                 text: 'JAXOPAY has transformed how I manage my international payments. The fees are incredibly low and transfers are instant!',
                 rating: 5
               },
               {
-                name: 'David Martinez',
+                name: 'David Amadi',
                 role: 'Freelance Developer',
                 image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150&auto=format&fit=crop&q=80',
                 text: 'As a freelancer working with global clients, JAXOPAY makes receiving payments seamless. Best financial app I\'ve used!',
@@ -1110,7 +1110,7 @@ export default function Home() {
               {
                 name: 'Amara Okafor',
                 role: 'E-commerce Entrepreneur',
-                image: 'https://images.unsplash.com/photo-1531123897727-8f129e16fd3c?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1589156280159-27698a70f29e?w=150&auto=format&fit=crop&q=80',
                 text: 'The virtual cards feature is a game-changer for my online business. Secure, fast, and reliable!',
                 rating: 5
               },
