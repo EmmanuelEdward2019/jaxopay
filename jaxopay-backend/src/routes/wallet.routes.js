@@ -41,7 +41,7 @@ router.get(
 // Get wallet by currency
 router.get(
   '/currency/:currency',
-  param('currency').isString().isLength({ min: 3, max: 3 }),
+  param('currency').isString().isLength({ min: 3, max: 6 }),
   validate,
   getWalletByCurrency
 );
@@ -77,7 +77,7 @@ router.get(
 // Create new wallet
 router.post(
   '/',
-  body('currency').isString().isLength({ min: 3, max: 3 }),
+  body('currency').isString().isLength({ min: 3, max: 6 }),
   body('wallet_type').optional().isIn(['fiat', 'crypto']),
   validate,
   createWallet
@@ -88,7 +88,7 @@ router.post(
   '/transfer',
   body('recipient_email').isEmail(),
   body('amount').isFloat({ min: 0.01 }),
-  body('currency').isString().isLength({ min: 3, max: 3 }),
+  body('currency').isString().isLength({ min: 3, max: 6 }),
   body('description').optional().isString(),
   validate,
   useIdempotency,
@@ -100,7 +100,7 @@ router.post(
   '/deposit/initialize',
   body('wallet_id').isUUID(),
   body('amount').isFloat({ min: 1 }),
-  body('currency').optional().isString().isLength({ min: 3, max: 3 }),
+  body('currency').optional().isString().isLength({ min: 3, max: 6 }),
   validate,
   initializeDeposit
 );

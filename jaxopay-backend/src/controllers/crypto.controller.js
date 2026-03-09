@@ -450,3 +450,214 @@ async function getMockExchangeRate(from, to) {
   return f / t;
 }
 
+// Get deposit address for crypto
+export const getCryptoDepositAddress = catchAsync(async (req, res) => {
+  const { coin, network } = req.query;
+
+  if (!coin) {
+    throw new AppError('Coin symbol is required', 400);
+  }
+
+  try {
+    const data = await mexc.getDepositAddress(coin, network);
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (err) {
+    logger.error(`[CryptoDeposit] Failed for ${coin}:`, err.message);
+    throw new AppError(err.message || 'Failed to generate deposit address', err.statusCode || 500);
+  }
+});
+
+// Withdraw crypto to external wallet
+export const withdrawCrypto = catchAsync(async (req, res) => {
+  const { coin, network, address, amount, memo } = req.body;
+
+  if (req.user.kyc_tier < 2) {
+    throw new AppError('KYC Tier 2 or higher required for crypto withdrawals', 403);
+  }
+
+  if (!coin || !address || !amount) {
+    throw new AppError('Coin, address, and amount are required', 400);
+  }
+
+  const result = await transaction(async (client) => {
+    // 1. Get wallet and lock
+    const wallet = await client.query(
+      `SELECT id, balance FROM wallets 
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND deleted_at IS NULL
+       FOR UPDATE`,
+      [req.user.id, coin.toUpperCase()]
+    );
+
+    if (wallet.rows.length === 0) {
+      throw new AppError(`No ${coin} wallet found`, 404);
+    }
+
+    if (parseFloat(wallet.rows[0].balance) < amount) {
+      throw new AppError('Insufficient balance for withdrawal', 400);
+    }
+
+    // 2. Perform withdrawal on MEXC
+    let mexcWithdrawId = null;
+    try {
+      const mexcRes = await mexc.withdraw({
+        coin,
+        network,
+        address,
+        amount,
+        memo
+      });
+      mexcWithdrawId = mexcRes.id;
+    } catch (err) {
+      logger.error(`[CryptoWithdraw] MEXC Failed:`, err.message);
+      throw new AppError(`External withdrawal failed: ${err.message}`, 502);
+    }
+
+    // 3. Deduct from local wallet
+    await client.query(
+      'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
+      [amount, wallet.rows[0].id]
+    );
+
+    // 4. Record transaction
+    const txResult = await client.query(
+      `INSERT INTO wallet_transactions 
+       (wallet_id, transaction_type, amount, currency, status, description, metadata)
+       VALUES ($1, 'withdrawal', $2, $3, 'pending', $4, $5)
+       RETURNING id`,
+      [
+        wallet.rows[0].id,
+        amount,
+        coin.toUpperCase(),
+        `Withdrawal to ${address}`,
+        JSON.stringify({
+          network,
+          address,
+          mexc_withdraw_id: mexcWithdrawId,
+          memo
+        })
+      ]
+    );
+
+    return { txId: txResult.rows[0].id };
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Withdrawal request submitted successfully',
+    data: result
+  });
+});
+
+// Exchange crypto to crypto
+export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
+  const { from_coin, to_coin, amount } = req.body;
+
+  if (req.user.kyc_tier < 2) {
+    throw new AppError('KYC Tier 2 or higher required', 403);
+  }
+
+  if (!from_coin || !to_coin || !amount || amount <= 0) {
+    throw new AppError('Invalid request parameters', 400);
+  }
+
+  const result = await transaction(async (client) => {
+    // 1. Check from_wallet
+    const fromWallet = await client.query(
+      `SELECT id, balance FROM wallets 
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND deleted_at IS NULL
+       FOR UPDATE`,
+      [req.user.id, from_coin.toUpperCase()]
+    );
+
+    if (fromWallet.rows.length === 0 || parseFloat(fromWallet.rows[0].balance) < amount) {
+      throw new AppError('Insufficient balance', 400);
+    }
+
+    // 2. Get rates and calculate receive amount
+    const rate = await getLiveExchangeRate(from_coin, to_coin);
+    const toAmount = amount * rate;
+    const fee = toAmount * 0.005; // 0.5% crypto-to-crypto fee
+    const netAmount = toAmount - fee;
+
+    // 3. Get or create to_wallet
+    let toWallet = await client.query(
+      `SELECT id FROM wallets 
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND deleted_at IS NULL`,
+      [req.user.id, to_coin.toUpperCase()]
+    );
+
+    if (toWallet.rows.length === 0) {
+      toWallet = await client.query(
+        `INSERT INTO wallets (user_id, currency, wallet_type, balance)
+         VALUES ($1, $2, 'crypto', 0) RETURNING id`,
+        [req.user.id, to_coin.toUpperCase()]
+      );
+    }
+
+    // 4. Update balances
+    await client.query('UPDATE wallets SET balance = balance - $1 WHERE id = $2', [amount, fromWallet.rows[0].id]);
+    await client.query('UPDATE wallets SET balance = balance + $1 WHERE id = $2', [netAmount, toWallet.rows[0].id]);
+
+    // 5. MEXC Liquidity sync
+    try {
+      if (process.env.MEXC_ACCESS_KEY && process.env.MEXC_SECRET_KEY) {
+        // Simple logic: Sell from_coin for USDT, then Buy to_coin with USDT
+        // Direct pairs could be used too if available
+        await mexc.createOrder({
+          symbol: `${from_coin.toUpperCase()}USDT`,
+          side: 'SELL',
+          type: 'MARKET',
+          quantity: amount
+        });
+
+        const usdRate = await mexc.getExchangeRate(from_coin, 'USDT');
+        const quoteQty = (amount * usdRate).toFixed(2);
+
+        await mexc.createOrder({
+          symbol: `${to_coin.toUpperCase()}USDT`,
+          side: 'BUY',
+          type: 'MARKET',
+          quoteOrderQty: quoteQty
+        });
+      }
+    } catch (e) {
+      logger.warn('[CryptoSwap] MEXC Sync partial/failed:', e.message);
+    }
+
+    // 6. Record transactions
+    await client.query(
+      `INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, currency, status, description, metadata)
+       VALUES ($1, 'exchange_out', $2, $3, 'completed', $4, $5)`,
+      [fromWallet.rows[0].id, amount, from_coin.toUpperCase(), `Swapped to ${to_coin}`, JSON.stringify({ rate, to_coin, to_amount: toAmount })]
+    );
+
+    await client.query(
+      `INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, currency, status, description, metadata)
+       VALUES ($1, 'exchange_in', $2, $3, 'completed', $4, $5)`,
+      [toWallet.rows[0].id, netAmount, to_coin.toUpperCase(), `Swapped from ${from_coin}`, JSON.stringify({ rate, from_coin, from_amount: amount, fee })]
+    );
+
+    return { rate, toAmount, netAmount, fee };
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result
+  });
+});
+
+// Get crypto config (networks, etc)
+export const getCryptoConfig = catchAsync(async (req, res) => {
+  try {
+    const data = await mexc.getCurrencyConfig();
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});

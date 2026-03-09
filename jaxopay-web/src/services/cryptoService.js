@@ -68,6 +68,48 @@ const cryptoService = {
       return { success: false, error: error.message };
     }
   },
+
+  // Get crypto deposit address
+  getDepositAddress: async (coin, network) => {
+    try {
+      const response = await apiClient.get('/crypto/deposit-address', {
+        params: { coin, network },
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Request crypto withdrawal
+  withdraw: async (payload) => {
+    try {
+      const response = await apiClient.post('/crypto/withdraw', payload);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Swap crypto for crypto
+  swap: async (payload) => {
+    try {
+      const response = await apiClient.post('/crypto/swap', payload);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get MEXC crypto config (networks, fees)
+  getConfig: async () => {
+    try {
+      const response = await apiClient.get('/crypto/config');
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
 };
 
 export default cryptoService;

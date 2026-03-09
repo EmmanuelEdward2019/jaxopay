@@ -63,7 +63,7 @@ export default function Home() {
     {
       icon: FaCreditCard,
       title: 'Virtual Cards',
-      description: 'Create virtual cards for international shopping across millions of online stores. Effortlessly fund your cards with USD or stablecoins for secure, borderless transactions.',
+      description: 'Create virtual cards for international shopping over millions of online stores. Fund it with USD or stable coins.',
       color: 'text-accent-600' // Green
     },
     {
@@ -237,7 +237,7 @@ export default function Home() {
                         </div>
                         <div>
                           <div className="text-xs text-gray-500">Good Morning</div>
-                          <div className="font-bold text-gray-900">Emmanuel Edward</div>
+                          <div className="font-bold text-gray-900">Emmanuel Jordan</div>
                         </div>
                       </div>
                       <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center border border-gray-200">
@@ -346,7 +346,7 @@ export default function Home() {
                   <div className="flex justify-between items-end">
                     <div>
                       <div className="text-white/40 text-[9px] uppercase tracking-wider mb-1">Card Holder</div>
-                      <div className="text-white text-xs font-medium tracking-wide">Emmanuel Edward</div>
+                      <div className="text-white text-xs font-medium tracking-wide">Emmanuel Jordan</div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <div className="text-white/40 text-[9px]">Exp 09/28</div>
@@ -655,7 +655,7 @@ export default function Home() {
                   <div className="flex justify-between items-end">
                     <div>
                       <div className="text-[10px] text-white/60 mb-1">CARD HOLDER</div>
-                      <div className="font-medium tracking-wide uppercase">Emmanuel Edward</div>
+                      <div className="font-medium tracking-wide uppercase">Emmanuel Jordan</div>
                     </div>
                     {/* Mastercard Logo Simulation */}
                     <div className="flex -space-x-3 opacity-90">
@@ -1096,7 +1096,7 @@ export default function Home() {
               {
                 name: 'Emmanuel Jordan',
                 role: 'Small Business Owner',
-                image: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1542909168-82c3e7fdca5c?w=150&auto=format&fit=crop&q=80',
                 text: 'JAXOPAY has transformed how I manage my international payments. The fees are incredibly low and transfers are instant!',
                 rating: 5
               },
@@ -1110,7 +1110,7 @@ export default function Home() {
               {
                 name: 'Amara Okafor',
                 role: 'E-commerce Entrepreneur',
-                image: 'https://images.unsplash.com/photo-1589156280159-27698a70f29e?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1614204424926-196a80bf0be8?w=150&auto=format&fit=crop&q=80',
                 text: 'The virtual cards feature is a game-changer for my online business. Secure, fast, and reliable!',
                 rating: 5
               },

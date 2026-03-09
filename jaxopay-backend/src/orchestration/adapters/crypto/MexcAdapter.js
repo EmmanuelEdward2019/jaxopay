@@ -135,6 +135,122 @@ class MexcAdapter {
     }
 
     /**
+     * Get deposit address for a specific coin and network
+     */
+    async getDepositAddress(coin, network = '') {
+        this._ensureCredentials();
+        const timestamp = Date.now();
+        const params = { coin: coin.toUpperCase(), timestamp };
+        if (network) params.network = network;
+
+        const queryString = this._buildQuery(params);
+        const signature = this._sign(queryString);
+
+        try {
+            const response = await this.client.get(`/api/v3/capital/deposit/address?${queryString}&signature=${signature}`);
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Request a withdrawal
+     */
+    async withdraw({ coin, address, amount, network = '', memo = '', remarks = '' }) {
+        this._ensureCredentials();
+        const timestamp = Date.now();
+        const params = {
+            coin: coin.toUpperCase(),
+            address,
+            amount,
+            timestamp
+        };
+        if (network) params.network = network;
+        if (memo) params.memo = memo;
+        if (remarks) params.remarks = remarks;
+
+        const queryString = this._buildQuery(params);
+        const signature = this._sign(queryString);
+
+        try {
+            const response = await this.client.post(`/api/v3/capital/withdraw/apply?${queryString}&signature=${signature}`);
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Get deposit history
+     */
+    async getDepositHistory(coin = null, status = null, limit = 100) {
+        this._ensureCredentials();
+        const timestamp = Date.now();
+        const params = { timestamp, limit };
+        if (coin) params.coin = coin.toUpperCase();
+        if (status !== null) params.status = status;
+
+        const queryString = this._buildQuery(params);
+        const signature = this._sign(queryString);
+
+        try {
+            const response = await this.client.get(`/api/v3/capital/deposit/hisrec?${queryString}&signature=${signature}`);
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Get withdrawal history
+     */
+    async getWithdrawalHistory(coin = null, status = null, limit = 100) {
+        this._ensureCredentials();
+        const timestamp = Date.now();
+        const params = { timestamp, limit };
+        if (coin) params.coin = coin.toUpperCase();
+        if (status !== null) params.status = status;
+
+        const queryString = this._buildQuery(params);
+        const signature = this._sign(queryString);
+
+        try {
+            const response = await this.client.get(`/api/v3/capital/withdraw/history?${queryString}&signature=${signature}`);
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Get all currency configurations (networks, fees, min amounts)
+     */
+    async getCurrencyConfig() {
+        this._ensureCredentials();
+        const timestamp = Date.now();
+        const queryString = `timestamp=${timestamp}`;
+        const signature = this._sign(queryString);
+
+        try {
+            const response = await this.client.get(`/api/v3/capital/config/getall?${queryString}&signature=${signature}`);
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Helper to build sorted query string
+     */
+    _buildQuery(params) {
+        return Object.keys(params)
+            .sort()
+            .map(key => `${key}=${encodeURIComponent(params[key])}`)
+            .join('&');
+    }
+
+    /**
      * Internal: Fetches all ticker prices and caches for 15 seconds
      */
     async _getAllPrices() {

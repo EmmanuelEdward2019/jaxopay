@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import walletService from '../../services/walletService';
+import cryptoService from '../../services/cryptoService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
 // Currency options for wallet creation
@@ -54,7 +55,7 @@ const Wallets = () => {
     const [transactions, setTransactions] = useState([]);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showTransferModal, setShowTransferModal] = useState(false);
-    const [showReceiveModal, setShowReceiveModal] = useState(false);
+    const [showDepositModal, setShowDepositModal] = useState(false);
     const [showFundModal, setShowFundModal] = useState(false);
     const [showBalances, setShowBalances] = useState(user?.preferences?.show_balances ?? true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -295,13 +296,13 @@ const Wallets = () => {
                     <span className="text-sm font-medium text-gray-900 dark:text-white">Send</span>
                 </button>
                 <button
-                    onClick={() => setShowReceiveModal(true)}
+                    onClick={() => setShowDepositModal(true)}
                     className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-accent-500 transition-colors shadow-sm"
                 >
                     <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-full">
                         <ArrowDownLeft className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
                     </div>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">Receive</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">Deposit</span>
                 </button>
                 <button
                     onClick={() => navigate('/dashboard/exchange')}
@@ -563,9 +564,9 @@ const Wallets = () => {
                 )}
             </AnimatePresence>
 
-            {/* Receive Modal */}
+            {/* Deposit Modal */}
             <AnimatePresence>
-                {showReceiveModal && <ReceiveModal wallets={wallets.filter((w) => w.is_active !== false)} onClose={() => setShowReceiveModal(false)} />}
+                {showDepositModal && <DepositModal wallets={wallets.filter((w) => w.is_active !== false)} onClose={() => setShowDepositModal(false)} />}
                 {showFundModal && <FundModal wallets={wallets.filter((w) => w.is_active !== false)} onClose={() => setShowFundModal(false)} onRefresh={fetchWallets} />}
             </AnimatePresence>
         </div>
@@ -684,11 +685,52 @@ const CreateWalletModal = ({ onClose, onCreate, loading, existingCurrencies }) =
 // Transfer Modal Component
 const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
     const [fromWallet, setFromWallet] = useState('');
-    const [recipientEmail, setRecipientEmail] = useState('');
+    const [recipient, setRecipient] = useState('');
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
+    const [network, setNetwork] = useState('');
+    const [cryptoConfigs, setCryptoConfigs] = useState(null);
 
     const fromWalletData = wallets.find((w) => w.id === fromWallet);
+    const isCrypto = fromWalletData?.wallet_type === 'crypto';
+
+    useEffect(() => {
+        if (isCrypto) {
+            cryptoService.getConfig().then(res => {
+                if (res.success) setCryptoConfigs(res.data);
+            });
+        }
+    }, [isCrypto]);
+
+    const handleTransferClick = () => {
+        const payload = {
+            amount: parseFloat(amount),
+            currency: fromWalletData?.currency,
+            description,
+        };
+
+        if (isCrypto) {
+            payload.address = recipient;
+            payload.network = network;
+            // For crypto, we use the new withdraw service
+            cryptoService.withdraw({
+                coin: fromWalletData.currency,
+                address: recipient,
+                amount: parseFloat(amount),
+                network,
+                memo: description
+            }).then(res => {
+                if (res.success) {
+                    onClose();
+                    alert('Withdrawal request submitted successfully!');
+                } else {
+                    alert(res.error || 'Withdrawal failed');
+                }
+            });
+        } else {
+            onTransfer(recipient, parseFloat(amount), fromWalletData?.currency, description);
+        }
+    };
 
     return (
         <motion.div
@@ -706,7 +748,9 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Send Funds</h2>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                        {isCrypto ? 'Withdraw Crypto' : 'Send Funds'}
+                    </h2>
                     <button
                         onClick={onClose}
                         className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -738,16 +782,38 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
                     {/* Recipient */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Recipient Email
+                            {isCrypto ? 'Wallet Address' : 'Account Details (Email)'}
                         </label>
                         <input
-                            type="email"
-                            value={recipientEmail}
-                            onChange={(e) => setRecipientEmail(e.target.value)}
-                            placeholder="user@example.com"
+                            type="text"
+                            value={recipient}
+                            onChange={(e) => setRecipient(e.target.value)}
+                            placeholder={isCrypto ? 'Enter wallet address' : 'user@example.com'}
                             className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
                         />
                     </div>
+
+                    {/* Network for Crypto */}
+                    {isCrypto && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Network
+                            </label>
+                            <select
+                                value={network}
+                                onChange={(e) => setNetwork(e.target.value)}
+                                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
+                            >
+                                <option value="">Select network...</option>
+                                {cryptoConfigs?.find(c => c.coin === fromWalletData.currency)?.networks.map(n => (
+                                    <option key={n.network} value={n.network}>
+                                        {n.network} (Fee: {n.withdrawFee} {fromWalletData.currency})
+                                    </option>
+                                ))}
+                                {!cryptoConfigs && <option disabled>Loading networks...</option>}
+                            </select>
+                        </div>
+                    )}
 
                     {/* Amount */}
                     <div>
@@ -775,16 +841,16 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
                         )}
                     </div>
 
-                    {/* Description */}
+                    {/* Description / Memo */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Description (optional)
+                            {isCrypto ? 'Memo/Remarks (optional)' : 'Description (optional)'}
                         </label>
                         <input
                             type="text"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            placeholder="What's this transfer for?"
+                            placeholder={isCrypto ? 'Enter memo if required' : "What's this transfer for?"}
                             className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
                         />
                     </div>
@@ -799,11 +865,11 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
                         Cancel
                     </button>
                     <button
-                        onClick={() => onTransfer(recipientEmail, parseFloat(amount), fromWalletData?.currency, description)}
-                        disabled={!fromWallet || !recipientEmail || !amount || parseFloat(amount) <= 0 || loading || parseFloat(amount) > parseFloat(fromWalletData?.balance || 0)}
+                        onClick={handleTransferClick}
+                        disabled={!fromWallet || !recipient || !amount || parseFloat(amount) <= 0 || loading || parseFloat(amount) > parseFloat(fromWalletData?.balance || 0) || (isCrypto && !network)}
                         className="flex-1 py-3 px-4 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {loading ? 'Sending...' : 'Send'}
+                        {loading ? (isCrypto ? 'Processing...' : 'Sending...') : (isCrypto ? 'Withdraw' : 'Send')}
                     </button>
                 </div>
             </motion.div>
@@ -811,12 +877,14 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
     );
 };
 
-const ReceiveModal = ({ onClose, wallets }) => {
+const DepositModal = ({ onClose, wallets }) => {
     const [selectedWalletId, setSelectedWalletId] = useState('');
     const [copied, setCopied] = useState(false);
-    const [vbaDetails, setVbaDetails] = useState(null);
-    const [vbaLoading, setVbaLoading] = useState(false);
-    const [vbaError, setVbaError] = useState(null);
+    const [details, setDetails] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [network, setNetwork] = useState('');
+    const [cryptoConfigs, setCryptoConfigs] = useState(null);
 
     const selectedWallet = wallets.find(w => w.id === selectedWalletId);
 
@@ -826,39 +894,46 @@ const ReceiveModal = ({ onClose, wallets }) => {
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Fetch or create VBA when wallet is selected
+    // Fetch VBA or Crypto Address
     useEffect(() => {
         if (!selectedWalletId || !selectedWallet) {
-            setVbaDetails(null);
-            setVbaError(null);
+            setDetails(null);
+            setError(null);
             return;
         }
-        // Only fiat wallets get VBA
-        if (selectedWallet.wallet_type !== 'fiat') return;
 
         let cancelled = false;
-        const fetchVBA = async () => {
-            setVbaLoading(true);
-            setVbaError(null);
-            setVbaDetails(null);
+        const fetchDetails = async () => {
+            setLoading(true);
+            setError(null);
+            setDetails(null);
             try {
-                const res = await walletService.getVBA(selectedWalletId);
-                if (!cancelled && res.success) {
-                    setVbaDetails(res.data);
-                } else if (!cancelled) {
-                    setVbaError(res.message || 'Could not get account details');
+                if (selectedWallet.wallet_type === 'fiat') {
+                    const res = await walletService.getVBA(selectedWalletId);
+                    if (!cancelled && res.success) setDetails(res.data);
+                    else if (!cancelled) setError(res.message || 'Could not get account details');
+                } else {
+                    // Crypto - fetch config for networks first
+                    const configRes = await cryptoService.getConfig();
+                    if (!cancelled && configRes.success) {
+                        setCryptoConfigs(configRes.data);
+                        // If network selected, fetch address
+                        if (network) {
+                            const addrRes = await cryptoService.getDepositAddress(selectedWallet.currency, network);
+                            if (!cancelled && addrRes.success) setDetails(addrRes.data);
+                            else if (!cancelled) setError(addrRes.error || 'Could not get deposit address');
+                        }
+                    }
                 }
             } catch (e) {
-                if (!cancelled) {
-                    setVbaError(e?.message || 'Could not generate account. Please try again.');
-                }
+                if (!cancelled) setError(e?.message || 'Something went wrong');
             } finally {
-                if (!cancelled) setVbaLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
-        fetchVBA();
+        fetchDetails();
         return () => { cancelled = true; };
-    }, [selectedWalletId]);
+    }, [selectedWalletId, network]);
 
     return (
         <motion.div
@@ -876,7 +951,7 @@ const ReceiveModal = ({ onClose, wallets }) => {
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Receive Funds</h2>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Deposit Funds</h2>
                     <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                         <X className="w-5 h-5 text-gray-500" />
                     </button>
@@ -884,11 +959,15 @@ const ReceiveModal = ({ onClose, wallets }) => {
 
                 <div className="space-y-6">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Wallet to Fund</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Wallet</label>
                         <select
                             value={selectedWalletId}
-                            onChange={(e) => setSelectedWalletId(e.target.value)}
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500"
+                            onChange={(e) => {
+                                setSelectedWalletId(e.target.value);
+                                setNetwork('');
+                                setDetails(null);
+                            }}
+                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
                         >
                             <option value="">Select wallet...</option>
                             {wallets.map(w => (
@@ -897,89 +976,98 @@ const ReceiveModal = ({ onClose, wallets }) => {
                         </select>
                     </div>
 
-                    {/* Loading */}
-                    {vbaLoading && (
-                        <div className="flex flex-col items-center justify-center py-8">
-                            <RefreshCw className="w-8 h-8 text-primary-500 animate-spin mb-3" />
-                            <p className="text-sm text-gray-500">Generating your account details...</p>
+                    {selectedWallet?.wallet_type === 'crypto' && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Network</label>
+                            <select
+                                value={network}
+                                onChange={(e) => setNetwork(e.target.value)}
+                                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
+                            >
+                                <option value="">Select network...</option>
+                                {cryptoConfigs && cryptoConfigs[selectedWallet.currency]?.map(n => (
+                                    <option key={n.network} value={n.network}>{n.network}</option>
+                                ))}
+                            </select>
                         </div>
                     )}
 
-                    {/* Error */}
-                    {vbaError && !vbaLoading && (
-                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
-                            <div className="flex items-start gap-3">
-                                <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                                <div>
-                                    <p className="text-sm text-red-700 dark:text-red-400">{vbaError}</p>
-                                    <button
-                                        onClick={() => setSelectedWalletId(prev => { setSelectedWalletId(''); setTimeout(() => setSelectedWalletId(prev), 100); return prev; })}
-                                        className="text-sm text-red-600 underline mt-1"
-                                    >
-                                        Retry
-                                    </button>
-                                </div>
-                            </div>
+                    {loading && (
+                        <div className="flex flex-col items-center justify-center py-8">
+                            <RefreshCw className="w-8 h-8 text-accent-500 animate-spin mb-3" />
+                            <p className="text-sm text-gray-500">Fetching details...</p>
+                        </div>
+                    )}
+
+                    {error && !loading && (
+                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 text-center">
+                            <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
                         </div>
                     )}
 
                     {/* Fiat VBA Details */}
-                    {selectedWallet && vbaDetails && !vbaLoading && selectedWallet.wallet_type === 'fiat' && (
+                    {selectedWallet && details && !loading && selectedWallet.wallet_type === 'fiat' && (
                         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                            <div className="space-y-4">
-                                <div className="flex items-center gap-3 mb-2">
-                                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                                        <Building2 className="w-5 h-5 text-blue-600" />
-                                    </div>
-                                    <div>
-                                        <p className="font-medium text-gray-900 dark:text-white">Bank Transfer</p>
-                                        <p className="text-xs text-gray-500">Send money to these details to fund your wallet</p>
+                            <div className="space-y-4 text-sm">
+                                <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
+                                    <span className="text-gray-500">Bank Name</span>
+                                    <span className="font-medium text-gray-900 dark:text-white">{details.bank_name}</span>
+                                </div>
+                                <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
+                                    <span className="text-gray-500">Account Name</span>
+                                    <span className="font-medium text-gray-900 dark:text-white">{details.account_name}</span>
+                                </div>
+                                <div>
+                                    <span className="text-gray-500 block mb-1">Account Number</span>
+                                    <div className="flex items-center gap-2">
+                                        <code className="bg-white dark:bg-gray-800 px-3 py-2 rounded border border-gray-200 dark:border-gray-600 text-lg font-mono flex-1 tracking-wider text-gray-900 dark:text-white">
+                                            {details.account_number}
+                                        </code>
+                                        <button onClick={() => handleCopy(details.account_number)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
+                                            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
+                                        </button>
                                     </div>
                                 </div>
-                                <div className="space-y-3 text-sm">
-                                    <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
-                                        <span className="text-gray-500">Bank Name</span>
-                                        <span className="font-medium text-gray-900 dark:text-white">{vbaDetails.bank_name}</span>
-                                    </div>
-                                    <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
-                                        <span className="text-gray-500">Account Name</span>
-                                        <span className="font-medium text-gray-900 dark:text-white">{vbaDetails.account_name}</span>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500 block mb-1">Account Number</span>
-                                        <div className="flex items-center gap-2">
-                                            <code className="bg-white dark:bg-gray-800 px-3 py-2 rounded border border-gray-200 dark:border-gray-600 text-lg font-mono flex-1 tracking-wider text-gray-900 dark:text-white">
-                                                {vbaDetails.account_number}
-                                            </code>
-                                            <button
-                                                onClick={() => handleCopy(vbaDetails.account_number)}
-                                                className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-                                            >
-                                                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 mt-3">
-                                    <p className="text-xs text-blue-700 dark:text-blue-400 flex items-start gap-1.5">
-                                        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                                        This is your unique account number. Any transfer to this account will automatically fund your {selectedWallet.currency} wallet.
-                                    </p>
-                                </div>
+                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                                    <Info className="w-3 h-3 inline mr-1" />
+                                    Fund your wallet by making a bank transfer to these details.
+                                </p>
                             </div>
                         </div>
                     )}
 
-                    {/* Crypto wallet (placeholder) */}
-                    {selectedWallet && selectedWallet.wallet_type !== 'fiat' && !vbaLoading && (
-                        <div className="text-center space-y-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
-                            <div className="bg-white p-4 rounded-xl inline-block">
+                    {/* Crypto Details */}
+                    {selectedWallet && details && !loading && selectedWallet.wallet_type === 'crypto' && (
+                        <div className="text-center space-y-4">
+                            <div className="bg-white p-4 rounded-xl inline-block shadow-sm">
                                 <QrCode className="w-32 h-32 text-gray-900" />
+                                <p className="text-[8px] mt-1 text-gray-400">Scan to copy address</p>
                             </div>
-                            <div>
-                                <p className="font-medium text-gray-900 dark:text-white">Crypto Deposit</p>
-                                <p className="text-xs text-gray-500 mb-2">Coming soon — crypto deposits are being set up</p>
+                            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                                <p className="text-xs text-gray-500 mb-1">Your {selectedWallet.currency} Address ({network})</p>
+                                <div className="flex items-center gap-2">
+                                    <code className="bg-white dark:bg-gray-800 px-3 py-2 rounded border border-gray-200 dark:border-gray-600 text-xs font-mono flex-1 break-all text-gray-900 dark:text-white">
+                                        {details.address}
+                                    </code>
+                                    <button onClick={() => handleCopy(details.address)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg shrink-0">
+                                        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
+                                    </button>
+                                </div>
+                                {details.memo && (
+                                    <div className="mt-4">
+                                        <p className="text-xs text-red-500 font-bold mb-1">MEMO REQUIRED:</p>
+                                        <div className="flex items-center gap-2">
+                                            <code className="bg-white dark:bg-gray-800 px-3 py-2 rounded border border-gray-200 dark:border-gray-600 text-sm font-mono flex-1 text-gray-900 dark:text-white">{details.memo}</code>
+                                            <button onClick={() => handleCopy(details.memo)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg shrink-0">
+                                                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                <p className="text-[10px] text-red-500 mt-4 leading-tight">
+                                    ⚠️ Only send {selectedWallet.currency} to this address via the {network} network.
+                                    Sending any other coin or using the wrong network may result in permanent loss.
+                                </p>
                             </div>
                         </div>
                     )}

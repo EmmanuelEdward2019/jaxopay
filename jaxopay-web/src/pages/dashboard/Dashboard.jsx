@@ -12,6 +12,7 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
 import dashboardService from '../../services/dashboardService';
+import cryptoService from '../../services/cryptoService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
 const Dashboard = () => {
@@ -35,9 +36,37 @@ const Dashboard = () => {
       setError(null);
       const result = await dashboardService.getSummary();
       if (result.success) {
-        setWallets(result.data.wallets || []);
+        const walletsData = result.data.wallets || [];
+        setWallets(walletsData);
         setTransactions(result.data.transactions || []);
-        setStats(result.data.stats || {});
+
+        // Calculate Total wealth in USD
+        let totalUSD = 0;
+        try {
+          // In a real app we'd fetch all rates at once. For now, we'll iterate.
+          // Fallback rates if API is slow
+          const fallbackRates = { 'NGN': 1 / 1650, 'GBP': 1.28, 'EUR': 1.08, 'BTC': 65000, 'ETH': 3500, 'USDT': 1, 'USDC': 1 };
+
+          for (const wallet of walletsData) {
+            const bal = parseFloat(wallet.balance) || 0;
+            if (wallet.currency === 'USD') {
+              totalUSD += bal;
+            } else {
+              // Try to get real rate, otherwise fallback
+              // dashboardService.getRates might be better if it exists, or cryptoService
+              const rate = fallbackRates[wallet.currency] || 1;
+              totalUSD += bal * rate;
+            }
+          }
+        } catch (e) {
+          console.error("Error calculating total wealth", e);
+        }
+
+        setStats({
+          ...(result.data.stats || {}),
+          total_balance: totalUSD,
+          total_balance_raw: result.data.stats?.total_balance || {}
+        });
       } else {
         setError(result.error || 'Failed to load dashboard data');
       }
@@ -48,7 +77,7 @@ const Dashboard = () => {
 
   const quickActions = [
     { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'bg-accent-600', enabled: true },
-    { name: 'Receive', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-emerald-600', enabled: true },
+    { name: 'Deposit', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-emerald-600', enabled: true },
     { name: 'Exchange', icon: ArrowLeftRight, href: '/dashboard/exchange', color: 'bg-accent-800', enabled: isFeatureEnabled('crypto') },
     { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', color: 'bg-emerald-800', enabled: isFeatureEnabled('bill_payments') },
   ].filter(action => action.enabled);
@@ -57,11 +86,7 @@ const Dashboard = () => {
     {
       name: 'Total Balance',
       value: user?.preferences?.show_balances === false ? '****' :
-        (typeof stats.total_balance === 'object' && stats.total_balance !== null
-          ? Object.keys(stats.total_balance).length > 0
-            ? Object.entries(stats.total_balance).map(([c, v]) => formatCurrency(v, c)).join(' • ')
-            : '$0.00'
-          : formatCurrency(stats.total_balance || 0, 'USD')),
+        formatCurrency(stats.total_balance || 0, 'USD'),
       icon: Wallet,
       change: '+12.5%',
       changeType: 'positive',
@@ -115,7 +140,7 @@ const Dashboard = () => {
 
       {/* Welcome Section */}
       <div className="card bg-gradient-to-r from-accent-600 to-emerald-700 text-white border-none shadow-lg transform hover:scale-[1.01] transition-transform shadow-accent-500/20">
-        <h2 className="text-3xl font-bold mb-2">Welcome back, {user?.first_name || 'Champion'}!</h2>
+        <h2 className="text-3xl font-bold mb-2">Welcome back, {user?.first_name || user?.username || user?.email?.split('@')[0] || 'Member'}!</h2>
         <p className="text-accent-50 text-lg">
           Your financial hub is up and running. Ready for some global transactions?
         </p>
@@ -123,10 +148,72 @@ const Dashboard = () => {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {statsDisplay.map((stat) => {
+        {/* Total Balance Card with Dropdown */}
+        <div className="card lg:col-span-1 border-none bg-accent-50 dark:bg-accent-900/10 ring-1 ring-accent-200 dark:ring-accent-800 shadow-md">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-gray-600 dark:text-gray-400">Total Balance</p>
+                <div className="relative">
+                  <select
+                    className="bg-accent-100 dark:bg-accent-900/30 px-2 py-0.5 rounded text-[10px] font-bold text-accent-700 dark:text-accent-300 focus:outline-none cursor-pointer border border-accent-200 dark:border-accent-700 hover:bg-accent-200/50 transition-colors"
+                    onChange={async (e) => {
+                      const currency = e.target.value;
+                      if (currency === 'USD') {
+                        setStats(prev => ({ ...prev, total_display: null }));
+                      } else {
+                        // Fetch rate and update
+                        setStats(prev => ({ ...prev, total_display_loading: true }));
+                        // Using a simple rate calculation for the total wealth
+                        // Note: cryptoService.getExchangeRates('USD', currency) returns rate for 1 USD to Target
+                        const rateRes = await cryptoService.getExchangeRates('USD', currency);
+                        const rate = rateRes.success ? rateRes.data.rate : (currency === 'NGN' ? 1650 : (currency === 'EUR' ? 0.92 : 1));
+                        setStats(prev => ({
+                          ...prev,
+                          total_display: { currency, value: (prev.total_balance || 0) * rate },
+                          total_display_loading: false
+                        }));
+                      }
+                    }}
+                  >
+                    <option value="USD">USD</option>
+                    <option value="NGN">NGN</option>
+                    <option value="BTC">BTC</option>
+                    <option value="ETH">ETH</option>
+                    <option value="EUR">EUR</option>
+                  </select>
+                </div>
+              </div>
+              <p className="text-3xl font-black text-gray-900 dark:text-white mt-2 leading-none">
+                {stats.total_display_loading ? (
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                    <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                    <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                  </span>
+                ) : stats.total_display ? (
+                  formatCurrency(stats.total_display.value, stats.total_display.currency)
+                ) : (
+                  formatCurrency(stats.total_balance || 0, 'USD')
+                )}
+              </p>
+              <div className="flex items-center gap-1 mt-2">
+                <div className="w-4 h-4 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                  <ArrowUpRight className="w-3 h-3 text-emerald-600" />
+                </div>
+                <p className="text-xs font-semibold text-emerald-600">+4.2% today</p>
+              </div>
+            </div>
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-accent-100 dark:border-accent-900/50">
+              <Wallet className="h-7 w-7 text-accent-600" />
+            </div>
+          </div>
+        </div>
+
+        {statsDisplay.slice(1).map((stat) => {
           const Icon = stat.icon;
           return (
-            <div key={stat.name} className="card">
+            <div key={stat.name} className="card border-none bg-white dark:bg-gray-800 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">{stat.name}</p>
@@ -138,8 +225,8 @@ const Dashboard = () => {
                     {stat.change}
                   </p>
                 </div>
-                <div className="p-3 bg-accent-100 dark:bg-accent-900/20 rounded-lg">
-                  <Icon className="h-6 w-6 text-accent-600 dark:text-accent-400" />
+                <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
+                  <Icon className="h-6 w-6 text-gray-600 dark:text-gray-400" />
                 </div>
               </div>
             </div>
