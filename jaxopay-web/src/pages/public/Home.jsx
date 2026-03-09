@@ -1094,16 +1094,16 @@ export default function Home() {
           <div className="grid md:grid-cols-2 gap-8 mb-12">
             {[
               {
-                name: 'Sarah Johnson',
+                name: 'Emmanuel Chibuike',
                 role: 'Small Business Owner',
-                image: 'https://images.unsplash.com/photo-1567532939604-b6b5b085f547?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
                 text: 'JAXOPAY has transformed how I manage my international payments. The fees are incredibly low and transfers are instant!',
                 rating: 5
               },
               {
-                name: 'Adebayo Abraham',
+                name: 'David Martinez',
                 role: 'Freelance Developer',
-                image: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150&auto=format&fit=crop&q=80',
                 text: 'As a freelancer working with global clients, JAXOPAY makes receiving payments seamless. Best financial app I\'ve used!',
                 rating: 5
               },
@@ -1115,9 +1115,9 @@ export default function Home() {
                 rating: 5
               },
               {
-                name: 'David Martinez',
+                name: 'Adebayo Abraham',
                 role: 'Digital Nomad',
-                image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?w=150&auto=format&fit=crop&q=80',
                 text: 'Managing multiple currencies while traveling has never been easier. JAXOPAY is my go-to financial companion!',
                 rating: 5
               }
