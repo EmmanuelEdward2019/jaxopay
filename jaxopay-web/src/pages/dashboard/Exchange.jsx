@@ -59,6 +59,7 @@ const Exchange = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
     const [history, setHistory] = useState([]);
 
     // Deposit State
@@ -98,7 +99,7 @@ const Exchange = () => {
                     setRates(null);
                     setQuoteExpiry(0);
                 }
-            }, 600);
+            }, 200);
             return () => clearTimeout(timer);
         }
     }, [payAmount, fromAsset, toAsset, activeTab]);
@@ -166,8 +167,10 @@ const Exchange = () => {
             result = await cryptoService.sellCrypto(fromAsset.code, amount, toAsset.code, wallet?.id);
         } else if (fromAsset.type === 'crypto' && toAsset.type === 'crypto') {
             result = await cryptoService.swap({ from_coin: fromAsset.code, to_coin: toAsset.code, amount });
+        } else if (fromAsset.type === 'fiat' && toAsset.type === 'fiat') {
+            result = await fxService.swap(fromAsset.code, toAsset.code, amount);
         } else {
-            setError("Fiat-to-fiat exchange is coming soon!");
+            setError("Exchange combination not supported");
             setLoading(false);
             return;
         }
@@ -240,8 +243,8 @@ const Exchange = () => {
                             key={tab}
                             onClick={() => setActiveTab(tab)}
                             className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === tab
-                                    ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-sm'
-                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                                ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-sm'
+                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                                 }`}
                         >
                             {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -414,7 +417,11 @@ const Exchange = () => {
                                         className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
                                     >
                                         <option value="">Select Network</option>
-                                        {selectedDepositCoinConfig?.networks.map(n => <option key={n.network} value={n.network}>{n.network} ({n.name})</option>)}
+                                        {selectedDepositCoinConfig?.networkList?.map(n => (
+                                            <option key={n.network} value={n.network}>{n.network} ({n.network})</option>
+                                        )) || selectedDepositCoinConfig?.networks?.map(n => (
+                                            <option key={n.network} value={n.network}>{n.network}</option>
+                                        ))}
                                     </select>
                                 </div>
                             </div>
@@ -486,7 +493,11 @@ const Exchange = () => {
                                             className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
                                         >
                                             <option value="">Select Network</option>
-                                            {selectedWithdrawCoinConfig?.networks.map(n => <option key={n.network} value={n.network}>{n.network} ({n.name})</option>)}
+                                            {selectedWithdrawCoinConfig?.networkList?.map(n => (
+                                                <option key={n.network} value={n.network}>{n.network} (Fee: {n.withdrawFee})</option>
+                                            )) || selectedWithdrawCoinConfig?.networks?.map(n => (
+                                                <option key={n.network} value={n.network}>{n.network}</option>
+                                            ))}
                                         </select>
                                     </div>
                                 </div>
@@ -630,6 +641,8 @@ const Exchange = () => {
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                                 <input
                                     type="text"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
                                     placeholder="Search by name or symbol"
                                     className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
                                 />
@@ -637,13 +650,14 @@ const Exchange = () => {
 
                             <div className="max-h-[400px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-4 mb-2">Fiat Currencies</p>
-                                {ASSETS.fiat.map(token => (
+                                {ASSETS.fiat.filter(t => t.code.toLowerCase().includes(searchTerm.toLowerCase()) || t.name.toLowerCase().includes(searchTerm.toLowerCase())).map(token => (
                                     <button
                                         key={token.code}
                                         onClick={() => {
                                             if (tokenModalSide === 'from') setFromAsset({ type: 'fiat', code: token.code });
                                             else setToAsset({ type: 'fiat', code: token.code });
                                             setShowTokenModal(false);
+                                            setSearchTerm('');
                                         }}
                                         className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-2xl transition-all group"
                                     >
@@ -659,13 +673,14 @@ const Exchange = () => {
                                 ))}
                                 <div className="h-4" />
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-4 mb-2">Cryptocurrencies</p>
-                                {ASSETS.crypto.map(token => (
+                                {ASSETS.crypto.filter(t => t.code.toLowerCase().includes(searchTerm.toLowerCase()) || t.name.toLowerCase().includes(searchTerm.toLowerCase())).map(token => (
                                     <button
                                         key={token.code}
                                         onClick={() => {
                                             if (tokenModalSide === 'from') setFromAsset({ type: 'crypto', code: token.code });
                                             else setToAsset({ type: 'crypto', code: token.code });
                                             setShowTokenModal(false);
+                                            setSearchTerm('');
                                         }}
                                         className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-2xl transition-all group"
                                     >

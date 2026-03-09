@@ -1,6 +1,6 @@
 import express from 'express';
 import { verifyToken } from '../middleware/auth.js';
-import { validate } from '../middleware/validator.js';
+import { validate, createWalletValidation } from '../middleware/validator.js';
 import { useIdempotency } from '../middleware/idempotency.js';
 import { body, param, query } from 'express-validator';
 import {
@@ -77,9 +77,7 @@ router.get(
 // Create new wallet
 router.post(
   '/',
-  body('currency').isString().isLength({ min: 3, max: 6 }),
-  body('wallet_type').optional().isIn(['fiat', 'crypto']),
-  validate,
+  createWalletValidation,
   createWallet
 );
 

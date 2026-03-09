@@ -73,7 +73,7 @@ const CrossBorder = () => {
                 setSwapData(prev => ({ ...prev, receiveAmount: '', rate: 0 }));
                 setQuoteExpiry(0);
             }
-        }, 650);
+        }, 300);
         return () => clearTimeout(timer);
     }, [swapData.amount, swapData.fromCurrency, swapData.toCurrency]);
 
@@ -206,7 +206,7 @@ const CrossBorder = () => {
                                                         onChange={(e) => setSwapData(prev => ({ ...prev, fromCurrency: e.target.value }))}
                                                         className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 font-bold focus:ring-accent-500"
                                                     >
-                                                        {['NGN', 'USD', 'GBP', 'EUR'].map(c => <option key={c} value={c}>{c}</option>)}
+                                                        {['NGN', 'USD', 'GBP', 'EUR', 'CAD', 'GHS', 'KES', 'ZAR', 'CNY', 'AUD', 'JPY'].map(c => <option key={c} value={c}>{c}</option>)}
                                                     </select>
                                                 </div>
                                             </div>
@@ -240,7 +240,7 @@ const CrossBorder = () => {
                                                         onChange={(e) => setSwapData(prev => ({ ...prev, toCurrency: e.target.value }))}
                                                         className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 font-bold focus:ring-accent-500"
                                                     >
-                                                        {['USD', 'GBP', 'EUR', 'NGN'].map(c => <option key={c} value={c}>{c}</option>)}
+                                                        {['USD', 'GBP', 'EUR', 'NGN', 'CAD', 'GHS', 'KES', 'ZAR', 'CNY', 'AUD', 'JPY'].map(c => <option key={c} value={c}>{c}</option>)}
                                                     </select>
                                                 </div>
                                             </div>
@@ -313,6 +313,11 @@ const CrossBorder = () => {
                                                         <option value="European Union">European Union (EUR)</option>
                                                         <option value="China">China (CNY)</option>
                                                         <option value="Canada">Canada (CAD)</option>
+                                                        <option value="Ghana">Ghana (GHS)</option>
+                                                        <option value="Kenya">Kenya (KES)</option>
+                                                        <option value="South Africa">South Africa (ZAR)</option>
+                                                        <option value="Australia">Australia (AUD)</option>
+                                                        <option value="Japan">Japan (JPY)</option>
                                                     </select>
                                                 </div>
                                             </div>
@@ -367,8 +372,7 @@ const CrossBorder = () => {
                                                     onChange={(e) => setTransferData(prev => ({ ...prev, currency: e.target.value }))}
                                                     className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 font-bold focus:ring-accent-500"
                                                 >
-                                                    <option value="NGN">NGN</option>
-                                                    <option value="USD">USD</option>
+                                                    {['NGN', 'USD', 'GBP', 'EUR', 'CAD', 'GHS', 'KES', 'ZAR', 'CNY'].map(c => <option key={c} value={c}>{c}</option>)}
                                                 </select>
                                             </div>
                                         </div>

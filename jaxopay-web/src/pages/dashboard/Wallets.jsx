@@ -37,12 +37,17 @@ const CURRENCY_OPTIONS = {
         { code: 'NGN', name: 'Nigerian Naira', symbol: '₦', flag: '🇳🇬' },
         { code: 'GHS', name: 'Ghanaian Cedi', symbol: '₵', flag: '🇬🇭' },
         { code: 'KES', name: 'Kenyan Shilling', symbol: 'KSh', flag: '🇰🇪' },
+        { code: 'ZAR', name: 'South African Rand', symbol: 'R', flag: '🇿🇦' },
+        { code: 'CAD', name: 'Canadian Dollar', symbol: '$', flag: '🇨🇦' },
+        { code: 'CNY', name: 'Chinese Yuan', symbol: '¥', flag: '🇨🇳' },
     ],
     crypto: [
         { code: 'BTC', name: 'Bitcoin', symbol: '₿', flag: '🪙' },
         { code: 'ETH', name: 'Ethereum', symbol: 'Ξ', flag: '🪙' },
         { code: 'USDT', name: 'Tether', symbol: '₮', flag: '🪙' },
         { code: 'USDC', name: 'USD Coin', symbol: '$', flag: '🪙' },
+        { code: 'SOL', name: 'Solana', symbol: 'S', flag: '🪙' },
+        { code: 'BNB', name: 'BNB', symbol: 'B', flag: '🪙' },
     ],
 };
 
@@ -58,6 +63,9 @@ const Wallets = () => {
     const [showDepositModal, setShowDepositModal] = useState(false);
     const [showFundModal, setShowFundModal] = useState(false);
     const [showBalances, setShowBalances] = useState(user?.preferences?.show_balances ?? true);
+    const [displayCurrency, setDisplayCurrency] = useState('USD');
+    const [totalUSDBalance, setTotalUSDBalance] = useState(0);
+    const [isConverting, setIsConverting] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState('all');
     const [error, setError] = useState(null);
@@ -111,6 +119,49 @@ const Wallets = () => {
         }
         setLoading(false);
     };
+
+    // Calculate total USD balance whenever wallets change
+    useEffect(() => {
+        const calculateTotalBalance = async () => {
+            if (wallets.length === 0) {
+                setTotalUSDBalance(0);
+                return;
+            }
+
+            setIsConverting(true);
+            try {
+                const rates = {
+                    'USD': 1,
+                    'NGN': 1 / 1650,
+                    'GBP': 1.28,
+                    'EUR': 1.08,
+                    'BTC': 65000,
+                    'ETH': 3500,
+                    'USDT': 1,
+                    'USDC': 1,
+                    'ZAR': 0.053,
+                    'CAD': 0.74,
+                    'GHS': 0.08,
+                    'KES': 0.0075,
+                    'CNY': 0.14
+                };
+
+                let total = 0;
+                for (const wallet of wallets) {
+                    const balance = parseFloat(wallet.balance) || 0;
+                    const rate = rates[wallet.currency] || 1;
+                    total += balance * rate;
+                }
+                setTotalUSDBalance(total);
+            } catch (err) {
+                console.error('Balance calculation error:', err);
+            } finally {
+                setIsConverting(false);
+            }
+        };
+
+        calculateTotalBalance();
+    }, [wallets]);
 
     const fetchWalletTransactions = async (walletId) => {
         const result = await walletService.getTransactions(walletId);
@@ -247,30 +298,70 @@ const Wallets = () => {
 
 
             {/* Total Balance Card */}
-            <div className="card bg-gradient-to-br from-accent-500 to-accent-700 text-white shadow-lg shadow-accent-500/20">
-                <div className="flex items-center justify-between">
+            <div className="card bg-gradient-to-br from-accent-600 to-accent-800 text-white shadow-xl shadow-accent-500/20 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700">
+                    <Wallet className="w-32 h-32 rotate-12" />
+                </div>
+
+                <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div>
-                        <p className="text-accent-100 text-sm mb-1">Total Balance</p>
-                        <div className="flex items-center gap-3 flex-wrap">
-                            <h2 className="text-3xl font-bold flex flex-wrap gap-x-4">
-                                {showBalances
-                                    ? Object.keys(totalBalances).length > 0
-                                        ? Object.entries(totalBalances).map(([c, v]) => <span key={c}>{formatCurrency(v, c)}</span>)
-                                        : '$0.00'
-                                    : '••••••'
-                                }
-                            </h2>
+                        <div className="flex items-center gap-2 mb-2">
+                            <p className="text-accent-100 text-sm font-medium">Total Portfolio Value</p>
                             <button
                                 onClick={() => setShowBalances(!showBalances)}
-                                className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                                className="p-1 hover:bg-white/10 rounded-md transition-colors"
                             >
-                                {showBalances ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                {showBalances ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                         </div>
-                        <p className="text-accent-100 text-sm mt-2">{wallets.length} active wallet(s)</p>
+
+                        <div className="flex flex-col gap-1">
+                            {isConverting ? (
+                                <div className="h-12 w-48 bg-white/10 animate-pulse rounded-lg" />
+                            ) : (
+                                <div className="flex items-baseline gap-2">
+                                    <h2 className="text-4xl md:text-5xl font-black tracking-tight">
+                                        {showBalances
+                                            ? formatCurrency(
+                                                displayCurrency === 'USD' ? totalUSDBalance :
+                                                    displayCurrency === 'NGN' ? totalUSDBalance * 1650 :
+                                                        displayCurrency === 'BTC' ? totalUSDBalance / 65000 :
+                                                            displayCurrency === 'ETH' ? totalUSDBalance / 3500 :
+                                                                totalUSDBalance,
+                                                displayCurrency
+                                            )
+                                            : '••••••••'
+                                        }
+                                    </h2>
+                                    {showBalances && <span className="text-accent-200 font-bold uppercase tracking-widest text-xs">{displayCurrency}</span>}
+                                </div>
+                            )}
+                        </div>
+                        <p className="text-accent-100 text-sm mt-3 flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                            {wallets.length} active multi-currency wallets
+                        </p>
                     </div>
-                    <div className="p-4 bg-white/10 rounded-2xl">
-                        <Wallet className="w-12 h-12" />
+
+                    <div className="flex flex-col gap-3">
+                        <p className="text-accent-200 text-xs font-bold uppercase tracking-widest">Select Display Currency</p>
+                        <div className="relative">
+                            <select
+                                value={displayCurrency}
+                                onChange={(e) => setDisplayCurrency(e.target.value)}
+                                className="appearance-none bg-white text-gray-900 border-none rounded-2xl px-8 py-4 pr-14 font-black text-base shadow-2xl transition-all focus:outline-none focus:ring-4 focus:ring-white/20 cursor-pointer w-full md:w-auto min-w-[180px]"
+                            >
+                                <option value="USD">USD (Dollar)</option>
+                                <option value="NGN">NGN (Naira)</option>
+                                <option value="BTC">BTC (Bitcoin)</option>
+                                <option value="ETH">ETH (Ethereum)</option>
+                                <option value="EUR">EUR (Euro)</option>
+                                <option value="GBP">GBP (Pounds)</option>
+                                <option value="CAD">CAD (CAD Dollar)</option>
+                                <option value="ZAR">ZAR (Rand)</option>
+                            </select>
+                            <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 w-5 h-5 pointer-events-none text-gray-900" />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -985,7 +1076,7 @@ const DepositModal = ({ onClose, wallets }) => {
                                 className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
                             >
                                 <option value="">Select network...</option>
-                                {cryptoConfigs && cryptoConfigs[selectedWallet.currency]?.map(n => (
+                                {cryptoConfigs?.find(c => c.coin === selectedWallet.currency)?.networks.map(n => (
                                     <option key={n.network} value={n.network}>{n.network}</option>
                                 ))}
                             </select>

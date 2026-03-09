@@ -139,73 +139,73 @@ const Dashboard = () => {
       )}
 
       {/* Welcome Section */}
-      <div className="card bg-gradient-to-r from-accent-600 to-emerald-700 text-white border-none shadow-lg transform hover:scale-[1.01] transition-transform shadow-accent-500/20">
-        <h2 className="text-3xl font-bold mb-2">Welcome back, {user?.first_name || user?.username || user?.email?.split('@')[0] || 'Member'}!</h2>
-        <p className="text-accent-50 text-lg">
-          Your financial hub is up and running. Ready for some global transactions?
-        </p>
+      <div className="card bg-gradient-to-br from-accent-600 to-accent-800 text-white border-none shadow-xl transform hover:scale-[1.01] transition-all shadow-accent-500/20 overflow-hidden relative group">
+        <div className="relative z-10">
+          <h2 className="text-3xl md:text-4xl font-black mb-2 tracking-tight">Welcome back, {user?.first_name || user?.username || 'Champion'}!</h2>
+          <p className="text-accent-100 text-lg max-w-xl">
+            Your financial hub is up and running. You have {wallets.length} active wallets across {new Set(wallets.map(w => w.currency)).size} currencies.
+          </p>
+        </div>
+        <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700">
+          <TrendingUp className="w-32 h-32" />
+        </div>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Total Balance Card with Dropdown */}
-        <div className="card lg:col-span-1 border-none bg-accent-50 dark:bg-accent-900/10 ring-1 ring-accent-200 dark:ring-accent-800 shadow-md">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Total Balance</p>
-                <div className="relative">
-                  <select
-                    className="bg-accent-100 dark:bg-accent-900/30 px-2 py-0.5 rounded text-[10px] font-bold text-accent-700 dark:text-accent-300 focus:outline-none cursor-pointer border border-accent-200 dark:border-accent-700 hover:bg-accent-200/50 transition-colors"
-                    onChange={async (e) => {
-                      const currency = e.target.value;
-                      if (currency === 'USD') {
-                        setStats(prev => ({ ...prev, total_display: null }));
-                      } else {
-                        // Fetch rate and update
-                        setStats(prev => ({ ...prev, total_display_loading: true }));
-                        // Using a simple rate calculation for the total wealth
-                        // Note: cryptoService.getExchangeRates('USD', currency) returns rate for 1 USD to Target
-                        const rateRes = await cryptoService.getExchangeRates('USD', currency);
-                        const rate = rateRes.success ? rateRes.data.rate : (currency === 'NGN' ? 1650 : (currency === 'EUR' ? 0.92 : 1));
-                        setStats(prev => ({
-                          ...prev,
-                          total_display: { currency, value: (prev.total_balance || 0) * rate },
-                          total_display_loading: false
-                        }));
-                      }
-                    }}
-                  >
-                    <option value="USD">USD</option>
-                    <option value="NGN">NGN</option>
-                    <option value="BTC">BTC</option>
-                    <option value="ETH">ETH</option>
-                    <option value="EUR">EUR</option>
-                  </select>
-                </div>
-              </div>
-              <p className="text-3xl font-black text-gray-900 dark:text-white mt-2 leading-none">
-                {stats.total_display_loading ? (
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                    <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                    <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                  </span>
-                ) : stats.total_display ? (
-                  formatCurrency(stats.total_display.value, stats.total_display.currency)
-                ) : (
-                  formatCurrency(stats.total_balance || 0, 'USD')
-                )}
-              </p>
-              <div className="flex items-center gap-1 mt-2">
-                <div className="w-4 h-4 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                  <ArrowUpRight className="w-3 h-3 text-emerald-600" />
-                </div>
-                <p className="text-xs font-semibold text-emerald-600">+4.2% today</p>
-              </div>
+        <div className="card lg:col-span-1 border-none bg-white dark:bg-gray-800 shadow-xl relative overflow-hidden group hover:shadow-2xl transition-all duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-accent-50 dark:bg-accent-900/30 rounded-2xl border border-accent-100 dark:border-accent-800">
+              <Wallet className="h-6 w-6 text-accent-600" />
             </div>
-            <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-accent-100 dark:border-accent-900/50">
-              <Wallet className="h-7 w-7 text-accent-600" />
+            <select
+              className="appearance-none bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-1.5 rounded-xl text-xs font-black text-gray-700 dark:text-gray-300 focus:outline-none cursor-pointer hover:border-accent-500 transition-colors pr-8 relative z-10"
+              onChange={async (e) => {
+                const currency = e.target.value;
+                if (currency === 'USD') {
+                  setStats(prev => ({ ...prev, total_display: null }));
+                } else {
+                  setStats(prev => ({ ...prev, total_display_loading: true }));
+                  const rateRes = await cryptoService.getExchangeRates('USD', currency);
+                  const rate = rateRes.success ? (rateRes.data.rate || rateRes.data.exchange_rate) : (currency === 'NGN' ? 1650 : (currency === 'EUR' ? 0.92 : 1));
+                  setStats(prev => ({
+                    ...prev,
+                    total_display: { currency, value: (prev.total_balance || 0) * rate },
+                    total_display_loading: false
+                  }));
+                }
+              }}
+            >
+              <option value="USD">USD</option>
+              <option value="NGN">NGN</option>
+              <option value="BTC">BTC</option>
+              <option value="ETH">ETH</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+            </select>
+          </div>
+
+          <div>
+            <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-1">Total Balance</p>
+            <h2 className="text-3xl font-black text-gray-900 dark:text-white mt-2 leading-none">
+              {stats.total_display_loading ? (
+                <span className="flex items-center gap-1 py-1">
+                  <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                  <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                  <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                </span>
+              ) : stats.total_display ? (
+                formatCurrency(stats.total_display.value, stats.total_display.currency)
+              ) : (
+                formatCurrency(stats.total_balance || 0, 'USD')
+              )}
+            </h2>
+            <div className="flex items-center gap-1 mt-4">
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
+              </span>
+              <p className="text-xs font-bold text-emerald-600">+4.2% Growth</p>
             </div>
           </div>
         </div>
