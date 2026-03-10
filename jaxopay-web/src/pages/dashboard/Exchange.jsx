@@ -122,10 +122,11 @@ const Exchange = () => {
         if (result.success) {
             setCryptoConfig(result.data);
             // Set default networks if available
-            const usdtConfig = result.data.find(c => c.coin === 'USDT');
-            if (usdtConfig && usdtConfig.networks.length > 0) {
-                setDepositNetwork(usdtConfig.networks[0].network);
-                setWithdrawNetwork(usdtConfig.networks[0].network);
+            const usdtConfig = result.data.find(c => c.coin?.toUpperCase() === 'USDT');
+            const nets = usdtConfig?.networkList || usdtConfig?.networks || [];
+            if (nets.length > 0) {
+                setDepositNetwork(nets[0].network);
+                setWithdrawNetwork(nets[0].network);
             }
         }
     };
@@ -425,10 +426,8 @@ const Exchange = () => {
                                         className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
                                     >
                                         <option value="">Select Network</option>
-                                        {selectedDepositCoinConfig?.networkList?.map(n => (
-                                            <option key={n.network} value={n.network}>{n.network} ({n.network})</option>
-                                        )) || selectedDepositCoinConfig?.networks?.map(n => (
-                                            <option key={n.network} value={n.network}>{n.network}</option>
+                                        {(selectedDepositCoinConfig?.networkList || selectedDepositCoinConfig?.networks)?.map(n => (
+                                            <option key={n.network} value={n.network}>{n.name || n.network}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -503,10 +502,8 @@ const Exchange = () => {
                                             className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
                                         >
                                             <option value="">Select Network</option>
-                                            {selectedWithdrawCoinConfig?.networkList?.map(n => (
-                                                <option key={n.network} value={n.network}>{n.network} (Fee: {n.withdrawFee})</option>
-                                            )) || selectedWithdrawCoinConfig?.networks?.map(n => (
-                                                <option key={n.network} value={n.network}>{n.network}</option>
+                                            {(selectedWithdrawCoinConfig?.networkList || selectedWithdrawCoinConfig?.networks)?.map(n => (
+                                                <option key={n.network} value={n.network}>{n.name || n.network} (Fee: {n.withdrawFee})</option>
                                             ))}
                                         </select>
                                     </div>
@@ -537,7 +534,7 @@ const Exchange = () => {
                                     </div>
                                 </div>
 
-                                {selectedWithdrawCoinConfig?.networks.find(n => n.network === withdrawNetwork)?.memo && (
+                                {(selectedWithdrawCoinConfig?.networks || selectedWithdrawCoinConfig?.networkList)?.find(n => n.network === withdrawNetwork)?.memo && (
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Memo (Required for this network)</label>
                                         <input

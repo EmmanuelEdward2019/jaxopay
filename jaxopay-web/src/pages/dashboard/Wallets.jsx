@@ -1004,14 +1004,14 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
                                         className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-bold"
                                     >
                                         <option value="">Select network...</option>
-                                        {(cryptoConfigs?.find(c => c.coin === fromWalletData.currency)?.networkList ||
-                                            cryptoConfigs?.find(c => c.coin === fromWalletData.currency)?.networks)?.map(n => (
+                                        {(cryptoConfigs?.find(c => (c.coin || c.symbol)?.toUpperCase() === fromWalletData.currency?.toUpperCase())?.networkList ||
+                                            cryptoConfigs?.find(c => (c.coin || c.symbol)?.toUpperCase() === fromWalletData.currency?.toUpperCase())?.networks)?.map(n => (
                                                 <option key={n.network} value={n.network}>
-                                                    {n.network} (Fee: {n.withdrawFee || n.fee || 0} {fromWalletData.currency})
+                                                    {n.name || n.network} (Fee: {n.withdrawFee || n.fee || 0} {fromWalletData.currency})
                                                 </option>
                                             ))}
                                         {loading && <option disabled>Loading networks...</option>}
-                                        {!loading && !cryptoConfigs?.find(c => (c.coin || c.symbol) === fromWalletData.currency) && (
+                                        {!loading && !cryptoConfigs?.find(c => (c.coin || c.symbol)?.toUpperCase() === fromWalletData.currency?.toUpperCase()) && (
                                             <option disabled>No networks found for {fromWalletData.currency}</option>
                                         )}
                                     </select>
