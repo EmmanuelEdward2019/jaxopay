@@ -102,23 +102,22 @@ app.use(errorHandler);
 // Database connection and server startup
 const startServer = async () => {
   try {
-    // Try to connect to database (non-blocking)
-    try {
-      await connectDatabase();
-      logger.info('✅ Database connected successfully');
-    } catch (dbError) {
-      logger.warn('⚠️  Database connection failed - server will start without database');
-      logger.warn('Database error:', dbError.message);
-      logger.warn('API endpoints will return errors until database is configured');
-    }
-
-    // Start server
+    // Start server first so health checks pass
     server.listen(PORT, () => {
       logger.info(`🚀 JAXOPAY API Server running on port ${PORT}`);
       logger.info(`📝 Environment: ${NODE_ENV}`);
       logger.info(`🔗 API Base URL: http://localhost:${PORT}/api/${API_VERSION}`);
       logger.info(`💚 Health check: http://localhost:${PORT}/health`);
     });
+
+    // Try to connect to database (asynchronous)
+    connectDatabase()
+      .then(() => logger.info('✅ Database connected successfully'))
+      .catch((dbError) => {
+        logger.warn('⚠️  Database connection failed - server running without database');
+        logger.warn('Database error:', dbError.message);
+        logger.warn('API endpoints will return errors until database is configured');
+      });
   } catch (error) {
     logger.error('❌ Failed to start server:', error);
     process.exit(1);
