@@ -345,13 +345,21 @@ const Exchange = () => {
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-4">
-                                    <input
-                                        type="text"
-                                        placeholder="0.00"
-                                        value={receiveAmount}
-                                        readOnly
-                                        className="bg-transparent text-3xl font-bold text-gray-900 dark:text-white focus:outline-none w-full"
-                                    />
+                                    <div className="relative w-full">
+                                        <input
+                                            type="text"
+                                            placeholder="0.00"
+                                            value={loadingRates ? '...' : (receiveAmount || '0.00')}
+                                            readOnly
+                                            className={`bg-transparent text-3xl font-bold text-gray-900 dark:text-white focus:outline-none w-full ${loadingRates ? 'opacity-50' : ''}`}
+                                        />
+                                        {loadingRates && (
+                                            <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                                <RefreshCw className="w-5 h-5 text-accent-500 animate-spin" />
+                                                <span className="text-xs text-accent-600 font-medium">Updating...</span>
+                                            </div>
+                                        )}
+                                    </div>
                                     <button
                                         onClick={() => { setTokenModalSide('to'); setShowTokenModal(true); }}
                                         className="flex items-center gap-2 bg-white dark:bg-gray-800 px-4 py-2 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:border-accent-500 transition-all shrink-0"

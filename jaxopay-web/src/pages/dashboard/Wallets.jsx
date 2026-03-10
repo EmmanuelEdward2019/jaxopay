@@ -21,11 +21,13 @@ import {
     Building2,
     Check,
     Info,
-    AlertCircle
+    AlertCircle,
+    ShieldCheck
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import walletService from '../../services/walletService';
 import cryptoService from '../../services/cryptoService';
+import transferService from '../../services/transferService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
 // Currency options for wallet creation
@@ -40,6 +42,8 @@ const CURRENCY_OPTIONS = {
         { code: 'ZAR', name: 'South African Rand', symbol: 'R', flag: '🇿🇦' },
         { code: 'CAD', name: 'Canadian Dollar', symbol: '$', flag: '🇨🇦' },
         { code: 'CNY', name: 'Chinese Yuan', symbol: '¥', flag: '🇨🇳' },
+        { code: 'AUD', name: 'Australian Dollar', symbol: 'A$', flag: '🇦🇺' },
+        { code: 'JPY', name: 'Japanese Yen', symbol: '¥', flag: '🇯🇵' },
     ],
     crypto: [
         { code: 'BTC', name: 'Bitcoin', symbol: '₿', flag: '🪙' },
@@ -49,6 +53,24 @@ const CURRENCY_OPTIONS = {
         { code: 'SOL', name: 'Solana', symbol: 'S', flag: '🪙' },
         { code: 'BNB', name: 'BNB', symbol: 'B', flag: '🪙' },
     ],
+};
+
+const FALLBACK_RATES = {
+    'USD': 1,
+    'NGN': 1650, // 1 USD = 1650 NGN
+    'GBP': 0.78,
+    'EUR': 0.92,
+    'BTC': 0.000015,
+    'ETH': 0.00028,
+    'USDT': 1,
+    'USDC': 1,
+    'ZAR': 18.8,
+    'CAD': 1.35,
+    'GHS': 12.5,
+    'KES': 130,
+    'CNY': 7.2,
+    'AUD': 1.5,
+    'JPY': 150
 };
 
 const Wallets = () => {
@@ -120,7 +142,6 @@ const Wallets = () => {
         setLoading(false);
     };
 
-    // Calculate total USD balance whenever wallets change
     useEffect(() => {
         const calculateTotalBalance = async () => {
             if (wallets.length === 0) {
@@ -130,27 +151,12 @@ const Wallets = () => {
 
             setIsConverting(true);
             try {
-                const rates = {
-                    'USD': 1,
-                    'NGN': 1 / 1650,
-                    'GBP': 1.28,
-                    'EUR': 1.08,
-                    'BTC': 65000,
-                    'ETH': 3500,
-                    'USDT': 1,
-                    'USDC': 1,
-                    'ZAR': 0.053,
-                    'CAD': 0.74,
-                    'GHS': 0.08,
-                    'KES': 0.0075,
-                    'CNY': 0.14
-                };
-
                 let total = 0;
                 for (const wallet of wallets) {
                     const balance = parseFloat(wallet.balance) || 0;
-                    const rate = rates[wallet.currency] || 1;
-                    total += balance * rate;
+                    // Rate is 1 USD = X Currency
+                    const rate = FALLBACK_RATES[wallet.currency] || 1;
+                    total += balance / rate;
                 }
                 setTotalUSDBalance(total);
             } catch (err) {
@@ -323,11 +329,7 @@ const Wallets = () => {
                                     <h2 className="text-4xl md:text-5xl font-black tracking-tight">
                                         {showBalances
                                             ? formatCurrency(
-                                                displayCurrency === 'USD' ? totalUSDBalance :
-                                                    displayCurrency === 'NGN' ? totalUSDBalance * 1650 :
-                                                        displayCurrency === 'BTC' ? totalUSDBalance / 65000 :
-                                                            displayCurrency === 'ETH' ? totalUSDBalance / 3500 :
-                                                                totalUSDBalance,
+                                                totalUSDBalance * (FALLBACK_RATES[displayCurrency] || 1),
                                                 displayCurrency
                                             )
                                             : '••••••••'
@@ -351,14 +353,21 @@ const Wallets = () => {
                                 onChange={(e) => setDisplayCurrency(e.target.value)}
                                 className="appearance-none bg-white text-gray-900 border-none rounded-2xl px-8 py-4 pr-14 font-black text-base shadow-2xl transition-all focus:outline-none focus:ring-4 focus:ring-white/20 cursor-pointer w-full md:w-auto min-w-[180px]"
                             >
-                                <option value="USD">USD (Dollar)</option>
+                                <option value="USD">USD (US Dollar)</option>
                                 <option value="NGN">NGN (Naira)</option>
                                 <option value="BTC">BTC (Bitcoin)</option>
                                 <option value="ETH">ETH (Ethereum)</option>
+                                <option value="USDT">USDT (Tether)</option>
+                                <option value="USDC">USDC (USD Coin)</option>
                                 <option value="EUR">EUR (Euro)</option>
                                 <option value="GBP">GBP (Pounds)</option>
                                 <option value="CAD">CAD (CAD Dollar)</option>
                                 <option value="ZAR">ZAR (Rand)</option>
+                                <option value="GHS">GHS (Cedi)</option>
+                                <option value="KES">KES (Shilling)</option>
+                                <option value="CNY">CNY (Yuan)</option>
+                                <option value="AUD">AUD (Australian $)</option>
+                                <option value="JPY">JPY (Yen)</option>
                             </select>
                             <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 w-5 h-5 pointer-events-none text-gray-900" />
                         </div>
@@ -774,7 +783,7 @@ const CreateWalletModal = ({ onClose, onCreate, loading, existingCurrencies }) =
 };
 
 // Transfer Modal Component
-const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
+const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading }) => {
     const [fromWallet, setFromWallet] = useState('');
     const [recipient, setRecipient] = useState('');
     const [amount, setAmount] = useState('');
@@ -782,18 +791,56 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
     const [network, setNetwork] = useState('');
     const [cryptoConfigs, setCryptoConfigs] = useState(null);
 
+    // Bank Transfer States
+    const [transferType, setTransferType] = useState('external'); // 'internal' | 'external'
+    const [banks, setBanks] = useState([]);
+    const [selectedBank, setSelectedBank] = useState('');
+    const [accountName, setAccountName] = useState('');
+    const [resolvingAccount, setResolvingAccount] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
     const fromWalletData = wallets.find((w) => w.id === fromWallet);
     const isCrypto = fromWalletData?.wallet_type === 'crypto';
 
     useEffect(() => {
-        if (isCrypto) {
+        if (isCrypto && !cryptoConfigs) {
+            setLoading(true);
             cryptoService.getConfig().then(res => {
                 if (res.success) setCryptoConfigs(res.data);
+                setLoading(false);
             });
         }
-    }, [isCrypto]);
+    }, [isCrypto, fromWallet, cryptoConfigs]);
 
-    const handleTransferClick = () => {
+    useEffect(() => {
+        if (fromWalletData?.wallet_type === 'fiat' && transferType === 'external') {
+            transferService.getBanks(fromWalletData.currency).then(res => {
+                if (res.success) setBanks(res.data);
+            });
+        }
+    }, [fromWalletData, transferType]);
+
+    // Auto-resolve account name for NGN
+    useEffect(() => {
+        if (transferType === 'external' && selectedBank && recipient.length >= 10 && fromWalletData?.currency === 'NGN') {
+            const resolve = async () => {
+                setResolvingAccount(true);
+                setAccountName('');
+                const res = await transferService.resolveAccount(selectedBank, recipient, 'NGN');
+                if (res.success) {
+                    setAccountName(res.data.account_name);
+                }
+                setResolvingAccount(false);
+            };
+            resolve();
+        }
+    }, [recipient, selectedBank, transferType, fromWalletData]);
+
+    const handleTransferClick = async () => {
+        setLoading(true);
+        setError(null);
+
         const payload = {
             amount: parseFloat(amount),
             currency: fromWalletData?.currency,
@@ -801,166 +848,223 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading }) => {
         };
 
         if (isCrypto) {
-            payload.address = recipient;
-            payload.network = network;
-            // For crypto, we use the new withdraw service
-            cryptoService.withdraw({
+            const res = await cryptoService.withdraw({
                 coin: fromWalletData.currency,
                 address: recipient,
                 amount: parseFloat(amount),
                 network,
                 memo: description
-            }).then(res => {
-                if (res.success) {
-                    onClose();
-                    alert('Withdrawal request submitted successfully!');
-                } else {
-                    alert(res.error || 'Withdrawal failed');
-                }
             });
+            if (res.success) {
+                onClose();
+                alert('Withdrawal request submitted successfully!');
+            } else {
+                setError(res.error || 'Withdrawal failed');
+            }
+        } else if (transferType === 'external') {
+            const res = await transferService.sendTransfer({
+                wallet_id: fromWallet,
+                bank_code: selectedBank,
+                account_number: recipient,
+                account_name: accountName,
+                amount: parseFloat(amount),
+                narration: description,
+                currency: fromWalletData.currency
+            });
+            if (res.success) {
+                onClose();
+                alert('Bank transfer initiated successfully!');
+            } else {
+                setError(res.error || 'Transfer failed');
+            }
         } else {
+            // Internal P2P
             onTransfer(recipient, parseFloat(amount), fromWalletData?.currency, description);
         }
+        setLoading(false);
     };
 
     return (
         <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
             onClick={onClose}
         >
             <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white dark:bg-gray-800 rounded-[2rem] shadow-2xl max-w-md w-full p-8 overflow-hidden relative"
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                        {isCrypto ? 'Withdraw Crypto' : 'Send Funds'}
-                    </h2>
-                    <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                    >
-                        <X className="w-5 h-5 text-gray-500" />
+                <div className="flex items-center justify-between mb-8">
+                    <div>
+                        <h2 className="text-2xl font-black text-gray-900 dark:text-white">
+                            {isCrypto ? 'Withdraw Crypto' : 'Send Funds'}
+                        </h2>
+                        <p className="text-gray-500 text-sm">Transfer assets safely and instantly.</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all">
+                        <X className="w-6 h-6 text-gray-400" />
                     </button>
                 </div>
 
-                <div className="space-y-4">
+                {error && (
+                    <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm font-bold flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        {error}
+                    </div>
+                )}
+
+                <div className="space-y-6">
                     {/* From Wallet */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Select Wallet
-                        </label>
+                        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Source Wallet</label>
                         <select
                             value={fromWallet}
-                            onChange={(e) => setFromWallet(e.target.value)}
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
+                            onChange={(e) => {
+                                setFromWallet(e.target.value);
+                                setRecipient('');
+                                setAccountName('');
+                                setSelectedBank('');
+                            }}
+                            className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-bold"
                         >
-                            <option value="">Select wallet...</option>
+                            <option value="">Select source wallet...</option>
                             {wallets.map((w) => (
                                 <option key={w.id} value={w.id}>
-                                    {w.currency} - {formatCurrency(w.balance || 0, w.currency)}
+                                    {w.currency} - Available: {formatCurrency(w.balance || 0, w.currency)}
                                 </option>
                             ))}
                         </select>
                     </div>
 
-                    {/* Recipient */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            {isCrypto ? 'Wallet Address' : 'Account Details (Email)'}
-                        </label>
-                        <input
-                            type="text"
-                            value={recipient}
-                            onChange={(e) => setRecipient(e.target.value)}
-                            placeholder={isCrypto ? 'Enter wallet address' : 'user@example.com'}
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
-                        />
-                    </div>
-
-                    {/* Network for Crypto */}
-                    {isCrypto && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                Network
-                            </label>
-                            <select
-                                value={network}
-                                onChange={(e) => setNetwork(e.target.value)}
-                                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
+                    {!isCrypto && fromWalletData && (
+                        <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-700 rounded-xl">
+                            <button
+                                onClick={() => setTransferType('external')}
+                                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all ${transferType === 'external' ? 'bg-white dark:bg-gray-600 text-accent-600 shadow-sm' : 'text-gray-500'}`}
                             >
-                                <option value="">Select network...</option>
-                                {cryptoConfigs?.find(c => c.coin === fromWalletData.currency)?.networks.map(n => (
-                                    <option key={n.network} value={n.network}>
-                                        {n.network} (Fee: {n.withdrawFee} {fromWalletData.currency})
-                                    </option>
-                                ))}
-                                {!cryptoConfigs && <option disabled>Loading networks...</option>}
-                            </select>
+                                External Bank
+                            </button>
+                            <button
+                                onClick={() => setTransferType('internal')}
+                                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all ${transferType === 'internal' ? 'bg-white dark:bg-gray-600 text-accent-600 shadow-sm' : 'text-gray-500'}`}
+                            >
+                                Internal P2P
+                            </button>
                         </div>
                     )}
 
-                    {/* Amount */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Amount
-                        </label>
-                        <div className="relative">
-                            <input
-                                type="number"
-                                value={amount}
-                                onChange={(e) => setAmount(e.target.value)}
-                                placeholder="0.00"
-                                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
-                            />
-                            {fromWalletData && (
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">
-                                    {fromWalletData.currency}
-                                </span>
+                    {/* Dynamic Fields based on type */}
+                    {fromWalletData && (
+                        <div className="space-y-4">
+                            {!isCrypto && transferType === 'external' && (
+                                <div>
+                                    <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Select Bank</label>
+                                    <select
+                                        value={selectedBank}
+                                        onChange={(e) => setSelectedBank(e.target.value)}
+                                        className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-bold"
+                                    >
+                                        <option value="">Choose beneficiary bank...</option>
+                                        {banks.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+                                    </select>
+                                </div>
                             )}
-                        </div>
-                        {fromWalletData && (
-                            <p className="text-sm text-gray-500 mt-1">
-                                Available: {formatCurrency(fromWalletData.balance || 0, fromWalletData.currency)}
-                            </p>
-                        )}
-                    </div>
 
-                    {/* Description / Memo */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            {isCrypto ? 'Memo/Remarks (optional)' : 'Description (optional)'}
-                        </label>
-                        <input
-                            type="text"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            placeholder={isCrypto ? 'Enter memo if required' : "What's this transfer for?"}
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
-                        />
-                    </div>
+                            <div>
+                                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">
+                                    {isCrypto ? 'Wallet Address' : transferType === 'external' ? 'Account Number' : 'Recipient Email'}
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        value={recipient}
+                                        onChange={(e) => setRecipient(e.target.value)}
+                                        placeholder={isCrypto ? 'Paste address here' : transferType === 'external' ? '0123456789' : 'user@example.com'}
+                                        className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-bold"
+                                    />
+                                    {resolvingAccount && (
+                                        <RefreshCw className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-accent-600" />
+                                    )}
+                                </div>
+                                {accountName && (
+                                    <div className="mt-2 px-4 py-2 bg-accent-50 dark:bg-accent-900/20 rounded-xl flex items-center gap-2">
+                                        <ShieldCheck className="w-4 h-4 text-accent-600" />
+                                        <span className="text-xs font-bold text-accent-700 dark:text-accent-300">{accountName}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {isCrypto && (
+                                <div>
+                                    <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Network</label>
+                                    <select
+                                        value={network}
+                                        onChange={(e) => setNetwork(e.target.value)}
+                                        className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-bold"
+                                    >
+                                        <option value="">Select network...</option>
+                                        {(cryptoConfigs?.find(c => c.coin === fromWalletData.currency)?.networkList ||
+                                            cryptoConfigs?.find(c => c.coin === fromWalletData.currency)?.networks)?.map(n => (
+                                                <option key={n.network} value={n.network}>
+                                                    {n.network} (Fee: {n.withdrawFee || n.fee || 0} {fromWalletData.currency})
+                                                </option>
+                                            ))}
+                                        {loading && <option disabled>Loading networks...</option>}
+                                        {!loading && !cryptoConfigs?.find(c => (c.coin || c.symbol) === fromWalletData.currency) && (
+                                            <option disabled>No networks found for {fromWalletData.currency}</option>
+                                        )}
+                                    </select>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Amount to Send</label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={amount}
+                                        onChange={(e) => setAmount(e.target.value)}
+                                        placeholder="0.00"
+                                        className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white text-xl font-black"
+                                    />
+                                    <div className="absolute right-5 top-1/2 -translate-y-1/2 font-black text-gray-400">{fromWalletData.currency}</div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Reference/Narration</label>
+                                <textarea
+                                    value={description}
+                                    onChange={(e) => setDescription(e.target.value)}
+                                    placeholder="Optional note for this transaction..."
+                                    className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white text-sm"
+                                    rows="2"
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                {/* Actions */}
-                <div className="flex gap-3 mt-6">
+                <div className="flex gap-4 mt-8">
                     <button
                         onClick={onClose}
-                        className="flex-1 py-3 px-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
+                        className="flex-1 py-4 px-6 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold rounded-2xl transition-all hover:bg-gray-200 dark:hover:bg-gray-600"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={handleTransferClick}
-                        disabled={!fromWallet || !recipient || !amount || parseFloat(amount) <= 0 || loading || parseFloat(amount) > parseFloat(fromWalletData?.balance || 0) || (isCrypto && !network)}
-                        className="flex-1 py-3 px-4 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={
+                            !fromWallet || !recipient || !amount || parseFloat(amount) <= 0 || loading ||
+                            parseFloat(amount) > parseFloat(fromWalletData?.balance || 0) ||
+                            (isCrypto && !network) ||
+                            (!isCrypto && transferType === 'external' && (!selectedBank || (fromWalletData.currency === 'NGN' && !accountName)))
+                        }
+                        className="flex-3 py-4 px-8 bg-accent-600 hover:bg-accent-700 text-white font-black rounded-2xl shadow-xl shadow-accent-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
-                        {loading ? (isCrypto ? 'Processing...' : 'Sending...') : (isCrypto ? 'Withdraw' : 'Send')}
+                        {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : null}
+                        {loading ? 'Processing...' : (isCrypto ? 'Withdraw Assets' : 'Confirm Transfer')}
                     </button>
                 </div>
             </motion.div>
@@ -1014,6 +1118,8 @@ const DepositModal = ({ onClose, wallets }) => {
                             if (!cancelled && addrRes.success) setDetails(addrRes.data);
                             else if (!cancelled) setError(addrRes.error || 'Could not get deposit address');
                         }
+                    } else if (!cancelled) {
+                        setError(configRes.error || 'Could not load crypto configuration');
                     }
                 }
             } catch (e) {
@@ -1076,9 +1182,10 @@ const DepositModal = ({ onClose, wallets }) => {
                                 className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
                             >
                                 <option value="">Select network...</option>
-                                {cryptoConfigs?.find(c => c.coin === selectedWallet.currency)?.networks.map(n => (
-                                    <option key={n.network} value={n.network}>{n.network}</option>
-                                ))}
+                                {((cryptoConfigs?.find(c => c.coin === selectedWallet.currency)?.networkList) ||
+                                    (cryptoConfigs?.find(c => c.coin === selectedWallet.currency)?.networks))?.map(n => (
+                                        <option key={n.network} value={n.network}>{n.network}</option>
+                                    ))}
                             </select>
                         </div>
                     )}

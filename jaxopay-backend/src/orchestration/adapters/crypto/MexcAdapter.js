@@ -93,21 +93,17 @@ class MexcAdapter {
             side: side.toUpperCase(),
             type: type.toUpperCase(),
             timestamp,
+            recvWindow: 60000,
         };
 
         if (quantity) params.quantity = quantity;
         if (quoteOrderQty) params.quoteOrderQty = quoteOrderQty;
 
-        const queryString = Object.keys(params)
-            .sort()
-            .map(key => `${key}=${params[key]}`)
-            .join('&');
-
+        const queryString = this._buildQuery(params);
         const signature = this._sign(queryString);
-        const finalQuery = `${queryString}&signature=${signature}`;
 
         try {
-            const response = await this.client.post(`/api/v3/order?${finalQuery}`);
+            const response = await this.client.post(`/api/v3/order?${queryString}&signature=${signature}`);
             logger.info(`[MEXC] Order created: ${side} ${symbol}`, response.data);
             return response.data;
         } catch (err) {
@@ -123,7 +119,7 @@ class MexcAdapter {
     async getAccountInfo() {
         this._ensureCredentials();
         const timestamp = Date.now();
-        const queryString = `timestamp=${timestamp}`;
+        const queryString = `recvWindow=60000&timestamp=${timestamp}`;
         const signature = this._sign(queryString);
 
         try {
@@ -140,7 +136,11 @@ class MexcAdapter {
     async getDepositAddress(coin, network = '') {
         this._ensureCredentials();
         const timestamp = Date.now();
-        const params = { coin: coin.toUpperCase(), timestamp };
+        const params = {
+            coin: coin.toUpperCase(),
+            timestamp,
+            recvWindow: 60000
+        };
         if (network) params.network = network;
 
         const queryString = this._buildQuery(params);
@@ -164,7 +164,8 @@ class MexcAdapter {
             coin: coin.toUpperCase(),
             address,
             amount,
-            timestamp
+            timestamp,
+            recvWindow: 60000
         };
         if (network) params.network = network;
         if (memo) params.memo = memo;
@@ -187,7 +188,7 @@ class MexcAdapter {
     async getDepositHistory(coin = null, status = null, limit = 100) {
         this._ensureCredentials();
         const timestamp = Date.now();
-        const params = { timestamp, limit };
+        const params = { timestamp, limit, recvWindow: 60000 };
         if (coin) params.coin = coin.toUpperCase();
         if (status !== null) params.status = status;
 
@@ -208,7 +209,7 @@ class MexcAdapter {
     async getWithdrawalHistory(coin = null, status = null, limit = 100) {
         this._ensureCredentials();
         const timestamp = Date.now();
-        const params = { timestamp, limit };
+        const params = { timestamp, limit, recvWindow: 60000 };
         if (coin) params.coin = coin.toUpperCase();
         if (status !== null) params.status = status;
 
@@ -229,7 +230,7 @@ class MexcAdapter {
     async getCurrencyConfig() {
         this._ensureCredentials();
         const timestamp = Date.now();
-        const queryString = `timestamp=${timestamp}`;
+        const queryString = `recvWindow=60000&timestamp=${timestamp}`;
         const signature = this._sign(queryString);
 
         try {
@@ -246,7 +247,12 @@ class MexcAdapter {
     _buildQuery(params) {
         return Object.keys(params)
             .sort()
-            .map(key => `${key}=${encodeURIComponent(params[key])}`)
+            .map(key => {
+                const val = params[key];
+                // Strict RFC 3986 encoding: encode everything except alphanumeric and - . _ ~
+                // MEXC/Binance are picky about encoded characters like ( ) ! * '
+                return `${key}=${encodeURIComponent(val).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())}`;
+            })
             .join('&');
     }
 

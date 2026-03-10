@@ -73,7 +73,7 @@ const CrossBorder = () => {
                 setSwapData(prev => ({ ...prev, receiveAmount: '', rate: 0 }));
                 setQuoteExpiry(0);
             }
-        }, 300);
+        }, 150); // Reduced from 300ms for faster updates
         return () => clearTimeout(timer);
     }, [swapData.amount, swapData.fromCurrency, swapData.toCurrency]);
 
@@ -229,12 +229,21 @@ const CrossBorder = () => {
                                             <div className="md:col-span-11 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-2xl border border-gray-100 dark:border-gray-700">
                                                 <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">You Receive (Estimated)</label>
                                                 <div className="flex items-center gap-4">
-                                                    <input
-                                                        readOnly
-                                                        value={swapData.receiveAmount}
-                                                        placeholder="0.00"
-                                                        className="w-full bg-transparent text-3xl font-bold outline-none text-gray-400 dark:text-gray-500 border-none focus:ring-0"
-                                                    />
+                                                    <div className="relative w-full">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="0.00"
+                                                            value={loading ? '...' : (swapData.receiveAmount ? Number(swapData.receiveAmount).toFixed(4) : '0.00')}
+                                                            readOnly
+                                                            className={`bg-transparent text-3xl font-bold text-gray-900 dark:text-white focus:outline-none w-full ${loading ? 'opacity-50' : ''}`}
+                                                        />
+                                                        {loading && (
+                                                            <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                                                <RefreshCw className="w-5 h-5 text-accent-500 animate-spin" />
+                                                                <span className="text-xs text-accent-600 font-medium hidden sm:inline">Updating...</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <select
                                                         value={swapData.toCurrency}
                                                         onChange={(e) => setSwapData(prev => ({ ...prev, toCurrency: e.target.value }))}

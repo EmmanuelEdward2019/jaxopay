@@ -15,6 +15,24 @@ import dashboardService from '../../services/dashboardService';
 import cryptoService from '../../services/cryptoService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
+const FALLBACK_RATES = {
+  'USD': 1,
+  'NGN': 1650, // 1 USD = 1650 NGN
+  'GBP': 0.78,
+  'EUR': 0.92,
+  'BTC': 0.000015,
+  'ETH': 0.00028,
+  'USDT': 1,
+  'USDC': 1,
+  'ZAR': 18.8,
+  'CAD': 1.35,
+  'GHS': 12.5,
+  'KES': 130,
+  'CNY': 7.2,
+  'AUD': 1.5,
+  'JPY': 150
+};
+
 const Dashboard = () => {
   const { user } = useAuthStore();
   const { isFeatureEnabled } = useAppStore();
@@ -43,20 +61,10 @@ const Dashboard = () => {
         // Calculate Total wealth in USD
         let totalUSD = 0;
         try {
-          // In a real app we'd fetch all rates at once. For now, we'll iterate.
-          // Fallback rates if API is slow
-          const fallbackRates = { 'NGN': 1 / 1650, 'GBP': 1.28, 'EUR': 1.08, 'BTC': 65000, 'ETH': 3500, 'USDT': 1, 'USDC': 1 };
-
           for (const wallet of walletsData) {
             const bal = parseFloat(wallet.balance) || 0;
-            if (wallet.currency === 'USD') {
-              totalUSD += bal;
-            } else {
-              // Try to get real rate, otherwise fallback
-              // dashboardService.getRates might be better if it exists, or cryptoService
-              const rate = fallbackRates[wallet.currency] || 1;
-              totalUSD += bal * rate;
-            }
+            const rate = FALLBACK_RATES[wallet.currency] || 1;
+            totalUSD += bal / rate;
           }
         } catch (e) {
           console.error("Error calculating total wealth", e);
@@ -141,7 +149,7 @@ const Dashboard = () => {
       {/* Welcome Section */}
       <div className="card bg-gradient-to-br from-accent-600 to-accent-800 text-white border-none shadow-xl transform hover:scale-[1.01] transition-all shadow-accent-500/20 overflow-hidden relative group">
         <div className="relative z-10">
-          <h2 className="text-3xl md:text-4xl font-black mb-2 tracking-tight">Welcome back, {user?.first_name || user?.username || 'Champion'}!</h2>
+          <h2 className="text-3xl md:text-4xl font-black mb-2 tracking-tight">Welcome back, {user?.first_name || user?.username || user?.full_name?.split(' ')[0] || 'User'}!</h2>
           <p className="text-accent-100 text-lg max-w-xl">
             Your financial hub is up and running. You have {wallets.length} active wallets across {new Set(wallets.map(w => w.currency)).size} currencies.
           </p>
@@ -166,14 +174,30 @@ const Dashboard = () => {
                 if (currency === 'USD') {
                   setStats(prev => ({ ...prev, total_display: null }));
                 } else {
-                  setStats(prev => ({ ...prev, total_display_loading: true }));
-                  const rateRes = await cryptoService.getExchangeRates('USD', currency);
-                  const rate = rateRes.success ? (rateRes.data.rate || rateRes.data.exchange_rate) : (currency === 'NGN' ? 1650 : (currency === 'EUR' ? 0.92 : 1));
+                  // Show balance immediately using Fallback rate for better UX
+                  const fallbackRate = FALLBACK_RATES[currency] || 1;
                   setStats(prev => ({
                     ...prev,
-                    total_display: { currency, value: (prev.total_balance || 0) * rate },
-                    total_display_loading: false
+                    total_display: { currency, value: (prev.total_balance || 0) * fallbackRate },
+                    total_display_loading: true
                   }));
+
+                  // Then fetch real rate in background for accuracy
+                  try {
+                    const rateRes = await cryptoService.getExchangeRates('USD', currency);
+                    if (rateRes.success) {
+                      const realRate = rateRes.data.rate || rateRes.data.exchange_rate;
+                      setStats(prev => ({
+                        ...prev,
+                        total_display: { currency, value: (prev.total_balance || 0) * realRate },
+                        total_display_loading: false
+                      }));
+                    } else {
+                      setStats(prev => ({ ...prev, total_display_loading: false }));
+                    }
+                  } catch (err) {
+                    setStats(prev => ({ ...prev, total_display_loading: false }));
+                  }
                 }
               }}
             >
@@ -181,32 +205,40 @@ const Dashboard = () => {
               <option value="NGN">NGN</option>
               <option value="BTC">BTC</option>
               <option value="ETH">ETH</option>
+              <option value="USDT">USDT</option>
+              <option value="USDC">USDC</option>
               <option value="EUR">EUR</option>
               <option value="GBP">GBP</option>
+              <option value="CAD">CAD</option>
+              <option value="ZAR">ZAR</option>
+              <option value="GHS">GHS</option>
+              <option value="KES">KES</option>
+              <option value="CNY">CNY</option>
+              <option value="AUD">AUD</option>
+              <option value="JPY">JPY</option>
             </select>
           </div>
 
           <div>
-            <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-1">Total Balance</p>
-            <h2 className="text-3xl font-black text-gray-900 dark:text-white mt-2 leading-none">
-              {stats.total_display_loading ? (
-                <span className="flex items-center gap-1 py-1">
-                  <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                  <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                  <span className="w-2 h-2 bg-accent-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                </span>
-              ) : stats.total_display ? (
-                formatCurrency(stats.total_display.value, stats.total_display.currency)
-              ) : (
-                formatCurrency(stats.total_balance || 0, 'USD')
+            <p className="text-sm font-black text-gray-400 uppercase tracking-widest mb-1">Total Balance</p>
+            <div className="flex items-center gap-2">
+              <h3 className="text-3xl font-black text-gray-900 dark:text-white">
+                {user?.preferences?.show_balances === false ? '****' : (
+                  stats.total_display
+                    ? formatCurrency(stats.total_display.value, stats.total_display.currency)
+                    : formatCurrency(stats.total_balance, 'USD')
+                )}
+              </h3>
+              {stats.total_display_loading && (
+                <RefreshCw className="w-4 h-4 text-accent-500 animate-spin" />
               )}
-            </h2>
-            <div className="flex items-center gap-1 mt-4">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
-              </span>
-              <p className="text-xs font-bold text-emerald-600">+4.2% Growth</p>
             </div>
+          </div>
+          <div className="flex items-center gap-1 mt-4">
+            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+              <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
+            </span>
+            <p className="text-xs font-bold text-emerald-600">+4.2% Growth</p>
           </div>
         </div>
 

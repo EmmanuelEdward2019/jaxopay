@@ -110,20 +110,23 @@ const Bills = () => {
 
     const handleCategorySelect = async (category) => {
         setSelectedCategory(category);
+        setStep(2); // Transition immediately to show loading spinner in Step 2
         setLoading(true);
         setError(null);
         setProviders([]);
-        const result = await billService.getProviders(category.id, 'NG');
-        if (result.success) {
-            // Backend sends { success: true, data: [...] }
-            // API client returns either raw data or response.data
-            const list = Array.isArray(result.data?.data) ? result.data.data : (Array.isArray(result.data) ? result.data : (result.data?.providers || []));
-            setProviders(list);
-        } else {
-            setError(result.message || result.error || 'Failed to load providers. Try again.');
+        try {
+            const result = await billService.getProviders(category.id, 'NG');
+            if (result.success) {
+                const list = Array.isArray(result.data?.data) ? result.data.data : (Array.isArray(result.data) ? result.data : (result.data?.providers || []));
+                setProviders(list);
+            } else {
+                setError(result.message || result.error || 'Failed to load providers. Try again.');
+            }
+        } catch (err) {
+            setError('Connection error. Please check your internet and try again.');
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
-        setStep(2);
     };
 
     const handleProviderSelect = (provider) => {
