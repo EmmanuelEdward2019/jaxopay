@@ -444,8 +444,10 @@ const Exchange = () => {
                                         <code className="text-sm font-mono text-gray-900 dark:text-white break-all flex-1">{depositDetails.address}</code>
                                         <button
                                             onClick={() => {
-                                                navigator.clipboard.writeText(depositDetails.address);
-                                                setSuccess('Address copied!');
+                                                if (depositDetails?.address) {
+                                                    navigator.clipboard.writeText(depositDetails.address);
+                                                    setSuccess('Address copied!');
+                                                }
                                             }}
                                             className="p-3 bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 transition-colors"
                                         >

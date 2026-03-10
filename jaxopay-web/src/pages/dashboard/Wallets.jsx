@@ -1084,6 +1084,7 @@ const DepositModal = ({ onClose, wallets }) => {
     const selectedWallet = wallets.find(w => w.id === selectedWalletId);
 
     const handleCopy = (text) => {
+        if (!text) return;
         navigator.clipboard.writeText(text);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -1182,8 +1183,8 @@ const DepositModal = ({ onClose, wallets }) => {
                                 className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
                             >
                                 <option value="">Select network...</option>
-                                {((cryptoConfigs?.find(c => c.coin === selectedWallet.currency)?.networkList) ||
-                                    (cryptoConfigs?.find(c => c.coin === selectedWallet.currency)?.networks))?.map(n => (
+                                {((cryptoConfigs?.find(c => c.coin?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networkList) ||
+                                    (cryptoConfigs?.find(c => c.coin?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networks))?.map(n => (
                                         <option key={n.network} value={n.network}>{n.network}</option>
                                     ))}
                             </select>

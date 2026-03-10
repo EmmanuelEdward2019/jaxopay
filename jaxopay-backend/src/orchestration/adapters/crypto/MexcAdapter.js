@@ -148,7 +148,12 @@ class MexcAdapter {
 
         try {
             const response = await this.client.get(`/api/v3/capital/deposit/address?${queryString}&signature=${signature}`);
-            return response.data;
+            const data = response.data;
+            // Normalize: MEXC sometimes uses 'tag' instead of 'memo'
+            if (data && data.tag && !data.memo) {
+                data.memo = data.tag;
+            }
+            return data;
         } catch (err) {
             throw this._normalizeError(err);
         }
