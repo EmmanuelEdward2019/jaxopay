@@ -24,6 +24,9 @@ const CrossBorder = () => {
     const [activeTab, setActiveTab] = useState('swap'); // 'swap' | 'transfer'
     const [wallets, setWallets] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [ratesLoading, setRatesLoading] = useState(false);
+    const [liveRates, setLiveRates] = useState([]);
+    const [ratesError, setRatesError] = useState(null);
     const [error, setError] = useState(null);
     const [step, setStep] = useState(1);
 
@@ -54,6 +57,12 @@ const CrossBorder = () => {
         fetchWallets();
     }, []);
 
+    useEffect(() => {
+        fetchLiveRates();
+        const interval = setInterval(fetchLiveRates, 30000);
+        return () => clearInterval(interval);
+    }, []);
+
     const [quoteExpiry, setQuoteExpiry] = useState(0);
 
     useEffect(() => {
@@ -81,6 +90,39 @@ const CrossBorder = () => {
         const res = await walletService.getWallets();
         if (res.success) {
             setWallets(res.data || []);
+        }
+    };
+
+    const fetchLiveRates = async () => {
+        const pairs = [
+            { from: 'NGN', to: 'USD' },
+            { from: 'GBP', to: 'NGN' },
+            { from: 'EUR', to: 'NGN' },
+            { from: 'USD', to: 'CNY' },
+        ];
+
+        setRatesLoading(true);
+        setRatesError(null);
+        try {
+            const results = await Promise.all(
+                pairs.map(async ({ from, to }) => {
+                    const res = await fxService.getRates(from, to);
+                    return { pair: `${from}/${to}`, rate: res.data?.rate };
+                })
+            );
+
+            setLiveRates((prev) => results.map((item) => {
+                const prevItem = prev.find(p => p.pair === item.pair);
+                let trend = 'flat';
+                if (prevItem?.rate && item.rate) {
+                    trend = item.rate > prevItem.rate ? 'up' : item.rate < prevItem.rate ? 'down' : 'flat';
+                }
+                return { ...item, trend };
+            }));
+        } catch (err) {
+            setRatesError(err.message || 'Unable to load live rates');
+        } finally {
+            setRatesLoading(false);
         }
     };
 
@@ -510,22 +552,30 @@ const CrossBorder = () => {
                             Live Exchange Rates
                         </h3>
                         <div className="space-y-4">
-                            {[
-                                { pair: 'NGN/USD', rate: '1,540.20', trend: 'up' },
-                                { pair: 'GBP/NGN', rate: '2,012.45', trend: 'down' },
-                                { pair: 'EUR/NGN', rate: '1,720.10', trend: 'up' },
-                                { pair: 'USD/CNY', rate: '7.21', trend: 'down' }
-                            ].map((item, i) => (
-                                <div key={i} className="flex justify-between items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-900/50 rounded-2xl transition-all group">
-                                    <span className="font-bold text-sm text-gray-700 dark:text-gray-300 group-hover:text-accent-600">{item.pair}</span>
-                                    <div className="text-right">
-                                        <p className="font-bold dark:text-white">{item.rate}</p>
-                                        <span className={`text-[10px] font-bold uppercase ${item.trend === 'up' ? 'text-green-500' : 'text-red-500'}`}>
-                                            {item.trend === 'up' ? '▲ 0.12%' : '▼ 0.05%'}
-                                        </span>
+                            {ratesError && (
+                                <div className="text-xs text-red-500">{ratesError}</div>
+                            )}
+                            {ratesLoading && liveRates.length === 0 && (
+                                <div className="text-xs text-gray-500">Loading live rates...</div>
+                            )}
+                            {(ratesLoading || liveRates.length > 0) && (
+                                liveRates.map((item) => (
+                                    <div key={item.pair} className="flex justify-between items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-900/50 rounded-2xl transition-all group">
+                                        <span className="font-bold text-sm text-gray-700 dark:text-gray-300 group-hover:text-accent-600">{item.pair}</span>
+                                        <div className="text-right">
+                                            <p className="font-bold dark:text-white">
+                                                {item.rate ? Number(item.rate).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}
+                                            </p>
+                                            <span className={`text-[10px] font-bold uppercase ${item.trend === 'up' ? 'text-green-500' : item.trend === 'down' ? 'text-red-500' : 'text-gray-400'}`}>
+                                                {item.trend === 'up' ? '▲' : item.trend === 'down' ? '▼' : '•'}
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))
+                            )}
+                            {!ratesLoading && liveRates.length === 0 && !ratesError && (
+                                <div className="text-xs text-gray-500">No rates available.</div>
+                            )}
                         </div>
                     </div>
 

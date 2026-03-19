@@ -8,6 +8,7 @@ import {
   TrendingUp,
   CreditCard,
   Receipt,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
