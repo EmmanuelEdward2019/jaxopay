@@ -129,8 +129,20 @@ export const useWalletStore = create<WalletState>((set) => ({
 
 The mobile app does not need to call Resend directly. The backend orchestration layer is pre-configured to:
 1.  **Welcome Emails**: Triggered automatically on `POST /auth/signup`.
-2.  **Transaction Receipts**: Triggered on `POST /wallets/transfer` and `POST /bills/pay`.
-3.  **Admin Alerts**: Sent to the platform admin for high-value or critical transactions.
+2.  **Transaction Receipts**: Triggered on `POST /wallets/transfer`, `POST /transfers/send`, `POST /bills/pay`, and `POST /crypto/sell`.
+3.  **Deposit Confirmation**: Triggered when a VBA deposit or Crypto deposit reflects.
+4.  **Admin Alerts**: Sent to the platform admin for high-value or critical transactions.
+
+---
+
+## Key Implementation Details
+
+1. **VBA Integration**: Use `GET /wallets/vba/:walletId` to show the user their unique bank account details for funding their NGN wallet.
+2. **Crypto Deposits**: 
+   - First, call `GET /crypto/config` to get the list of supported networks.
+   - Then, call `GET /crypto/deposit-address` with the selected `coin` and `network`.
+   - Always display the **QR Code** and a "Copy Address" button.
+3. **Withdrawals**: Ensure the user has **KYC Tier 2** status before allowing withdrawals via `POST /crypto/withdraw` or `POST /transfers/send`.
 
 ---
 

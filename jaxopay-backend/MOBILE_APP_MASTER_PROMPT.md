@@ -37,12 +37,13 @@ Refer to `jaxopay-backend/MOBILE_API_DOCUMENTATION.md` for specific endpoints.
 
 ### Phase 2: Financial Core
 - **Wallets**: Multi-currency support (NGN, USD, GBP, EUR) with real-time balance fetching.
-- **Transfers**: Internal P2P transfers and Cross-Border FX payments.
+- **Deposit Flow**: Support for **Virtual Bank Accounts (VBA)** via Korapay for fiat and **Dynamic Address Generation** for Crypto.
+- **Transfers**: Internal P2P transfers, Bank transfers (NGN), and Cross-Border FX payments.
 - **Virtual Cards**: Interactive card visualization, fund loading, and toggle switches for security.
 - **Notifications**: Automatic email receipts and alerts triggered via the **Resend API** integration on the backend.
 
 ### Phase 3: Marketplace & Utilities
-- **Crypto**: Real-time ticker prices and Buy/Sell functionality.
+- **Crypto**: Real-time ticker prices, Buy/Sell functionality, **External Withdrawals**, and **Multi-network deposits**.
 - **Bills**: Dynamic provider lists for Utilities (Electricity), Airtime, and TV.
 - **Gift Cards**: Purchasing and Selling marketplace.
 

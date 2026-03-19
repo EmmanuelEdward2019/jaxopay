@@ -251,14 +251,10 @@ Query Parameters:
 
 ---
 
-## Wallet Endpoints
-
 ### Get All Wallets
-
 ```http
 GET /wallets
 ```
-
 **Response:**
 ```json
 {
@@ -267,88 +263,91 @@ GET /wallets
       "id": "uuid",
       "currency": "USD",
       "balance": 1500.00,
-      "status": "active",
-      "is_default": true,
-      "created_at": "2024-01-15T10:30:00Z"
+      "wallet_type": "fiat",
+      "status": "active"
     }
   ]
 }
 ```
 
-### Create Wallet
+### Get Virtual Bank Account (VBA)
+```http
+GET /wallets/vba/:walletId
+```
+Returns dedicated virtual bank details for NGN funding.
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "account_number": "1234567890",
+    "bank_name": "Wema Bank",
+    "account_name": "JAXOPAY - JOHN DOE"
+  }
+}
+```
 
+### Toggle Wallet Status
+```http
+PATCH /wallets/:walletId/status
+```
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| is_active | boolean | Yes | Set to true/false to freeze/unfreeze |
+
+### Create Wallet
 ```http
 POST /wallets
 ```
-
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | currency | string | Yes | Currency code (USD, NGN, GBP, EUR) |
 
 ### Get Wallet by ID
-
 ```http
 GET /wallets/:walletId
 ```
 
 ### Get Wallet Transactions
-
 ```http
 GET /wallets/:walletId/transactions
 ```
-
 Query Parameters:
 - `page` (default: 1)
 - `limit` (default: 20)
 - `type` (credit, debit)
-- `start_date`
-- `end_date`
+- `status` (completed, pending, failed)
 
 ### Transfer Between Wallets
-
 ```http
 POST /wallets/transfer
 ```
-
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| from_wallet_id | string | Yes | Source wallet |
-| to_wallet_id | string | Yes | Destination wallet |
+| recipient_email | string | Yes | Recipient account email |
 | amount | number | Yes | Transfer amount |
+| currency | string | Yes | Currency code |
+| description | string | No | Optional narration |
 
-### Freeze Wallet
-
+### Initialize Deposit
 ```http
-POST /wallets/:walletId/freeze
+POST /wallets/deposit/initialize
 ```
+Returns a checkout URL if using external payment gateways (e.g. Korapay).
 
-### Unfreeze Wallet
-
+### Verify Deposit
 ```http
-POST /wallets/:walletId/unfreeze
+POST /wallets/deposit/verify
 ```
-
-### Fund Wallet (Deposit)
-
-```http
-POST /wallets/:walletId/fund
-```
-
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| amount | number | Yes | Amount to fund |
-| payment_method | string | Yes | Payment method ID |
+| reference | string | Yes | Transaction reference to verify |
 
-### Withdraw from Wallet
-
+### Add Funds (Testing)
 ```http
-POST /wallets/:walletId/withdraw
+POST /wallets/:walletId/add-funds
 ```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| amount | number | Yes | Withdrawal amount |
-| bank_account_id | string | Yes | Bank account ID |
+(Sandbox only) Directly credits a wallet balance.
 
 ---
 
@@ -626,76 +625,61 @@ GET /bills/history
 
 ## Crypto Exchange Endpoints
 
-### Get Supported Cryptocurrencies
-
+### Get Crypto Configuration
 ```http
-GET /crypto/currencies
+GET /crypto/config
 ```
-
+Returns supported networks and fees for each cryptocurrency.
 **Response:**
 ```json
 {
-  "currencies": [
+  "success": true,
+  "data": [
     {
-      "symbol": "BTC",
-      "name": "Bitcoin",
-      "icon_url": "https://...",
-      "min_buy": 0.0001,
-      "min_sell": 0.0001
+      "coin": "USDT",
+      "networkList": [
+        { "network": "TRC20", "withdrawFee": "1.0", "withdrawMax": "100000" }
+      ]
     }
   ]
 }
 ```
 
-### Get Exchange Rates
-
+### Get Deposit Address
 ```http
-GET /crypto/rates
+GET /crypto/deposit-address
 ```
-
 Query Parameters:
-- `base` (e.g., USD)
-- `crypto` (e.g., BTC)
+- `coin` (required, e.g. BTC)
+- `network` (optional, e.g. BTC)
 
-**Response:**
-```json
-{
-  "BTC": {
-    "buy": 45000.00,
-    "sell": 44800.00
-  }
-}
-```
-
-### Buy Crypto
-
+### Buy/Sell Crypto (KYC Tier 2 Required)
 ```http
 POST /crypto/buy
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| crypto | string | Yes | Crypto symbol (BTC, ETH) |
-| amount | number | Yes | Fiat amount to spend |
-| wallet_id | string | Yes | Funding wallet |
-
-### Sell Crypto
-
-```http
 POST /crypto/sell
 ```
 
+### Crypto Swap
+```http
+POST /crypto/swap
+```
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| crypto | string | Yes | Crypto symbol |
-| amount | number | Yes | Crypto amount to sell |
-| wallet_id | string | Yes | Receiving wallet |
+| from_coin | string | Yes | Source coin symbol |
+| to_coin | string | Yes | Destination coin symbol |
+| amount | number | Yes | Amount to swap |
 
-### Get Crypto Transaction History
-
+### Crypto Withdrawal (KYC Tier 2 Required)
 ```http
-GET /crypto/history
+POST /crypto/withdraw
 ```
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| coin | string | Yes | e.g. USDT |
+| network | string | Yes | e.g. TRC20 |
+| address | string | Yes | External destination address |
+| amount | number | Yes | Amount to withdraw |
+| memo | string | No | Memo/Tag if required |
 
 ---
 

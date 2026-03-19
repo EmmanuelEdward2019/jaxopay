@@ -53,6 +53,8 @@ The backend uses a distributed orchestration layer to route requests to the best
 - `POST /`: Create a new wallet in a specific currency.
 - `POST /transfer`: Send money to another user's ID/Email.
 - `POST /exchange`: Swap between two user wallets (e.g. USD to NGN).
+- `GET /vba/:walletId`: Get or create Virtual Bank Account (VBA) for receiving fiat funds.
+- `PATCH /:walletId/status`: Toggle wallet status (freeze/unfreeze).
 - `POST /:walletId/add-funds`: (Sandbox) Mock deposit for testing.
 
 ## 5. Transactions (`/transactions`)
@@ -86,8 +88,13 @@ The backend uses a distributed orchestration layer to route requests to the best
 
 ## 9. Crypto Operations (`/crypto`)
 - `GET /rates`: Current market prices for USDT, BTC, ETH.
-- `POST /buy`: Purchase crypto using fiat wallet.
-- `POST /sell`: Sell crypto and credit fiat wallet.
+- `GET /config`: Get supported networks, fees, and limits for each coin.
+- `GET /deposit-address?coin=...&network=...`: Generate/Fetch a unique deposit address.
+- `POST /buy`: Purchase crypto using fiat wallet (KYC Tier 2).
+- `POST /sell`: Sell crypto and credit fiat wallet (KYC Tier 2).
+- `POST /swap`: Direct crypto-to-crypto exchange (KYC Tier 2).
+- `POST /withdraw`: Withdraw crypto to an external wallet (KYC Tier 2).
+- `GET /history`: Crypto transaction history (exchanges, deposits, withdrawals).
 - `GET /stats`: Crypto portfolio performance.
 
 ## 10. Utility Bill Payments (`/bills`)

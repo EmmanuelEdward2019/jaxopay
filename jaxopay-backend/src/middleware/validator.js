@@ -128,7 +128,7 @@ export const transferValidation = [
 // Wallet validation
 export const createWalletValidation = [
   body('currency')
-    .isIn(['NGN', 'GHS', 'KES', 'ZAR', 'USD', 'GBP', 'CAD', 'CNY', 'USDT', 'BTC', 'ETH', 'USDC'])
+    .isIn(['NGN', 'GHS', 'KES', 'ZAR', 'USD', 'GBP', 'CAD', 'CNY', 'USDT', 'BTC', 'ETH', 'USDC', 'SOL'])
     .withMessage('Invalid currency'),
   body('wallet_type')
     .isIn(['fiat', 'crypto'])

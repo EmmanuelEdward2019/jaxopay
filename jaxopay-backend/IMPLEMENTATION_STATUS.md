@@ -39,14 +39,15 @@
 **Endpoints:**
 - `GET /wallets` - Get all user wallets
 - `GET /wallets/balances` - Get all balances summary
+- `GET /wallets/vba/:walletId` - Get or create Virtual Bank Account details
 - `GET /wallets/currency/:currency` - Get wallet by currency
 - `GET /wallets/:walletId` - Get single wallet
 - `GET /wallets/:walletId/balance` - Get wallet balance
 - `GET /wallets/:walletId/transactions` - Get wallet transactions
 - `POST /wallets` - Create new wallet
-- `POST /wallets/transfer` - Transfer between wallets
+- `POST /wallets/transfer` - Transfer between users
 - `POST /wallets/:walletId/add-funds` - Add funds
-- `PATCH /wallets/:walletId/status` - Toggle wallet status
+- `PATCH /wallets/:walletId/status` - Toggle wallet status (freeze/unfreeze)
 
 ---
 
@@ -160,19 +161,26 @@
 **Features:**
 - ✅ Get supported cryptocurrencies (BTC, ETH, USDT, BNB, SOL, XRP, USDC, ADA, DOGE, TRX)
 - ✅ Get real-time exchange rates
+- ✅ Get network configurations, fees, and limits
+- ✅ Generate/Fetch dynamic deposit addresses (MEXC integration)
 - ✅ Exchange crypto to fiat (sell)
 - ✅ Exchange fiat to crypto (buy)
-- ✅ Get exchange history
-- ✅ 1% exchange fee
-- ✅ KYC Tier 2+ requirement
+- ✅ Direct crypto-to-crypto swaps
+- ✅ External crypto withdrawals (KYC Tier 2 required)
+- ✅ Get total exchange and withdrawal history
 - ✅ Automatic wallet creation
+- ✅ 1% exchange fee
 
 **Endpoints:**
 - `GET /crypto/supported` - Get supported cryptocurrencies
 - `GET /crypto/rates` - Get exchange rates
-- `GET /crypto/history` - Get exchange history
+- `GET /crypto/config` - Get network and fee configurations
+- `GET /crypto/deposit-address` - Get unique deposit address
+- `GET /crypto/history` - Get exchange/withdrawal history
 - `POST /crypto/sell` - Exchange crypto to fiat (KYC Tier 2+)
 - `POST /crypto/buy` - Exchange fiat to crypto (KYC Tier 2+)
+- `POST /crypto/swap` - Direct crypto swap (KYC Tier 2+)
+- `POST /crypto/withdraw` - Withdraw to external wallet (KYC Tier 2+)
 
 ---
 
@@ -302,6 +310,19 @@
 ---
 
 ### 13. **Webhooks (Internal & Provider)** ✅
+... (keeping previous)
+---
+
+### 14. **Notification Engine (Resend)** ✅
+**Status:** COMPLETE
+**Files:** `resend.js` (orchestration), `NotificationService.js`
+
+**Features:**
+- ✅ Transactional email receipts for all movements
+- ✅ Welcome emails on signup
+- ✅ Security alerts for logins/password changes
+- ✅ Admin alerts for high-value transactions
+- ✅ Managed via Resend API
 **Status:** COMPLETE
 **Files:** `webhook.controller.js`, `webhook.routes.js`
 
