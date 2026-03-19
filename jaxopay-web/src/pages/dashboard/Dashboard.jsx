@@ -220,10 +220,10 @@ const Dashboard = () => {
             </select>
           </div>
 
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-black text-gray-400 uppercase tracking-widest mb-1">Total Balance</p>
-            <div className="flex items-center gap-2">
-              <h3 className="text-3xl font-black text-gray-900 dark:text-white">
+            <div className="flex items-start gap-2 min-w-0">
+              <h3 className="text-2xl md:text-[1.65rem] font-black text-gray-900 dark:text-white min-w-0 break-words leading-snug">
                 {user?.preferences?.show_balances === false ? '****' : (
                   stats.total_display
                     ? formatCurrency(stats.total_display.value, stats.total_display.currency)
