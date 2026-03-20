@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Wallet,
@@ -15,6 +15,57 @@ import { useAppStore } from '../../store/appStore';
 import dashboardService from '../../services/dashboardService';
 import cryptoService from '../../services/cryptoService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
+
+/** Keeps balance text on a single line by shrinking font-size to fit the container */
+const BalanceOneLine = ({ children, className = '' }) => {
+  const containerRef = useRef(null);
+  const textRef = useRef(null);
+  const MIN_PX = 9;
+  const MAX_PX = 26;
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const text = textRef.current;
+    if (!container || !text) return;
+
+    const fit = () => {
+      const available = container.clientWidth;
+      if (available <= 0) return;
+      text.style.whiteSpace = 'nowrap';
+      let lo = MIN_PX;
+      let hi = MAX_PX;
+      let best = MIN_PX;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        text.style.fontSize = `${mid}px`;
+        if (text.scrollWidth <= available) {
+          best = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      text.style.fontSize = `${best}px`;
+    };
+
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [children]);
+
+  return (
+    <div ref={containerRef} className={`min-w-0 w-full overflow-hidden ${className}`}>
+      <h3
+        ref={textRef}
+        className="font-black text-gray-900 dark:text-white tabular-nums leading-tight"
+        style={{ fontSize: `${MAX_PX}px`, whiteSpace: 'nowrap' }}
+      >
+        {children}
+      </h3>
+    </div>
+  );
+};
 
 const FALLBACK_RATES = {
   'USD': 1,
@@ -220,18 +271,18 @@ const Dashboard = () => {
             </select>
           </div>
 
-          <div className="min-w-0">
+          <div className="min-w-0 w-full">
             <p className="text-sm font-black text-gray-400 uppercase tracking-widest mb-1">Total Balance</p>
-            <div className="flex items-start gap-2 min-w-0">
-              <h3 className="text-2xl md:text-[1.65rem] font-black text-gray-900 dark:text-white min-w-0 break-words leading-snug">
+            <div className="flex items-center gap-2 min-w-0 w-full">
+              <BalanceOneLine className="flex-1">
                 {user?.preferences?.show_balances === false ? '****' : (
                   stats.total_display
                     ? formatCurrency(stats.total_display.value, stats.total_display.currency)
                     : formatCurrency(stats.total_balance, 'USD')
                 )}
-              </h3>
+              </BalanceOneLine>
               {stats.total_display_loading && (
-                <RefreshCw className="w-4 h-4 text-accent-500 animate-spin" />
+                <RefreshCw className="w-4 h-4 text-accent-500 animate-spin shrink-0" />
               )}
             </div>
           </div>
