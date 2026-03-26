@@ -213,7 +213,7 @@ export const buyGiftCard = catchAsync(async (req, res) => {
        VALUES ($1, $2, 'gift_card_purchase', $3, $4, $3, 0, 'pending', $5, $6)`,
       [
         req.user.id, wallet.rows[0].id, totalCostInWalletCurrency, currency.toUpperCase(),
-        `Gift card purchase: ${amount} ${cardCurrency} (Reloadly)`, reference,
+        `Gift card purchase: ${amount} ${cardCurrency}`, reference,
       ]
     );
 

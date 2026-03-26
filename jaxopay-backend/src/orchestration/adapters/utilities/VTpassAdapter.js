@@ -82,7 +82,7 @@ class VTpassAdapter extends BaseAdapter {
 
     _ensureCredentials() {
         if (!this._hasCredentials()) {
-            throw { message: 'VTpass credentials not configured', statusCode: 503 };
+            throw { message: 'Bill payment service is not configured', statusCode: 503 };
         }
     }
 
@@ -118,7 +118,7 @@ class VTpassAdapter extends BaseAdapter {
             timeout: 12000,
         });
         if (res.data?.response_description !== '000' && res.data?.code !== '000') {
-            throw new Error(`VTpass /services error: ${res.data?.response_description}`);
+            throw new Error(res.data?.response_description || 'Could not load bill services');
         }
         const services = Array.isArray(res.data?.content) ? res.data.content : [];
         this.cache.services[cacheKey] = services;
@@ -207,7 +207,7 @@ class VTpassAdapter extends BaseAdapter {
 
             if (data.code !== '000') {
                 const msg = data.content?.error || data.response_description || 'Meter/account verification failed';
-                throw { message: `VTpass: ${msg}`, statusCode: 400 };
+                throw { message: msg, statusCode: 400 };
             }
 
             if (data.content?.WrongBillersCode === true || data.content?.WrongBillersCode === 'true') {
@@ -224,7 +224,7 @@ class VTpassAdapter extends BaseAdapter {
                     };
                 }
                 const msg = data.content?.error || data.response_description || 'Invalid meter number. Please check and try again.';
-                throw { message: `VTpass: ${msg}`, statusCode: 400 };
+                throw { message: msg, statusCode: 400 };
             }
 
             return data;

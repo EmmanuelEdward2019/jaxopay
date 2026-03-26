@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import logger from './logger.js';
+import { verifySmileCallbackSignature } from '../services/smileId.service.js';
 
 class WebhookVerifier {
     /**
@@ -30,6 +31,10 @@ class WebhookVerifier {
             case 'graph':
             case 'graph_finance':
                 return this._verifyGraph(headers, payload);
+            case 'smile_identity':
+            case 'smile':
+            case 'smile-id':
+                return this._verifySmileIdentity(body);
             default:
                 logger.warn(`[WEBHOOK] No verification for: ${provider}`);
                 return process.env.NODE_ENV === 'development';
@@ -111,6 +116,24 @@ class WebhookVerifier {
 
         const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
         return hash === signature;
+    }
+
+    /** Smile ID — signature on JSON body (parsed object or string) */
+    _verifySmileIdentity(body) {
+        let parsed = body;
+        if (typeof body === 'string') {
+            try {
+                parsed = JSON.parse(body);
+            } catch {
+                return false;
+            }
+        }
+        if (!parsed || typeof parsed !== 'object') return false;
+        if (process.env.SMILE_WEBHOOK_SKIP_VERIFY === 'true') {
+            logger.warn('[WEBHOOK] Smile ID verification skipped (SMILE_WEBHOOK_SKIP_VERIFY)');
+            return true;
+        }
+        return verifySmileCallbackSignature(parsed);
     }
 }
 

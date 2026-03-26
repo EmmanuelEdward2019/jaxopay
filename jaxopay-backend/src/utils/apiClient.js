@@ -89,7 +89,7 @@ export function normalizeError(error, provider = 'Unknown') {
         || 'An unexpected error occurred';
 
     return {
-        message: `${provider}: ${message}`,
+        message,
         statusCode: status,
         provider,
         raw,

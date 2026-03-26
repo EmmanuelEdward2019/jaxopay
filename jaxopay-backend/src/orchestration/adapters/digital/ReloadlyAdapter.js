@@ -43,7 +43,7 @@ class ReloadlyAdapter {
 
     _ensureCredentials() {
         if (!this.clientId || !this.clientSecret) {
-            throw { message: 'Reloadly API credentials not configured', statusCode: 503 };
+            throw { message: 'Gift card service is not configured', statusCode: 503 };
         }
     }
 
@@ -89,7 +89,7 @@ class ReloadlyAdapter {
             return this._token;
         } catch (err) {
             logger.error('[Reloadly] Token fetch failed:', err.response?.data || err.message);
-            throw { message: 'Reloadly authentication failed. Please check API keys.', statusCode: 502 };
+            throw { message: 'Gift card service authentication failed. Please try again later.', statusCode: 502 };
         }
     }
 
@@ -123,7 +123,7 @@ class ReloadlyAdapter {
                 } catch (retryErr) {
                     logger.error('[Reloadly] Retry failed:', retryErr.response?.data || retryErr.message);
                     throw {
-                        message: retryErr.response?.data?.message || 'Reloadly request failed',
+                        message: retryErr.response?.data?.message || 'Gift card request failed',
                         statusCode: 502,
                         raw: retryErr.response?.data,
                     };
@@ -131,7 +131,7 @@ class ReloadlyAdapter {
             }
             logger.error(`[Reloadly] ${method.toUpperCase()} ${path} failed:`, err.response?.data || err.message);
             throw {
-                message: err.response?.data?.message || err.response?.data?.errorMessage || 'Reloadly service unavailable',
+                message: err.response?.data?.message || err.response?.data?.errorMessage || 'Gift card service unavailable',
                 statusCode: 502,
                 raw: err.response?.data,
             };

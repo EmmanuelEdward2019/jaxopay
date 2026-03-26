@@ -535,10 +535,11 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
             spending_limit: parseFloat(spendingLimit),
             billing_address: {
                 line1: billingAddress.line1.substring(0, 50),
-                city: billingAddress.city,
-                state: billingAddress.state.substring(0, 2).toUpperCase(),
-                postal_code: billingAddress.postal_code,
-                country: billingAddress.country || 'NG',
+                city: billingAddress.city.trim().slice(0, 80),
+                // Full region/state (e.g. "Lagos"); avoid US-only 2-letter truncation for NG/global users
+                state: billingAddress.state.trim().slice(0, 40),
+                postal_code: billingAddress.postal_code.trim().slice(0, 20),
+                country: (billingAddress.country || 'NG').trim().slice(0, 3).toUpperCase(),
             }
         });
     };

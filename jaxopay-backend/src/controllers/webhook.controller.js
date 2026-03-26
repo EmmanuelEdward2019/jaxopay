@@ -4,6 +4,7 @@ import webhookVerifier from '../utils/webhookVerifier.js';
 import ledgerService from '../orchestration/ledger/LedgerService.js';
 import logger from '../utils/logger.js';
 import crypto from 'crypto';
+import { SMILE_APPROVED_RESULT_CODES, SMILE_PROVISIONAL_RESULT_CODES } from '../services/smileId.service.js';
 
 /**
  * Unified webhook handler for all providers
@@ -23,7 +24,7 @@ export const handleWebhook = catchAsync(async (req, res) => {
     if (!isValid) {
         logger.warn(`[WEBHOOK] Invalid/missing signature for: ${provider}`);
         // For unknown providers, still return 200 to stop retries but don't process
-        if (!['korapay', 'vtpass', 'graph'].includes(provider.toLowerCase())) {
+        if (!['korapay', 'vtpass', 'graph', 'smile_identity', 'smile', 'smile-id'].includes(provider.toLowerCase())) {
             return res.status(401).json({ success: false, message: 'Invalid signature' });
         }
     }
@@ -46,6 +47,11 @@ export const handleWebhook = catchAsync(async (req, res) => {
                 break;
             case 'paystack':
                 await processPaystack(body);
+                break;
+            case 'smile_identity':
+            case 'smile':
+            case 'smile-id':
+                await processSmileIdentity(body);
                 break;
             default:
                 logger.info(`[WEBHOOK] No handler for ${provider}, acknowledged.`);
@@ -284,6 +290,78 @@ async function creditUserWallet(reference, amount, currency) {
     } catch (err) {
         logger.error('[WEBHOOK] creditUserWallet error:', err);
     }
+}
+
+/**
+ * Smile ID — Basic KYC / job callbacks (signature verified in webhookVerifier).
+ */
+async function processSmileIdentity(body) {
+    const b = body?.Information || body?.information || body;
+    const partnerParams = b.PartnerParams || b.partner_params || {};
+    const jobId = partnerParams.job_id;
+    const userId = partnerParams.user_id;
+    const rawCode = b.ResultCode ?? b.result_code;
+    if (rawCode === undefined || rawCode === null || rawCode === '') {
+        logger.warn('[WEBHOOK] Smile ID: missing result code');
+        return;
+    }
+    const resultCode = String(rawCode).padStart(4, '0');
+
+    if (!jobId || !userId) {
+        logger.warn('[WEBHOOK] Smile ID: missing job_id or user_id');
+        return;
+    }
+
+    if (SMILE_PROVISIONAL_RESULT_CODES.has(resultCode)) {
+        logger.info(`[WEBHOOK] Smile ID provisional/in-review result ${resultCode} job ${jobId} — no user status change`);
+        return;
+    }
+
+    const approved = SMILE_APPROVED_RESULT_CODES.has(resultCode);
+
+    const docNumber = `SMILE:${jobId}`;
+
+    const docUpdate = await query(
+        `UPDATE kyc_documents
+         SET status = $1,
+             rejection_reason = $2,
+             reviewed_at = NOW(),
+             updated_at = NOW()
+         WHERE user_id = $3::uuid AND document_number = $4
+           AND document_type IN ('smile_basic_kyc', 'smile_biometric_kyc')
+         RETURNING document_type`,
+        [
+            approved ? 'approved' : 'rejected',
+            approved ? null : (b.ResultText || b.result_text || 'Verification did not pass'),
+            userId,
+            docNumber,
+        ]
+    );
+
+    if (docUpdate.rowCount === 0) {
+        logger.warn(`[WEBHOOK] Smile ID: no kyc_documents row for job ${jobId} user ${userId}`);
+    }
+
+    if (approved) {
+        const tierRank = { tier_0: 0, tier_1: 1, tier_2: 2 };
+        const userRow = await query(`SELECT kyc_tier FROM users WHERE id = $1::uuid`, [userId]);
+        const docTierRow = await query(
+            `SELECT tier::text AS tier FROM kyc_documents WHERE document_number = $1 AND user_id = $2::uuid`,
+            [docNumber, userId]
+        );
+        const current = tierRank[userRow.rows[0]?.kyc_tier] ?? 0;
+        const fromDoc = tierRank[docTierRow.rows[0]?.tier] ?? 1;
+        const nextIdx = Math.min(2, Math.max(current, fromDoc));
+        const nextTier = ['tier_0', 'tier_1', 'tier_2'][nextIdx];
+        await query(
+            `UPDATE users SET kyc_status = 'approved', kyc_tier = $1::kyc_tier, updated_at = NOW() WHERE id = $2::uuid`,
+            [nextTier, userId]
+        );
+    } else {
+        await query(`UPDATE users SET kyc_status = 'rejected', updated_at = NOW() WHERE id = $1::uuid`, [userId]);
+    }
+
+    logger.info(`[WEBHOOK] Smile ID job ${jobId} user ${userId} → ${resultCode} (${approved ? 'approved' : 'rejected'})`);
 }
 
 async function refundFailedPayment(reference) {

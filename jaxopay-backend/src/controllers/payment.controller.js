@@ -197,7 +197,7 @@ export const sendMoney = catchAsync(async (req, res) => {
       exchange_rate: exchangeRate,
       fee: parseFloat(fee.toFixed(4)),
       status: finalStatus,
-      provider: 'korapay',
+      provider: 'integrated',
       beneficiary: { name: benName, account: ben.account_number, bank: ben.bank_name }
     }
   });

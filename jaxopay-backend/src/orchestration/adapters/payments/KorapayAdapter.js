@@ -40,7 +40,7 @@ class KorapayAdapter extends BaseAdapter {
 
     _ensureKeys() {
         if (!this.secretKey || this.secretKey.includes('your_')) {
-            throw { message: 'Korapay secret key not configured', statusCode: 503 };
+            throw { message: 'Payment service is not configured', statusCode: 503 };
         }
     }
 

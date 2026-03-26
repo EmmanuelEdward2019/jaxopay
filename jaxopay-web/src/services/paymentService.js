@@ -26,7 +26,7 @@ const paymentService = {
     }
   },
 
-  // Send cross-border payment (Korapay)
+  // Send cross-border payment
   sendPayment: async (paymentData) => {
     try {
       const response = await apiClient.post('/payments/send', paymentData);

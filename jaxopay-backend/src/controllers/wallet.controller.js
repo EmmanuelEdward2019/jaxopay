@@ -121,7 +121,7 @@ export const initializeDeposit = catchAsync(async (req, res) => {
     `INSERT INTO transactions
        (user_id, to_wallet_id, transaction_type, from_amount, to_amount,
         from_currency, to_currency, net_amount, fee_amount, status, description, reference)
-     VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $3, 0, 'pending', 'Wallet deposit via Korapay', $5)`,
+     VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $3, 0, 'pending', 'Wallet deposit', $5)`,
     [req.user.id, wallet_id, parseFloat(amount), depositCurrency, reference]
   );
 

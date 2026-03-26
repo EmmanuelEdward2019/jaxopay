@@ -57,6 +57,29 @@ const kycService = {
       return { success: false, error: error.message };
     }
   },
+
+  /** Smile ID: safe flags only (configured, sandbox, biometric enabled) — no secrets */
+  getSmileConfig: async () => {
+    try {
+      const response = await apiClient.get('/kyc/smile/config');
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Biometric KYC + liveness (images from Smart Camera Web component).
+   * @param {object} payload — country, id_type, id_number, first_name, last_name, dob?, images[]
+   */
+  submitSmileBiometric: async (payload) => {
+    try {
+      const response = await apiClient.post('/kyc/smile/biometric-kyc', payload);
+      return { success: true, data: response.data, message: response.message };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
 };
 
 export default kycService;

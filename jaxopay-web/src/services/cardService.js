@@ -32,7 +32,8 @@ const cardService = {
       const response = await apiClient.post('/cards', cardData);
       return { success: true, data: response.data ?? response };
     } catch (error) {
-      return { success: false, error: error.message || 'Failed to create card' };
+      const msg = error.message || 'Failed to create card';
+      return { success: false, error: msg, message: msg };
     }
   },
 

@@ -42,11 +42,41 @@ apiClient.interceptors.request.use(
   }
 );
 
+/**
+ * Remove third-party vendor / integration names from strings shown on the dashboard.
+ */
+function sanitizeDashboardErrorMessage(input) {
+  if (typeof input !== 'string' || !input.trim()) return input;
+  let s = input;
+  const pairs = [
+    [/Graph Finance/gi, 'The card service'],
+    [/GRAPH_API_KEY|GRAPH_CARDS_ENABLED|GRAPH_BASE_URL/gi, 'server configuration'],
+    [/STROWALLET_[A-Z0-9_]*/gi, 'virtual card settings'],
+    [/Strowallet/gi, 'Virtual card service'],
+    [/BitVCard/gi, 'virtual cards'],
+    [/VTpass/gi, 'Bill payment service'],
+    [/Reloadly/gi, 'Gift card service'],
+    [/Korapay/gi, 'Payment service'],
+    [/MEXC/gi, 'Exchange service'],
+    [/Smile Identity|Smile ID/gi, 'Identity verification'],
+    [/Smile portal/gi, 'verification portal'],
+    [/usegraph\.com/gi, 'card service'],
+  ];
+  for (const [re, rep] of pairs) {
+    s = s.replace(re, rep);
+  }
+  return s.replace(/\s{2,}/g, ' ').trim();
+}
+
 // User-friendly error messages based on status codes
 const getErrorMessage = (status, serverMessage) => {
-  // If server provides a clear message, ALWAYS use it instead of hiding it
-  if (serverMessage && typeof serverMessage === 'string' && !serverMessage.includes('status code')) {
-    return serverMessage;
+  const cleaned =
+    serverMessage && typeof serverMessage === 'string' && !serverMessage.includes('status code')
+      ? sanitizeDashboardErrorMessage(serverMessage)
+      : null;
+  // If server provides a clear message, use it (after sanitizing vendor names)
+  if (cleaned) {
+    return cleaned;
   }
 
   // Fallback generic messages only if the server responds with nothing
@@ -205,9 +235,10 @@ apiClient.interceptors.response.use(
 export const handleApiError = (error) => {
   if (error.response) {
     // Server responded with error
+    const rawMsg = error.response.data?.message || 'Server error occurred';
     return {
       success: false,
-      message: error.response.data?.message || 'Server error occurred',
+      message: sanitizeDashboardErrorMessage(rawMsg) || rawMsg,
       status: error.response.status,
       data: error.response.data,
     };

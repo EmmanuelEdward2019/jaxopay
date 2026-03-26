@@ -29,7 +29,7 @@ const initOrchestration = () => {
     // Digital Goods
     providerRegistry.register('digital', 'reloadly', new ReloadlyAdapter());
 
-    console.log('✅ Orchestration Layer Initialized (Graph, Korapay, VTpass, Reloadly)');
+    console.log('✅ Orchestration Layer Initialized (Strowallet, Graph, Korapay, VTpass, Reloadly)');
 };
 
 /**

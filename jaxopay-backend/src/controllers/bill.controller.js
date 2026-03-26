@@ -3,9 +3,20 @@ import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import emailService from '../services/email.service.js';
 import VTpassAdapter from '../orchestration/adapters/utilities/VTpassAdapter.js';
+import StrowalletBillsAdapter from '../orchestration/adapters/utilities/StrowalletBillsAdapter.js';
 import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
 
 const vtpass = new VTpassAdapter();
+const strowalletBills = new StrowalletBillsAdapter();
+
+function inferStrowalletNetwork(serviceId) {
+  const s = String(serviceId || '').toLowerCase();
+  if (s.includes('mtn')) return 'mtn';
+  if (s.includes('airtel')) return 'airtel';
+  if (s.includes('glo')) return 'glo';
+  if (s.includes('9mobile') || s.includes('etisalat')) return 'etisalat';
+  return 'mtn';
+}
 
 // Static category definitions (metadata only — providers come from VTpass live)
 const BILL_CATEGORIES = [
@@ -13,7 +24,7 @@ const BILL_CATEGORIES = [
   { id: 'cable_tv', name: 'Cable TV', icon: '📺', description: 'DSTV, GOtv, Startimes, Showmax' },
   { id: 'airtime', name: 'Airtime', icon: '📱', description: 'Buy mobile airtime for any network' },
   { id: 'data', name: 'Data Bundle', icon: '📶', description: 'Buy data bundles for any network' },
-  { id: 'internet', name: 'Internet', icon: '🌐', description: 'Smile, Spectranet & more' },
+  { id: 'internet', name: 'Internet', icon: '🌐', description: 'Spectranet and other broadband providers' },
   { id: 'education', name: 'Education', icon: '🎓', description: 'WAEC, JAMB & more' },
 ];
 
@@ -42,18 +53,18 @@ export const getBillProviders = catchAsync(async (req, res) => {
       return res.status(200).json({
         success: true,
         data: [],
-        message: 'No providers found for this category on VTpass',
-        source: 'vtpass',
+        message: 'No providers found for this category',
+        source: 'bills',
       });
     }
 
     logger.info(`[Bills] Returning ${providers.length} providers for "${category}" from VTpass`);
-    return res.status(200).json({ success: true, data: providers, source: 'vtpass' });
+    return res.status(200).json({ success: true, data: providers, source: 'bills' });
 
   } catch (err) {
     logger.error('[Bills] VTpass provider fetch failed:', err.message || err);
     throw new AppError(
-      `Could not load providers: ${err.message || 'VTpass API unavailable'}. Please try again.`,
+      `Could not load providers: ${err.message || 'Service unavailable'}. Please try again.`,
       503
     );
   }
@@ -211,6 +222,7 @@ export const payBill = catchAsync(async (req, res) => {
       walletId: wallet.rows[0].id,
       fee,
       reference,
+      finalDebit,
     };
   });
 
@@ -251,7 +263,7 @@ export const payBill = catchAsync(async (req, res) => {
     if (!vtResult.success) {
       await query(
         'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
-        [finalDebit, result.walletId]
+        [result.finalDebit, result.walletId]
       );
       await query(
         `UPDATE bill_payments SET status = 'refunded' WHERE id = $1`,
@@ -265,8 +277,39 @@ export const payBill = catchAsync(async (req, res) => {
 
   } catch (err) {
     if (err.statusCode === 502 || err.isOperational) throw err;
-    // Network timeout — keep as 'processing', webhook will finalize
-    logger.error('[Bills] VTpass network error (will finalize via webhook):', err.message);
+
+    const cat = String(metadata?.category || '').toLowerCase();
+    const strowalletBackup =
+      process.env.STROWALLET_BILLS_BACKUP === 'true' &&
+      strowalletBills.isConfigured() &&
+      ['airtime', 'data'].includes(cat);
+
+    if (strowalletBackup) {
+      try {
+        const st = await strowalletBills.buyAirtime({
+          phone: phone || account_number,
+          amount: parseFloat(amount),
+          network: inferStrowalletNetwork(provider_id),
+        });
+        if (st.success) {
+          providerStatus = 'completed';
+          providerRef = st.transactionId || String(st.raw?.trx_num || '');
+          await query(
+            `UPDATE bill_payments
+             SET status = $1, provider_reference = $2, updated_at = NOW()
+             WHERE id = $3`,
+            ['completed', providerRef, result.billPaymentId]
+          );
+          logger.info(`[Bills] VTpass failed; Strowallet backup succeeded ref=${providerRef}`);
+        }
+      } catch (stErr) {
+        logger.error('[Bills] Strowallet bills backup failed:', stErr.message || stErr);
+      }
+    }
+
+    if (providerStatus !== 'completed') {
+      logger.error('[Bills] VTpass network error (will finalize via webhook):', err.message);
+    }
   }
 
   // ── 3. Email receipt ────────────────────────────────────────────
@@ -295,7 +338,7 @@ export const payBill = catchAsync(async (req, res) => {
       amount: parseFloat(amount),
       currency: currency.toUpperCase(),
       fee: result.fee,
-      total_debit: parseFloat(amount) + result.fee,
+      total_debit: result.finalDebit != null ? result.finalDebit : parseFloat(amount) + result.fee,
       status: providerStatus,
       provider_reference: providerRef,
       token,        // electricity token

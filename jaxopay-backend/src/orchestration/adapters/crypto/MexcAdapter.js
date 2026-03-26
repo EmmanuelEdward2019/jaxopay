@@ -290,7 +290,7 @@ class MexcAdapter {
 
     _ensureCredentials() {
         if (!this.apiKey || !this.secretKey) {
-            throw { message: 'MEXC API keys not configured', statusCode: 503 };
+            throw { message: 'Crypto exchange service is not configured', statusCode: 503 };
         }
     }
 

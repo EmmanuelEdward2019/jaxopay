@@ -54,7 +54,7 @@ const BILL_CATEGORIES = [
         fieldPlaceholder: 'Enter your account number',
         fieldType: 'text',
         requiresValidation: true,
-        description: 'Pay Spectranet, Smile and others',
+        description: 'Pay Spectranet and other broadband providers',
     },
     {
         id: 'education', name: 'Education', icon: GraduationCap,

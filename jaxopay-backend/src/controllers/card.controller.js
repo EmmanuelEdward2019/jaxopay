@@ -3,9 +3,34 @@ import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import emailService from '../services/email.service.js';
 import GraphAdapter from '../orchestration/adapters/cards/GraphAdapter.js';
-import { ledgerService } from '../orchestration/index.js';
-
+import StrowalletAdapter from '../orchestration/adapters/cards/StrowalletAdapter.js';
 const graph = new GraphAdapter();
+const strowallet = new StrowalletAdapter();
+
+/** Strowallet blocks unknown outbound IPs — map to actionable text; log raw for ops. */
+function userFacingStrowalletError(rawMessage) {
+  const s = String(rawMessage || '');
+  if (/untrusted source ip|untrusted\s+source|ip\s+not\s+allowed|ip\s+whitelist|allowlist|not\s+in\s+the\s+allowed/i.test(s)) {
+    return (
+      'The card provider rejected this request because your API server’s public (outbound) IP is not on their allow list. ' +
+      'In the Strowallet / BitVCard merchant dashboard, open API or security settings and add that IP to trusted IPs, then retry.'
+    );
+  }
+  return s;
+}
+
+function strowalletCardsEnabled() {
+  return !!(process.env.STROWALLET_PUBLIC_KEY && process.env.STROWALLET_SECRET_KEY);
+}
+
+/** Legacy Graph path — opt-in only when Strowallet is not configured */
+function graphCardsFallbackEnabled() {
+  return (
+    process.env.GRAPH_CARDS_ENABLED === 'true' &&
+    !!process.env.GRAPH_API_KEY &&
+    !String(process.env.GRAPH_API_KEY).includes('your_')
+  );
+}
 
 // ─────────────────────────────────────────────
 // GET /cards
@@ -14,7 +39,7 @@ export const getCards = catchAsync(async (req, res) => {
   const result = await query(
     `SELECT id, card_type, card_number_encrypted, cvv_encrypted, card_last_four, cardholder_name,
             status, balance, spending_limit_daily, spending_limit_monthly,
-            expiry_month, expiry_year, provider_card_id, metadata, created_at
+            expiry_month, expiry_year, provider, provider_card_id, metadata, created_at
      FROM virtual_cards
      WHERE user_id = $1 AND status != 'terminated'
      ORDER BY created_at DESC`,
@@ -48,7 +73,7 @@ export const getCard = catchAsync(async (req, res) => {
   const result = await query(
     `SELECT id, card_type, card_number_encrypted, cvv_encrypted, card_last_four, cardholder_name,
             status, balance, spending_limit_daily, spending_limit_monthly,
-            expiry_month, expiry_year, provider_card_id, metadata, created_at
+            expiry_month, expiry_year, provider, provider_card_id, metadata, created_at
      FROM virtual_cards WHERE id = $1 AND user_id = $2`,
     [cardId, req.user.id]
   );
@@ -70,16 +95,25 @@ export const getCard = catchAsync(async (req, res) => {
     card_brand: c.metadata?.card_brand || 'visa',
   };
 
-  // Refresh live balance from Graph
+  // Refresh live balance from primary provider
   if (c.provider_card_id) {
     try {
-      const live = await graph.getCard(c.provider_card_id);
-      if (live?.details?.balance !== undefined) {
-        card.balance = live.details.balance;
-        await query('UPDATE virtual_cards SET balance = $1 WHERE id = $2', [live.details.balance, cardId]);
+      if (c.provider === 'strowallet') {
+        const live = await strowallet.getCard(c.provider_card_id);
+        const bal = live?.details?.balance ?? live?.raw?.balance;
+        if (bal !== undefined) {
+          card.balance = bal;
+          await query('UPDATE virtual_cards SET balance = $1 WHERE id = $2', [bal, cardId]);
+        }
+      } else {
+        const live = await graph.getCard(c.provider_card_id);
+        if (live?.details?.balance !== undefined) {
+          card.balance = live.details.balance;
+          await query('UPDATE virtual_cards SET balance = $1 WHERE id = $2', [live.details.balance, cardId]);
+        }
       }
     } catch (e) {
-      logger.warn('[Cards] Could not refresh live balance from Graph:', e.message);
+      logger.warn('[Cards] Could not refresh live balance from provider:', e.message);
     }
   }
 
@@ -93,7 +127,7 @@ export const getCardSecureData = catchAsync(async (req, res) => {
   const { cardId } = req.params;
   const result = await query(
     `SELECT id, card_number_encrypted, cvv_encrypted, card_last_four, cardholder_name,
-            expiry_month, expiry_year, provider_card_id, metadata
+            expiry_month, expiry_year, provider, provider_card_id, metadata
      FROM virtual_cards WHERE id = $1 AND user_id = $2 AND status != 'terminated'`,
     [cardId, req.user.id]
   );
@@ -111,7 +145,10 @@ export const getCardSecureData = catchAsync(async (req, res) => {
 
   if (c.provider_card_id) {
     try {
-      const liveSecure = await graph.getSecureCardData(c.provider_card_id);
+      const liveSecure =
+        c.provider === 'strowallet'
+          ? await strowallet.getSecureCardData(c.provider_card_id)
+          : await graph.getSecureCardData(c.provider_card_id);
       if (liveSecure) {
         if (liveSecure.pan && !liveSecure.pan.includes('*')) securePAN = liveSecure.pan;
         if (liveSecure.cvv && !liveSecure.cvv.includes('*')) secureCVV = liveSecure.cvv;
@@ -119,7 +156,7 @@ export const getCardSecureData = catchAsync(async (req, res) => {
         if (liveSecure.billing_address) billingAddress = liveSecure.billing_address;
       }
     } catch (e) {
-      logger.warn('[Cards] Graph secure-data fetch failed:', e.message);
+      logger.warn('[Cards] Provider secure-data fetch failed:', e.message);
     }
   }
 
@@ -162,19 +199,70 @@ export const createCard = catchAsync(async (req, res) => {
     throw new AppError(`Maximum ${maxCards} active cards allowed for your KYC tier`, 400);
   }
 
-  // ── Call Graph Finance ──
-  const userProfile = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
+  const userProfile = await query(
+    'SELECT first_name, last_name FROM user_profiles WHERE user_id = $1',
+    [req.user.id]
+  );
   const profile = userProfile.rows[0] || {};
   const cardholderName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'JAXOPAY USER';
 
-  const cardResult = await graph.createCard({
-    customerId: req.user.id,
-    type: 'VIRTUAL',
-    brand: 'VISA',
-    currency: currency.toUpperCase(),
-    amount: spending_limit || 1000,
-    billingAddress: billing_address
-  });
+  const userRow = await query('SELECT email, phone FROM users WHERE id = $1', [req.user.id]);
+  const userEmail = userRow.rows[0]?.email || 'noreply@jaxopay.com';
+  const userPhone = userRow.rows[0]?.phone || '';
+
+  let cardResult;
+  let providerUsed;
+
+  if (strowalletCardsEnabled()) {
+    try {
+      cardResult = await strowallet.createCard({
+        customerId: req.user.id,
+        cardholderName,
+        email: userEmail,
+        phone: userPhone,
+        currency: currency.toUpperCase(),
+        amount: spending_limit || 1000,
+        billingAddress: billing_address,
+        cardType: card_type,
+      });
+      providerUsed = 'strowallet';
+      logger.info(`[Cards] Created via Strowallet for user ${req.user.id}`);
+    } catch (swErr) {
+      const rawMsg =
+        swErr?.message ||
+        (typeof swErr === 'string' ? swErr : 'Virtual card creation failed');
+      logger.error('[Cards] Strowallet create failed (full detail):', {
+        message: rawMsg,
+        raw: swErr?.raw,
+        statusCode: swErr?.statusCode,
+      });
+      const friendly = userFacingStrowalletError(rawMsg);
+      const userMessage =
+        friendly !== rawMsg
+          ? `We could not create your virtual card: ${friendly}`
+          : `We could not create your virtual card: ${rawMsg}. Please try again or contact support.`;
+      throw new AppError(
+        userMessage,
+        swErr?.statusCode && swErr.statusCode >= 400 && swErr.statusCode < 600 ? swErr.statusCode : 502
+      );
+    }
+  } else if (graphCardsFallbackEnabled()) {
+    cardResult = await graph.createCard({
+      customerId: req.user.id,
+      type: 'VIRTUAL',
+      brand: 'VISA',
+      currency: currency.toUpperCase(),
+      amount: spending_limit || 1000,
+      billingAddress: billing_address,
+    });
+    providerUsed = 'graph';
+    logger.info(`[Cards] Created via Graph (GRAPH_CARDS_ENABLED) for user ${req.user.id}`);
+  } else {
+    throw new AppError(
+      'Virtual cards are not available right now. Please try again later or contact support.',
+      503
+    );
+  }
 
   // Get card details from provider response
   const providerCardId = cardResult?.cardId || null;
@@ -196,7 +284,7 @@ export const createCard = catchAsync(async (req, res) => {
        (user_id, card_type, card_number_encrypted, cvv_encrypted, card_last_four,
         cardholder_name, status, balance, spending_limit_daily,
         expiry_month, expiry_year, provider, provider_card_id, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, 'active', 0, $7, $8, $9, 'graph', $10, $11)
+     VALUES ($1, $2, $3, $4, $5, $6, 'active', 0, $7, $8, $9, $10, $11, $12)
      RETURNING id, card_type, card_last_four, cardholder_name, status,
                balance, spending_limit_daily, expiry_month, expiry_year,
                provider, provider_card_id, metadata, created_at`,
@@ -210,6 +298,7 @@ export const createCard = catchAsync(async (req, res) => {
       spending_limit || 1000,
       expiryMonth,
       expiryYear,
+      providerUsed,
       providerCardId,
       JSON.stringify({
         currency: currency.toUpperCase(),
@@ -222,7 +311,7 @@ export const createCard = catchAsync(async (req, res) => {
   );
 
   const card = dbResult.rows[0];
-  logger.info(`[Cards] Created via Graph for user ${req.user.id}: ${card.id}`);
+  logger.info(`[Cards] Created via ${providerUsed} for user ${req.user.id}: ${card.id}`);
 
   res.status(201).json({
     success: true,
@@ -237,7 +326,7 @@ export const createCard = catchAsync(async (req, res) => {
       cvv,
       expiry_date: `${String(expiryMonth).padStart(2, '0')}/${expiryYear}`,
       billing_address: billing_address || {},
-      provider: 'graph',
+      provider: providerUsed,
     }
   });
 
@@ -254,7 +343,7 @@ export const fundCard = catchAsync(async (req, res) => {
 
   const result = await transaction(async (client) => {
     const card = await client.query(
-      `SELECT id, user_id, balance, status, spending_limit_daily, provider_card_id
+      `SELECT id, user_id, balance, status, spending_limit_daily, provider, provider_card_id
        FROM virtual_cards WHERE id = $1 FOR UPDATE`,
       [cardId]
     );
@@ -278,10 +367,16 @@ export const fundCard = catchAsync(async (req, res) => {
     // Deduct from wallet
     await client.query('UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2', [amount, wallet.rows[0].id]);
 
-    // If live provider card exists, call Graph to fund it
+    // If live provider card exists, fund at provider
     if (card.rows[0].provider_card_id) {
-      try { await graph.fundCard(card.rows[0].provider_card_id, amount); } catch (e) {
-        logger.warn('[Cards] Graph fund call failed, internal balance applied:', e.message);
+      try {
+        if (card.rows[0].provider === 'strowallet') {
+          await strowallet.fundCard(card.rows[0].provider_card_id, amount);
+        } else {
+          await graph.fundCard(card.rows[0].provider_card_id, amount);
+        }
+      } catch (e) {
+        logger.warn('[Cards] Provider fund call failed, internal balance applied:', e.message);
       }
     }
 
@@ -311,11 +406,22 @@ export const fundCard = catchAsync(async (req, res) => {
 // ─────────────────────────────────────────────
 export const freezeCard = catchAsync(async (req, res) => {
   const { cardId } = req.params;
-  const card = await query('SELECT id, provider_card_id FROM virtual_cards WHERE id = $1 AND user_id = $2 AND status = \'active\'', [cardId, req.user.id]);
+  const card = await query(
+    'SELECT id, provider, provider_card_id FROM virtual_cards WHERE id = $1 AND user_id = $2 AND status = \'active\'',
+    [cardId, req.user.id]
+  );
   if (card.rows.length === 0) throw new AppError('Card not found or already frozen', 404);
 
   if (card.rows[0].provider_card_id) {
-    try { await graph.freezeCard(card.rows[0].provider_card_id); } catch (e) { logger.warn('[Cards] Graph freeze failed:', e.message); }
+    try {
+      if (card.rows[0].provider === 'strowallet') {
+        await strowallet.freezeCard(card.rows[0].provider_card_id);
+      } else {
+        await graph.freezeCard(card.rows[0].provider_card_id);
+      }
+    } catch (e) {
+      logger.warn('[Cards] Provider freeze failed:', e.message);
+    }
   }
 
   const result = await query(

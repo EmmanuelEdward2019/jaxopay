@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import '@smile_identity/smart-camera-web';
 import {
     Shield,
     Upload,
@@ -61,6 +62,31 @@ const KYC = () => {
     const frontInputRef = useRef(null);
     const backInputRef = useRef(null);
     const selfieInputRef = useRef(null);
+    const smileCameraHostRef = useRef(null);
+    const smileFormRef = useRef({
+        first_name: '',
+        last_name: '',
+        country: '',
+        id_type: '',
+        id_number: '',
+        dob: '',
+    });
+
+    const [smileConfigured, setSmileConfigured] = useState(false);
+    const [showSmileWizard, setShowSmileWizard] = useState(false);
+    const [showCameraModal, setShowCameraModal] = useState(false);
+    const [smileForm, setSmileForm] = useState({
+        first_name: '',
+        last_name: '',
+        country: '',
+        id_type: '',
+        id_number: '',
+        dob: '',
+    });
+
+    useEffect(() => {
+        smileFormRef.current = smileForm;
+    }, [smileForm]);
 
     useEffect(() => {
         fetchKYCData();
@@ -68,10 +94,11 @@ const KYC = () => {
 
     const fetchKYCData = async () => {
         setLoading(true);
-        const [statusResult, limitsResult, docsResult] = await Promise.all([
+        const [statusResult, limitsResult, docsResult, smileCfg] = await Promise.all([
             kycService.getKYCStatus(),
             kycService.getTierLimits(),
             kycService.getDocuments(),
+            kycService.getSmileConfig(),
         ]);
 
         if (statusResult.success) {
@@ -83,8 +110,71 @@ const KYC = () => {
         if (docsResult.success) {
             setDocuments(docsResult.data.documents || []);
         }
+        if (smileCfg.success && smileCfg.data?.configured) {
+            setSmileConfigured(true);
+        } else {
+            setSmileConfigured(false);
+        }
         setLoading(false);
     };
+
+    useEffect(() => {
+        if (!showCameraModal || !smileCameraHostRef.current) return undefined;
+
+        const host = smileCameraHostRef.current;
+        host.innerHTML = '';
+        const el = document.createElement('smart-camera-web');
+        el.setAttribute('capture-id', '');
+
+        const onImages = async (e) => {
+            const { images } = e.detail || {};
+            if (!images?.length) {
+                setError('No images captured. Please try again.');
+                setShowCameraModal(false);
+                return;
+            }
+            setSubmitting(true);
+            setError(null);
+            const f = smileFormRef.current;
+            const result = await kycService.submitSmileBiometric({
+                first_name: f.first_name.trim(),
+                last_name: f.last_name.trim(),
+                country: f.country.trim().toUpperCase(),
+                id_type: f.id_type.trim(),
+                id_number: f.id_number.trim(),
+                dob: f.dob?.trim() || undefined,
+                images,
+            });
+            setSubmitting(false);
+            setShowCameraModal(false);
+            setShowSmileWizard(false);
+            if (result.success) {
+                setSuccess(
+                    result.message ||
+                        result.data?.message ||
+                        'Verification submitted. We will update you when processing completes.'
+                );
+                fetchKYCData();
+            } else {
+                setError(result.error || 'Submission failed');
+            }
+        };
+
+        const onClose = () => setShowCameraModal(false);
+
+        el.addEventListener('imagesComputed', onImages);
+        el.addEventListener('close', onClose);
+        el.addEventListener('backExit', onClose);
+        host.appendChild(el);
+
+        return () => {
+            el.removeEventListener('imagesComputed', onImages);
+            el.removeEventListener('close', onClose);
+            el.removeEventListener('backExit', onClose);
+            el.remove();
+            host.innerHTML = '';
+        };
+    }, [showCameraModal]);
 
     const handleFileChange = (e, setter) => {
         const file = e.target.files[0];
@@ -128,8 +218,12 @@ const KYC = () => {
         setSelfie(null);
     };
 
-    const currentTier = kycStatus?.kyc_tier || 'tier_0';
-    const tierData = TIER_INFO[currentTier];
+    const rawTier = kycStatus?.kyc_tier;
+    const currentTier =
+        typeof rawTier === 'string' && rawTier.startsWith('tier_')
+            ? rawTier
+            : `tier_${Number(rawTier) || 0}`;
+    const tierData = TIER_INFO[currentTier] || TIER_INFO.tier_0;
 
     if (loading) {
         return (
@@ -172,7 +266,7 @@ const KYC = () => {
                                 {currentTier.replace('_', ' ').toUpperCase()}
                             </span>
                         </div>
-                        {kycStatus?.verification_status === 'pending' && (
+                        {kycStatus?.kyc_status === 'pending' && (
                             <div className="flex items-center gap-2 text-yellow-300">
                                 <Clock className="w-5 h-5" />
                                 <span>Verification in progress</span>
@@ -234,25 +328,183 @@ const KYC = () => {
                 </div>
             </div>
 
-            {/* Upgrade Section */}
-            {currentTier !== 'tier_2' && !showUploadForm && (
+            {/* Smile ID — liveness + ID capture (primary when configured) */}
+            {smileConfigured && currentTier !== 'tier_2' && !showSmileWizard && !showUploadForm && (
+                <div className="card border-2 border-accent-200 dark:border-accent-800">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div>
+                            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
+                                Verify with live face check
+                            </h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                                Complete guided camera capture: liveness photos, selfie, and ID images. Your details are
+                                checked against official records. Use Chrome, Safari, or Edge on HTTPS (or localhost).
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowSmileWizard(true);
+                                setError(null);
+                            }}
+                            className="shrink-0 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-medium rounded-lg shadow-lg shadow-accent-500/20"
+                        >
+                            Start liveness verification
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {smileConfigured && showSmileWizard && (
+                <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="card"
+                >
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Identity details</h3>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowSmileWizard(false);
+                                setError(null);
+                            }}
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                        >
+                            <X className="w-5 h-5 text-gray-500" />
+                        </button>
+                    </div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                        Use the exact ID type code from your verification provider docs (e.g.{' '}
+                        <span className="font-mono text-xs">NIN_V2</span>, <span className="font-mono text-xs">PASSPORT</span>
+                        ) for your country.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                First name
+                            </label>
+                            <input
+                                value={smileForm.first_name}
+                                onChange={(e) => setSmileForm((s) => ({ ...s, first_name: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Last name
+                            </label>
+                            <input
+                                value={smileForm.last_name}
+                                onChange={(e) => setSmileForm((s) => ({ ...s, last_name: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Country (ISO2)
+                            </label>
+                            <input
+                                placeholder="NG"
+                                maxLength={2}
+                                value={smileForm.country}
+                                onChange={(e) =>
+                                    setSmileForm((s) => ({ ...s, country: e.target.value.toUpperCase() }))
+                                }
+                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                ID type code
+                            </label>
+                            <input
+                                placeholder="e.g. NIN_V2"
+                                value={smileForm.id_type}
+                                onChange={(e) => setSmileForm((s) => ({ ...s, id_type: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                            />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                ID number
+                            </label>
+                            <input
+                                value={smileForm.id_number}
+                                onChange={(e) => setSmileForm((s) => ({ ...s, id_number: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                            />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Date of birth (optional)
+                            </label>
+                            <input
+                                type="date"
+                                value={smileForm.dob}
+                                onChange={(e) => setSmileForm((s) => ({ ...s, dob: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                            />
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        disabled={
+                            submitting ||
+                            !smileForm.first_name.trim() ||
+                            !smileForm.last_name.trim() ||
+                            smileForm.country.trim().length !== 2 ||
+                            !smileForm.id_type.trim() ||
+                            !smileForm.id_number.trim()
+                        }
+                        onClick={() => setShowCameraModal(true)}
+                        className="mt-6 w-full md:w-auto px-6 py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg disabled:opacity-50"
+                    >
+                        Open camera — liveness &amp; ID
+                    </button>
+                </motion.div>
+            )}
+
+            {showCameraModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-4 relative">
+                        <button
+                            type="button"
+                            className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-gray-100 dark:bg-gray-800"
+                            onClick={() => setShowCameraModal(false)}
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 pr-10">
+                            Allow camera access, then follow on-screen steps: liveness capture, selfie review, then ID
+                            front (and back if prompted).
+                        </p>
+                        <div ref={smileCameraHostRef} className="min-h-[320px] w-full" />
+                    </div>
+                </div>
+            )}
+
+            {/* Upgrade Section — manual fallback */}
+            {currentTier !== 'tier_2' && !showUploadForm && !showSmileWizard && (
                 <div className="card">
                     <div className="flex items-center justify-between">
                         <div>
                             <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                                Upgrade to {currentTier === 'tier_0' ? 'Basic' : 'Verified'}
+                                {smileConfigured ? 'Other option: manual upload' : `Upgrade to ${currentTier === 'tier_0' ? 'Basic' : 'Verified'}`}
                             </h3>
                             <p className="text-sm text-gray-500">
-                                {currentTier === 'tier_0'
-                                    ? 'Submit your ID to unlock crypto trading and higher limits'
-                                    : 'Complete full verification for virtual cards and maximum limits'}
+                                {smileConfigured
+                                    ? 'Upload documents for manual review if you cannot use the camera flow.'
+                                    : currentTier === 'tier_0'
+                                      ? 'Submit your ID to unlock crypto trading and higher limits'
+                                      : 'Complete full verification for virtual cards and maximum limits'}
                             </p>
                         </div>
                         <button
                             onClick={() => setShowUploadForm(true)}
-                            className="px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-medium rounded-lg shadow-lg shadow-accent-500/20"
+                            className="px-4 py-2 bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 text-white font-medium rounded-lg"
                         >
-                            Start Verification
+                            {smileConfigured ? 'Manual upload' : 'Start Verification'}
                         </button>
                     </div>
                 </div>
@@ -448,7 +700,11 @@ const KYC = () => {
                                     <FileText className="w-5 h-5 text-gray-400" />
                                     <div>
                                         <p className="font-medium text-gray-900 dark:text-white">
-                                            {doc.document_type?.replace('_', ' ').toUpperCase()}
+                                            {doc.document_type === 'smile_biometric_kyc'
+                                                ? 'Biometric (liveness)'
+                                                : doc.document_type === 'smile_basic_kyc'
+                                                  ? 'Identity check'
+                                                  : doc.document_type?.replace(/_/g, ' ').toUpperCase()}
                                         </p>
                                         <p className="text-sm text-gray-500">{doc.document_number}</p>
                                     </div>

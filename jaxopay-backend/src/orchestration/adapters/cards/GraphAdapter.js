@@ -39,7 +39,7 @@ class GraphAdapter extends BaseAdapter {
 
     _ensureKey() {
         if (!this.apiKey || this.apiKey.includes('your_')) {
-            throw { message: 'Graph Finance API key not configured. Please add GRAPH_API_KEY to .env', statusCode: 503 };
+            throw { message: 'Card service is not configured on the server.', statusCode: 503 };
         }
     }
 

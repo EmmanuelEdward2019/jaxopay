@@ -1,6 +1,8 @@
-import { query, transaction } from '../config/database.js';
+import crypto from 'crypto';
+import { query } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import * as smileId from '../services/smileId.service.js';
 
 // Get KYC status
 export const getKYCStatus = catchAsync(async (req, res) => {
@@ -24,6 +26,7 @@ export const getKYCStatus = catchAsync(async (req, res) => {
     data: {
       kyc_tier: user.kyc_tier,
       kyc_status: user.kyc_status,
+      verification_status: user.kyc_status,
       documents: documents.map((doc) => ({
         id: doc.document_id,
         document_type: doc.document_type,
@@ -103,6 +106,22 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
     success: true,
     message: 'KYC document submitted successfully. Verification in progress.',
     data: result.rows[0],
+  });
+});
+
+// GET /kyc/documents — list submitted KYC rows for the current user
+export const getKYCDocuments = catchAsync(async (req, res) => {
+  const result = await query(
+    `SELECT id, document_type, document_number, status, rejection_reason,
+            reviewed_at, created_at, updated_at
+     FROM kyc_documents
+     WHERE user_id = $1
+     ORDER BY created_at DESC`,
+    [req.user.id]
+  );
+  res.status(200).json({
+    success: true,
+    data: { documents: result.rows },
   });
 });
 
@@ -225,6 +244,206 @@ export const requestTierUpgrade = catchAsync(async (req, res) => {
     data: {
       new_tier: target_tier,
     },
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Smile ID — KYC / AML (Basic KYC async + mobile auth package)
+// ─────────────────────────────────────────────────────────────────────
+
+export const getSmileIdConfig = catchAsync(async (req, res) => {
+  // Do not expose partner_id, API URLs, or webhook paths to clients — secrets stay server-side only.
+  res.status(200).json({
+    success: true,
+    data: {
+      configured: smileId.isSmileConfigured(),
+      sandbox: smileId.getSmileApiBase().includes('testapi'),
+      biometric_kyc_enabled: smileId.isSmileConfigured(),
+    },
+  });
+});
+
+/** Short-lived signature for Smile mobile SDK flows (never returns API key). */
+export const postSmileAuthPackage = catchAsync(async (req, res) => {
+  if (!smileId.isSmileConfigured()) {
+    throw new AppError('Identity verification is not available', 503);
+  }
+  const pkg = smileId.getMobileAuthPackage();
+  if (!pkg) throw new AppError('Could not start verification session', 500);
+  res.status(200).json({ success: true, data: pkg });
+});
+
+/** Submit Basic KYC (job_type 5) to Smile Identity — async; results via webhook. */
+export const submitSmileBasicKyc = catchAsync(async (req, res) => {
+  if (!smileId.isSmileConfigured()) {
+    throw new AppError('Identity verification is not available', 503);
+  }
+
+  const apiBase = (process.env.API_BASE_URL || '').replace(/\/$/, '');
+  if (!apiBase) {
+    throw new AppError('Server callback URL is not configured. Please contact support.', 500);
+  }
+
+  const {
+    country,
+    id_type,
+    id_number,
+    first_name,
+    last_name,
+    middle_name,
+    dob,
+    gender,
+    phone_number,
+  } = req.body;
+
+  const callbackUrl = `${apiBase}/api/v1/webhooks/smile_identity`;
+
+  const { smileResponse, jobId } = await smileId.submitBasicKycAsync({
+    userId: req.user.id,
+    callbackUrl,
+    country,
+    id_type,
+    id_number,
+    first_name,
+    last_name,
+    middle_name,
+    dob,
+    gender,
+    phone_number,
+  });
+
+  await query(
+    `INSERT INTO kyc_documents
+     (user_id, document_type, document_number, document_front_url,
+      document_back_url, selfie_url, metadata, status, tier)
+     VALUES ($1, 'smile_basic_kyc', $2, $3, null, null, $4, 'pending', 'tier_1')`,
+    [
+      req.user.id,
+      `SMILE:${jobId}`,
+      'https://jaxopay.com/kyc/smile-id-async',
+      JSON.stringify({
+        smile_job_id: jobId,
+        provider: 'smile_id',
+        id_type,
+        country,
+      }),
+    ]
+  );
+
+  await query(`UPDATE users SET kyc_status = 'pending', updated_at = NOW() WHERE id = $1`, [req.user.id]);
+
+  logger.info('[KYC] Smile Basic KYC submitted', { userId: req.user.id, jobId });
+
+  res.status(202).json({
+    success: true,
+    message: 'Verification submitted. You will be updated when processing completes.',
+    data: {
+      job_id: jobId,
+    },
+  });
+});
+
+function validateSmileBiometricImages(images) {
+  if (!Array.isArray(images) || images.length < 4) {
+    return 'images must be a non-empty array (selfie, liveness, and ID captures required)';
+  }
+  const typeIds = images.map((i) => parseInt(i.image_type_id, 10));
+  if (!typeIds.includes(2)) return 'Missing selfie image (image_type_id 2)';
+  if (!typeIds.some((t) => t === 6)) return 'Missing liveness images (image_type_id 6)';
+  if (!typeIds.includes(3)) return 'Missing ID document image (image_type_id 3)';
+  for (const img of images) {
+    if (!img?.image || typeof img.image !== 'string' || img.image.length < 50) {
+      return 'Each image must include a base64-encoded JPEG payload';
+    }
+  }
+  return null;
+}
+
+/** POST /kyc/smile/biometric-kyc — Biometric KYC with liveness (Smart Camera Web). */
+export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
+  if (!smileId.isSmileConfigured()) {
+    throw new AppError('Identity verification is not available', 503);
+  }
+
+  const apiBase = (process.env.API_BASE_URL || '').replace(/\/$/, '');
+  if (!apiBase) {
+    throw new AppError('Server callback URL is not configured. Please contact support.', 500);
+  }
+
+  const { country, id_type, id_number, first_name, last_name, dob, images } = req.body;
+
+  const imgErr = validateSmileBiometricImages(images);
+  if (imgErr) throw new AppError(imgErr, 400);
+
+  const pending = await query(
+    `SELECT id FROM kyc_documents
+     WHERE user_id = $1 AND status = 'pending'
+       AND document_type IN ('smile_basic_kyc', 'smile_biometric_kyc')`,
+    [req.user.id]
+  );
+  if (pending.rows.length > 0) {
+    throw new AppError('A verification is already in progress. Please wait for the result.', 409);
+  }
+
+  const jobId = crypto.randomUUID();
+  const callbackUrl = `${apiBase}/api/v1/webhooks/smile_identity`;
+
+  const idInfo = {
+    first_name: String(first_name).trim(),
+    last_name: String(last_name).trim(),
+    country: String(country).toUpperCase(),
+    id_type: String(id_type).trim(),
+    id_number: String(id_number).trim(),
+    dob: dob ? String(dob).trim() : '',
+    entered: 'false',
+  };
+
+  const normalizedImages = images.map((i) => ({
+    image_type_id: parseInt(i.image_type_id, 10),
+    image: String(i.image).replace(/^data:image\/\w+;base64,/, ''),
+  }));
+
+  try {
+    await smileId.submitBiometricKycJob({
+      userId: req.user.id,
+      jobId,
+      callbackUrl,
+      images: normalizedImages,
+      idInfo,
+    });
+  } catch (e) {
+    logger.error('[KYC] Smile Biometric submit failed:', e.message || e);
+    throw new AppError(e.message || 'Could not start biometric verification', 502);
+  }
+
+  await query(
+    `INSERT INTO kyc_documents
+     (user_id, document_type, document_number, document_front_url,
+      document_back_url, selfie_url, metadata, status, tier)
+     VALUES ($1, 'smile_biometric_kyc', $2, $3, null, null, $4, 'pending', 'tier_2')`,
+    [
+      req.user.id,
+      `SMILE:${jobId}`,
+      'https://jaxopay.com/kyc/smile-biometric',
+      JSON.stringify({
+        smile_job_id: jobId,
+        provider: 'smile_id',
+        job_type: 1,
+        id_type: idInfo.id_type,
+        country: idInfo.country,
+      }),
+    ]
+  );
+
+  await query(`UPDATE users SET kyc_status = 'pending', updated_at = NOW() WHERE id = $1`, [req.user.id]);
+
+  logger.info('[KYC] Smile Biometric KYC queued', { userId: req.user.id, jobId });
+
+  res.status(202).json({
+    success: true,
+    message:
+      'Biometric verification with liveness has been submitted. We will update your account when processing completes.',
+    data: { job_id: jobId },
   });
 });
 

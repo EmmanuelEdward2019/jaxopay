@@ -20,8 +20,9 @@ The platform uses **Resend** for high-deliverability transactional emails.
 ## 3. Infrastructure Providers (Orchestration Layer)
 The backend uses a distributed orchestration layer to route requests to the best available provider:
 - **Payments & Payouts**: Korapay (Primary), SafeHaven (Secondary).
-- **Virtual USD Cards**: Graph Finance (Primary), Strowallet.
-- **Bills & Utilities**: VTpass (MTN, Glo, Airtel, DSTV, GOtv, Startimes, Electricity).
+- **Virtual USD Cards**: **Strowallet (primary)** when `STROWALLET_PUBLIC_KEY` + `STROWALLET_SECRET_KEY` are set; otherwise Graph Finance. Failed Strowallet creation falls back to Graph automatically.
+- **Bills & Utilities**: VTpass (primary). Optional **Strowallet airtime backup** when `STROWALLET_BILLS_BACKUP=true` and VTpass request errors (categories `airtime` / `data` only).
+- **KYC / AML**: **Smile Identity** — Basic KYC async + webhook; mobile can use `/kyc/smile/config` and `/kyc/smile/auth-package` alongside the Smile RN SDK (`smile_config.json` from the Smile portal).
 - **Bulk SMS**: VTpass.
 - **Crypto Exchange**: Binance / Coinbase / Yellow Card integration.
 
@@ -67,6 +68,11 @@ The backend uses a distributed orchestration layer to route requests to the best
 - `GET /limits`: Tier-based transaction limits.
 - `POST /submit`: Upload ID, Selfie, and Address docs.
 - `POST /upgrade`: Request a higher limit tier.
+- **Smile ID (KYC / liveness orchestration)**:
+  - `GET /smile/config`: Whether Smile is configured, sandbox flag, `partner_id`, callback URL hint, and endpoint paths (no API secrets).
+  - `POST /smile/auth-package`: Returns `{ partner_id, timestamp, signature, environment }` for SDK flows (signature rotates; do not cache long-term).
+  - `POST /smile/basic-kyc`: Server-side **Basic KYC (async)** — body: `country` (ISO2), `id_type`, `id_number`, `first_name`, `last_name`, optional `middle_name`, `dob`, `gender`, `phone_number`. Requires `API_BASE_URL` on the server for `POST /api/v1/webhooks/smile_identity` callbacks.
+- **Webhook (public)**: `POST /webhooks/smile_identity` — Smile posts job results; signature verified unless `SMILE_WEBHOOK_SKIP_VERIFY=true` (dev only).
 
 ## 7. Virtual USD Cards (`/cards`)
 - `GET /`: List all active/inactive virtual cards.
@@ -101,7 +107,7 @@ The backend uses a distributed orchestration layer to route requests to the best
 - `GET /categories`: Electricity, TV, Internet, etc.
 - `GET /providers`: Find providers by country and category.
 - `POST /validate`: Verify Meter NO or SmartCard NO.
-- `POST /pay`: Execution of bill payment.
+- `POST /pay`: Execution of bill payment (VTpass primary). If `STROWALLET_BILLS_BACKUP=true` and the payment is `airtime` or `data`, a failed VTpass **network** call may complete via Strowallet airtime API (`metadata.category` must be set accordingly from the client).
 - `GET /history`: List of paid bills.
 
 ## 11. Flight Bookings (`/flights`)
