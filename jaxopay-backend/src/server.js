@@ -105,6 +105,10 @@ const startServer = async () => {
   try {
     // Start server first so health checks pass
     server.listen(PORT, () => {
+      // Node 18+ defaults requestTimeout to 5m — large KYC payloads (base64 images) need longer
+      server.requestTimeout = 600000;
+      server.headersTimeout = 610000;
+      server.keepAliveTimeout = 65000;
       logger.info(`🚀 JAXOPAY API Server running on port ${PORT}`);
       logger.info(`📝 Environment: ${NODE_ENV}`);
       logger.info(`🔗 API Base URL: http://localhost:${PORT}/api/${API_VERSION}`);

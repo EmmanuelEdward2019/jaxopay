@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import '@smile_identity/smart-camera-web';
 import {
     Shield,
@@ -10,12 +10,12 @@ import {
     Clock,
     FileText,
     Camera,
-    User,
     CreditCard,
-    ChevronRight,
     Info,
+    Home,
 } from 'lucide-react';
 import kycService from '../../services/kycService';
+import { SMILE_ISO2_COUNTRIES, getSmileIdTypeOptions } from '../../constants/smileKycOptions';
 import { formatCurrency } from '../../utils/formatters';
 
 const TIER_INFO = {
@@ -36,15 +36,23 @@ const TIER_INFO = {
     },
 };
 
-const DOCUMENT_TYPES = [
+/** Tier 1 (basic): government ID */
+const TIER1_DOCUMENT_TYPES = [
     { id: 'passport', name: 'Passport', icon: FileText },
     { id: 'national_id', name: 'National ID', icon: CreditCard },
     { id: 'drivers_license', name: "Driver's License", icon: CreditCard },
 ];
 
+/** Tier 2: Nigeria-focused + proof of address */
+const TIER2_DOCUMENT_TYPES = [
+    { id: 'nin', name: 'NIN', icon: CreditCard },
+    { id: 'bvn', name: 'BVN', icon: CreditCard },
+    { id: 'proof_of_address', name: 'Proof of address', icon: Home },
+];
+
 const KYC = () => {
     const [kycStatus, setKycStatus] = useState(null);
-    const [tierLimits, setTierLimits] = useState(null);
+    const [, setTierLimits] = useState(null);
     const [documents, setDocuments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -63,11 +71,12 @@ const KYC = () => {
     const backInputRef = useRef(null);
     const selfieInputRef = useRef(null);
     const smileCameraHostRef = useRef(null);
+    const smileSubmittingRef = useRef(false);
     const smileFormRef = useRef({
         first_name: '',
         last_name: '',
-        country: '',
-        id_type: '',
+        country: 'NG',
+        id_type: 'NIN_V2',
         id_number: '',
         dob: '',
     });
@@ -78,8 +87,8 @@ const KYC = () => {
     const [smileForm, setSmileForm] = useState({
         first_name: '',
         last_name: '',
-        country: '',
-        id_type: '',
+        country: 'NG',
+        id_type: 'NIN_V2',
         id_number: '',
         dob: '',
     });
@@ -87,6 +96,14 @@ const KYC = () => {
     useEffect(() => {
         smileFormRef.current = smileForm;
     }, [smileForm]);
+
+    useEffect(() => {
+        setSmileForm((s) => {
+            const opts = getSmileIdTypeOptions(s.country);
+            if (opts.some((o) => o.value === s.id_type)) return s;
+            return { ...s, id_type: opts[0]?.value || '' };
+        });
+    }, [smileForm.country]);
 
     useEffect(() => {
         fetchKYCData();
@@ -133,34 +150,42 @@ const KYC = () => {
                 setShowCameraModal(false);
                 return;
             }
+            smileSubmittingRef.current = true;
             setSubmitting(true);
             setError(null);
             const f = smileFormRef.current;
-            const result = await kycService.submitSmileBiometric({
-                first_name: f.first_name.trim(),
-                last_name: f.last_name.trim(),
-                country: f.country.trim().toUpperCase(),
-                id_type: f.id_type.trim(),
-                id_number: f.id_number.trim(),
-                dob: f.dob?.trim() || undefined,
-                images,
-            });
-            setSubmitting(false);
-            setShowCameraModal(false);
-            setShowSmileWizard(false);
-            if (result.success) {
-                setSuccess(
-                    result.message ||
-                        result.data?.message ||
-                        'Verification submitted. We will update you when processing completes.'
-                );
-                fetchKYCData();
-            } else {
-                setError(result.error || 'Submission failed');
+            try {
+                const result = await kycService.submitSmileBiometric({
+                    first_name: f.first_name.trim(),
+                    last_name: f.last_name.trim(),
+                    country: f.country.trim().toUpperCase(),
+                    id_type: f.id_type.trim(),
+                    id_number: f.id_number.trim(),
+                    dob: f.dob?.trim() || undefined,
+                    images,
+                });
+                if (result.success) {
+                    setSuccess(
+                        result.message ||
+                            result.data?.message ||
+                            'Verification submitted. We will update you when processing completes.'
+                    );
+                    fetchKYCData();
+                } else {
+                    setError(result.error || 'Submission failed');
+                }
+            } finally {
+                smileSubmittingRef.current = false;
+                setSubmitting(false);
+                setShowCameraModal(false);
+                setShowSmileWizard(false);
             }
         };
 
-        const onClose = () => setShowCameraModal(false);
+        const onClose = () => {
+            if (smileSubmittingRef.current) return;
+            setShowCameraModal(false);
+        };
 
         el.addEventListener('imagesComputed', onImages);
         el.addEventListener('close', onClose);
@@ -184,7 +209,9 @@ const KYC = () => {
     };
 
     const handleSubmitKYC = async () => {
-        if (!documentType || !documentNumber || !documentFront) {
+        const needsDocNumber =
+            documentType !== 'proof_of_address' && documentType !== 'utility_bill';
+        if (!documentType || !documentFront || (needsDocNumber && !documentNumber.trim())) {
             setError('Please fill in all required fields');
             return;
         }
@@ -193,7 +220,7 @@ const KYC = () => {
         setError(null);
         const result = await kycService.submitDocument({
             document_type: documentType,
-            document_number: documentNumber,
+            document_number: documentNumber.trim(),
             document_front: documentFront,
             document_back: documentBack,
             selfie: selfie,
@@ -224,6 +251,10 @@ const KYC = () => {
             ? rawTier
             : `tier_${Number(rawTier) || 0}`;
     const tierData = TIER_INFO[currentTier] || TIER_INFO.tier_0;
+
+    const uploadDocOptions =
+        currentTier === 'tier_0' ? TIER1_DOCUMENT_TYPES : TIER2_DOCUMENT_TYPES;
+    const smileIdTypeOptions = getSmileIdTypeOptions(smileForm.country);
 
     if (loading) {
         return (
@@ -356,7 +387,7 @@ const KYC = () => {
             )}
 
             {smileConfigured && showSmileWizard && (
-                <motion.div
+                <Motion.div
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="card"
@@ -375,9 +406,8 @@ const KYC = () => {
                         </button>
                     </div>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                        Use the exact ID type code from your verification provider docs (e.g.{' '}
-                        <span className="font-mono text-xs">NIN_V2</span>, <span className="font-mono text-xs">PASSPORT</span>
-                        ) for your country.
+                        Choose your country and ID type — values match what your verification provider expects for
+                        that country.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -402,28 +432,37 @@ const KYC = () => {
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Country (ISO2)
+                                Country
                             </label>
-                            <input
-                                placeholder="NG"
-                                maxLength={2}
+                            <select
                                 value={smileForm.country}
                                 onChange={(e) =>
                                     setSmileForm((s) => ({ ...s, country: e.target.value.toUpperCase() }))
                                 }
                                 className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
-                            />
+                            >
+                                {SMILE_ISO2_COUNTRIES.map((c) => (
+                                    <option key={c.code} value={c.code}>
+                                        {c.name} ({c.code})
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                ID type code
+                                ID type
                             </label>
-                            <input
-                                placeholder="e.g. NIN_V2"
+                            <select
                                 value={smileForm.id_type}
                                 onChange={(e) => setSmileForm((s) => ({ ...s, id_type: e.target.value }))}
                                 className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
-                            />
+                            >
+                                {smileIdTypeOptions.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                         <div className="md:col-span-2">
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -462,7 +501,7 @@ const KYC = () => {
                     >
                         Open camera — liveness &amp; ID
                     </button>
-                </motion.div>
+                </Motion.div>
             )}
 
             {showCameraModal && (
@@ -471,7 +510,10 @@ const KYC = () => {
                         <button
                             type="button"
                             className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-gray-100 dark:bg-gray-800"
-                            onClick={() => setShowCameraModal(false)}
+                            onClick={() => {
+                                if (smileSubmittingRef.current) return;
+                                setShowCameraModal(false);
+                            }}
                         >
                             <X className="w-5 h-5" />
                         </button>
@@ -479,7 +521,12 @@ const KYC = () => {
                             Allow camera access, then follow on-screen steps: liveness capture, selfie review, then ID
                             front (and back if prompted).
                         </p>
-                        <div ref={smileCameraHostRef} className="min-h-[320px] w-full" />
+                        <div ref={smileCameraHostRef} className="min-h-[320px] w-full relative" />
+                        {submitting && (
+                            <div className="mt-3 text-center text-sm font-medium text-accent-700 dark:text-accent-300">
+                                Uploading images — please keep this page open…
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -512,7 +559,7 @@ const KYC = () => {
 
             {/* Document Upload Form */}
             {showUploadForm && (
-                <motion.div
+                <Motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="card"
@@ -531,13 +578,20 @@ const KYC = () => {
                     </div>
 
                     <div className="space-y-6">
+                        {currentTier === 'tier_1' && (
+                            <div className="rounded-lg border border-accent-200 dark:border-accent-800 bg-accent-50/50 dark:bg-accent-900/10 px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                                <strong className="text-gray-900 dark:text-white">Tier 2 (verified):</strong> submit
+                                your NIN, BVN, and proof of address (utility bill or bank statement dated within 3
+                                months). You can upload each as a separate submission.
+                            </div>
+                        )}
                         {/* Document Type Selection */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                                 Document Type
                             </label>
-                            <div className="grid grid-cols-3 gap-3">
-                                {DOCUMENT_TYPES.map((doc) => (
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                {uploadDocOptions.map((doc) => (
                                     <button
                                         key={doc.id}
                                         onClick={() => setDocumentType(doc.id)}
@@ -557,13 +611,20 @@ const KYC = () => {
                         {/* Document Number */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                Document Number
+                                Document number{' '}
+                                {documentType === 'proof_of_address' || documentType === 'utility_bill'
+                                    ? '(optional)'
+                                    : '*'}
                             </label>
                             <input
                                 type="text"
                                 value={documentNumber}
                                 onChange={(e) => setDocumentNumber(e.target.value)}
-                                placeholder="Enter document number"
+                                placeholder={
+                                    documentType === 'proof_of_address' || documentType === 'utility_bill'
+                                        ? 'e.g. account or reference (optional)'
+                                        : 'Enter document number'
+                                }
                                 className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
                             />
                         </div>
@@ -680,13 +741,20 @@ const KYC = () => {
                         {/* Submit Button */}
                         <button
                             onClick={handleSubmitKYC}
-                            disabled={!documentType || !documentNumber || !documentFront || submitting}
+                            disabled={
+                                !documentType ||
+                                !documentFront ||
+                                submitting ||
+                                (documentType !== 'proof_of_address' &&
+                                    documentType !== 'utility_bill' &&
+                                    !documentNumber.trim())
+                            }
                             className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg disabled:opacity-50 shadow-lg shadow-accent-500/20"
                         >
                             {submitting ? 'Submitting...' : 'Submit for Verification'}
                         </button>
                     </div>
-                </motion.div>
+                </Motion.div>
             )}
 
             {/* Previous Submissions */}
@@ -704,7 +772,13 @@ const KYC = () => {
                                                 ? 'Biometric (liveness)'
                                                 : doc.document_type === 'smile_basic_kyc'
                                                   ? 'Identity check'
-                                                  : doc.document_type?.replace(/_/g, ' ').toUpperCase()}
+                                                  : doc.document_type === 'nin'
+                                                    ? 'NIN'
+                                                    : doc.document_type === 'bvn'
+                                                      ? 'BVN'
+                                                      : doc.document_type === 'proof_of_address'
+                                                        ? 'Proof of address'
+                                                        : doc.document_type?.replace(/_/g, ' ').toUpperCase()}
                                         </p>
                                         <p className="text-sm text-gray-500">{doc.document_number}</p>
                                     </div>

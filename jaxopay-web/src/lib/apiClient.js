@@ -70,6 +70,13 @@ function sanitizeDashboardErrorMessage(input) {
 
 // User-friendly error messages based on status codes
 const getErrorMessage = (status, serverMessage) => {
+  if (
+    serverMessage &&
+    typeof serverMessage === 'string' &&
+    /connection terminated|connection timeout/i.test(serverMessage)
+  ) {
+    return 'The server took too long to finish this step. Your verification photos are large — please try again on a stable connection. If it keeps failing, contact support.';
+  }
   const cleaned =
     serverMessage && typeof serverMessage === 'string' && !serverMessage.includes('status code')
       ? sanitizeDashboardErrorMessage(serverMessage)
@@ -127,6 +134,18 @@ apiClient.interceptors.response.use(
       originalRequest.url?.includes('/auth/signup') ||
       originalRequest.url?.includes('/auth/reset-password') ||
       originalRequest.url?.includes('/auth/verify-otp');
+
+    if (!error.response) {
+      const msg = error.message || '';
+      if (error.code === 'ECONNABORTED' || /timeout/i.test(msg)) {
+        return Promise.reject({
+          message:
+            'The request took too long. Try again on a stable connection — verification uploads can be large.',
+          status: 0,
+          data: null,
+        });
+      }
+    }
 
     if (status === 401 && !originalRequest._retry && !isAuthRoute) {
       if (isRefreshing) {

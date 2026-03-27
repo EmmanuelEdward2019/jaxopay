@@ -4,6 +4,12 @@ import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import * as smileId from '../services/smileId.service.js';
 
+/** DB column is `document_url` (not document_front_url). Optional back image stored as JSON in same column. */
+function buildKycDocumentUrl(frontUrl, backUrl) {
+  if (!backUrl) return frontUrl;
+  return JSON.stringify({ front: frontUrl, back: backUrl });
+}
+
 // Get KYC status
 export const getKYCStatus = catchAsync(async (req, res) => {
   const result = await query(
@@ -43,14 +49,12 @@ export const getKYCStatus = catchAsync(async (req, res) => {
 
 // Submit KYC document
 export const submitKYCDocument = catchAsync(async (req, res) => {
-  const {
-    document_type,
-    document_number,
-    document_front_url,
-    document_back_url,
-    selfie_url,
-    metadata,
-  } = req.body;
+  const { document_type, document_number, document_front_url, document_back_url, selfie_url } = req.body;
+
+  const docNumber =
+    document_type === 'proof_of_address' || document_type === 'utility_bill'
+      ? (document_number && String(document_number).trim()) || 'proof_of_address'
+      : String(document_number).trim();
 
   // Check if document type already exists and is verified
   const existing = await query(
@@ -64,31 +68,24 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
     throw new AppError('This document type is already verified', 409);
   }
 
-  // Determine tier based on document type
-  let tier = 'tier_2'; // Default to higher tier for unspecified docs
+  // Tier: primary ID (T1) vs enhanced / address (T2) — NIN, BVN, POA count toward verified (T2)
+  let tier = 'tier_2';
   if (['passport', 'national_id', 'drivers_license', 'id_card'].includes(document_type)) {
     tier = 'tier_1';
-  } else if (['proof_of_address', 'utility_bill'].includes(document_type)) {
+  } else if (
+    ['nin', 'bvn', 'proof_of_address', 'utility_bill', 'proof_of_income'].includes(document_type)
+  ) {
     tier = 'tier_2';
   }
 
-  // Create KYC document
+  const documentUrl = buildKycDocumentUrl(document_front_url, document_back_url || null);
+
   const result = await query(
     `INSERT INTO kyc_documents
-     (user_id, document_type, document_number, document_front_url,
-      document_back_url, selfie_url, metadata, status, tier)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
+     (user_id, document_type, document_number, document_url, selfie_url, status, tier)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6)
      RETURNING id, document_type, status as verification_status, created_at`,
-    [
-      req.user.id,
-      document_type,
-      document_number,
-      document_front_url,
-      document_back_url || null,
-      selfie_url || null,
-      metadata ? JSON.stringify(metadata) : null,
-      tier
-    ]
+    [req.user.id, document_type, docNumber, documentUrl, selfie_url || null, tier]
   );
 
   // Update user KYC status
@@ -185,19 +182,40 @@ export const getKYCLimits = catchAsync(async (req, res) => {
   });
 });
 
-// Request tier upgrade
+function parseTierStep(tier) {
+  if (tier == null) return 0;
+  if (typeof tier === 'number' && !Number.isNaN(tier)) return Math.min(2, Math.max(0, tier));
+  const s = String(tier);
+  const m = s.match(/(\d+)/);
+  return m ? Math.min(2, Math.max(0, parseInt(m[1], 10))) : 0;
+}
+
+const GOV_ID_DOC_TYPES = new Set([
+  'id_card',
+  'national_id',
+  'passport',
+  'drivers_license',
+  'nin',
+  'bvn',
+  'smile_basic_kyc',
+  'smile_biometric_kyc',
+]);
+
+// Request tier upgrade (DB enum: tier_0 .. tier_2)
 export const requestTierUpgrade = catchAsync(async (req, res) => {
   const { target_tier } = req.body;
 
-  if (target_tier <= req.user.kyc_tier) {
+  const currentStep = parseTierStep(req.user.kyc_tier);
+  const targetStep = parseTierStep(target_tier);
+
+  if (targetStep <= currentStep) {
     throw new AppError('Target tier must be higher than current tier', 400);
   }
 
-  if (target_tier > 3) {
+  if (targetStep > 2) {
     throw new AppError('Invalid tier', 400);
   }
 
-  // Check if user has required documents
   const documents = await query(
     `SELECT document_type, status
      FROM kyc_documents
@@ -209,40 +227,47 @@ export const requestTierUpgrade = catchAsync(async (req, res) => {
     .filter((doc) => doc.status === 'approved')
     .map((doc) => doc.document_type);
 
-  // Simple validation (in production, this would be more sophisticated)
-  const requiredDocs = {
-    1: ['id_card'],
-    2: ['id_card', 'proof_of_address'],
-    3: ['id_card', 'proof_of_address', 'proof_of_income'],
-  };
+  const hasGovId = verifiedDocs.some((t) => GOV_ID_DOC_TYPES.has(t));
+  const hasPoa = verifiedDocs.includes('proof_of_address') || verifiedDocs.includes('utility_bill');
 
-  const missing = requiredDocs[target_tier].filter(
-    (doc) => !verifiedDocs.includes(doc)
-  );
-
-  if (missing.length > 0) {
-    throw new AppError(
-      `Missing required documents: ${missing.join(', ')}`,
-      400
-    );
+  if (targetStep === 1) {
+    if (!hasGovId) {
+      throw new AppError(
+        'Missing approved government ID (passport, national ID, NIN, BVN, or completed identity check)',
+        400
+      );
+    }
   }
 
-  // Update user tier
-  await query(
-    `UPDATE users SET kyc_tier = $1, updated_at = NOW() WHERE id = $2`,
-    [target_tier, req.user.id]
-  );
+  if (targetStep === 2) {
+    if (!hasPoa) {
+      throw new AppError('Missing approved proof of address', 400);
+    }
+    if (!hasGovId) {
+      throw new AppError(
+        'Tier 2 requires proof of address plus an approved government ID (NIN, BVN, passport, national ID, or completed identity verification)',
+        400
+      );
+    }
+  }
+
+  const newTierLabel = `tier_${targetStep}`;
+
+  await query(`UPDATE users SET kyc_tier = $1, updated_at = NOW() WHERE id = $2`, [
+    newTierLabel,
+    req.user.id,
+  ]);
 
   logger.info('KYC tier upgraded:', {
     userId: req.user.id,
-    newTier: target_tier,
+    newTier: newTierLabel,
   });
 
   res.status(200).json({
     success: true,
-    message: `Successfully upgraded to Tier ${target_tier}`,
+    message: `Successfully upgraded to ${newTierLabel.replace('_', ' ')}`,
     data: {
-      new_tier: target_tier,
+      new_tier: newTierLabel,
     },
   });
 });
@@ -314,20 +339,9 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
 
   await query(
     `INSERT INTO kyc_documents
-     (user_id, document_type, document_number, document_front_url,
-      document_back_url, selfie_url, metadata, status, tier)
-     VALUES ($1, 'smile_basic_kyc', $2, $3, null, null, $4, 'pending', 'tier_1')`,
-    [
-      req.user.id,
-      `SMILE:${jobId}`,
-      'https://jaxopay.com/kyc/smile-id-async',
-      JSON.stringify({
-        smile_job_id: jobId,
-        provider: 'smile_id',
-        id_type,
-        country,
-      }),
-    ]
+     (user_id, document_type, document_number, document_url, selfie_url, status, tier)
+     VALUES ($1, 'smile_basic_kyc', $2, $3, null, 'pending', 'tier_1')`,
+    [req.user.id, `SMILE:${jobId}`, 'https://jaxopay.com/kyc/smile-id-async']
   );
 
   await query(`UPDATE users SET kyc_status = 'pending', updated_at = NOW() WHERE id = $1`, [req.user.id]);
@@ -350,7 +364,10 @@ function validateSmileBiometricImages(images) {
   const typeIds = images.map((i) => parseInt(i.image_type_id, 10));
   if (!typeIds.includes(2)) return 'Missing selfie image (image_type_id 2)';
   if (!typeIds.some((t) => t === 6)) return 'Missing liveness images (image_type_id 6)';
-  if (!typeIds.includes(3)) return 'Missing ID document image (image_type_id 3)';
+  // Smart Camera Web uses 3 = ID front, 7 = ID back / alternate capture
+  if (!typeIds.some((t) => t === 3 || t === 7)) {
+    return 'Missing ID document image (image_type_id 3 or 7)';
+  }
   for (const img of images) {
     if (!img?.image || typeof img.image !== 'string' || img.image.length < 50) {
       return 'Each image must include a base64-encoded JPEG payload';
@@ -403,47 +420,60 @@ export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
     image: String(i.image).replace(/^data:image\/\w+;base64,/, ''),
   }));
 
-  try {
-    await smileId.submitBiometricKycJob({
-      userId: req.user.id,
-      jobId,
-      callbackUrl,
-      images: normalizedImages,
-      idInfo,
-    });
-  } catch (e) {
-    logger.error('[KYC] Smile Biometric submit failed:', e.message || e);
-    throw new AppError(e.message || 'Could not start biometric verification', 502);
-  }
+  const docNumber = `SMILE:${jobId}`;
 
+  // Persist first so the user has a pending row; respond quickly. Calling Smile synchronously
+  // here held the HTTP request open for a long upload and triggered DB/proxy/client timeouts.
   await query(
     `INSERT INTO kyc_documents
-     (user_id, document_type, document_number, document_front_url,
-      document_back_url, selfie_url, metadata, status, tier)
-     VALUES ($1, 'smile_biometric_kyc', $2, $3, null, null, $4, 'pending', 'tier_2')`,
-    [
-      req.user.id,
-      `SMILE:${jobId}`,
-      'https://jaxopay.com/kyc/smile-biometric',
-      JSON.stringify({
-        smile_job_id: jobId,
-        provider: 'smile_id',
-        job_type: 1,
-        id_type: idInfo.id_type,
-        country: idInfo.country,
-      }),
-    ]
+     (user_id, document_type, document_number, document_url, selfie_url, status, tier)
+     VALUES ($1, 'smile_biometric_kyc', $2, $3, null, 'pending', 'tier_2')`,
+    [req.user.id, docNumber, 'https://jaxopay.com/kyc/smile-biometric']
   );
 
   await query(`UPDATE users SET kyc_status = 'pending', updated_at = NOW() WHERE id = $1`, [req.user.id]);
 
-  logger.info('[KYC] Smile Biometric KYC queued', { userId: req.user.id, jobId });
+  logger.info('[KYC] Smile Biometric KYC record created; submitting to provider async', {
+    userId: req.user.id,
+    jobId,
+  });
 
   res.status(202).json({
     success: true,
     message:
       'Biometric verification with liveness has been submitted. We will update your account when processing completes.',
     data: { job_id: jobId },
+  });
+
+  const userId = req.user.id;
+  setImmediate(() => {
+    smileId
+      .submitBiometricKycJob({
+        userId,
+        jobId,
+        callbackUrl,
+        images: normalizedImages,
+        idInfo,
+      })
+      .then(() => {
+        logger.info('[KYC] Smile Biometric job accepted by provider', { userId, jobId });
+      })
+      .catch((e) => {
+        const msg = e?.message || String(e);
+        logger.error('[KYC] Smile Biometric submit failed (async):', msg);
+        query(
+          `UPDATE kyc_documents
+           SET status = 'rejected',
+               rejection_reason = $1,
+               updated_at = NOW()
+           WHERE user_id = $2 AND document_type = 'smile_biometric_kyc' AND document_number = $3`,
+          [
+            'Identity verification could not be submitted to the provider. Please try again or contact support.',
+            userId,
+            docNumber,
+          ]
+        ).catch((dbErr) => logger.error('[KYC] Failed to mark biometric job failed:', dbErr.message || dbErr));
+      });
   });
 });
 

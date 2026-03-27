@@ -1,5 +1,14 @@
 import apiClient from '../lib/apiClient';
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 const kycService = {
   // Get KYC status
   getKYCStatus: async () => {
@@ -11,26 +20,24 @@ const kycService = {
     }
   },
 
-  // Submit KYC document
+  // Submit KYC document (JSON with data URLs — server accepts https or data:image)
   submitDocument: async (documentData) => {
     try {
-      const formData = new FormData();
-      formData.append('document_type', documentData.document_type);
-      formData.append('document_number', documentData.document_number);
-      if (documentData.document_front) {
-        formData.append('document_front', documentData.document_front);
-      }
+      const document_front_url = await fileToDataUrl(documentData.document_front);
+      const payload = {
+        document_type: documentData.document_type,
+        document_number: documentData.document_number?.trim() ?? '',
+        document_front_url,
+      };
       if (documentData.document_back) {
-        formData.append('document_back', documentData.document_back);
+        payload.document_back_url = await fileToDataUrl(documentData.document_back);
       }
       if (documentData.selfie) {
-        formData.append('selfie', documentData.selfie);
+        payload.selfie_url = await fileToDataUrl(documentData.selfie);
       }
-
-      const response = await apiClient.post('/kyc/submit', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+      const response = await apiClient.post('/kyc/submit', payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 120000,
       });
       return { success: true, data: response.data };
     } catch (error) {
@@ -74,7 +81,10 @@ const kycService = {
    */
   submitSmileBiometric: async (payload) => {
     try {
-      const response = await apiClient.post('/kyc/smile/biometric-kyc', payload);
+      // Large JSON body (base64 images) + slow networks: allow up to 10 minutes
+      const response = await apiClient.post('/kyc/smile/biometric-kyc', payload, {
+        timeout: 600000,
+      });
       return { success: true, data: response.data, message: response.message };
     } catch (error) {
       return { success: false, error: error.message };

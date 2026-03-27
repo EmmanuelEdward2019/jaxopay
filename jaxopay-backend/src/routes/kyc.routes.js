@@ -60,25 +60,62 @@ router.post(
   submitSmileBiometricKyc
 );
 
-// Submit KYC document
+const imageDataOrUrl = (field) =>
+  body(field)
+    .isString()
+    .trim()
+    .custom((value) => {
+      if (!value || value.length < 30) return false;
+      if (/^https?:\/\//i.test(value)) return true;
+      return /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value);
+    })
+    .withMessage(`${field} must be a valid https URL or image data URL`);
+
+const optionalImageDataOrUrl = (field) =>
+  body(field)
+    .optional({ values: 'falsy' })
+    .isString()
+    .trim()
+    .custom((value) => {
+      if (!value) return true;
+      if (value.length < 30) return false;
+      if (/^https?:\/\//i.test(value)) return true;
+      return /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value);
+    });
+
+// Submit KYC document (JSON with URLs or data:image URLs from the client)
 router.post(
   '/submit',
   body('document_type')
-    .isIn(['id_card', 'passport', 'drivers_license', 'proof_of_address', 'proof_of_income'])
+    .isIn([
+      'id_card',
+      'national_id',
+      'passport',
+      'drivers_license',
+      'nin',
+      'bvn',
+      'proof_of_address',
+      'utility_bill',
+      'proof_of_income',
+    ])
     .withMessage('Invalid document type'),
-  body('document_number').isString().trim(),
-  body('document_front_url').isURL(),
-  body('document_back_url').optional().isURL(),
-  body('selfie_url').optional().isURL(),
+  body('document_number').custom((value, { req }) => {
+    const t = req.body?.document_type;
+    if (t === 'proof_of_address' || t === 'utility_bill') return true;
+    return typeof value === 'string' && value.trim().length >= 1;
+  }),
+  imageDataOrUrl('document_front_url'),
+  optionalImageDataOrUrl('document_back_url'),
+  optionalImageDataOrUrl('selfie_url'),
   body('metadata').optional().isObject(),
   validate,
   submitKYCDocument
 );
 
-// Request tier upgrade
+// Request tier upgrade (schema supports tier_0 → tier_2)
 router.post(
   '/upgrade',
-  body('target_tier').isInt({ min: 1, max: 3 }),
+  body('target_tier').isInt({ min: 1, max: 2 }),
   validate,
   requestTierUpgrade
 );
