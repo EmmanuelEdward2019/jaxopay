@@ -5,16 +5,12 @@ import { AppError } from './errorHandler.js';
 export const validate = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    const errorMessages = errors.array().map(err => ({
-      field: err.path,
-      message: err.msg,
-      value: err.value,
-    }));
-
-    throw new AppError(
-      JSON.stringify(errorMessages),
-      400
-    );
+    const arr = errors.array();
+    const message =
+      arr.length === 1
+        ? arr[0].msg
+        : arr.map((e) => (e.path ? `${e.path}: ${e.msg}` : e.msg)).join('; ');
+    throw new AppError(message, 400);
   }
   next();
 };

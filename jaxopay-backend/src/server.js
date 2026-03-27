@@ -61,8 +61,8 @@ app.use(cors(corsOptions));
 
 // Body parsing middleware
 // Large limit for Smile ID biometric payloads (selfie + liveness + ID images as base64)
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Logging middleware
 if (NODE_ENV === 'development') {

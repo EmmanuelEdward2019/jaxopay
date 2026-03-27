@@ -54,7 +54,7 @@ router.post(
   body('id_number').notEmpty().trim(),
   body('first_name').notEmpty().trim(),
   body('last_name').notEmpty().trim(),
-  body('dob').optional().trim(),
+  body('dob').optional({ values: 'falsy' }).trim(),
   body('images').isArray({ min: 1 }).withMessage('images array required'),
   validate,
   submitSmileBiometricKyc
@@ -65,11 +65,12 @@ const imageDataOrUrl = (field) =>
     .isString()
     .trim()
     .custom((value) => {
-      if (!value || value.length < 30) return false;
+      if (!value || value.length < 24) return false;
       if (/^https?:\/\//i.test(value)) return true;
-      return /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value);
+      // Any raster image data URL (jpeg, png, webp, heic, etc.)
+      return /^data:image\/[a-z0-9.+-]+;base64,/i.test(value);
     })
-    .withMessage(`${field} must be a valid https URL or image data URL`);
+    .withMessage(`${field} must be a valid https URL or a base64 image data URL`);
 
 const optionalImageDataOrUrl = (field) =>
   body(field)
@@ -78,9 +79,9 @@ const optionalImageDataOrUrl = (field) =>
     .trim()
     .custom((value) => {
       if (!value) return true;
-      if (value.length < 30) return false;
+      if (value.length < 24) return false;
       if (/^https?:\/\//i.test(value)) return true;
-      return /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value);
+      return /^data:image\/[a-z0-9.+-]+;base64,/i.test(value);
     });
 
 // Submit KYC document (JSON with URLs or data:image URLs from the client)
@@ -107,7 +108,6 @@ router.post(
   imageDataOrUrl('document_front_url'),
   optionalImageDataOrUrl('document_back_url'),
   optionalImageDataOrUrl('selfie_url'),
-  body('metadata').optional().isObject(),
   validate,
   submitKYCDocument
 );
