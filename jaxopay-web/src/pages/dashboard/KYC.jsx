@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useAuthStore } from '../../store/authStore';
 import { motion as Motion } from 'framer-motion';
 import '@smile_identity/smart-camera-web';
 import {
@@ -79,6 +80,7 @@ function rememberKycDocNumber(documentType, rawValue) {
 }
 
 const KYC = () => {
+    const refreshSession = useAuthStore((s) => s.refreshSession);
     const [kycStatus, setKycStatus] = useState(null);
     const [, setTierLimits] = useState(null);
     const [documents, setDocuments] = useState([]);
@@ -137,11 +139,7 @@ const KYC = () => {
         });
     }, [smileForm.country]);
 
-    useEffect(() => {
-        fetchKYCData();
-    }, []);
-
-    const fetchKYCData = async () => {
+    const fetchKYCData = useCallback(async () => {
         setLoading(true);
         const [statusResult, limitsResult, docsResult, smileCfg] = await Promise.all([
             kycService.getKYCStatus(),
@@ -165,7 +163,25 @@ const KYC = () => {
             setSmileConfigured(false);
         }
         setLoading(false);
-    };
+    }, []);
+
+    useEffect(() => {
+        fetchKYCData();
+    }, [fetchKYCData]);
+
+    useEffect(() => {
+        const sync = () => {
+            if (document.visibilityState !== 'visible') return;
+            fetchKYCData();
+            refreshSession();
+        };
+        document.addEventListener('visibilitychange', sync);
+        window.addEventListener('focus', sync);
+        return () => {
+            document.removeEventListener('visibilitychange', sync);
+            window.removeEventListener('focus', sync);
+        };
+    }, [fetchKYCData, refreshSession]);
 
     useEffect(() => {
         if (!showCameraModal || !smileCameraHostRef.current) return undefined;

@@ -70,6 +70,15 @@ const adminService = {
         }
     },
 
+    getApprovedKYC: async (params = {}) => {
+        try {
+            const response = await apiClient.get('/admin/kyc/approved', { params });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
     // Verify KYC document
     verifyKYCDocument: async (documentId, status, rejectionReason) => {
         try {

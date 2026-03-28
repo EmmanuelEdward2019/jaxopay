@@ -11,6 +11,7 @@ import {
   verifyKYCDocument,
   getSystemStats,
   getPendingKYC,
+  getApprovedKYC,
   getFeatureToggles,
   updateFeatureToggle,
   getAuditLogs,
@@ -51,6 +52,14 @@ router.get(
   query('limit').optional().isInt({ min: 1, max: 100 }),
   validate,
   getPendingKYC
+);
+
+router.get(
+  '/kyc/approved',
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 }),
+  validate,
+  getApprovedKYC
 );
 
 // Get all users

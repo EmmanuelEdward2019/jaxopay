@@ -25,6 +25,50 @@ function parseKycDocumentUrls(documentUrl) {
   return { document_front_url: s, document_back_url: null };
 }
 
+const KYC_TIER_RANK = { tier_0: 0, tier_1: 1, tier_2: 2, tier_3: 3 };
+
+/**
+ * Derive users.kyc_tier / users.kyc_status from kyc_documents after approve or reject.
+ * Tier is the max rank among approved rows (uses each document's `tier` from submission).
+ */
+async function syncUserKycStateFromDocuments(client, userId) {
+  const approvedRes = await client.query(
+    `SELECT tier::text AS tier FROM kyc_documents WHERE user_id = $1 AND status = 'approved'`,
+    [userId]
+  );
+
+  let maxRank = 0;
+  for (const row of approvedRes.rows) {
+    maxRank = Math.max(maxRank, KYC_TIER_RANK[row.tier] ?? 0);
+  }
+
+  const newTier = maxRank >= 2 ? 'tier_2' : maxRank >= 1 ? 'tier_1' : 'tier_0';
+
+  const pendingRes = await client.query(
+    `SELECT 1 FROM kyc_documents WHERE user_id = $1 AND status = 'pending' LIMIT 1`,
+    [userId]
+  );
+  const hasPending = pendingRes.rows.length > 0;
+
+  let kycStatus;
+  if (hasPending) {
+    kycStatus = 'pending';
+  } else if (approvedRes.rows.length > 0) {
+    kycStatus = 'approved';
+  } else {
+    const anyRes = await client.query(
+      `SELECT 1 FROM kyc_documents WHERE user_id = $1 LIMIT 1`,
+      [userId]
+    );
+    kycStatus = anyRes.rows.length > 0 ? 'rejected' : 'pending';
+  }
+
+  await client.query(
+    `UPDATE users SET kyc_tier = $1::kyc_tier, kyc_status = $2::kyc_status, updated_at = NOW() WHERE id = $3`,
+    [newTier, kycStatus, userId]
+  );
+}
+
 // Get all users (admin only)
 export const getUsers = catchAsync(async (req, res) => {
   const {
@@ -343,27 +387,7 @@ export const verifyKYCDocument = catchAsync(async (req, res) => {
       throw new AppError('Document not found', 404);
     }
 
-    // If approved, check if user should be upgraded to next tier
-    if (status === 'approved') {
-      const userDocs = await client.query(
-        `SELECT COUNT(*) as approved_count
-         FROM kyc_documents
-         WHERE user_id = $1 AND status = 'approved'`,
-        [doc.rows[0].user_id]
-      );
-
-      const approvedCount = parseInt(userDocs.rows[0].approved_count);
-      let newTier = 'tier_0';
-
-      if (approvedCount === 1) newTier = 'tier_1';
-      if (approvedCount >= 2) newTier = 'tier_2';
-
-      // Update user KYC tier
-      await client.query(
-        `UPDATE users SET kyc_tier = $1, updated_at = NOW() WHERE id = $2`,
-        [newTier, doc.rows[0].user_id]
-      );
-    }
+    await syncUserKycStateFromDocuments(client, doc.rows[0].user_id);
 
     // Log KYC verification
     await logAdminAction({
@@ -388,6 +412,81 @@ export const verifyKYCDocument = catchAsync(async (req, res) => {
     success: true,
     message: 'KYC document verified successfully',
     data: result,
+  });
+});
+
+// Approved KYC history (admin only) — reference past submissions
+export const getApprovedKYC = catchAsync(async (req, res) => {
+  const { page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
+
+  const result = await query(
+    `SELECT kd.id, kd.user_id, kd.document_type, kd.document_number,
+            kd.document_url, kd.selfie_url, kd.status, kd.tier,
+            kd.created_at, kd.submitted_at, kd.updated_at,
+            kd.reviewed_at, kd.reviewed_by,
+            u.email, u.phone,
+            up.first_name, up.last_name,
+            ru.email AS reviewer_email
+     FROM kyc_documents kd
+     JOIN users u ON kd.user_id = u.id
+     LEFT JOIN user_profiles up ON u.id = up.user_id
+     LEFT JOIN users ru ON kd.reviewed_by = ru.id
+     WHERE kd.status = 'approved'
+     ORDER BY kd.reviewed_at DESC NULLS LAST, kd.updated_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+
+  const countResult = await query(
+    `SELECT COUNT(*) as total
+     FROM kyc_documents
+     WHERE status = 'approved'`
+  );
+
+  const documents = result.rows.map((row) => {
+    const {
+      document_url,
+      email,
+      phone,
+      first_name,
+      last_name,
+      user_id,
+      selfie_url,
+      reviewer_email,
+      ...rest
+    } = row;
+    const { document_front_url, document_back_url } = parseKycDocumentUrls(document_url);
+    const nameParts = [first_name, last_name].filter(Boolean);
+    return {
+      ...rest,
+      user_id,
+      document_front_url,
+      document_back_url,
+      selfie_url: selfie_url || null,
+      reviewer_email: reviewer_email || null,
+      user: {
+        id: user_id,
+        email: email || null,
+        phone: phone || null,
+        first_name: first_name || null,
+        last_name: last_name || null,
+        full_name: nameParts.length ? nameParts.join(' ') : null,
+      },
+    };
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      documents,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: parseInt(countResult.rows[0].total),
+        pages: Math.ceil(countResult.rows[0].total / limit),
+      },
+    },
   });
 });
 
@@ -516,7 +615,6 @@ export const getPendingKYC = catchAsync(async (req, res) => {
     },
   });
 });
-
 
 // Get all feature toggles (admin only)
 export const getFeatureToggles = catchAsync(async (req, res) => {

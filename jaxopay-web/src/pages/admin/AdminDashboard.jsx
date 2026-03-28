@@ -15,7 +15,8 @@ import {
     ArrowDownRight,
     RefreshCw,
     ShieldAlert,
-    Megaphone
+    Megaphone,
+    Archive,
 } from 'lucide-react';
 import adminService from '../../services/adminService';
 import { useAuthStore } from '../../store/authStore';
@@ -202,6 +203,18 @@ const AdminDashboard = () => {
                             <div>
                                 <p className="font-medium text-gray-900 dark:text-white">Review KYC</p>
                                 <p className="text-xs text-gray-500">{stats.pending_kyc} pending</p>
+                            </div>
+                        </Link>
+                        <Link
+                            to="/admin/kyc?tab=approved"
+                            className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        >
+                            <div className="p-2 bg-accent-100 dark:bg-accent-900/30 rounded-lg">
+                                <Archive className="w-5 h-5 text-accent-600" />
+                            </div>
+                            <div>
+                                <p className="font-medium text-gray-900 dark:text-white">Approved KYC archive</p>
+                                <p className="text-xs text-gray-500">Past submissions and documents</p>
                             </div>
                         </Link>
                         <Link
