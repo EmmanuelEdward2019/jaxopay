@@ -38,6 +38,20 @@ const Profile = () => {
         fetchActivityLogs();
     }, []);
 
+    useEffect(() => {
+        const sync = () => {
+            if (document.visibilityState !== 'visible') return;
+            fetchProfile();
+            refreshSession();
+        };
+        document.addEventListener('visibilitychange', sync);
+        window.addEventListener('focus', sync);
+        return () => {
+            document.removeEventListener('visibilitychange', sync);
+            window.removeEventListener('focus', sync);
+        };
+    }, []);
+
     const fetchProfile = async () => {
         const result = await userService.getProfile();
         if (result.success) {
