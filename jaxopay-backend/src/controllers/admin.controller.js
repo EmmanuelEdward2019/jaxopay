@@ -4,6 +4,7 @@ import logger from '../utils/logger.js';
 import { sendSMS } from '../services/sms.service.js';
 import bcrypt from 'bcryptjs';
 import { providerRegistry } from '../orchestration/index.js';
+import * as kycNotify from '../services/kycNotification.service.js';
 
 /** Split stored `document_url` (plain URL or JSON { front, back }) for admin review UI. */
 function parseKycDocumentUrls(documentUrl) {
@@ -407,6 +408,16 @@ export const verifyKYCDocument = catchAsync(async (req, res) => {
     documentId,
     status,
   });
+
+  kycNotify
+    .notifyAdminKycDecision({
+      userId: result.user_id,
+      documentType: result.document_type,
+      status: result.status,
+      rejectionReason: rejection_reason || null,
+      reviewerEmail: req.user.email,
+    })
+    .catch((err) => logger.error('[KYC] notifyAdminKycDecision:', err?.message || err));
 
   res.status(200).json({
     success: true,

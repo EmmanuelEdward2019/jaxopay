@@ -5,6 +5,7 @@ import ledgerService from '../orchestration/ledger/LedgerService.js';
 import logger from '../utils/logger.js';
 import crypto from 'crypto';
 import { SMILE_APPROVED_RESULT_CODES, SMILE_PROVISIONAL_RESULT_CODES } from '../services/smileId.service.js';
+import * as kycNotify from '../services/kycNotification.service.js';
 
 /**
  * Unified webhook handler for all providers
@@ -342,6 +343,8 @@ async function processSmileIdentity(body) {
         logger.warn(`[WEBHOOK] Smile ID: no kyc_documents row for job ${jobId} user ${userId}`);
     }
 
+    const smileResultText = b.ResultText || b.result_text || '';
+
     if (approved) {
         const tierRank = { tier_0: 0, tier_1: 1, tier_2: 2 };
         const userRow = await query(`SELECT kyc_tier FROM users WHERE id = $1::uuid`, [userId]);
@@ -359,6 +362,19 @@ async function processSmileIdentity(body) {
         );
     } else {
         await query(`UPDATE users SET kyc_status = 'rejected', updated_at = NOW() WHERE id = $1::uuid`, [userId]);
+    }
+
+    if (docUpdate.rowCount > 0) {
+        const docType = docUpdate.rows[0]?.document_type || 'smile_biometric_kyc';
+        kycNotify
+            .notifySmileKycWebhookResult({
+                userId,
+                jobId,
+                documentType: docType,
+                approved,
+                resultText: smileResultText,
+            })
+            .catch((err) => logger.error('[WEBHOOK] KYC email notify:', err?.message || err));
     }
 
     logger.info(`[WEBHOOK] Smile ID job ${jobId} user ${userId} → ${resultCode} (${approved ? 'approved' : 'rejected'})`);

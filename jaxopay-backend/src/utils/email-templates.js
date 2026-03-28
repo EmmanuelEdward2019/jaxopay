@@ -141,7 +141,69 @@ export const templates = {
     ` : ''}
     <div class="divider"></div>
     <p>Best regards,<br/>The JAXOPAY Team</p>
-  `)
+  `),
+
+  /** User: manual or Smile verification submitted (awaiting processing / review). */
+  kycUserSubmissionReceived: (data) => layout(`
+    <h1 style="margin-top: 0;">KYC submission received</h1>
+    <p>Hi ${data.name},</p>
+    <p>We have received your <strong>${data.documentLabel}</strong> verification request.</p>
+    <p>${data.bodyExtra || 'Our team or verification partner will process it shortly. We will email you when there is an update.'}</p>
+    <div style="text-align: center;">
+      <a href="${data.dashboardUrl}" class="button">View KYC status</a>
+    </div>
+    <div class="divider"></div>
+    <p>Thank you for helping us keep JAXOPAY secure.</p>
+  `),
+
+  /** User: admin reviewed a document or Smile returned a final result. */
+  kycUserReviewResult: (data) => layout(`
+    <h1 style="margin-top: 0;">${data.approved ? 'KYC update: approved' : 'KYC update: not approved'}</h1>
+    <p>Hi ${data.name},</p>
+    ${data.approved
+      ? `<p>Your <strong>${data.documentLabel}</strong> verification has been <span class="highlight">approved</span>.</p>
+         ${data.newTierLabel ? `<p>Your current verification level is now: <strong>${data.newTierLabel}</strong>.</p>` : ''}`
+      : `<p>Your <strong>${data.documentLabel}</strong> verification could not be approved at this time.</p>
+         ${data.rejectionReason ? `<p><strong>Reason:</strong> ${data.rejectionReason}</p>` : ''}
+         <p>You can submit a new request from your KYC page if applicable.</p>`}
+    <div style="text-align: center;">
+      <a href="${data.dashboardUrl}" class="button">Open KYC</a>
+    </div>
+  `),
+
+  /** User: self-service tier upgrade (after documents already approved). */
+  kycUserTierUpgraded: (data) => layout(`
+    <h1 style="margin-top: 0;">Verification level updated</h1>
+    <p>Hi ${data.name},</p>
+    <p>Your account verification level is now <strong>${data.newTierLabel}</strong>.</p>
+    <p>Higher limits and features may now be available based on your tier.</p>
+    <div style="text-align: center;">
+      <a href="${data.dashboardUrl}" class="button">View account</a>
+    </div>
+  `),
+
+  /** Compliance & admin: structured KYC audit alerts. */
+  kycStaffNotification: (data) => layout(`
+    <h1 style="margin-top: 0; color: #111827;">${data.eventTitle}</h1>
+    ${data.intro ? `<p style="color:#4b5563;">${data.intro}</p>` : ''}
+    <div class="transaction-box">
+      ${(data.rows || [])
+        .map(
+          (row) => `
+        <div class="transaction-row">
+          <span class="transaction-label">${row.label}</span>
+          <span class="transaction-value" style="word-break: break-all; max-width: 65%;">${row.value}</span>
+        </div>
+      `
+        )
+        .join('')}
+    </div>
+    ${data.ctaUrl
+      ? `<div style="text-align: center;">
+      <a href="${data.ctaUrl}" class="button" style="background-color: #111827;">${data.ctaText || 'Open admin KYC'}</a>
+    </div>`
+      : ''}
+  `),
 };
 
 // Aliases for backward compatibility

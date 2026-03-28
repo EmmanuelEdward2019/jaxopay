@@ -3,6 +3,7 @@ import { query } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import * as smileId from '../services/smileId.service.js';
+import * as kycNotify from '../services/kycNotification.service.js';
 
 /** DB column is `document_url` (not document_front_url). Optional back image stored as JSON in same column. */
 function buildKycDocumentUrl(frontUrl, backUrl) {
@@ -98,6 +99,15 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
     userId: req.user.id,
     documentType: document_type,
   });
+
+  kycNotify
+    .notifyManualKycSubmitted({
+      userId: req.user.id,
+      documentType: document_type,
+      tier,
+      documentId: result.rows[0].id,
+    })
+    .catch((err) => logger.error('[KYC] notifyManualKycSubmitted:', err?.message || err));
 
   res.status(201).json({
     success: true,
@@ -263,6 +273,10 @@ export const requestTierUpgrade = catchAsync(async (req, res) => {
     newTier: newTierLabel,
   });
 
+  kycNotify
+    .notifyTierSelfUpgrade({ userId: req.user.id, newTier: newTierLabel })
+    .catch((err) => logger.error('[KYC] notifyTierSelfUpgrade:', err?.message || err));
+
   res.status(200).json({
     success: true,
     message: `Successfully upgraded to ${newTierLabel.replace('_', ' ')}`,
@@ -347,6 +361,10 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
   await query(`UPDATE users SET kyc_status = 'pending', updated_at = NOW() WHERE id = $1`, [req.user.id]);
 
   logger.info('[KYC] Smile Basic KYC submitted', { userId: req.user.id, jobId });
+
+  kycNotify
+    .notifySmileBasicSubmitted({ userId: req.user.id, jobId })
+    .catch((err) => logger.error('[KYC] notifySmileBasicSubmitted:', err?.message || err));
 
   res.status(202).json({
     success: true,
@@ -438,6 +456,10 @@ export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
     jobId,
   });
 
+  kycNotify
+    .notifySmileBiometricSubmitted({ userId: req.user.id, jobId })
+    .catch((err) => logger.error('[KYC] notifySmileBiometricSubmitted:', err?.message || err));
+
   res.status(202).json({
     success: true,
     message:
@@ -472,7 +494,20 @@ export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
             userId,
             docNumber,
           ]
-        ).catch((dbErr) => logger.error('[KYC] Failed to mark biometric job failed:', dbErr.message || dbErr));
+        )
+          .then((upd) => {
+            if (upd.rowCount > 0) {
+              return kycNotify.notifySmileKycWebhookResult({
+                userId,
+                jobId,
+                documentType: 'smile_biometric_kyc',
+                approved: false,
+                resultText:
+                  'Identity verification could not be submitted to the provider. Please try again or contact support.',
+              });
+            }
+          })
+          .catch((dbErr) => logger.error('[KYC] Failed to mark biometric job failed:', dbErr.message || dbErr));
       });
   });
 });
