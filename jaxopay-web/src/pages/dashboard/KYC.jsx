@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion as Motion } from 'framer-motion';
 import '@smile_identity/smart-camera-web';
 import {
@@ -50,6 +50,34 @@ const TIER2_DOCUMENT_TYPES = [
     { id: 'proof_of_address', name: 'Proof of address', icon: Home },
 ];
 
+const KYC_DOC_NUMBER_STORAGE_KEY = 'jaxopay-kyc-doc-numbers';
+const KYC_DOC_NUMBER_HISTORY_MAX = 15;
+
+function loadKycDocNumberHistory() {
+    try {
+        const raw = localStorage.getItem(KYC_DOC_NUMBER_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+function rememberKycDocNumber(documentType, rawValue) {
+    const trimmed = String(rawValue ?? '').trim();
+    if (!trimmed || !documentType) return;
+    const hist = loadKycDocNumberHistory();
+    const prev = Array.isArray(hist[documentType]) ? hist[documentType] : [];
+    const next = [trimmed, ...prev.filter((x) => x !== trimmed)].slice(0, KYC_DOC_NUMBER_HISTORY_MAX);
+    hist[documentType] = next;
+    try {
+        localStorage.setItem(KYC_DOC_NUMBER_STORAGE_KEY, JSON.stringify(hist));
+    } catch {
+        /* ignore quota / private mode */
+    }
+}
+
 const KYC = () => {
     const [kycStatus, setKycStatus] = useState(null);
     const [, setTierLimits] = useState(null);
@@ -70,6 +98,8 @@ const KYC = () => {
     const frontInputRef = useRef(null);
     const backInputRef = useRef(null);
     const selfieInputRef = useRef(null);
+    const manualSelfieVideoRef = useRef(null);
+    const manualSelfieStreamRef = useRef(null);
     const smileCameraHostRef = useRef(null);
     const smileSubmittingRef = useRef(false);
     const smileFormRef = useRef({
@@ -84,6 +114,8 @@ const KYC = () => {
     const [smileConfigured, setSmileConfigured] = useState(false);
     const [showSmileWizard, setShowSmileWizard] = useState(false);
     const [showCameraModal, setShowCameraModal] = useState(false);
+    const [showManualSelfieCamera, setShowManualSelfieCamera] = useState(false);
+    const [docNumberHistoryTick, setDocNumberHistoryTick] = useState(0);
     const [smileForm, setSmileForm] = useState({
         first_name: '',
         last_name: '',
@@ -201,6 +233,78 @@ const KYC = () => {
         };
     }, [showCameraModal]);
 
+    useEffect(() => {
+        if (!showManualSelfieCamera) return undefined;
+        let cancelled = false;
+        let stream;
+        (async () => {
+            try {
+                if (!navigator.mediaDevices?.getUserMedia) {
+                    setError('This browser does not support camera access. Use “Upload image” instead.');
+                    setShowManualSelfieCamera(false);
+                    return;
+                }
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+                });
+                if (cancelled) {
+                    stream.getTracks().forEach((t) => t.stop());
+                    return;
+                }
+                manualSelfieStreamRef.current = stream;
+                const el = manualSelfieVideoRef.current;
+                if (el) {
+                    el.srcObject = stream;
+                    await el.play().catch(() => {});
+                }
+            } catch {
+                if (!cancelled) {
+                    setError('Could not open the camera. Check permissions or use “Upload image”.');
+                    setShowManualSelfieCamera(false);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+            if (manualSelfieStreamRef.current) {
+                manualSelfieStreamRef.current.getTracks().forEach((t) => t.stop());
+                manualSelfieStreamRef.current = null;
+            }
+            const el = manualSelfieVideoRef.current;
+            if (el) el.srcObject = null;
+        };
+    }, [showManualSelfieCamera]);
+
+    const captureManualSelfie = () => {
+        const video = manualSelfieVideoRef.current;
+        if (!video || video.readyState < 2) {
+            setError('Camera is not ready yet. Wait a moment, then try again.');
+            return;
+        }
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        if (!w || !h) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, w, h);
+        canvas.toBlob(
+            (blob) => {
+                if (!blob) {
+                    setError('Could not capture the photo. Try again.');
+                    return;
+                }
+                const file = new File([blob], `selfie-with-id-${Date.now()}.jpg`, { type: 'image/jpeg' });
+                setSelfie(file);
+                setShowManualSelfieCamera(false);
+                setError(null);
+            },
+            'image/jpeg',
+            0.92
+        );
+    };
+
     const handleFileChange = (e, setter) => {
         const file = e.target.files[0];
         if (file) {
@@ -228,6 +332,11 @@ const KYC = () => {
             });
 
             if (result.success) {
+                const num = documentNumber.trim();
+                if (num) {
+                    rememberKycDocNumber(documentType, num);
+                    setDocNumberHistoryTick((t) => t + 1);
+                }
                 setSuccess('Documents submitted successfully! Verification usually takes 24-48 hours.');
                 setShowUploadForm(false);
                 resetForm();
@@ -260,6 +369,12 @@ const KYC = () => {
     const uploadDocOptions =
         currentTier === 'tier_0' ? TIER1_DOCUMENT_TYPES : TIER2_DOCUMENT_TYPES;
     const smileIdTypeOptions = getSmileIdTypeOptions(smileForm.country);
+
+    const docNumberSuggestions = useMemo(() => {
+        if (!documentType) return [];
+        const all = loadKycDocNumberHistory()[documentType];
+        return Array.isArray(all) ? all : [];
+    }, [documentType, docNumberHistoryTick]);
 
     if (loading) {
         return (
@@ -536,6 +651,51 @@ const KYC = () => {
                 </div>
             )}
 
+            {showManualSelfieCamera && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl max-w-lg w-full p-4 relative">
+                        <button
+                            type="button"
+                            className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-gray-100 dark:bg-gray-800"
+                            onClick={() => setShowManualSelfieCamera(false)}
+                            aria-label="Close camera"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white pr-10 mb-2">
+                            Selfie with your ID
+                        </h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                            Position your face and ID document in the frame, then capture. Use good lighting and avoid
+                            glare on the ID.
+                        </p>
+                        <video
+                            ref={manualSelfieVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full rounded-xl bg-black aspect-video object-cover"
+                        />
+                        <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                            <button
+                                type="button"
+                                onClick={captureManualSelfie}
+                                className="flex-1 py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg"
+                            >
+                                Capture photo
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowManualSelfieCamera(false)}
+                                className="flex-1 py-3 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium rounded-lg"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Upgrade Section — manual fallback */}
             {currentTier !== 'tier_2' && !showUploadForm && !showSmileWizard && (
                 <div className="card">
@@ -615,16 +775,26 @@ const KYC = () => {
 
                         {/* Document Number */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <label
+                                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                                htmlFor="kyc-manual-document-number"
+                            >
                                 Document number{' '}
                                 {documentType === 'proof_of_address' || documentType === 'utility_bill'
                                     ? '(optional)'
                                     : '*'}
                             </label>
                             <input
+                                id="kyc-manual-document-number"
                                 type="text"
                                 value={documentNumber}
                                 onChange={(e) => setDocumentNumber(e.target.value)}
+                                list={
+                                    documentType && docNumberSuggestions.length > 0
+                                        ? 'kyc-manual-doc-number-suggestions'
+                                        : undefined
+                                }
+                                autoComplete="off"
                                 placeholder={
                                     documentType === 'proof_of_address' || documentType === 'utility_bill'
                                         ? 'e.g. account or reference (optional)'
@@ -632,6 +802,19 @@ const KYC = () => {
                                 }
                                 className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
                             />
+                            {documentType && docNumberSuggestions.length > 0 && (
+                                <datalist id="kyc-manual-doc-number-suggestions">
+                                    {docNumberSuggestions.map((v) => (
+                                        <option key={v} value={v} />
+                                    ))}
+                                </datalist>
+                            )}
+                            {documentType && docNumberSuggestions.length > 0 && (
+                                <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                    Suggestions from your previous entries for this document type (browser
+                                    autocomplete).
+                                </p>
+                            )}
                         </div>
 
                         {/* File Uploads */}
@@ -698,32 +881,61 @@ const KYC = () => {
                                 />
                             </div>
 
-                            {/* Selfie */}
+                            {/* Selfie with ID — camera or gallery */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    Selfie with Document
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Selfie with document
                                 </label>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                                    Recommended: use the camera so your face and ID are visible together. Optional but
+                                    speeds up review.
+                                </p>
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setError(null);
+                                            setShowManualSelfieCamera(true);
+                                        }}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent-600 hover:bg-accent-700 text-white text-sm font-medium"
+                                    >
+                                        <Camera className="w-4 h-4" />
+                                        Use camera
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => selfieInputRef.current?.click()}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                                    >
+                                        <Upload className="w-4 h-4" />
+                                        Upload image
+                                    </button>
+                                </div>
                                 <div
-                                    onClick={() => selfieInputRef.current?.click()}
-                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${selfie ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 hover:border-primary-500'
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${selfie ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300'
                                         }`}
                                 >
                                     {selfie ? (
                                         <div className="text-primary-600">
                                             <Check className="w-8 h-8 mx-auto mb-2" />
-                                            <p className="text-sm">{selfie.name}</p>
+                                            <p className="text-sm font-medium">{selfie.name}</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelfie(null)}
+                                                className="mt-2 text-xs text-red-600 dark:text-red-400 underline"
+                                            >
+                                                Remove
+                                            </button>
                                         </div>
                                     ) : (
-                                        <>
-                                            <Camera className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                                            <p className="text-sm text-gray-500">Click to upload</p>
-                                        </>
+                                        <p className="text-sm text-gray-500">No selfie added yet</p>
                                     )}
                                 </div>
                                 <input
                                     ref={selfieInputRef}
                                     type="file"
                                     accept="image/*"
+                                    capture="user"
                                     onChange={(e) => handleFileChange(e, setSelfie)}
                                     className="hidden"
                                 />

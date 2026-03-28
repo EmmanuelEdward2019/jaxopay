@@ -5,6 +5,26 @@ import { sendSMS } from '../services/sms.service.js';
 import bcrypt from 'bcryptjs';
 import { providerRegistry } from '../orchestration/index.js';
 
+/** Split stored `document_url` (plain URL or JSON { front, back }) for admin review UI. */
+function parseKycDocumentUrls(documentUrl) {
+  if (documentUrl == null || documentUrl === '') {
+    return { document_front_url: null, document_back_url: null };
+  }
+  const s = String(documentUrl).trim();
+  if (s.startsWith('{')) {
+    try {
+      const j = JSON.parse(s);
+      return {
+        document_front_url: j.front ?? j.document_front_url ?? null,
+        document_back_url: j.back ?? j.document_back_url ?? null,
+      };
+    } catch {
+      return { document_front_url: s, document_back_url: null };
+    }
+  }
+  return { document_front_url: s, document_back_url: null };
+}
+
 // Get all users (admin only)
 export const getUsers = catchAsync(async (req, res) => {
   const {
@@ -443,13 +463,15 @@ export const getPendingKYC = catchAsync(async (req, res) => {
 
   const result = await query(
     `SELECT kd.id, kd.user_id, kd.document_type, kd.document_number,
-            kd.status, kd.submitted_at,
-            u.email, up.first_name, up.last_name
+            kd.document_url, kd.selfie_url, kd.status, kd.tier,
+            kd.created_at, kd.submitted_at, kd.updated_at,
+            u.email, u.phone,
+            up.first_name, up.last_name
      FROM kyc_documents kd
      JOIN users u ON kd.user_id = u.id
      LEFT JOIN user_profiles up ON u.id = up.user_id
      WHERE kd.status = 'pending'
-     ORDER BY kd.submitted_at ASC
+     ORDER BY COALESCE(kd.submitted_at, kd.created_at) ASC
      LIMIT $1 OFFSET $2`,
     [limit, offset]
   );
@@ -460,10 +482,31 @@ export const getPendingKYC = catchAsync(async (req, res) => {
      WHERE status = 'pending'`
   );
 
+  const documents = result.rows.map((row) => {
+    const { document_url, email, phone, first_name, last_name, user_id, selfie_url, ...rest } = row;
+    const { document_front_url, document_back_url } = parseKycDocumentUrls(document_url);
+    const nameParts = [first_name, last_name].filter(Boolean);
+    return {
+      ...rest,
+      user_id,
+      document_front_url,
+      document_back_url,
+      selfie_url: selfie_url || null,
+      user: {
+        id: user_id,
+        email: email || null,
+        phone: phone || null,
+        first_name: first_name || null,
+        last_name: last_name || null,
+        full_name: nameParts.length ? nameParts.join(' ') : null,
+      },
+    };
+  });
+
   res.status(200).json({
     success: true,
     data: {
-      documents: result.rows,
+      documents,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),

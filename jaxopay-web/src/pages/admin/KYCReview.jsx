@@ -12,7 +12,6 @@ import {
     ChevronLeft,
     ChevronRight,
     AlertTriangle,
-    Download,
 } from 'lucide-react';
 import adminService from '../../services/adminService';
 import { formatDateTime } from '../../utils/formatters';
@@ -21,6 +20,14 @@ const DOC_TYPES = {
     passport: { label: 'Passport', icon: FileText },
     national_id: { label: 'National ID', icon: FileText },
     drivers_license: { label: "Driver's License", icon: FileText },
+    id_card: { label: 'ID Card', icon: FileText },
+    nin: { label: 'NIN', icon: FileText },
+    bvn: { label: 'BVN', icon: FileText },
+    proof_of_address: { label: 'Proof of address', icon: FileText },
+    utility_bill: { label: 'Utility bill', icon: FileText },
+    proof_of_income: { label: 'Proof of income', icon: FileText },
+    smile_basic_kyc: { label: 'Identity check (provider)', icon: FileText },
+    smile_biometric_kyc: { label: 'Biometric / liveness', icon: FileText },
 };
 
 const KYCReview = () => {
@@ -118,10 +125,13 @@ const KYCReview = () => {
                                                     Pending
                                                 </span>
                                             </div>
-                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 flex-wrap">
                                                 <span className="flex items-center gap-1">
                                                     <User className="w-4 h-4" />
-                                                    {doc.user?.email || 'Unknown user'}
+                                                    {doc.user?.email ||
+                                                        doc.user?.full_name ||
+                                                        doc.user?.phone ||
+                                                        'Unknown user'}
                                                 </span>
                                                 <span className="flex items-center gap-1">
                                                     <Calendar className="w-4 h-4" />
@@ -229,24 +239,52 @@ const KYCReviewModal = ({ document, onClose, onVerify, loading }) => {
                     {/* User Info */}
                     <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 mb-6">
                         <h3 className="font-medium text-gray-900 dark:text-white mb-3">User Information</h3>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                             <div>
                                 <span className="text-gray-500">Email:</span>
-                                <span className="ml-2 text-gray-900 dark:text-white">{document.user?.email}</span>
+                                <span className="ml-2 text-gray-900 dark:text-white break-all">
+                                    {document.user?.email || '—'}
+                                </span>
                             </div>
                             <div>
                                 <span className="text-gray-500">Name:</span>
                                 <span className="ml-2 text-gray-900 dark:text-white">
-                                    {document.user?.first_name} {document.user?.last_name}
+                                    {document.user?.full_name ||
+                                        [document.user?.first_name, document.user?.last_name].filter(Boolean).join(' ') ||
+                                        '—'}
                                 </span>
                             </div>
                             <div>
+                                <span className="text-gray-500">Phone:</span>
+                                <span className="ml-2 text-gray-900 dark:text-white">{document.user?.phone || '—'}</span>
+                            </div>
+                            <div>
+                                <span className="text-gray-500">User ID:</span>
+                                <span className="ml-2 text-gray-900 dark:text-white font-mono text-xs break-all">
+                                    {document.user_id || document.user?.id || '—'}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="text-gray-500">Document type:</span>
+                                <span className="ml-2 text-gray-900 dark:text-white">
+                                    {DOC_TYPES[document.document_type]?.label || document.document_type}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="text-gray-500">Tier:</span>
+                                <span className="ml-2 text-gray-900 dark:text-white">{document.tier || '—'}</span>
+                            </div>
+                            <div>
                                 <span className="text-gray-500">Document Number:</span>
-                                <span className="ml-2 text-gray-900 dark:text-white font-mono">{document.document_number}</span>
+                                <span className="ml-2 text-gray-900 dark:text-white font-mono break-all">
+                                    {document.document_number}
+                                </span>
                             </div>
                             <div>
                                 <span className="text-gray-500">Submitted:</span>
-                                <span className="ml-2 text-gray-900 dark:text-white">{formatDateTime(document.created_at)}</span>
+                                <span className="ml-2 text-gray-900 dark:text-white">
+                                    {formatDateTime(document.submitted_at || document.created_at)}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -260,7 +298,7 @@ const KYCReviewModal = ({ document, onClose, onVerify, loading }) => {
                                     <img
                                         src={document.document_front_url}
                                         alt="Document Front"
-                                        className="w-full h-48 object-cover rounded-xl border border-gray-200 dark:border-gray-700"
+                                        className="w-full max-h-96 min-h-[12rem] object-contain rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"
                                     />
                                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
                                         <a
@@ -280,7 +318,7 @@ const KYCReviewModal = ({ document, onClose, onVerify, loading }) => {
                                     <img
                                         src={document.document_back_url}
                                         alt="Document Back"
-                                        className="w-full h-48 object-cover rounded-xl border border-gray-200 dark:border-gray-700"
+                                        className="w-full max-h-96 min-h-[12rem] object-contain rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"
                                     />
                                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
                                         <a
@@ -299,8 +337,8 @@ const KYCReviewModal = ({ document, onClose, onVerify, loading }) => {
                                 <div className="relative group">
                                     <img
                                         src={document.selfie_url}
-                                        alt="Selfie"
-                                        className="w-full h-48 object-cover rounded-xl border border-gray-200 dark:border-gray-700"
+                                        alt="Selfie with document"
+                                        className="w-full max-h-96 min-h-[12rem] object-contain rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"
                                     />
                                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
                                         <a
@@ -312,7 +350,7 @@ const KYCReviewModal = ({ document, onClose, onVerify, loading }) => {
                                             View Full
                                         </a>
                                     </div>
-                                    <p className="text-sm text-gray-500 mt-2 text-center">Selfie</p>
+                                    <p className="text-sm text-gray-500 mt-2 text-center">Selfie with document</p>
                                 </div>
                             )}
                         </div>
