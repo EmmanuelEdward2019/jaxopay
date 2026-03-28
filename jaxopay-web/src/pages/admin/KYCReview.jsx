@@ -30,6 +30,30 @@ const DOC_TYPES = {
     smile_biometric_kyc: { label: 'Biometric / liveness', icon: FileText },
 };
 
+/**
+ * Navigating directly to a long data: URL hits browser URL-length limits (blank tab).
+ * Opening a short blob: URL avoids that; fetch() decodes the data URL reliably.
+ */
+function openImageInNewTab(src) {
+    if (!src || typeof src !== 'string') return;
+
+    if (!src.startsWith('data:')) {
+        window.open(src, '_blank', 'noopener,noreferrer');
+        return;
+    }
+
+    fetch(src)
+        .then((r) => r.blob())
+        .then((blob) => {
+            const blobUrl = URL.createObjectURL(blob);
+            window.open(blobUrl, '_blank', 'noopener,noreferrer');
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 3_600_000);
+        })
+        .catch(() => {
+            window.open(src, '_blank', 'noopener,noreferrer');
+        });
+}
+
 const KYCReview = () => {
     const [documents, setDocuments] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -301,14 +325,13 @@ const KYCReviewModal = ({ document, onClose, onVerify, loading }) => {
                                         className="w-full max-h-96 min-h-[12rem] object-contain rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"
                                     />
                                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
-                                        <a
-                                            href={document.document_front_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
+                                        <button
+                                            type="button"
+                                            onClick={() => openImageInNewTab(document.document_front_url)}
                                             className="px-4 py-2 bg-white text-gray-900 font-medium rounded-lg"
                                         >
                                             View Full
-                                        </a>
+                                        </button>
                                     </div>
                                     <p className="text-sm text-gray-500 mt-2 text-center">Front</p>
                                 </div>
@@ -321,14 +344,13 @@ const KYCReviewModal = ({ document, onClose, onVerify, loading }) => {
                                         className="w-full max-h-96 min-h-[12rem] object-contain rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"
                                     />
                                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
-                                        <a
-                                            href={document.document_back_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
+                                        <button
+                                            type="button"
+                                            onClick={() => openImageInNewTab(document.document_back_url)}
                                             className="px-4 py-2 bg-white text-gray-900 font-medium rounded-lg"
                                         >
                                             View Full
-                                        </a>
+                                        </button>
                                     </div>
                                     <p className="text-sm text-gray-500 mt-2 text-center">Back</p>
                                 </div>
@@ -341,14 +363,13 @@ const KYCReviewModal = ({ document, onClose, onVerify, loading }) => {
                                         className="w-full max-h-96 min-h-[12rem] object-contain rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"
                                     />
                                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
-                                        <a
-                                            href={document.selfie_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
+                                        <button
+                                            type="button"
+                                            onClick={() => openImageInNewTab(document.selfie_url)}
                                             className="px-4 py-2 bg-white text-gray-900 font-medium rounded-lg"
                                         >
                                             View Full
-                                        </a>
+                                        </button>
                                     </div>
                                     <p className="text-sm text-gray-500 mt-2 text-center">Selfie with document</p>
                                 </div>
