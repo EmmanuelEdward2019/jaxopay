@@ -57,6 +57,7 @@ const migrate = async () => {
     -- Add indexes
     CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read);
+    CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id) WHERE is_read = false;
     CREATE INDEX IF NOT EXISTS idx_announcements_is_active ON announcements(is_active);
     CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON support_tickets(user_id);
     CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);

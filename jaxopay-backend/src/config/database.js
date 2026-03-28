@@ -6,7 +6,20 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// Database configuration
+const isRemoteHost =
+  (process.env.DB_HOST || '').includes('supabase') ||
+  (process.env.DB_HOST || '').includes('pooler');
+
+const poolMax = parseInt(process.env.DB_POOL_MAX || '', 10);
+const max =
+  Number.isFinite(poolMax) && poolMax > 0
+    ? poolMax
+    : isRemoteHost
+      ? 15
+      : 20;
+
+const statementTimeoutMs = parseInt(process.env.DB_STATEMENT_TIMEOUT_MS || '25000', 10);
+
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT) || 5432,
@@ -14,21 +27,21 @@ const dbConfig = {
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD,
   ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 30000, // Return an error after 30 seconds if connection could not be established
+  max,
+  idleTimeoutMillis: isRemoteHost ? 20000 : 30000,
+  connectionTimeoutMillis: isRemoteHost ? 60000 : 30000,
 };
 
-// Create connection pool
+if (Number.isFinite(statementTimeoutMs) && statementTimeoutMs > 0) {
+  dbConfig.options = `-c statement_timeout=${statementTimeoutMs}`;
+}
+
 export const pool = new Pool(dbConfig);
 
-// Pool error handler
-pool.on('error', (err, client) => {
-  logger.error('Unexpected error on idle client', err);
-  process.exit(-1);
+pool.on('error', (err) => {
+  logger.error('Unexpected error on idle database client:', err.message);
 });
 
-// Test database connection
 export const connectDatabase = async () => {
   try {
     const client = await pool.connect();
@@ -42,21 +55,24 @@ export const connectDatabase = async () => {
   }
 };
 
-// Query helper function
 export const query = async (text, params) => {
   const start = Date.now();
   try {
     const result = await pool.query(text, params);
     const duration = Date.now() - start;
-    logger.debug('Executed query', { text, duration, rows: result.rowCount });
+    if (duration > 5000) {
+      logger.warn('Slow query', { text: text.slice(0, 120), duration, rows: result.rowCount });
+    } else {
+      logger.debug('Executed query', { text: text.slice(0, 120), duration, rows: result.rowCount });
+    }
     return result;
   } catch (error) {
-    logger.error('Query error:', { text, error: error.message });
+    const duration = Date.now() - start;
+    logger.error('Query error:', { text: text.slice(0, 120), duration, error: error.message });
     throw error;
   }
 };
 
-// Transaction helper
 export const transaction = async (callback) => {
   const client = await pool.connect();
   try {
@@ -73,4 +89,3 @@ export const transaction = async (callback) => {
 };
 
 export default pool;
-

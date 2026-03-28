@@ -218,23 +218,28 @@ const KYC = () => {
 
         setSubmitting(true);
         setError(null);
-        const result = await kycService.submitDocument({
-            document_type: documentType,
-            document_number: documentNumber.trim(),
-            document_front: documentFront,
-            document_back: documentBack,
-            selfie: selfie,
-        });
+        try {
+            const result = await kycService.submitDocument({
+                document_type: documentType,
+                document_number: documentNumber.trim(),
+                document_front: documentFront,
+                document_back: documentBack,
+                selfie: selfie,
+            });
 
-        if (result.success) {
-            setSuccess('Documents submitted successfully! Verification usually takes 24-48 hours.');
-            setShowUploadForm(false);
-            resetForm();
-            fetchKYCData();
-        } else {
-            setError(result.error);
+            if (result.success) {
+                setSuccess('Documents submitted successfully! Verification usually takes 24-48 hours.');
+                setShowUploadForm(false);
+                resetForm();
+                fetchKYCData();
+            } else {
+                setError(result.error);
+            }
+        } catch (e) {
+            setError(e?.message || 'Submission failed. Please try again.');
+        } finally {
+            setSubmitting(false);
         }
-        setSubmitting(false);
     };
 
     const resetForm = () => {

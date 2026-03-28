@@ -13,9 +13,25 @@ const NotificationDropdown = () => {
     const dropdownRef = useRef(null);
 
     useEffect(() => {
-        fetchUnreadCount();
-        const interval = setInterval(fetchUnreadCount, 60000); // Poll every minute
-        return () => clearInterval(interval);
+        const pollMs = 180000; // 3 min — reduces load on remote DB (e.g. Supabase pooler)
+
+        const tick = () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+            fetchUnreadCount();
+        };
+
+        tick();
+        const interval = setInterval(tick, pollMs);
+
+        const onVis = () => {
+            if (document.visibilityState === 'visible') fetchUnreadCount();
+        };
+        document.addEventListener('visibilitychange', onVis);
+
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onVis);
+        };
     }, []);
 
     useEffect(() => {
