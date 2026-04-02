@@ -49,10 +49,11 @@ export const handleWebhook = catchAsync(async (req, res) => {
             case 'paystack':
                 await processPaystack(body);
                 break;
-            case 'smile_identity':
-            case 'smile':
             case 'smile-id':
                 await processSmileIdentity(body);
+                break;
+            case 'quidax':
+                await processQuidax(body);
                 break;
             default:
                 logger.info(`[WEBHOOK] No handler for ${provider}, acknowledged.`);
@@ -397,5 +398,101 @@ async function refundFailedPayment(reference) {
         logger.info(`[WEBHOOK] Refunded failed payment ${reference}: ${refund} ${source_currency}`);
     } catch (err) {
         logger.error('[WEBHOOK] refundFailedPayment error:', err);
+    }
+}
+
+// ─────────────────────────────────────────────
+// Quidax Webhooks
+// ─────────────────────────────────────────────
+async function processQuidax(payload) {
+    const event = payload.event;
+    const data = payload.data;
+
+    logger.info(`[WEBHOOK] Quidax event: ${event}`, { id: data?.id });
+
+    switch (event) {
+        case 'deposit.successful':
+        case 'deposit.success': {
+            // Find wallet by address and tag
+            const address = data.address;
+            const currency = data.currency?.toUpperCase();
+            const tag = data.address_info?.tag || data.tag || '';
+
+            // Map and credit
+            await creditUserWalletByQuidax(data);
+            break;
+        }
+        case 'withdraw.successful':
+        case 'withdraw.success': {
+            await updateTransactionStatus(data.id, 'completed', data);
+            break;
+        }
+        case 'withdraw.failed':
+        case 'withdraw.rejected': {
+            await updateTransactionStatus(data.id, 'failed', data);
+            break;
+        }
+        default:
+            logger.info(`[WEBHOOK] Quidax unhandled event: ${event}`);
+    }
+}
+
+async function creditUserWalletByQuidax(data) {
+    const { amount, currency, address, id: quidaxTxId } = data;
+    const tag = data.address_info?.tag || data.tag || '';
+
+    try {
+        await transaction(async (client) => {
+            // 1. Find wallet
+            const walletRes = await client.query(
+                `SELECT id, user_id FROM wallets 
+                 WHERE (crypto_address = $1 OR crypto_address = $2) 
+                   AND currency = $3 
+                   AND wallet_type = 'crypto'`,
+                [address, address.toLowerCase(), currency.toUpperCase()]
+            );
+
+            if (walletRes.rows.length === 0) {
+                logger.warn(`[WEBHOOK] Quidax deposit: No wallet found for address ${address} (${currency})`);
+                return;
+            }
+
+            const { id: walletId, user_id: userId } = walletRes.rows[0];
+
+            // 2. Check for duplicate (idempotency)
+            const txRes = await client.query(
+                'SELECT id FROM wallet_transactions WHERE metadata->>\'quidax_tx_id\' = $1',
+                [quidaxTxId]
+            );
+            if (txRes.rows.length > 0) {
+                logger.info(`[WEBHOOK] Quidax deposit already processed: ${quidaxTxId}`);
+                return;
+            }
+
+            // 3. Update balance
+            await client.query(
+                'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
+                [amount, walletId]
+            );
+
+            // 4. Record transaction
+            await client.query(
+                `INSERT INTO wallet_transactions 
+                 (wallet_id, transaction_type, amount, currency, status, description, metadata)
+                 VALUES ($1, 'deposit', $2, $3, 'completed', $4, $5)`,
+                [
+                    walletId,
+                    amount,
+                    currency.toUpperCase(),
+                    `Crypto deposit via Quidax (${quidaxTxId})`,
+                    JSON.stringify({ quidax_tx_id: quidaxTxId, address, tag, source: 'quidax' })
+                ]
+            );
+
+            logger.info(`[WEBHOOK] ✅ Quidax Credited: ${amount} ${currency} to wallet ${walletId}`);
+        });
+    } catch (err) {
+        logger.error('[WEBHOOK] creditUserWalletByQuidax error:', err);
+        throw err;
     }
 }

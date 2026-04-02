@@ -101,7 +101,41 @@ const cryptoService = {
     }
   },
 
-  // Get MEXC crypto config (networks, fees)
+  // Get Order Book (Quidax)
+  getOrderBook: async (market, limit = 50) => {
+    try {
+      const response = await apiClient.get('/crypto/order-book', {
+        params: { market, limit },
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Create Order (Trading)
+  createOrder: async (payload) => {
+    try {
+      const response = await apiClient.post('/crypto/orders', payload);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get Instant Swap Quote
+  getSwapQuote: async (payload) => {
+    try {
+      const response = await apiClient.get('/crypto/swap/quote', {
+        params: payload,
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get Quidax crypto config (networks, fees)
   getConfig: async () => {
     try {
       const response = await apiClient.get('/crypto/config');

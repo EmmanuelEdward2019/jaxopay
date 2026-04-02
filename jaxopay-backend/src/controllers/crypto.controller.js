@@ -1,7 +1,7 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
-import mexc from '../orchestration/adapters/crypto/MexcAdapter.js';
+import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
 
 // Get supported cryptocurrencies
@@ -118,21 +118,24 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
       [netAmount, fiatWallet.rows[0].id]
     );
 
-    // Optional: Synchronize Liquidity with MEXC
-    let mexcOrderId = null;
+    // Optional: Synchronize Liquidity with Quidax
+    let quidaxSwapId = null;
     try {
-      if (process.env.MEXC_ACCESS_KEY && process.env.MEXC_SECRET_KEY) {
-        const symbol = `${crypto_currency.toUpperCase()}USDT`;
-        const mexcRes = await mexc.createOrder({
-          symbol,
-          side: 'SELL',
-          type: 'MARKET',
-          quantity: crypto_amount
+      if (process.env.QUIDAX_SECRET_KEY) {
+        // Use Instant Swap for liquidity
+        const quote = await quidax.getSwapQuote({
+          from: crypto_currency,
+          to: fiat_currency,
+          amount: crypto_amount,
+          side: 'from'
         });
-        mexcOrderId = mexcRes.orderId;
+        if (quote && quote.id) {
+          const swap = await quidax.executeSwap(quote.id);
+          quidaxSwapId = swap.id;
+        }
       }
     } catch (e) {
-      logger.warn('[Exchange] MEXC Liquidity Sync Failed (Trade still processed internally):', e.message);
+      logger.warn('[Exchange] Quidax Swap Sync Failed (Processed internally):', e.message);
     }
 
     // Create crypto transaction
@@ -150,8 +153,8 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
           fiat_amount: fiatAmount,
           fee,
           net_amount: netAmount,
-          mexc_order_id: mexcOrderId,
-          source: 'mexc_live'
+          quidax_swap_id: quidaxSwapId,
+          source: 'quidax_live'
         }),
       ]
     );
@@ -270,24 +273,23 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       [cryptoAmount, cryptoWallet.rows[0].id]
     );
 
-    // Optional: Synchronize Liquidity with MEXC
-    let mexcOrderId = null;
+    // Optional: Synchronize Liquidity with Quidax
+    let quidaxSwapId = null;
     try {
-      if (process.env.MEXC_ACCESS_KEY && process.env.MEXC_SECRET_KEY) {
-        const symbol = `${crypto_currency.toUpperCase()}USDT`;
-        const usdRate = await fxService.getExchangeRate(fiat_currency, 'USD');
-        const quoteQty = (fiat_amount * (usdRate?.rate || 1 / 1650)).toFixed(2);
-
-        const mexcRes = await mexc.createOrder({
-          symbol,
-          side: 'BUY',
-          type: 'MARKET',
-          quoteOrderQty: quoteQty
+      if (process.env.QUIDAX_SECRET_KEY) {
+        const quote = await quidax.getSwapQuote({
+          from: fiat_currency,
+          to: crypto_currency,
+          amount: fiat_amount,
+          side: 'from'
         });
-        mexcOrderId = mexcRes.orderId;
+        if (quote && quote.id) {
+          const swap = await quidax.executeSwap(quote.id);
+          quidaxSwapId = swap.id;
+        }
       }
     } catch (e) {
-      logger.warn('[Exchange] MEXC Liquidity Sync Failed (Trade still processed internally):', e.message);
+      logger.warn('[Exchange] Quidax Swap Sync Failed (Processed internally):', e.message);
     }
 
     // Create fiat transaction
@@ -304,8 +306,8 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
           crypto_currency: crypto_currency.toUpperCase(),
           crypto_amount: cryptoAmount,
           fee,
-          mexc_order_id: mexcOrderId,
-          source: 'mexc_live'
+          quidax_swap_id: quidaxSwapId,
+          source: 'quidax_live'
         }),
       ]
     );
@@ -401,27 +403,27 @@ async function getLiveExchangeRate(from, to) {
   to = to.toUpperCase();
 
   try {
-    // 1. Check if it's a direct crypto pair MEXC handles
-    let rate = await mexc.getExchangeRate(from, to);
-    if (rate !== null) return rate;
+    // 1. Try Quidax (Ticker)
+    let rate = await quidax.getExchangeRate(from, to);
+    if (rate !== null && rate > 0) return rate;
 
-    // 2. Identify Crypto vs Fiat to bridge through USD
+    // 2. Identify Crypto vs Fiat to bridge through USD/NGN
     const cryptoAssets = ['BTC', 'ETH', 'USDT', 'BNB', 'SOL', 'XRP', 'USDC', 'ADA', 'DOGE', 'TRX'];
     const isFromCrypto = cryptoAssets.includes(from);
     const isToCrypto = cryptoAssets.includes(to);
 
     // Case: Crypto to Fiat (e.g. BTC to NGN)
     if (isFromCrypto && !isToCrypto) {
-      const cryptoToUsd = await mexc.getExchangeRate(from, 'USDT') || await mexc.getExchangeRate(from, 'USDC') || 1.0;
+      const cryptoToUsd = (await quidax.getExchangeRate(from, 'USDT')) || (await quidax.getExchangeRate(from, 'USDC')) || 1.0;
       const usdToFiat = await fxService.getExchangeRate('USD', to);
-      return cryptoToUsd * (usdToFiat?.rate || 1.0);
+      return cryptoToUsd * (usdToFiat?.rate || (to === 'NGN' ? 1650 : 1.0));
     }
 
     // Case: Fiat to Crypto (e.g. NGN to BTC)
     if (!isFromCrypto && isToCrypto) {
       const fiatToUsd = await fxService.getExchangeRate(from, 'USD');
-      const usdToCrypto = await mexc.getExchangeRate('USDT', to) || await mexc.getExchangeRate('USDC', to) || 1.0;
-      return (fiatToUsd?.rate || 1 / 1650) * usdToCrypto;
+      const usdToCrypto = (await quidax.getExchangeRate('USDT', to)) || (await quidax.getExchangeRate('USDC', to)) || 1.0;
+      return (fiatToUsd?.rate || (from === 'NGN' ? 1 / 1650 : 1.0)) * usdToCrypto;
     }
 
     // Case: Fiat to Fiat
@@ -459,13 +461,30 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
   }
 
   try {
-    const data = await mexc.getDepositAddress(coin, network);
+    const dataResponse = await quidax.getDepositAddress(coin.toLowerCase());
+    // Direct Quidax mapping: data.data.address
+    const addressData = dataResponse?.data || dataResponse;
+    const address = addressData.address;
+    const tag = addressData.tag || addressData.memo || '';
+
+    // Persist to DB for webhook matching
+    await query(
+      'UPDATE wallets SET crypto_address = $1, crypto_tag = $2, updated_at = NOW() WHERE user_id = $3 AND currency = $4 AND wallet_type = \'crypto\'',
+      [address, tag, req.user.id, coin.toUpperCase()]
+    );
+
     res.status(200).json({
       success: true,
-      data
+      data: {
+        address,
+        coin: coin.toUpperCase(),
+        tag,
+        memo: tag,
+        network: addressData.network || network || 'Default',
+      }
     });
   } catch (err) {
-    logger.error(`[CryptoDeposit] MEXC Failed for ${coin}:`, err.message);
+    logger.error(`[CryptoDeposit] Quidax Failed for ${coin}:`, err.message);
 
     // Provide a mock address as fallback if not in production or keys missing
     if (process.env.NODE_ENV !== 'production' || err.message.includes('not configured')) {
@@ -528,19 +547,19 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
       throw new AppError('Insufficient balance for withdrawal', 400);
     }
 
-    // 2. Perform withdrawal on MEXC
-    let mexcWithdrawId = null;
+    // 2. Perform withdrawal on Quidax
+    let quidaxWithdrawId = null;
     try {
-      const mexcRes = await mexc.withdraw({
-        coin,
+      const withdrawRes = await quidax.withdraw({
+        currency: coin,
         network,
-        address,
+        fund_uid: address,
         amount,
-        memo
+        fund_uid2: memo
       });
-      mexcWithdrawId = mexcRes.id;
+      quidaxWithdrawId = withdrawRes?.data?.id || withdrawRes?.id;
     } catch (err) {
-      logger.error(`[CryptoWithdraw] MEXC Failed:`, err.message);
+      logger.error(`[CryptoWithdraw] Quidax Failed:`, err.message);
       throw new AppError(`External withdrawal failed: ${err.message}`, 502);
     }
 
@@ -564,7 +583,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
         JSON.stringify({
           network,
           address,
-          mexc_withdraw_id: mexcWithdrawId,
+          quidax_withdraw_id: quidaxWithdrawId,
           memo
         })
       ]
@@ -630,30 +649,23 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
     await client.query('UPDATE wallets SET balance = balance - $1 WHERE id = $2', [amount, fromWallet.rows[0].id]);
     await client.query('UPDATE wallets SET balance = balance + $1 WHERE id = $2', [netAmount, toWallet.rows[0].id]);
 
-    // 5. MEXC Liquidity sync
+    // 5. Quidax Liquidity sync (Instant Swap)
+    let quidaxSwapId = null;
     try {
-      if (process.env.MEXC_ACCESS_KEY && process.env.MEXC_SECRET_KEY) {
-        // Simple logic: Sell from_coin for USDT, then Buy to_coin with USDT
-        // Direct pairs could be used too if available
-        await mexc.createOrder({
-          symbol: `${from_coin.toUpperCase()}USDT`,
-          side: 'SELL',
-          type: 'MARKET',
-          quantity: amount
+      if (process.env.QUIDAX_SECRET_KEY) {
+        const quote = await quidax.getSwapQuote({
+          from: from_coin,
+          to: to_coin,
+          amount: amount,
+          side: 'from'
         });
-
-        const usdRate = await mexc.getExchangeRate(from_coin, 'USDT');
-        const quoteQty = (amount * usdRate).toFixed(2);
-
-        await mexc.createOrder({
-          symbol: `${to_coin.toUpperCase()}USDT`,
-          side: 'BUY',
-          type: 'MARKET',
-          quoteOrderQty: quoteQty
-        });
+        if (quote && quote.id) {
+          const swap = await quidax.executeSwap(quote.id);
+          quidaxSwapId = swap.id;
+        }
       }
     } catch (e) {
-      logger.warn('[CryptoSwap] MEXC Sync partial/failed:', e.message);
+      logger.warn('[CryptoSwap] Quidax Sync partial/failed:', e.message);
     }
 
     // 6. Record transactions
@@ -681,13 +693,16 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
 // Get crypto config (networks, etc)
 export const getCryptoConfig = catchAsync(async (req, res) => {
   try {
-    const data = await mexc.getCurrencyConfig();
+    // Quidax mapping: getAllWallets provides currency configs too 
+    // In a real scenario, we might want a specific Currency Config endpoint if Quidax has one.
+    // For now, providing a normalized mock-hybrid or the basic coin list.
+    const dataResponse = await quidax.getAllWallets();
     res.status(200).json({
       success: true,
-      data
+      data: dataResponse
     });
   } catch (err) {
-    logger.error('[CryptoConfig] MEXC Failed:', err.message);
+    logger.error('[CryptoConfig] Quidax Failed:', err.message);
 
     // Provide mock config if not in production or keys missing
     if (process.env.NODE_ENV !== 'production' || err.message.includes('not configured')) {
@@ -714,6 +729,26 @@ export const getCryptoConfig = catchAsync(async (req, res) => {
       });
     }
 
-    res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// Get order book
+export const getOrderBook = catchAsync(async (req, res) => {
+  const { market, limit } = req.query;
+  const data = await quidax.getOrderBook(market || 'btcusdt', limit);
+  res.status(200).json({ success: true, data });
+});
+
+// Create trading order
+export const createOrder = catchAsync(async (req, res) => {
+  const { market, side, type, volume, price, total } = req.body;
+  const data = await quidax.createOrder({ market, side, type, volume, price, total });
+  res.status(201).json({ success: true, data });
+});
+
+// Get swap quote
+export const getSwapQuote = catchAsync(async (req, res) => {
+  const { from, to, amount, side } = req.query;
+  const data = await quidax.getSwapQuote({ from, to, amount, side });
+  res.status(200).json({ success: true, data });
 });

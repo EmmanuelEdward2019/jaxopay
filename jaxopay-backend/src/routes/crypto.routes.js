@@ -12,7 +12,10 @@ import {
   getExchangeHistory,
   getCryptoDepositAddress,
   withdrawCrypto,
-  getCryptoConfig
+  getCryptoConfig,
+  getOrderBook,
+  createOrder,
+  getSwapQuote
 } from '../controllers/crypto.controller.js';
 
 const router = express.Router();
@@ -100,6 +103,15 @@ router.post(
 
 // Get crypto config (networks, etc)
 router.get('/config', getCryptoConfig);
+
+// Get order book
+router.get('/order-book', getOrderBook);
+
+// Create order (spot/limit)
+router.post('/orders', requireKYCTier(2), createOrder);
+
+// Get swap quote
+router.get('/swap/quote', requireKYCTier(2), getSwapQuote);
 
 export default router;
 

@@ -35,6 +35,8 @@ class WebhookVerifier {
             case 'smile':
             case 'smile-id':
                 return this._verifySmileIdentity(body);
+            case 'quidax':
+                return this._verifyQuidax(headers, payload);
             default:
                 logger.warn(`[WEBHOOK] No verification for: ${provider}`);
                 return process.env.NODE_ENV === 'development';
@@ -134,6 +136,36 @@ class WebhookVerifier {
             return true;
         }
         return verifySmileCallbackSignature(parsed);
+    }
+
+    /**
+     * Quidax (HMAC-SHA256)
+     * Header: quidax-signature (t=timestamp,v1=signature) or raw hex
+     */
+    _verifyQuidax(headers, payload) {
+        const secret = process.env.QUIDAX_WEBHOOK_SECRET || process.env.QUIDAX_SECRET_KEY;
+        const signatureHeader = headers['quidax-signature'] || headers['x-quidax-signature'];
+        if (!secret) return process.env.NODE_ENV === 'development';
+        if (!signatureHeader) return false;
+
+        let signature = signatureHeader;
+        let timestamp = null;
+
+        // Parse t=...,v1=... format if present
+        if (signatureHeader.includes('v1=')) {
+            const parts = signatureHeader.split(',');
+            const tPart = parts.find(p => p.startsWith('t='));
+            const vPart = parts.find(p => p.startsWith('v1='));
+            if (tPart) timestamp = tPart.split('=')[1];
+            if (vPart) signature = vPart.split('=')[1];
+        }
+
+        // If timestamp is present, it's often prepended to the payload with a dot
+        // signed_payload = timestamp + "." + payload
+        const toSign = timestamp ? `${timestamp}.${payload}` : payload;
+        const hash = crypto.createHmac('sha256', secret).update(toSign).digest('hex');
+
+        return hash === signature;
     }
 }
 
