@@ -183,8 +183,9 @@ async function processVTpass(payload) {
                  WHERE user_id = $2 AND currency = $3`,
                 [refundAmount, user_id, currency]
             );
-            await query('UPDATE bill_payments SET status = \'refunded\' WHERE reference = $1', [requestId]);
-            logger.info(`[WEBHOOK] VTpass failed bill refunded: ${requestId} → ₦${refundAmount}`);
+            // transaction_status enum does not support 'refunded'; use 'reversed'
+            await query('UPDATE bill_payments SET status = \'reversed\' WHERE reference = $1', [requestId]);
+            logger.info(`[WEBHOOK] VTpass failed bill reversed: ${requestId} → ₦${refundAmount}`);
         }
     }
 

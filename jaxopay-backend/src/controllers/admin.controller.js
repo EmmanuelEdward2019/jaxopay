@@ -970,8 +970,8 @@ export const processRefund = catchAsync(async (req, res) => {
 
   const tx = txResult.rows[0];
 
-  if (tx.status === 'refunded') {
-    throw new AppError('Transaction is already refunded', 400);
+  if (tx.status === 'reversed') {
+    throw new AppError('Transaction is already reversed/refunded', 400);
   }
 
   // Perform refund via LedgerService (to be imported if needed, or manual query here)
@@ -979,7 +979,7 @@ export const processRefund = catchAsync(async (req, res) => {
   await transaction(async (client) => {
     // 1. Update original transaction status
     await client.query(
-      "UPDATE transactions SET status = 'refunded', updated_at = NOW() WHERE id = $1",
+      "UPDATE transactions SET status = 'reversed', updated_at = NOW() WHERE id = $1",
       [transactionId]
     );
 

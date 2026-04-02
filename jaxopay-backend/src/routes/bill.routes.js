@@ -10,6 +10,7 @@ import {
   getBillHistory,
   getBillPayment,
   getBillCategories,
+  getSmeTransactionStatus,
 } from '../controllers/bill.controller.js';
 
 const router = express.Router();
@@ -20,6 +21,14 @@ router.use(requireFeature('bill_payments'));
 
 // Get bill categories
 router.get('/categories', getBillCategories);
+
+// Strowallet SME transaction status (reference from buy sme response)
+router.get(
+  '/sme-transaction',
+  query('reference').isString().trim().notEmpty(),
+  validate,
+  getSmeTransactionStatus
+);
 
 // Get bill providers
 router.get(
@@ -54,6 +63,8 @@ router.post(
   '/validate',
   body('provider_id').isString(),
   body('account_number').isString(),
+  body('category').optional().isString(),
+  body('bill_type').optional().isString(),
   validate,
   validateBillAccount
 );

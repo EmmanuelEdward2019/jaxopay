@@ -138,9 +138,12 @@ apiClient.interceptors.response.use(
     if (!error.response) {
       const msg = error.message || '';
       if (error.code === 'ECONNABORTED' || /timeout/i.test(msg)) {
+        const url = String(originalRequest?.url || '');
+        const isBill = url.includes('/bills/');
         return Promise.reject({
-          message:
-            'The request took too long. Try again on a stable connection — verification uploads can be large.',
+          message: isBill
+            ? 'This bill step is taking longer than usual (provider checks can be slow). Check your connection and try again.'
+            : 'The request took too long. Try again on a stable connection — verification uploads can be large.',
           status: 0,
           data: null,
         });

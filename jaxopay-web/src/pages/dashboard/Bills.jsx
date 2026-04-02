@@ -129,12 +129,47 @@ const Bills = () => {
         }
     };
 
-    const handleProviderSelect = (provider) => {
-        setSelectedProvider(provider);
+    const extractProviderList = (result) => {
+        const payload = result?.data;
+        if (Array.isArray(payload?.data)) return payload.data;
+        if (Array.isArray(payload)) return payload;
+        if (Array.isArray(payload?.providers)) return payload.providers;
+        return [];
+    };
+
+    /** Strowallet: first data response is networks only; refetch with ?network= to load bundle plans. */
+    const handleProviderSelect = async (provider) => {
         setSelectedVariation(null);
         setAmount('');
         setAccountNumber('');
         setValidatedAccount(null);
+
+        if (selectedCategory?.id === 'data') {
+            setLoading(true);
+            setError(null);
+            try {
+                const result = await billService.getProviders('data', 'NG', { network: provider.id });
+                const list = extractProviderList(result);
+                const enriched = list[0];
+                const vars = enriched?.variations || [];
+                if (!result.success || !enriched || vars.length === 0) {
+                    setError(
+                        result.error ||
+                            'No data plans returned for this network. Pick another network or try again later.'
+                    );
+                    setLoading(false);
+                    return;
+                }
+                setSelectedProvider(enriched);
+            } catch {
+                setError('Could not load data plans. Check your connection and try again.');
+                setLoading(false);
+                return;
+            }
+            setLoading(false);
+        } else {
+            setSelectedProvider(provider);
+        }
         setStep(3);
     };
 
@@ -212,13 +247,16 @@ const Bills = () => {
         ? false  // electricity uses meterType toggle, not variations
         : (selectedProvider?.variations?.length ?? 0) > 0;
     const needsValidation = selectedCategory?.requiresValidation;
+    const needsBundlePlan = selectedCategory?.id === 'data' || selectedCategory?.id === 'cable_tv';
     // For electricity: must have verified account AND meterType selected
-    // For data/cable with plans: must have selected a plan
+    // For data/cable: must pick a bundle / package (variation_code)
     const canProceed = needsValidation
         ? (validatedAccount && amount && parseFloat(amount) > 0 &&
             (selectedCategory?.id !== 'electricity' || meterType) &&
+            (!needsBundlePlan || selectedVariation) &&
             (!hasVariations || selectedVariation))
         : (accountNumber && accountNumber.length >= 10 && amount && parseFloat(amount) > 0 &&
+            (!needsBundlePlan || selectedVariation) &&
             (!hasVariations || selectedVariation));
 
     return (
@@ -437,21 +475,25 @@ const Bills = () => {
                                                     'Select Plan'}
                                         </label>
                                         <div className="space-y-2 max-h-56 overflow-y-auto pr-1 rounded-lg">
-                                            {selectedProvider.variations.map((v) => (
+                                            {selectedProvider.variations.map((v, idx) => (
                                                 <button
-                                                    key={v.variation_code}
-                                                    onClick={() => { setSelectedVariation(v); setAmount(String(v.variation_amount || v.price || '')); }}
+                                                    key={v.variation_code || `plan-${idx}`}
+                                                    onClick={() => {
+                                                        setSelectedVariation(v);
+                                                        const price = v.amount ?? v.variation_amount ?? v.price;
+                                                        setAmount(price != null && price !== '' ? String(price) : '');
+                                                    }}
                                                     className={`w - full flex items - center justify - between px - 4 py - 3 rounded - lg border - 2 transition - all text - left ${selectedVariation?.variation_code === v.variation_code
                                                         ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
                                                         : 'border-gray-200 dark:border-gray-700 hover:border-accent-400'
                                                         } `}
                                                 >
                                                     <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{v.name}</span>
-                                                    {(v.variation_amount || v.price) && (
+                                                    {(v.amount != null && v.amount !== '') || v.variation_amount || v.price ? (
                                                         <span className="text-sm font-bold text-accent-600">
-                                                            ₦{parseFloat(v.variation_amount || v.price).toLocaleString()}
+                                                            ₦{parseFloat(v.amount ?? v.variation_amount ?? v.price).toLocaleString()}
                                                         </span>
-                                                    )}
+                                                    ) : null}
                                                 </button>
                                             ))}
                                         </div>
