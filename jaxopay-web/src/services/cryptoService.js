@@ -159,6 +159,16 @@ const cryptoService = {
     }
   },
 
+  // Get all markets
+  getMarkets: async () => {
+    try {
+      const response = await apiClient.get('/crypto/markets');
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
   // Get Quidax crypto config (networks, fees)
   getConfig: async () => {
     try {

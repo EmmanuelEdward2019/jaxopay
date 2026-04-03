@@ -10,9 +10,10 @@ const TradingViewChart = ({ symbol = 'USDTNGN', theme = 'light' }) => {
     script.async = true;
     script.onload = () => {
       if (typeof TradingView !== 'undefined') {
+        const isLocalPair = (s) => ['NGN', 'GHS', 'KES', 'EUR', 'GBP'].some(f => s.toUpperCase().includes(f));
         new TradingView.widget({
           "autosize": true,
-          "symbol": symbol.toUpperCase().includes('NGN') ? `QUIDAX:${symbol.toUpperCase()}` : `BINANCE:${symbol.toUpperCase()}`,
+          "symbol": isLocalPair(symbol) ? `QUIDAX:${symbol.toUpperCase()}` : `BINANCE:${symbol.toUpperCase()}`,
           "interval": "D",
           "timezone": "Africa/Lagos",
           "theme": theme,

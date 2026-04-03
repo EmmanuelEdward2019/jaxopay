@@ -27,23 +27,21 @@ import walletService from '../../services/walletService';
 import { formatCurrency } from '../../utils/formatters';
 import TradeDashboard from '../../components/crypto/TradeDashboard';
 
-const ASSETS = {
-    fiat: [
-        { code: 'USD', name: 'US Dollar', symbol: '$', flag: '🇺🇸' },
-        { code: 'NGN', name: 'Nigerian Naira', symbol: '₦', flag: '🇳🇬' },
-        { code: 'GHS', name: 'Ghanaian Cedi', symbol: '₵', flag: '🇬🇭' },
-        { code: 'KES', name: 'Kenyan Shilling', symbol: 'KSh', flag: '🇰🇪' },
-        { code: 'EUR', name: 'Euro', symbol: '€', flag: '🇪🇺' },
-        { code: 'GBP', name: 'British Pound', symbol: '£', flag: '🇬🇧' },
-    ],
-    crypto: [
-        { code: 'USDT', name: 'Tether', symbol: '₮', flag: '💵' },
-        { code: 'BTC', name: 'Bitcoin', symbol: '₿', flag: '₿' },
-        { code: 'ETH', name: 'Ethereum', symbol: 'Ξ', flag: 'Ξ' },
-        { code: 'USDC', name: 'USD Coin', symbol: '$', flag: '💵' },
-        { code: 'BNB', name: 'Binance Coin', symbol: 'BNB', flag: '🔶' },
-        { code: 'SOL', name: 'Solana', symbol: 'SOL', flag: '☀️' },
-    ]
+const GET_FLAG = (code) => {
+    const flags = {
+        'USD': '🇺🇸', 'NGN': '🇳🇬', 'GHS': '🇬🇭', 'KES': '🇰🇪', 'EUR': '🇪🇺', 'GBP': '🇬🇧', 'ZAR': '🇿🇦',
+        'USDT': '💵', 'BTC': '₿', 'ETH': 'Ξ', 'USDC': '💵', 'BNB': '🔶', 'SOL': '☀️', 'XRP': '❌',
+        'ADA': '₳', 'DOGE': '🐕', 'TRX': '💎', 'LTC': 'Ł', 'DOT': '●', 'MATIC': 'M'
+    };
+    return flags[code?.toUpperCase()] || '🪙';
+};
+
+const GET_SYMBOL = (code) => {
+    const symbols = {
+        'USD': '$', 'NGN': '₦', 'GHS': '₵', 'KES': 'KSh', 'EUR': '€', 'GBP': '£',
+        'BTC': '₿', 'ETH': 'Ξ', 'USDT': '₮', 'USDC': '$'
+    };
+    return symbols[code?.toUpperCase()] || code;
 };
 
 const Exchange = () => {
@@ -64,6 +62,7 @@ const Exchange = () => {
     const [success, setSuccess] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [history, setHistory] = useState([]);
+    const [assets, setAssets] = useState({ fiat: [], crypto: [] });
 
     // Deposit State
     const [depositCoin, setDepositCoin] = useState('USDT');
@@ -110,8 +109,20 @@ const Exchange = () => {
     useEffect(() => {
         fetchWallets();
         fetchHistory();
-        fetchConfig();
+        fetchAssets();
     }, []);
+
+    const fetchAssets = async () => {
+        const result = await cryptoService.getSupportedCryptos();
+        if (result.success) {
+            const fetched = result.data;
+            setAssets({
+                fiat: fetched.filter(a => a.type === 'fiat'),
+                crypto: fetched.filter(a => a.type === 'crypto')
+            });
+            setCryptoConfig(fetched); // Can reuse same data as it now includes networks
+        }
+    };
 
     // Update networks when coin changes
     useEffect(() => {
@@ -140,16 +151,8 @@ const Exchange = () => {
     };
 
     const fetchConfig = async () => {
-        const result = await cryptoService.getConfig();
-        if (result.success) {
-            setCryptoConfig(result.data);
-            const usdtConfig = result.data.find(c => c.coin?.toUpperCase() === 'USDT');
-            const nets = usdtConfig?.networkList || usdtConfig?.networks || [];
-            if (nets.length > 0) {
-                setDepositNetwork(nets[0].network);
-                setWithdrawNetwork(nets[0].network);
-            }
-        }
+        // Reuse fetchAssets for config now
+        await fetchAssets();
     };
 
     const fetchRates = async () => {
@@ -341,7 +344,7 @@ const Exchange = () => {
                                             onClick={() => { setTokenModalSide('from'); setShowTokenModal(true); }}
                                             className="flex items-center gap-3 bg-white dark:bg-gray-800 px-6 py-4 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 hover:border-accent-500 transition-all shrink-0 group"
                                         >
-                                            <span className="text-3xl group-hover:scale-110 transition-transform">{ASSETS[fromAsset.type].find(a => a.code === fromAsset.code)?.flag}</span>
+                                            <span className="text-3xl group-hover:scale-110 transition-transform">{GET_FLAG(fromAsset.code)}</span>
                                             <span className="font-black text-gray-900 dark:text-white text-lg">{fromAsset.code}</span>
                                             <ChevronDown className="w-5 h-5 text-gray-400" />
                                         </button>
@@ -390,7 +393,7 @@ const Exchange = () => {
                                             onClick={() => { setTokenModalSide('to'); setShowTokenModal(true); }}
                                             className="flex items-center gap-3 bg-white dark:bg-gray-800 px-6 py-4 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 hover:border-accent-500 transition-all shrink-0 group"
                                         >
-                                            <span className="text-3xl group-hover:scale-110 transition-transform">{ASSETS[toAsset.type].find(a => a.code === toAsset.code)?.flag}</span>
+                                            <span className="text-3xl group-hover:scale-110 transition-transform">{GET_FLAG(toAsset.code)}</span>
                                             <span className="font-black text-gray-900 dark:text-white text-lg">{toAsset.code}</span>
                                             <ChevronDown className="w-5 h-5 text-gray-400" />
                                         </button>
@@ -444,7 +447,7 @@ const Exchange = () => {
                                         onChange={(e) => setDepositCoin(e.target.value)}
                                         className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold"
                                     >
-                                        {ASSETS.crypto.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+                                        {(assets.crypto.length > 0 ? assets.crypto : [{code: 'USDT', name: 'Tether'}]).map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
                                     </select>
                                 </div>
                                 <div className="space-y-2">
@@ -524,7 +527,7 @@ const Exchange = () => {
                                             onChange={(e) => setWithdrawCoin(e.target.value)}
                                             className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold"
                                         >
-                                            {ASSETS.crypto.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+                                            {(assets.crypto.length > 0 ? assets.crypto : [{code: 'USDT', name: 'Tether'}]).map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
                                         </select>
                                     </div>
                                     <div className="space-y-2">
@@ -698,7 +701,7 @@ const Exchange = () => {
 
                             <div className="max-h-[450px] overflow-y-auto space-y-4 pr-3 custom-scrollbar">
                                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-6 mb-4">Fiat Currencies</p>
-                                {ASSETS.fiat.filter(t => t.code.toLowerCase().includes(searchTerm.toLowerCase()) || t.name.toLowerCase().includes(searchTerm.toLowerCase())).map(token => (
+                                {assets.fiat.filter(t => t.code.toLowerCase().includes(searchTerm.toLowerCase()) || t.name.toLowerCase().includes(searchTerm.toLowerCase())).map(token => (
                                     <button
                                         key={token.code}
                                         onClick={() => {
@@ -710,7 +713,7 @@ const Exchange = () => {
                                         className="w-full flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-[2rem] transition-all group border border-transparent hover:border-accent-100"
                                     >
                                         <div className="flex items-center gap-6">
-                                            <span className="w-16 h-16 bg-white dark:bg-gray-900 rounded-full shadow-lg flex items-center justify-center text-4xl group-hover:scale-110 transition-transform">{token.flag}</span>
+                                            <span className="w-16 h-16 bg-white dark:bg-gray-900 rounded-full shadow-lg flex items-center justify-center text-4xl group-hover:scale-110 transition-transform">{GET_FLAG(token.code)}</span>
                                             <div className="text-left">
                                                 <div className="font-black text-xl text-gray-900 dark:text-white">{token.code}</div>
                                                 <div className="text-xs font-bold text-gray-400 uppercase">{token.name}</div>
@@ -721,7 +724,7 @@ const Exchange = () => {
                                 ))}
                                 <div className="h-6" />
                                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-6 mb-4">Cryptocurrencies</p>
-                                {ASSETS.crypto.filter(t => t.code.toLowerCase().includes(searchTerm.toLowerCase()) || t.name.toLowerCase().includes(searchTerm.toLowerCase())).map(token => (
+                                {assets.crypto.filter(t => t.code.toLowerCase().includes(searchTerm.toLowerCase()) || t.name.toLowerCase().includes(searchTerm.toLowerCase())).map(token => (
                                     <button
                                         key={token.code}
                                         onClick={() => {
@@ -733,7 +736,7 @@ const Exchange = () => {
                                         className="w-full flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-[2rem] transition-all group border border-transparent hover:border-accent-100"
                                     >
                                         <div className="flex items-center gap-6">
-                                            <span className="w-16 h-16 bg-white dark:bg-gray-900 rounded-full shadow-lg flex items-center justify-center text-4xl group-hover:scale-110 transition-transform">{token.flag}</span>
+                                            <span className="w-16 h-16 bg-white dark:bg-gray-900 rounded-full shadow-lg flex items-center justify-center text-4xl group-hover:scale-110 transition-transform">{GET_FLAG(token.code)}</span>
                                             <div className="text-left">
                                                 <div className="font-black text-xl text-gray-900 dark:text-white">{token.code}</div>
                                                 <div className="text-xs font-bold text-gray-400 uppercase">{token.name}</div>

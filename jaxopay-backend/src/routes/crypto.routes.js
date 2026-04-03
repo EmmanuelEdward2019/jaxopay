@@ -17,7 +17,8 @@ import {
   createOrder,
   getSwapQuote,
   getMarketTrades,
-  getMarketTicker
+  getMarketTicker,
+  getMarkets
 } from '../controllers/crypto.controller.js';
 
 const router = express.Router();
@@ -120,6 +121,9 @@ router.get('/market/trades', getMarketTrades);
 
 // Get market ticker
 router.get('/market/ticker', getMarketTicker);
+
+// Get all markets
+router.get('/markets', getMarkets);
 
 export default router;
 

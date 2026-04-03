@@ -17,16 +17,28 @@ const TradeDashboard = ({ wallets = [] }) => {
   const [tradeLoading, setTradeLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [availableMarkets, setAvailableMarkets] = useState([]);
 
   // Asset mapping for display
   const baseAsset = market.toUpperCase().slice(0, market.length - 4);
   const quoteAsset = market.toUpperCase().slice(-4);
 
   useEffect(() => {
+    fetchMarkets();
+  }, []);
+
+  useEffect(() => {
     fetchMarketData();
     const interval = setInterval(fetchMarketData, 5000); // Poll every 5s
     return () => clearInterval(interval);
   }, [market]);
+
+  const fetchMarkets = async () => {
+    const result = await cryptoService.getMarkets();
+    if (result.success) {
+      setAvailableMarkets(result.data || []);
+    }
+  };
 
   const fetchMarketData = async () => {
     try {
@@ -76,7 +88,19 @@ const TradeDashboard = ({ wallets = [] }) => {
             <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 ring-4 ring-white dark:ring-gray-800 text-[10px] font-black">{quoteAsset}</div>
           </div>
           <div>
-            <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight">{baseAsset}/{quoteAsset}</h2>
+            <div className="flex items-center gap-2 mb-1">
+                 <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight">{baseAsset}/{quoteAsset}</h2>
+                 <select 
+                    value={market}
+                    onChange={(e) => setMarket(e.target.value)}
+                    className="ml-2 text-[10px] font-black bg-gray-50 dark:bg-gray-700 border-none rounded-lg px-2 py-1 focus:ring-2 focus:ring-accent-500 uppercase"
+                 >
+                    {availableMarkets.map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                    {availableMarkets.length === 0 && <option value="btcusdt">BTC/USDT</option>}
+                 </select>
+            </div>
             <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-accent-600 px-2 py-0.5 bg-accent-50 dark:bg-accent-900/20 rounded-full">Quidax Market</span>
                 <span className="flex items-center gap-1 text-[10px] text-green-500 font-bold"><Zap className="w-3 h-3" /> Live</span>
