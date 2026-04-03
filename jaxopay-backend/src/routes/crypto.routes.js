@@ -15,7 +15,9 @@ import {
   getCryptoConfig,
   getOrderBook,
   createOrder,
-  getSwapQuote
+  getSwapQuote,
+  getMarketTrades,
+  getMarketTicker
 } from '../controllers/crypto.controller.js';
 
 const router = express.Router();
@@ -112,6 +114,12 @@ router.post('/orders', requireKYCTier(2), createOrder);
 
 // Get swap quote
 router.get('/swap/quote', requireKYCTier(2), getSwapQuote);
+
+// Get market trades
+router.get('/market/trades', getMarketTrades);
+
+// Get market ticker
+router.get('/market/ticker', getMarketTicker);
 
 export default router;
 

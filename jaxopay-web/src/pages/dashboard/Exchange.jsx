@@ -17,11 +17,15 @@ import {
     Copy,
     ArrowRight,
     QrCode,
-    ShieldCheck
+    ShieldCheck,
+    MessageCircle,
+    LayoutGrid,
+    BarChart3
 } from 'lucide-react';
 import cryptoService from '../../services/cryptoService';
 import walletService from '../../services/walletService';
 import { formatCurrency } from '../../utils/formatters';
+import TradeDashboard from '../../components/crypto/TradeDashboard';
 
 const ASSETS = {
     fiat: [
@@ -44,7 +48,7 @@ const ASSETS = {
 };
 
 const Exchange = () => {
-    const [activeTab, setActiveTab] = useState('exchange'); // 'exchange' | 'deposit' | 'withdraw'
+    const [activeTab, setActiveTab] = useState('exchange'); // 'exchange' | 'trade' | 'deposit' | 'withdraw'
     const [fromAsset, setFromAsset] = useState({ type: 'fiat', code: 'USD' });
     const [toAsset, setToAsset] = useState({ type: 'crypto', code: 'BTC' });
     const [wallets, setWallets] = useState([]);
@@ -121,7 +125,6 @@ const Exchange = () => {
         const result = await cryptoService.getConfig();
         if (result.success) {
             setCryptoConfig(result.data);
-            // Set default networks if available
             const usdtConfig = result.data.find(c => c.coin?.toUpperCase() === 'USDT');
             const nets = usdtConfig?.networkList || usdtConfig?.networks || [];
             if (nets.length > 0) {
@@ -168,8 +171,6 @@ const Exchange = () => {
             result = await cryptoService.sellCrypto(fromAsset.code, amount, toAsset.code, wallet?.id);
         } else if (fromAsset.type === 'crypto' && toAsset.type === 'crypto') {
             result = await cryptoService.swap({ from_coin: fromAsset.code, to_coin: toAsset.code, amount });
-        } else if (fromAsset.type === 'fiat' && toAsset.type === 'fiat') {
-            result = await fxService.swap(fromAsset.code, toAsset.code, amount);
         } else {
             setError("Exchange combination not supported");
             setLoading(false);
@@ -232,19 +233,19 @@ const Exchange = () => {
     const selectedWithdrawCoinConfig = cryptoConfig?.find(c => c.coin === withdrawCoin);
 
     return (
-        <div className="max-w-4xl mx-auto py-8 px-4">
+        <div className="max-w-7xl mx-auto py-8 px-4">
             <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Crypto Hub</h1>
-                    <p className="text-gray-600 dark:text-gray-400">Manage, exchange, and transfer your digital assets.</p>
+                    <h1 className="text-3xl font-black text-gray-900 dark:text-white mb-2 tracking-tight">Crypto Hub</h1>
+                    <p className="text-gray-600 dark:text-gray-400 font-medium">Manage, exchange, and transfer your digital assets.</p>
                 </div>
-                <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl border border-gray-200 dark:border-gray-700">
-                    {['exchange', 'deposit', 'withdraw'].map(tab => (
+                <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-2xl border border-gray-200 dark:border-gray-700">
+                    {['exchange', 'trade', 'deposit', 'withdraw'].map(tab => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
-                            className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === tab
-                                ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-sm'
+                            className={`px-8 py-2.5 rounded-xl text-sm font-black transition-all ${activeTab === tab
+                                ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-xl'
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                                 }`}
                         >
@@ -254,147 +255,151 @@ const Exchange = () => {
                 </div>
             </div>
 
-            {error && (
-                <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-3 text-red-600 dark:text-red-300"
-                >
-                    <AlertCircle className="w-5 h-5" />
-                    <p className="font-medium">{error}</p>
-                    <button onClick={() => setError(null)} className="ml-auto text-sm font-bold">Close</button>
-                </motion.div>
-            )}
+            <AnimatePresence>
+                {error && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                        className="mb-8 p-5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-3xl flex items-center gap-4 text-red-600 dark:text-red-400 shadow-sm"
+                    >
+                        <AlertCircle className="w-6 h-6 flex-shrink-0" />
+                        <p className="font-bold">{error}</p>
+                        <button onClick={() => setError(null)} className="ml-auto text-xs font-black uppercase">Dismiss</button>
+                    </motion.div>
+                )}
+                {success && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                        className="mb-8 p-5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-3xl flex items-center gap-4 text-green-600 dark:text-green-400 shadow-sm"
+                    >
+                        <Check className="w-6 h-6 flex-shrink-0" />
+                        <p className="font-bold">{success}</p>
+                        <button onClick={() => setSuccess(null)} className="ml-auto text-xs font-black uppercase">Dismiss</button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            {success && (
-                <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl flex items-center gap-3 text-green-600 dark:text-green-300"
-                >
-                    <Check className="w-5 h-5" />
-                    <p className="font-medium">{success}</p>
-                    <button onClick={() => setSuccess(null)} className="ml-auto text-sm font-bold">Close</button>
-                </motion.div>
-            )}
+            <div className={`grid grid-cols-1 ${activeTab === 'trade' ? '' : 'lg:grid-cols-3'} gap-8`}>
+                {/* Main Content Area */}
+                <div className={activeTab === 'trade' ? 'w-full' : 'lg:col-span-2 space-y-6'}>
+                    {activeTab === 'trade' && <TradeDashboard wallets={wallets} />}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Main Content */}
-                <div className="lg:col-span-2 space-y-6">
                     {activeTab === 'exchange' && (
                         <motion.div
                             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                            className="bg-white dark:bg-gray-800 rounded-[2rem] p-8 shadow-xl border border-gray-100 dark:border-gray-700 relative overflow-hidden"
+                            className="bg-white dark:bg-gray-800 rounded-[2.5rem] p-10 shadow-2xl border border-gray-100 dark:border-gray-700 relative overflow-hidden"
                         >
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-accent-50 dark:bg-accent-900/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-
-                            <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Exchange Assets</h2>
-                                <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                                    <Settings className="w-5 h-5 text-gray-500" />
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-accent-50 dark:bg-accent-900/10 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/2" />
+                            <div className="flex justify-between items-center mb-10">
+                                <h2 className="text-2xl font-black text-gray-900 dark:text-white">Exchange Assets</h2>
+                                <button className="p-3 bg-gray-50 dark:bg-gray-900 rounded-2xl hover:bg-gray-100 transition-colors">
+                                    <Settings className="w-6 h-6 text-gray-500" />
                                 </button>
                             </div>
 
-                            {/* Pay In Section */}
-                            <div className="p-6 bg-gray-50 dark:bg-gray-900/50 rounded-2xl border border-gray-100 dark:border-gray-700 mb-2">
-                                <div className="flex justify-between mb-2">
-                                    <span className="text-sm font-medium text-gray-500">You Pay</span>
-                                    <span className="text-sm font-medium text-gray-500">
-                                        Bal: {formatCurrency(wallets.find(w => w.currency === fromAsset.code)?.balance || 0, fromAsset.code)}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <input
-                                        type="number"
-                                        placeholder="0.00"
-                                        value={payAmount}
-                                        onChange={(e) => setPayAmount(e.target.value)}
-                                        className="bg-transparent text-3xl font-bold text-gray-900 dark:text-white focus:outline-none w-full"
-                                    />
-                                    <button
-                                        onClick={() => { setTokenModalSide('from'); setShowTokenModal(true); }}
-                                        className="flex items-center gap-2 bg-white dark:bg-gray-800 px-4 py-2 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:border-accent-500 transition-all shrink-0"
-                                    >
-                                        <span className="text-xl">{ASSETS[fromAsset.type].find(a => a.code === fromAsset.code)?.flag}</span>
-                                        <span className="font-bold text-gray-900 dark:text-white">{fromAsset.code}</span>
-                                        <ChevronDown className="w-4 h-4 text-gray-500" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Swap Divider */}
-                            <div className="flex justify-center -my-3 relative z-10">
-                                <button
-                                    onClick={() => {
-                                        const temp = fromAsset;
-                                        setFromAsset(toAsset);
-                                        setToAsset(temp);
-                                        setPayAmount(receiveAmount);
-                                    }}
-                                    className="p-3 bg-accent-600 text-white rounded-full shadow-lg hover:rotate-180 transition-all duration-300 ring-4 ring-white dark:ring-gray-800"
-                                >
-                                    <ArrowDown className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            {/* Receive Section */}
-                            <div className="p-6 bg-gray-50 dark:bg-gray-900/50 rounded-2xl border border-gray-100 dark:border-gray-700 mt-2 mb-6">
-                                <div className="flex justify-between mb-2">
-                                    <span className="text-sm font-medium text-gray-500">You Receive</span>
-                                    <span className="text-sm font-medium text-gray-500">
-                                        Bal: {formatCurrency(wallets.find(w => w.currency === toAsset.code)?.balance || 0, toAsset.code)}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <div className="relative w-full">
-                                        <input
-                                            type="text"
-                                            placeholder="0.00"
-                                            value={loadingRates ? '...' : (receiveAmount || '0.00')}
-                                            readOnly
-                                            className={`bg-transparent text-3xl font-bold text-gray-900 dark:text-white focus:outline-none w-full ${loadingRates ? 'opacity-50' : ''}`}
-                                        />
-                                        {loadingRates && (
-                                            <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                                                <RefreshCw className="w-5 h-5 text-accent-500 animate-spin" />
-                                                <span className="text-xs text-accent-600 font-medium">Updating...</span>
-                                            </div>
-                                        )}
+                            <div className="space-y-2">
+                                {/* Pay In Section */}
+                                <div className="p-8 bg-gray-50 dark:bg-gray-900/50 rounded-3xl border border-gray-100 dark:border-gray-700">
+                                    <div className="flex justify-between mb-4">
+                                        <span className="text-xs font-black text-gray-400 uppercase tracking-widest">You Pay</span>
+                                        <span className="text-xs font-black text-accent-600">
+                                            Available: {formatCurrency(wallets.find(w => w.currency === fromAsset.code)?.balance || 0, fromAsset.code)}
+                                        </span>
                                     </div>
+                                    <div className="flex items-center gap-6">
+                                        <input
+                                            type="number"
+                                            placeholder="0.00"
+                                            value={payAmount}
+                                            onChange={(e) => setPayAmount(e.target.value)}
+                                            className="bg-transparent text-5xl font-black text-gray-900 dark:text-white focus:outline-none w-full placeholder-gray-200 dark:placeholder-gray-800"
+                                        />
+                                        <button
+                                            onClick={() => { setTokenModalSide('from'); setShowTokenModal(true); }}
+                                            className="flex items-center gap-3 bg-white dark:bg-gray-800 px-6 py-4 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 hover:border-accent-500 transition-all shrink-0 group"
+                                        >
+                                            <span className="text-3xl group-hover:scale-110 transition-transform">{ASSETS[fromAsset.type].find(a => a.code === fromAsset.code)?.flag}</span>
+                                            <span className="font-black text-gray-900 dark:text-white text-lg">{fromAsset.code}</span>
+                                            <ChevronDown className="w-5 h-5 text-gray-400" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Swap Button */}
+                                <div className="flex justify-center -my-6 relative z-10">
                                     <button
-                                        onClick={() => { setTokenModalSide('to'); setShowTokenModal(true); }}
-                                        className="flex items-center gap-2 bg-white dark:bg-gray-800 px-4 py-2 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:border-accent-500 transition-all shrink-0"
+                                        onClick={() => {
+                                            const temp = fromAsset;
+                                            setFromAsset(toAsset);
+                                            setToAsset(temp);
+                                            setPayAmount(receiveAmount);
+                                        }}
+                                        className="p-5 bg-accent-600 text-white rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300 ring-[12px] ring-white dark:ring-gray-800"
                                     >
-                                        <span className="text-xl">{ASSETS[toAsset.type].find(a => a.code === toAsset.code)?.flag}</span>
-                                        <span className="font-bold text-gray-900 dark:text-white">{toAsset.code}</span>
-                                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                                        <ArrowLeftRight className="w-6 h-6" />
                                     </button>
+                                </div>
+
+                                {/* Receive Section */}
+                                <div className="p-8 bg-gray-50 dark:bg-gray-900/50 rounded-3xl border border-gray-100 dark:border-gray-700">
+                                    <div className="flex justify-between mb-4">
+                                        <span className="text-xs font-black text-gray-400 uppercase tracking-widest">You Receive</span>
+                                        <span className="text-xs font-black text-accent-600">
+                                            Available: {formatCurrency(wallets.find(w => w.currency === toAsset.code)?.balance || 0, toAsset.code)}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-6">
+                                        <div className="relative w-full">
+                                            <input
+                                                type="text"
+                                                placeholder="0.00"
+                                                value={loadingRates ? '...' : (receiveAmount || '0.00')}
+                                                readOnly
+                                                className={`bg-transparent text-5xl font-black text-gray-900 dark:text-white focus:outline-none w-full placeholder-gray-200 dark:placeholder-gray-800 ${loadingRates ? 'opacity-50' : ''}`}
+                                            />
+                                            {loadingRates && (
+                                                <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                                    <RefreshCw className="w-6 h-6 text-accent-500 animate-spin" />
+                                                </div>
+                                            )}
+                                        </div>
+                                        <button
+                                            onClick={() => { setTokenModalSide('to'); setShowTokenModal(true); }}
+                                            className="flex items-center gap-3 bg-white dark:bg-gray-800 px-6 py-4 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 hover:border-accent-500 transition-all shrink-0 group"
+                                        >
+                                            <span className="text-3xl group-hover:scale-110 transition-transform">{ASSETS[toAsset.type].find(a => a.code === toAsset.code)?.flag}</span>
+                                            <span className="font-black text-gray-900 dark:text-white text-lg">{toAsset.code}</span>
+                                            <ChevronDown className="w-5 h-5 text-gray-400" />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
                             {rates && (
-                                <div className="mb-6 p-4 bg-accent-50 dark:bg-accent-900/10 rounded-xl border border-accent-100 dark:border-accent-800/30">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                <motion.div 
+                                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                                    className="mt-8 p-6 bg-accent-50 dark:bg-accent-900/10 rounded-3xl border border-accent-100 dark:border-accent-800/30"
+                                >
+                                    <div className="flex justify-between items-center mb-4">
+                                        <div className="flex items-center gap-2 text-sm font-bold text-gray-600 dark:text-gray-400">
                                             <RefreshCw className={`w-4 h-4 ${loadingRates ? 'animate-spin' : ''}`} />
-                                            <span>Exchange Rate</span>
+                                            <span>Real-time Rate</span>
                                         </div>
-                                        <div className="text-xs font-bold text-accent-600 px-2 py-0.5 bg-white dark:bg-gray-800 rounded-full border border-accent-100">
-                                            Expires in {quoteExpiry}s
+                                        <div className="text-[10px] font-black text-accent-600 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-accent-100 uppercase tracking-tighter">
+                                            Secures for {quoteExpiry}s
                                         </div>
                                     </div>
-                                    <p className="text-lg font-bold text-gray-900 dark:text-white">
+                                    <p className="text-xl font-black text-gray-900 dark:text-white">
                                         1 {fromAsset.code} = {rates.rate?.toFixed(toAsset.type === 'crypto' ? 8 : 4)} {toAsset.code}
                                     </p>
-                                </div>
+                                </motion.div>
                             )}
 
                             <button
                                 onClick={handleExchange}
                                 disabled={loading || !payAmount || parseFloat(payAmount) <= 0 || loadingRates}
-                                className="w-full py-5 bg-accent-600 hover:bg-accent-700 text-white font-black text-lg rounded-2xl shadow-xl shadow-accent-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                className="w-full mt-10 py-6 bg-accent-600 hover:bg-accent-700 text-white font-black text-xl rounded-3xl shadow-2xl shadow-accent-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-4"
                             >
-                                {loading ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'Confirm Exchange'}
+                                {loading ? <RefreshCw className="w-8 h-8 animate-spin" /> : 'Confirm Swap'}
                             </button>
                         </motion.div>
                     )}
@@ -402,28 +407,28 @@ const Exchange = () => {
                     {activeTab === 'deposit' && (
                         <motion.div
                             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                            className="bg-white dark:bg-gray-800 rounded-[2rem] p-8 shadow-xl border border-gray-100 dark:border-gray-700"
+                            className="bg-white dark:bg-gray-800 rounded-[2.5rem] p-10 shadow-2xl border border-gray-100 dark:border-gray-700"
                         >
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Deposit Crypto</h2>
-                            <p className="text-gray-500 text-sm mb-8">Receive crypto from any external wallet. Select your asset and preferred network below.</p>
+                            <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-4">Deposit Crypto</h2>
+                            <p className="text-gray-500 font-medium mb-10 leading-relaxed">Securely receive digital assets from any external wallet. Select your preferred currency and network.</p>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Currency</label>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest px-1">Currency</label>
                                     <select
                                         value={depositCoin}
                                         onChange={(e) => setDepositCoin(e.target.value)}
-                                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
+                                        className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold"
                                     >
                                         {ASSETS.crypto.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
                                     </select>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Network</label>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest px-1">Network</label>
                                     <select
                                         value={depositNetwork}
                                         onChange={(e) => setDepositNetwork(e.target.value)}
-                                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
+                                        className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold"
                                     >
                                         <option value="">Select Network</option>
                                         {(selectedDepositCoinConfig?.networkList || selectedDepositCoinConfig?.networks)?.map(n => (
@@ -434,13 +439,13 @@ const Exchange = () => {
                             </div>
 
                             {depositDetails ? (
-                                <div className="p-8 bg-gray-50 dark:bg-gray-900/50 rounded-3xl border border-dashed border-accent-200 dark:border-accent-800 text-center animate-in fade-in zoom-in">
-                                    <div className="inline-block bg-white p-4 rounded-2xl shadow-sm mb-6">
-                                        <QrCode className="w-32 h-32 text-gray-900" />
+                                <div className="p-10 bg-gray-50 dark:bg-gray-900/50 rounded-[3rem] border-2 border-dashed border-accent-200 dark:border-accent-800 text-center animate-in fade-in zoom-in slide-in-from-bottom-4">
+                                    <div className="inline-block bg-white p-6 rounded-[2rem] shadow-xl mb-8">
+                                        <QrCode className="w-40 h-40 text-gray-900" />
                                     </div>
-                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Your {depositCoin} Address</p>
-                                    <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 mb-6">
-                                        <code className="text-sm font-mono text-gray-900 dark:text-white break-all flex-1">{depositDetails.address}</code>
+                                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Your Secure {depositCoin} Address</p>
+                                    <div className="flex items-center gap-4 bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 mb-8 shadow-sm">
+                                        <code className="text-sm font-mono font-black text-gray-900 dark:text-white break-all flex-1">{depositDetails.address}</code>
                                         <button
                                             onClick={() => {
                                                 if (depositDetails?.address) {
@@ -448,28 +453,31 @@ const Exchange = () => {
                                                     setSuccess('Address copied!');
                                                 }
                                             }}
-                                            className="p-3 bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 transition-colors"
+                                            className="p-4 bg-accent-50 dark:bg-accent-900/20 rounded-2xl hover:bg-accent-100 transition-all group"
                                         >
-                                            <Copy className="w-5 h-5 text-accent-600" />
+                                            <Copy className="w-6 h-6 text-accent-600 group-hover:scale-110 transition-transform" />
                                         </button>
                                     </div>
                                     {depositDetails.memo && (
-                                        <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-200 dark:border-red-800">
-                                            <p className="text-xs font-bold text-red-600 mb-1">MEMO REQUIRED:</p>
-                                            <p className="font-mono text-gray-900 dark:text-white">{depositDetails.memo}</p>
+                                        <div className="mt-6 p-6 bg-red-50 dark:bg-red-900/10 rounded-3xl border border-red-200 dark:border-red-800">
+                                            <p className="text-xs font-black text-red-600 mb-2 uppercase">Memo Required</p>
+                                            <p className="font-mono font-black text-gray-900 dark:text-white text-lg">{depositDetails.memo}</p>
                                         </div>
                                     )}
-                                    <p className="text-[10px] text-red-500 mt-4 leading-tight italic">
-                                        ⚠️ Only send {depositCoin} via {depositNetwork} network. Other coins or networks will be lost.
-                                    </p>
+                                    <div className="mt-8 flex items-start gap-3 text-left p-4 bg-orange-50 dark:bg-orange-900/10 rounded-2xl border border-orange-100">
+                                          <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0" />
+                                          <p className="text-[11px] text-orange-800 dark:text-orange-300 font-medium leading-relaxed uppercase">
+                                              Only send {depositCoin} via {depositNetwork} network. incorrect network usage will result in permanent loss of funds.
+                                          </p>
+                                    </div>
                                 </div>
                             ) : (
                                 <button
                                     onClick={handleFetchDepositAddress}
                                     disabled={!depositNetwork || fetchingDeposit}
-                                    className="w-full py-5 bg-accent-600 hover:bg-accent-700 text-white font-black rounded-2xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="w-full py-6 bg-accent-600 hover:bg-accent-700 text-white font-black text-lg rounded-3xl shadow-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-4"
                                 >
-                                    {fetchingDeposit ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'Generate Secure Address'}
+                                    {fetchingDeposit ? <RefreshCw className="w-8 h-8 animate-spin" /> : <><QrCode className="w-6 h-6" /> Generate Wallet Address</>}
                                 </button>
                             )}
                         </motion.div>
@@ -478,28 +486,29 @@ const Exchange = () => {
                     {activeTab === 'withdraw' && (
                         <motion.div
                             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                            className="bg-white dark:bg-gray-800 rounded-[2rem] p-8 shadow-xl border border-gray-100 dark:border-gray-700"
+                            className="bg-white dark:bg-gray-800 rounded-[2.5rem] p-10 shadow-2xl border border-gray-100 dark:border-gray-700"
                         >
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Withdraw Crypto</h2>
+                            <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-4">Withdraw Crypto</h2>
+                            <p className="text-gray-500 font-medium mb-10 leading-relaxed">Securely transfer your assets to an external blockchain address.</p>
 
-                            <div className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Currency</label>
+                            <div className="space-y-8">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest px-1">Currency</label>
                                         <select
                                             value={withdrawCoin}
                                             onChange={(e) => setWithdrawCoin(e.target.value)}
-                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
+                                            className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold"
                                         >
                                             {ASSETS.crypto.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
                                         </select>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Network</label>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest px-1">Blockchain Network</label>
                                         <select
                                             value={withdrawNetwork}
                                             onChange={(e) => setWithdrawNetwork(e.target.value)}
-                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
+                                            className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold"
                                         >
                                             <option value="">Select Network</option>
                                             {(selectedWithdrawCoinConfig?.networkList || selectedWithdrawCoinConfig?.networks)?.map(n => (
@@ -509,118 +518,126 @@ const Exchange = () => {
                                     </div>
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Recipient Address</label>
-                                    <input
-                                        type="text"
-                                        placeholder="Paste address here"
-                                        value={withdrawAddress}
-                                        onChange={(e) => setWithdrawAddress(e.target.value)}
-                                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white font-mono"
-                                    />
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest px-1">Recipient Address</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            placeholder="Blockchain address"
+                                            value={withdrawAddress}
+                                            onChange={(e) => setWithdrawAddress(e.target.value)}
+                                            className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-mono font-bold"
+                                        />
+                                        <button className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-accent-50 dark:bg-accent-900/20 rounded-xl text-[10px] font-black text-accent-600 uppercase" onClick={async () => setWithdrawAddress(await navigator.clipboard.readText())}>Paste</button>
+                                    </div>
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Amount</label>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest px-1">Amount to Send</label>
                                     <div className="relative">
                                         <input
                                             type="number"
                                             placeholder="0.00"
                                             value={withdrawAmount}
                                             onChange={(e) => setWithdrawAmount(e.target.value)}
-                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white text-lg font-bold"
+                                            className="w-full px-6 py-5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white text-2xl font-black"
                                         />
-                                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">{withdrawCoin}</div>
+                                        <div className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-gray-400">{withdrawCoin}</div>
+                                    </div>
+                                    <div className="flex justify-end pt-1">
+                                         <button onClick={() => setWithdrawAmount(wallets.find(w => w.currency === withdrawCoin)?.balance || 0)} className="text-[10px] font-black text-accent-600 uppercase tracking-widest pr-2">Use Max Balance</button>
                                     </div>
                                 </div>
 
                                 {(selectedWithdrawCoinConfig?.networks || selectedWithdrawCoinConfig?.networkList)?.find(n => n.network === withdrawNetwork)?.memo && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Memo (Required for this network)</label>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-red-500 uppercase tracking-widest px-1">Network Memo (Required)</label>
                                         <input
                                             type="text"
                                             value={withdrawMemo}
                                             onChange={(e) => setWithdrawMemo(e.target.value)}
-                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
+                                            className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 border border-red-200 dark:border-red-900 rounded-2xl focus:ring-4 focus:ring-red-500/10 focus:border-red-500 focus:outline-none dark:text-white font-bold"
                                         />
                                     </div>
                                 )}
 
-                                <div className="p-4 bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 rounded-2xl">
-                                    <div className="flex gap-3">
-                                        <ShieldCheck className="w-6 h-6 text-orange-600 shrink-0" />
-                                        <div className="text-xs text-orange-800 dark:text-orange-300 leading-normal">
-                                            Please verify the address and network carefully. Crypto transactions are irreversible.
-                                            Withdrawals are processed within 5-15 minutes.
-                                        </div>
+                                <div className="p-6 bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 rounded-3xl flex gap-4">
+                                    <ShieldCheck className="w-8 h-8 text-orange-600 flex-shrink-0" />
+                                    <div className="text-xs text-orange-800 dark:text-orange-300 leading-relaxed font-medium uppercase">
+                                        Please verify the address and network carefully. Blockchain transactions are final and cannot be reversed or cancelled.
+                                        Withdrawals are typically processed within 5-15 minutes.
                                     </div>
                                 </div>
 
                                 <button
                                     onClick={handleWithdraw}
                                     disabled={loading || !withdrawAmount || !withdrawAddress || !withdrawNetwork}
-                                    className="w-full py-5 bg-accent-600 hover:bg-accent-700 text-white font-black rounded-2xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="w-full py-6 bg-accent-600 hover:bg-accent-700 text-white font-black text-lg rounded-3xl shadow-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-4"
                                 >
-                                    {loading ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'Initiate Withdrawal'}
+                                    {loading ? <RefreshCw className="w-8 h-8 animate-spin" /> : 'Confirm Withdrawal'}
                                 </button>
                             </div>
                         </motion.div>
                     )}
                 </div>
 
-                {/* Sidebar Info */}
-                <div className="space-y-6">
-                    <div className="card bg-accent-600 text-white p-8 rounded-[2rem] border-none shadow-xl shadow-accent-500/20 relative overflow-hidden">
-                        <div className="absolute -right-8 -top-8 w-24 h-24 bg-white/10 rounded-full" />
-                        <h3 className="font-bold mb-4 flex items-center gap-2">
-                            <Wallet className="w-5 h-5" /> Portfolio
-                        </h3>
-                        <div className="space-y-4">
-                            {wallets.length > 0 ? (
-                                wallets.filter(w => w.balance > 0).slice(0, 4).map(w => (
-                                    <div key={w.id} className="flex justify-between items-center group cursor-pointer">
-                                        <div className="flex items-center gap-2">
-                                            <span className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">{w.currency}</span>
-                                            <span className="text-sm font-medium">{w.currency}</span>
+                {/* Sidebar - Portfolio & Activity (Hidden in Trade Tab) */}
+                {activeTab !== 'trade' && (
+                    <div className="space-y-8">
+                        <div className="bg-accent-600 p-10 rounded-[3rem] text-white shadow-2xl shadow-accent-500/30 relative overflow-hidden group">
+                            <div className="absolute -right-8 -top-8 w-40 h-40 bg-white/10 rounded-full group-hover:scale-125 transition-transform duration-500" />
+                            <h3 className="text-xl font-black mb-8 flex items-center gap-3">
+                                <Wallet className="w-6 h-6" /> Portfolio
+                            </h3>
+                            <div className="space-y-6">
+                                {wallets.length > 0 ? (
+                                    wallets.filter(w => w.balance > 0).slice(0, 5).map(w => (
+                                        <div key={w.id} className="flex justify-between items-center group/item">
+                                            <div className="flex items-center gap-4">
+                                                <span className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-black group-hover/item:scale-110 transition-transform">{w.currency}</span>
+                                                <span className="font-bold">{w.currency}</span>
+                                            </div>
+                                            <span className="font-black text-lg">{Number(w.balance).toLocaleString()}</span>
                                         </div>
-                                        <span className="text-sm font-bold">{Number(w.balance).toLocaleString()}</span>
+                                    ))
+                                ) : (
+                                    <div className="py-10 text-center opacity-60">
+                                        <p className="text-sm font-bold">No assets found</p>
                                     </div>
-                                ))
-                            ) : (
-                                <p className="text-sm opacity-80">No balances to display</p>
-                            )}
+                                )}
+                            </div>
+                            <button className="w-full mt-10 py-4 bg-white/20 hover:bg-white/30 rounded-2xl text-xs font-black uppercase tracking-widest transition-all">Go to Wallets</button>
                         </div>
-                        <button className="w-full mt-6 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-sm font-bold transition-all">View All Assets</button>
-                    </div>
 
-                    <div className="card p-8 rounded-[2rem]">
-                        <h3 className="font-bold text-gray-900 dark:text-white mb-6">Recent Hub Activity</h3>
-                        <div className="space-y-6">
-                            {history.length > 0 ? (
-                                history.map((tx, i) => (
-                                    <div key={i} className="flex items-center gap-4">
-                                        <div className={`p-2 rounded-full ${tx.type === 'buy' || tx.type === 'deposit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                            {tx.type === 'buy' || tx.type === 'deposit' ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />}
+                        <div className="bg-white dark:bg-gray-800 p-10 rounded-[3rem] shadow-xl border border-gray-100 dark:border-gray-700">
+                            <h3 className="text-xl font-black text-gray-900 dark:text-white mb-8">Recent Hub Activity</h3>
+                            <div className="space-y-8">
+                                {history.length > 0 ? (
+                                    history.map((tx, i) => (
+                                        <div key={i} className="flex items-center gap-5 group">
+                                            <div className={`p-3 rounded-2xl shadow-sm group-hover:scale-110 transition-transform ${tx.type === 'buy' || tx.type === 'deposit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                                {tx.type === 'buy' || tx.type === 'deposit' ? <ArrowDown className="w-5 h-5" /> : <ArrowUp className="w-5 h-5" />}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-black text-gray-900 dark:text-white truncate uppercase tracking-tighter">{tx.type} {tx.to_currency || tx.currency || tx.coin}</p>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase">{new Date(tx.created_at || tx.timestamp).toLocaleDateString()}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-sm font-black text-gray-900 dark:text-white">{Number(tx.amount || tx.from_amount).toLocaleString()}</p>
+                                                <p className="text-[9px] font-black text-accent-600 uppercase bg-accent-50 dark:bg-accent-900/20 px-2 py-0.5 rounded-full inline-block">{tx.status}</p>
+                                            </div>
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-bold text-gray-900 dark:text-white truncate uppercase">{tx.type} {tx.to_currency || tx.currency || tx.coin}</p>
-                                            <p className="text-xs text-gray-500">{new Date(tx.created_at || tx.timestamp).toLocaleDateString()}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-sm font-black text-gray-900 dark:text-white">{Number(tx.amount || tx.from_amount).toFixed(2)}</p>
-                                            <p className="text-[10px] font-bold text-accent-600 uppercase">{tx.status}</p>
-                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-center py-10">
+                                        <RefreshCw className="w-12 h-12 mx-auto mb-4 opacity-10" />
+                                        <p className="text-sm font-bold text-gray-400 italic">No activity recorded</p>
                                     </div>
-                                ))
-                            ) : (
-                                <div className="text-center py-6 text-gray-400">
-                                    <RefreshCw className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                                    <p className="text-sm">No activity records</p>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
             </div>
 
             {/* Asset Selection Modal */}
@@ -633,30 +650,30 @@ const Exchange = () => {
                             onClick={() => setShowTokenModal(false)}
                         />
                         <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-                            className="relative w-full max-w-md bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-2xl p-8 overflow-hidden"
+                            initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                            className="relative w-full max-w-lg bg-white dark:bg-gray-800 rounded-[3rem] shadow-2xl p-10 overflow-hidden"
                             onClick={e => e.stopPropagation()}
                         >
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Select Asset</h3>
-                                <button onClick={() => setShowTokenModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all">
+                            <div className="flex justify-between items-center mb-8">
+                                <h3 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">Select Asset</h3>
+                                <button onClick={() => setShowTokenModal(false)} className="p-3 bg-gray-100 dark:bg-gray-900 rounded-2xl hover:scale-110 transition-all">
                                     <X className="w-6 h-6 text-gray-500" />
                                 </button>
                             </div>
 
-                            <div className="relative mb-6">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                            <div className="relative mb-8">
+                                <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
                                 <input
                                     type="text"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     placeholder="Search by name or symbol"
-                                    className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white"
+                                    className="w-full pl-16 pr-6 py-6 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-[2rem] focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold"
                                 />
                             </div>
 
-                            <div className="max-h-[400px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-4 mb-2">Fiat Currencies</p>
+                            <div className="max-h-[450px] overflow-y-auto space-y-4 pr-3 custom-scrollbar">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-6 mb-4">Fiat Currencies</p>
                                 {ASSETS.fiat.filter(t => t.code.toLowerCase().includes(searchTerm.toLowerCase()) || t.name.toLowerCase().includes(searchTerm.toLowerCase())).map(token => (
                                     <button
                                         key={token.code}
@@ -666,20 +683,20 @@ const Exchange = () => {
                                             setShowTokenModal(false);
                                             setSearchTerm('');
                                         }}
-                                        className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-2xl transition-all group"
+                                        className="w-full flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-[2rem] transition-all group border border-transparent hover:border-accent-100"
                                     >
-                                        <div className="flex items-center gap-4">
-                                            <span className="w-12 h-12 bg-white dark:bg-gray-900 rounded-full shadow-sm flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">{token.flag}</span>
+                                        <div className="flex items-center gap-6">
+                                            <span className="w-16 h-16 bg-white dark:bg-gray-900 rounded-full shadow-lg flex items-center justify-center text-4xl group-hover:scale-110 transition-transform">{token.flag}</span>
                                             <div className="text-left">
-                                                <div className="font-black text-gray-900 dark:text-white">{token.code}</div>
-                                                <div className="text-xs text-gray-500">{token.name}</div>
+                                                <div className="font-black text-xl text-gray-900 dark:text-white">{token.code}</div>
+                                                <div className="text-xs font-bold text-gray-400 uppercase">{token.name}</div>
                                             </div>
                                         </div>
-                                        <ArrowRight className="w-5 h-5 text-gray-300 group-hover:text-accent-500 transition-colors" />
+                                        <ArrowRight className="w-6 h-6 text-gray-300 group-hover:text-accent-500 group-hover:translate-x-2 transition-all" />
                                     </button>
                                 ))}
-                                <div className="h-4" />
-                                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-4 mb-2">Cryptocurrencies</p>
+                                <div className="h-6" />
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-6 mb-4">Cryptocurrencies</p>
                                 {ASSETS.crypto.filter(t => t.code.toLowerCase().includes(searchTerm.toLowerCase()) || t.name.toLowerCase().includes(searchTerm.toLowerCase())).map(token => (
                                     <button
                                         key={token.code}
@@ -689,16 +706,16 @@ const Exchange = () => {
                                             setShowTokenModal(false);
                                             setSearchTerm('');
                                         }}
-                                        className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-2xl transition-all group"
+                                        className="w-full flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-[2rem] transition-all group border border-transparent hover:border-accent-100"
                                     >
-                                        <div className="flex items-center gap-4">
-                                            <span className="w-12 h-12 bg-white dark:bg-gray-900 rounded-full shadow-sm flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">{token.flag}</span>
+                                        <div className="flex items-center gap-6">
+                                            <span className="w-16 h-16 bg-white dark:bg-gray-900 rounded-full shadow-lg flex items-center justify-center text-4xl group-hover:scale-110 transition-transform">{token.flag}</span>
                                             <div className="text-left">
-                                                <div className="font-black text-gray-900 dark:text-white">{token.code}</div>
-                                                <div className="text-xs text-gray-500">{token.name}</div>
+                                                <div className="font-black text-xl text-gray-900 dark:text-white">{token.code}</div>
+                                                <div className="text-xs font-bold text-gray-400 uppercase">{token.name}</div>
                                             </div>
                                         </div>
-                                        <ArrowRight className="w-5 h-5 text-gray-300 group-hover:text-accent-500 transition-colors" />
+                                        <ArrowRight className="w-6 h-6 text-gray-300 group-hover:text-accent-500 group-hover:translate-x-2 transition-all" />
                                     </button>
                                 ))}
                             </div>
@@ -707,8 +724,19 @@ const Exchange = () => {
                 )}
             </AnimatePresence>
 
+            {/* Chat Floating Icon */}
+            <motion.button
+                whileHover={{ scale: 1.1, rotate: 5 }}
+                whileTap={{ scale: 0.9 }}
+                className="fixed bottom-10 right-10 w-16 h-16 bg-accent-600 text-white rounded-full shadow-2xl shadow-accent-500/40 flex items-center justify-center z-[100] group"
+                onClick={() => alert("Chat Support Coming Soon!")}
+            >
+                <MessageCircle className="w-8 h-8 group-hover:animate-bounce" />
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full" />
+            </motion.button>
+
             <style>{`
-                .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+                .custom-scrollbar::-webkit-scrollbar { width: 6px; }
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: #E5E7EB; border-radius: 20px; }
                 .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; }

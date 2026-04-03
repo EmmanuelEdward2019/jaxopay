@@ -752,3 +752,17 @@ export const getSwapQuote = catchAsync(async (req, res) => {
   const data = await quidax.getSwapQuote({ from, to, amount, side });
   res.status(200).json({ success: true, data });
 });
+
+// Get market trades
+export const getMarketTrades = catchAsync(async (req, res) => {
+  const { market, limit } = req.query;
+  const data = await quidax.getMarketTrades(market || 'btcusdt', limit);
+  res.status(200).json({ success: true, data });
+});
+
+// Get market ticker
+export const getMarketTicker = catchAsync(async (req, res) => {
+  const { market } = req.query;
+  const data = await quidax.getMarketTicker(market || 'btcusdt');
+  res.status(200).json({ success: true, data });
+});

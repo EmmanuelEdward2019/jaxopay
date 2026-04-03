@@ -135,6 +135,30 @@ const cryptoService = {
     }
   },
 
+  // Get market ticker
+  getMarketTicker: async (market) => {
+    try {
+      const response = await apiClient.get('/crypto/market/ticker', {
+        params: { market },
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get market trades
+  getMarketTrades: async (market, limit = 50) => {
+    try {
+      const response = await apiClient.get('/crypto/market/trades', {
+        params: { market, limit },
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
   // Get Quidax crypto config (networks, fees)
   getConfig: async () => {
     try {

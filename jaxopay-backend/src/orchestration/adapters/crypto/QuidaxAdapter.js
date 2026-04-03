@@ -10,13 +10,14 @@ import logger from '../../../utils/logger.js';
 class QuidaxAdapter {
     constructor() {
         this.secretKey = process.env.QUIDAX_SECRET_KEY;
-        this.publicKey = process.env.QUIDAX_PUBLIC_KEY;
+        this.apiKey = process.env.QUIDAX_API_KEY || process.env.QUIDAX_PUBLIC_KEY;
         this.baseURL = process.env.QUIDAX_BASE_URL || 'https://api.quidax.com/v1';
 
         this.client = createApiClient({
             baseURL: this.baseURL,
             headers: {
                 'Authorization': `Bearer ${this.secretKey}`,
+                'X-Quidax-Api-Key': this.apiKey, // Sometimes used instead of Bearer or alongside
                 'Content-Type': 'application/json',
             },
             timeout: 15000,
@@ -133,6 +134,31 @@ class QuidaxAdapter {
             const response = await this.client.get(`/markets/${market.toLowerCase()}/order_book`, {
                 params: { asks_limit: limit, bids_limit: limit }
             });
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+    /**
+     * Get market trade history (Recent trades)
+     */
+    async getMarketTrades(market, limit = 50) {
+        try {
+            const response = await this.client.get(`/markets/${market.toLowerCase()}/trades`, {
+                params: { limit }
+            });
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Get market ticker summary
+     */
+    async getMarketTicker(market) {
+        try {
+            const response = await this.client.get(`/markets/${market.toLowerCase()}/tickers`);
             return response.data;
         } catch (err) {
             throw this._normalizeError(err);
