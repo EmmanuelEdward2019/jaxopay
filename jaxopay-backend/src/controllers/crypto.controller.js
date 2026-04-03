@@ -413,14 +413,13 @@ export const getExchangeHistory = catchAsync(async (req, res) => {
 async function getLiveExchangeRate(from, to) {
   from = from.toUpperCase();
   to = to.toUpperCase();
+  const cryptoAssets = ['BTC', 'ETH', 'USDT', 'BNB', 'SOL', 'XRP', 'USDC', 'ADA', 'DOGE', 'TRX'];
+  const isFromCrypto = cryptoAssets.includes(from);
+  const isToCrypto = cryptoAssets.includes(to);
 
   try {
     // 1. Try Quidax Swap Quote (Most accurate for instant swaps)
     try {
-      const cryptoAssets = ['BTC', 'ETH', 'USDT', 'BNB', 'SOL', 'XRP', 'USDC', 'ADA', 'DOGE', 'TRX'];
-      const isFromCrypto = cryptoAssets.includes(from);
-      const isToCrypto = cryptoAssets.includes(to);
-
       if (isFromCrypto || isToCrypto) {
          const quote = await quidax.getSwapQuote({
            from: from,
@@ -428,7 +427,10 @@ async function getLiveExchangeRate(from, to) {
            amount: 1,
            side: 'from'
          });
-         if (quote && quote.rate) return parseFloat(quote.rate);
+         // Handle both 'rate' and 'price' fields in Quidax response
+         if (quote && (quote.rate || quote.price)) {
+            return parseFloat(quote.rate || quote.price);
+         }
       }
     } catch (e) {
       logger.debug(`[ExchangeRate] Swap Quote failed for ${from}->${to}:`, e.message);
@@ -438,23 +440,26 @@ async function getLiveExchangeRate(from, to) {
     let rate = await quidax.getExchangeRate(from, to);
     if (rate !== null && rate > 0) return rate;
 
-    // 3. Identify Crypto vs Fiat to bridge through USD/NGN
-    const cryptoAssets = ['BTC', 'ETH', 'USDT', 'BNB', 'SOL', 'XRP', 'USDC', 'ADA', 'DOGE', 'TRX'];
-    const isFromCrypto = cryptoAssets.includes(from);
-    const isToCrypto = cryptoAssets.includes(to);
-
-    // Case: Crypto to Fiat (e.g. BTC to NGN)
-    if (isFromCrypto && !isToCrypto) {
-      const cryptoToUsd = (await quidax.getExchangeRate(from, 'USDT')) || (await quidax.getExchangeRate(from, 'USDC')) || (usdRates[from] || 1.0);
-      const usdToFiat = await fxService.getExchangeRate('USD', to);
-      return cryptoToUsd * (usdToFiat?.rate || (to === 'NGN' ? 1650 : 1.0));
+    // 3. Bridging Logic
+    // Case: Crypto to Crypto (Bridge through USDT)
+    if (isFromCrypto && isToCrypto) {
+       const u_from = (await quidax.getExchangeRate(from, 'USDT')) || (usdRates[from] || 1.0);
+       const u_to = (await quidax.getExchangeRate(to, 'USDT')) || (usdRates[to] || 1.0);
+       return u_from / u_to;
     }
 
-    // Case: Fiat to Crypto (e.g. NGN to BTC)
+    // Case: Crypto to Fiat (Bridge through USD)
+    if (isFromCrypto && !isToCrypto) {
+      const cryptoInUsd = (await quidax.getExchangeRate(from, 'USDT')) || (usdRates[from] || 1.0);
+      const usdInFiat = (await fxService.getExchangeRate('USD', to))?.rate || (to === 'NGN' ? 1650 : 1.0);
+      return cryptoInUsd * usdInFiat;
+    }
+
+    // Case: Fiat to Crypto (Bridge through USD)
     if (!isFromCrypto && isToCrypto) {
-      const fiatToUsd = await fxService.getExchangeRate(from, 'USD');
-      const usdToCrypto = (await quidax.getExchangeRate('USDT', to)) || (await quidax.getExchangeRate('USDC', to)) || (1 / (usdRates[to] || 1.0));
-      return (fiatToUsd?.rate || (from === 'NGN' ? 1 / 1650 : 1.0)) * usdToCrypto;
+      const fiatInUsd = (await fxService.getExchangeRate(from, 'USD'))?.rate || (from === 'NGN' ? 1 / 1650 : 1.0);
+      const usdInCrypto = 1 / ((await quidax.getExchangeRate(to, 'USDT')) || (usdRates[to] || 1.0));
+      return fiatInUsd * usdInCrypto;
     }
 
     // Case: Fiat to Fiat
@@ -475,7 +480,7 @@ async function getLiveExchangeRate(from, to) {
 async function getMockExchangeRate(from, to) {
   const f = usdRates[from.toUpperCase()] || 1.0;
   const t = usdRates[to.toUpperCase()] || 1.0;
-  return t / f;
+  return f / t;
 }
 
 // Get deposit address for crypto
