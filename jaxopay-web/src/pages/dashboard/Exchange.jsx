@@ -45,7 +45,7 @@ const GET_SYMBOL = (code) => {
 };
 
 const Exchange = () => {
-    const [activeTab, setActiveTab] = useState('exchange'); // 'exchange' | 'trade' | 'deposit' | 'withdraw'
+    const [activeTab, setActiveTab] = useState('exchange'); // 'exchange' | 'order-book' | 'deposit' | 'withdraw'
     const [fromAsset, setFromAsset] = useState({ type: 'fiat', code: 'USD' });
     const [toAsset, setToAsset] = useState({ type: 'crypto', code: 'BTC' });
     const [wallets, setWallets] = useState([]);
@@ -77,6 +77,9 @@ const Exchange = () => {
     const [withdrawAddress, setWithdrawAddress] = useState('');
     const [withdrawAmount, setWithdrawAmount] = useState('');
     const [withdrawMemo, setWithdrawMemo] = useState('');
+    const [withdrawFee, setWithdrawFee] = useState(null);
+    const [fetchingFee, setFetchingFee] = useState(false);
+    const [withdrawReceiveAmount, setWithdrawReceiveAmount] = useState('');
 
     // UI
     const [showTokenModal, setShowTokenModal] = useState(false);
@@ -90,6 +93,17 @@ const Exchange = () => {
         }
         return () => clearInterval(timer);
     }, [quoteExpiry]);
+
+    // Auto-refresh rates every 5 seconds when on exchange tab
+    useEffect(() => {
+        if (activeTab !== 'exchange' || !payAmount || parseFloat(payAmount) <= 0) return;
+        
+        const interval = setInterval(() => {
+            fetchRates();
+        }, 5000);
+        
+        return () => clearInterval(interval);
+    }, [activeTab, payAmount, fromAsset, toAsset]);
 
     useEffect(() => {
         if (activeTab === 'exchange') {
@@ -142,6 +156,31 @@ const Exchange = () => {
             setWithdrawNetwork(nets[0].network);
         }
     }, [withdrawCoin, cryptoConfig]);
+
+    // Fetch withdrawal fee when coin or network changes
+    useEffect(() => {
+        if (!withdrawCoin || !withdrawNetwork) return;
+        
+        const fetchFee = async () => {
+            setFetchingFee(true);
+            try {
+                const result = await cryptoService.getWithdrawFee(withdrawCoin.toLowerCase(), withdrawNetwork);
+                if (result.success) {
+                    setWithdrawFee(result.data.fee);
+                    // Calculate receive amount
+                    if (withdrawAmount && parseFloat(withdrawAmount) > 0) {
+                        const net = parseFloat(withdrawAmount) - parseFloat(result.data.fee);
+                        setWithdrawReceiveAmount(net > 0 ? net.toFixed(6) : '0.00');
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch withdrawal fee:', err);
+            }
+            setFetchingFee(false);
+        };
+        
+        fetchFee();
+    }, [withdrawCoin, withdrawNetwork]);
 
     const fetchWallets = async () => {
         const result = await walletService.getWallets();
@@ -221,37 +260,62 @@ const Exchange = () => {
         if (!depositCoin || !depositNetwork) return;
         setFetchingDeposit(true);
         setDepositDetails(null);
-        const result = await cryptoService.getDepositAddress(depositCoin, depositNetwork);
-        if (result.success) {
-            setDepositDetails(result.data);
-        } else {
-            setError(result.error || 'Failed to fetch deposit address');
+        setError(null);
+        
+        try {
+            const result = await cryptoService.getDepositAddress(depositCoin.toLowerCase(), depositNetwork);
+            if (result.success) {
+                setDepositDetails(result.data);
+            } else {
+                setError(result.error || 'Failed to fetch deposit address');
+            }
+        } catch (err) {
+            setError('Failed to fetch deposit address: ' + err.message);
         }
         setFetchingDeposit(false);
     };
 
     const handleWithdraw = async () => {
-        if (!withdrawAddress || !withdrawAmount || !withdrawNetwork) return;
+        if (!withdrawAddress || !withdrawAmount || !withdrawNetwork) {
+            setError('Please fill in all required fields');
+            return;
+        }
+        
+        if (parseFloat(withdrawAmount) <= 0) {
+            setError('Amount must be greater than 0');
+            return;
+        }
+        
+        if (withdrawFee && parseFloat(withdrawAmount) <= withdrawFee) {
+            setError('Amount must be greater than the withdrawal fee');
+            return;
+        }
+        
         setLoading(true);
         setError(null);
         setSuccess(null);
 
-        const result = await cryptoService.withdraw({
-            coin: withdrawCoin,
-            network: withdrawNetwork,
-            address: withdrawAddress,
-            amount: parseFloat(withdrawAmount),
-            memo: withdrawMemo
-        });
+        try {
+            const result = await cryptoService.withdraw({
+                coin: withdrawCoin,
+                network: withdrawNetwork,
+                address: withdrawAddress,
+                amount: parseFloat(withdrawAmount),
+                memo: withdrawMemo
+            });
 
-        if (result.success) {
-            setSuccess('Withdrawal request submitted successfully!');
-            setWithdrawAmount('');
-            setWithdrawAddress('');
-            setWithdrawMemo('');
-            fetchWallets();
-        } else {
-            setError(result.error);
+            if (result.success) {
+                setSuccess('Withdrawal request submitted successfully!');
+                setWithdrawAmount('');
+                setWithdrawAddress('');
+                setWithdrawMemo('');
+                setWithdrawReceiveAmount('');
+                fetchWallets();
+            } else {
+                setError(result.error);
+            }
+        } catch (err) {
+            setError('Withdrawal failed: ' + err.message);
         }
         setLoading(false);
     };
@@ -267,7 +331,7 @@ const Exchange = () => {
                     <p className="text-gray-600 dark:text-gray-400 font-medium">Manage, exchange, and transfer your digital assets.</p>
                 </div>
                 <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-2xl border border-gray-200 dark:border-gray-700">
-                    {['exchange', 'trade', 'deposit', 'withdraw'].map(tab => (
+                    {['exchange', 'order-book', 'deposit', 'withdraw'].map(tab => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -276,7 +340,7 @@ const Exchange = () => {
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                                 }`}
                         >
-                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                            {tab === 'order-book' ? 'Order Book' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                         </button>
                     ))}
                 </div>
@@ -305,10 +369,10 @@ const Exchange = () => {
                 )}
             </AnimatePresence>
 
-            <div className={`grid grid-cols-1 ${activeTab === 'trade' ? '' : 'lg:grid-cols-3'} gap-8`}>
+            <div className={`grid grid-cols-1 ${activeTab === 'order-book' ? '' : 'lg:grid-cols-3'} gap-8`}>
                 {/* Main Content Area */}
-                <div className={activeTab === 'trade' ? 'w-full' : 'lg:col-span-2 space-y-6'}>
-                    {activeTab === 'trade' && <TradeDashboard wallets={wallets} />}
+                <div className={activeTab === 'order-book' ? 'w-full' : 'lg:col-span-2 space-y-6'}>
+                    {activeTab === 'order-book' && <TradeDashboard wallets={wallets} />}
 
                     {activeTab === 'exchange' && (
                         <motion.div
@@ -409,15 +473,31 @@ const Exchange = () => {
                                     <div className="flex justify-between items-center mb-4">
                                         <div className="flex items-center gap-2 text-sm font-bold text-gray-600 dark:text-gray-400">
                                             <RefreshCw className={`w-4 h-4 ${loadingRates ? 'animate-spin' : ''}`} />
-                                            <span>Real-time Rate</span>
+                                            <span>Real-time Rate (Powered by Quidax)</span>
                                         </div>
-                                        <div className="text-[10px] font-black text-accent-600 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-accent-100 uppercase tracking-tighter">
-                                            Secures for {quoteExpiry}s
+                                        <div className="flex items-center gap-2">
+                                            <div className="text-[10px] font-black text-accent-600 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-accent-100 uppercase tracking-tighter">
+                                                Secures for {quoteExpiry}s
+                                            </div>
+                                            {quoteExpiry <= 10 && (
+                                                <button 
+                                                    onClick={fetchRates}
+                                                    disabled={loadingRates}
+                                                    className="p-2 bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition-all disabled:opacity-50"
+                                                >
+                                                    <RefreshCw className={`w-4 h-4 ${loadingRates ? 'animate-spin' : ''}`} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                     <p className="text-xl font-black text-gray-900 dark:text-white">
                                         1 {fromAsset.code} = {rates.rate?.toFixed(toAsset.type === 'crypto' ? 8 : 4)} {toAsset.code}
                                     </p>
+                                    {rates.rate_with_fee && (
+                                        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-2">
+                                            After fees (1%): 1 {fromAsset.code} = {rates.rate_with_fee?.toFixed(toAsset.type === 'crypto' ? 8 : 4)} {toAsset.code}
+                                        </p>
+                                    )}
                                 </motion.div>
                             )}
 
@@ -447,7 +527,11 @@ const Exchange = () => {
                                         onChange={(e) => setDepositCoin(e.target.value)}
                                         className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold"
                                     >
-                                        {(assets.crypto.length > 0 ? assets.crypto : [{code: 'USDT', name: 'Tether'}]).map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+                                        {(assets.crypto.length > 0 ? assets.crypto : [{code: 'USDT', name: 'Tether'}]).map(c => (
+                                            <option key={c.code} value={c.code}>
+                                                {c.name} ({c.code})
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div className="space-y-2">
@@ -459,9 +543,31 @@ const Exchange = () => {
                                     >
                                         <option value="">Select Network</option>
                                         {(selectedDepositCoinConfig?.networkList || selectedDepositCoinConfig?.networks)?.map(n => (
-                                            <option key={n.network} value={n.network}>{n.name || n.network}</option>
+                                            <option key={n.network} value={n.network}>
+                                                {n.name || n.network}
+                                            </option>
                                         ))}
                                     </select>
+                                </div>
+                            </div>
+
+                            {/* Deposit Info Box */}
+                            <div className="mb-8 p-5 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-2xl">
+                                <div className="flex items-start gap-3">
+                                    <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                                    <div className="text-xs text-blue-800 dark:text-blue-300 font-medium leading-relaxed">
+                                        <p className="font-bold mb-1">How to deposit {depositCoin}:</p>
+                                        <ol className="list-decimal list-inside space-y-1 ml-1">
+                                            <li>Select the correct network above</li>
+                                            <li>Generate your unique deposit address</li>
+                                            <li>Send only {depositCoin} via the selected network</li>
+                                            <li>Wait for blockchain confirmations</li>
+                                            <li>Funds will appear in your wallet automatically</li>
+                                        </ol>
+                                        <p className="mt-3 font-bold text-red-600">
+                                            ⚠️ Warning: Sending other tokens or using wrong network may result in permanent loss!
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 
@@ -566,15 +672,52 @@ const Exchange = () => {
                                             type="number"
                                             placeholder="0.00"
                                             value={withdrawAmount}
-                                            onChange={(e) => setWithdrawAmount(e.target.value)}
+                                            onChange={(e) => {
+                                                setWithdrawAmount(e.target.value);
+                                                if (withdrawFee && parseFloat(e.target.value) > 0) {
+                                                    const net = parseFloat(e.target.value) - withdrawFee;
+                                                    setWithdrawReceiveAmount(net > 0 ? net.toFixed(6) : '0.00');
+                                                } else {
+                                                    setWithdrawReceiveAmount('');
+                                                }
+                                            }}
                                             className="w-full px-6 py-5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white text-2xl font-black"
                                         />
                                         <div className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-gray-400">{withdrawCoin}</div>
                                     </div>
-                                    <div className="flex justify-end pt-1">
-                                         <button onClick={() => setWithdrawAmount(wallets.find(w => w.currency === withdrawCoin)?.balance || 0)} className="text-[10px] font-black text-accent-600 uppercase tracking-widest pr-2">Use Max Balance</button>
+                                    <div className="flex justify-between items-center pt-2 px-2">
+                                         <button 
+                                            onClick={() => {
+                                                const balance = wallets.find(w => w.currency === withdrawCoin)?.balance || 0;
+                                                setWithdrawAmount(balance);
+                                                if (withdrawFee) {
+                                                    const net = parseFloat(balance) - withdrawFee;
+                                                    setWithdrawReceiveAmount(net > 0 ? net.toFixed(6) : '0.00');
+                                                }
+                                            }} 
+                                            className="text-[10px] font-black text-accent-600 uppercase tracking-widest pr-2 hover:text-accent-700"
+                                        >
+                                            Use Max Balance
+                                        </button>
+                                        {withdrawFee !== null && (
+                                            <span className="text-[10px] font-bold text-gray-500">
+                                                Fee: {fetchingFee ? '...' : withdrawFee} {withdrawCoin}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
+
+                                {/* Receive Amount Display */}
+                                {withdrawReceiveAmount && (
+                                    <div className="p-4 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-2xl">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-gray-600 dark:text-gray-400">Recipient Receives:</span>
+                                            <span className="text-xl font-black text-green-600">
+                                                {withdrawReceiveAmount} {withdrawCoin}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {(selectedWithdrawCoinConfig?.networks || selectedWithdrawCoinConfig?.networkList)?.find(n => n.network === withdrawNetwork)?.memo && (
                                     <div className="space-y-2">
@@ -608,8 +751,8 @@ const Exchange = () => {
                     )}
                 </div>
 
-                {/* Sidebar - Portfolio & Activity (Hidden in Trade Tab) */}
-                {activeTab !== 'trade' && (
+                {/* Sidebar - Portfolio & Activity (Hidden in Order Book Tab) */}
+                {activeTab !== 'order-book' && (
                     <div className="space-y-8">
                         <div className="bg-accent-600 p-10 rounded-[3rem] text-white shadow-2xl shadow-accent-500/30 relative overflow-hidden group">
                             <div className="absolute -right-8 -top-8 w-40 h-40 bg-white/10 rounded-full group-hover:scale-125 transition-transform duration-500" />

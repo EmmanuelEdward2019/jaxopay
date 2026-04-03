@@ -178,6 +178,118 @@ class QuidaxAdapter {
     }
 
     /**
+     * Get 24-hour ticker statistics for a market or all markets
+     */
+    async getTicker24h(market = null) {
+        try {
+            const url = market ? `/markets/${market.toLowerCase()}/tickers` : '/markets/tickers';
+            const response = await this.client.get(url);
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Get candlestick/kline data for charts
+     * @param {string} market - Market pair (e.g., 'btcusdt')
+     * @param {string} interval - Time interval (1m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 12h, 1d, 1w, 1M)
+     * @param {number} limit - Number of candles (default: 100, max: 1000)
+     */
+    async getKlineData(market, interval = '1h', limit = 100) {
+        try {
+            const response = await this.client.get(`/markets/${market.toLowerCase()}/k`, {
+                params: { period: interval, limit }
+            });
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Get user's orders
+     * @param {string} userId - User ID
+     * @param {string} market - Optional market filter
+     * @param {string} status - Optional status filter (wait, cancel, done)
+     */
+    async getUserOrders(userId = 'me', market = null, status = null) {
+        try {
+            const params = {};
+            if (market) params.market = market.toLowerCase();
+            if (status) params.state = status.toLowerCase();
+            
+            const response = await this.client.get(`/users/${userId}/orders`, { params });
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Get a single order by ID
+     */
+    async getOrder(orderId, userId = 'me') {
+        try {
+            const response = await this.client.get(`/users/${userId}/orders/${orderId}`);
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Cancel an order
+     */
+    async cancelOrder(orderId, userId = 'me') {
+        try {
+            const response = await this.client.post(`/users/${userId}/orders/${orderId}/cancel`);
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Get user's wallets from Quidax
+     */
+    async getUserWallets(userId = 'me') {
+        try {
+            const response = await this.client.get(`/users/${userId}/wallets`);
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Get withdrawal fee estimate
+     */
+    async getWithdrawFee(currency, network = null) {
+        try {
+            // Quidax typically includes fee info in currency/network config
+            const currencies = await this.getCurrencies();
+            const currencyData = currencies.find(c => c.code.toLowerCase() === currency.toLowerCase());
+            
+            if (!currencyData) {
+                throw new Error('Currency not found');
+            }
+
+            let fee = '0';
+            if (network && currencyData.networks) {
+                const networkData = currencyData.networks.find(n => n.network.toLowerCase() === network.toLowerCase());
+                fee = networkData?.withdraw_fee || '0';
+            } else {
+                fee = currencyData.withdraw_fee || '0';
+            }
+
+            return { fee: parseFloat(fee), currency: currency.toUpperCase() };
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
      * Get all supported currencies (with network info)
      */
     async getCurrencies() {

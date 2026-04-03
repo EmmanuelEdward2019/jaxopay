@@ -53,7 +53,7 @@ export const getSupportedCryptos = catchAsync(async (req, res) => {
   }
 });
 
-// Get exchange rates
+// Enhanced exchange rates with real-time Quidax data
 export const getExchangeRates = catchAsync(async (req, res) => {
   const { from, to, from_currency, to_currency, amount } = req.query;
   const fromCurr = from || from_currency;
@@ -63,8 +63,14 @@ export const getExchangeRates = catchAsync(async (req, res) => {
     throw new AppError('From and to currencies are required', 400);
   }
 
+  // Get live rate from Quidax
   const rate = await getLiveExchangeRate(fromCurr, toCurr);
-  const exchangeAmount = amount ? parseFloat(amount) * rate : null;
+  
+  // Calculate fees (1% standard fee)
+  const fee = 0.01; // 1%
+  const rateWithFee = rate * (1 - fee);
+  
+  const exchangeAmount = amount ? parseFloat(amount) * rateWithFee : null;
 
   res.status(200).json({
     success: true,
@@ -72,9 +78,12 @@ export const getExchangeRates = catchAsync(async (req, res) => {
       from: fromCurr.toUpperCase(),
       to: toCurr.toUpperCase(),
       rate,
+      rate_with_fee: rateWithFee,
+      fee_percentage: fee * 100,
       amount: amount ? parseFloat(amount) : null,
       exchange_amount: exchangeAmount,
       timestamp: new Date().toISOString(),
+      expiry: new Date(Date.now() + 30000).toISOString(), // 30 seconds expiry
     },
   });
 });
@@ -809,5 +818,50 @@ export const getMarketTicker = catchAsync(async (req, res) => {
 // Get all markets
 export const getMarkets = catchAsync(async (req, res) => {
   const data = await quidax.getMarkets();
+  res.status(200).json({ success: true, data });
+});
+
+// Get 24hr ticker statistics
+export const get24hTickers = catchAsync(async (req, res) => {
+  const { market } = req.query;
+  const data = await quidax.getTicker24h(market);
+  res.status(200).json({ success: true, data });
+});
+
+// Get kline/candlestick data for charts
+export const getKlines = catchAsync(async (req, res) => {
+  const { market, period = '1h', limit = 100 } = req.query;
+  
+  if (!market) {
+    throw new AppError('Market parameter is required', 400);
+  }
+  
+  const data = await quidax.getKlineData(market, period, parseInt(limit));
+  res.status(200).json({ success: true, data });
+});
+
+// Get user's orders
+export const getUserOrders = catchAsync(async (req, res) => {
+  const { market, status } = req.query;
+  const data = await quidax.getUserOrders(req.user.id, market, status);
+  res.status(200).json({ success: true, data });
+});
+
+// Cancel order
+export const cancelOrder = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const data = await quidax.cancelOrder(id, req.user.id);
+  res.status(200).json({ success: true, data });
+});
+
+// Get withdrawal fee estimate
+export const getWithdrawFee = catchAsync(async (req, res) => {
+  const { coin, network } = req.query;
+  
+  if (!coin) {
+    throw new AppError('Coin parameter is required', 400);
+  }
+  
+  const data = await quidax.getWithdrawFee(coin, network);
   res.status(200).json({ success: true, data });
 });

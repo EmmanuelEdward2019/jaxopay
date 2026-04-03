@@ -178,6 +178,61 @@ const cryptoService = {
       return { success: false, error: error.message };
     }
   },
+
+  // Get 24hr ticker statistics
+  get24hTickers: async (market = null) => {
+    try {
+      const params = market ? { market } : {};
+      const response = await apiClient.get('/crypto/ticker/24h', { params });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get kline/candlestick data for charts
+  getKlines: async (market, period = '1h', limit = 100) => {
+    try {
+      const response = await apiClient.get('/crypto/klines', {
+        params: { market, period, limit },
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get user's orders
+  getUserOrders: async (params = {}) => {
+    try {
+      const response = await apiClient.get('/crypto/orders', { params });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Cancel order
+  cancelOrder: async (orderId) => {
+    try {
+      const response = await apiClient.post(`/crypto/orders/${orderId}/cancel`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get withdrawal fee estimate
+  getWithdrawFee: async (coin, network = null) => {
+    try {
+      const params = { coin };
+      if (network) params.network = network;
+      const response = await apiClient.get('/crypto/withdraw-fee', { params });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
 };
 
 export default cryptoService;

@@ -18,7 +18,12 @@ import {
   getSwapQuote,
   getMarketTrades,
   getMarketTicker,
-  getMarkets
+  getMarkets,
+  get24hTickers,
+  getKlines,
+  getUserOrders,
+  cancelOrder,
+  getWithdrawFee
 } from '../controllers/crypto.controller.js';
 
 const router = express.Router();
@@ -124,6 +129,44 @@ router.get('/market/ticker', getMarketTicker);
 
 // Get all markets
 router.get('/markets', getMarkets);
+
+// Get 24hr ticker statistics
+router.get('/ticker/24h', get24hTickers);
+
+// Get kline/candlestick data for charts
+router.get(
+  '/klines',
+  query('market').isString().notEmpty(),
+  query('period').optional().isString(),
+  query('limit').optional().isInt({ min: 1, max: 1000 }),
+  validate,
+  getKlines
+);
+
+// Get user's orders
+router.get(
+  '/orders',
+  query('market').optional().isString(),
+  query('status').optional().isString(),
+  validate,
+  getUserOrders
+);
+
+// Cancel order
+router.post(
+  '/orders/:id/cancel',
+  requireKYCTier(2),
+  cancelOrder
+);
+
+// Get withdrawal fee estimate
+router.get(
+  '/withdraw-fee',
+  query('coin').isString().notEmpty(),
+  query('network').optional().isString(),
+  validate,
+  getWithdrawFee
+);
 
 export default router;
 
