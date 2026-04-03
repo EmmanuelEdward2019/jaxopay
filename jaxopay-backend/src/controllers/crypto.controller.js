@@ -154,11 +154,11 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
        VALUES ($1, 'crypto_sell', $2, $3, 'completed', 'Crypto to fiat exchange', $4)`,
       [
         cryptoWallet.rows[0].id,
-        crypto_amount,
-        crypto_currency.toUpperCase(),
+        qty,
+        from_coin.toUpperCase(),
         JSON.stringify({
           exchange_rate: rate,
-          fiat_currency: fiat_currency.toUpperCase(),
+          fiat_currency: to_fiat.toUpperCase(),
           fiat_amount: fiatAmount,
           fee,
           net_amount: netAmount,
@@ -176,10 +176,10 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
       [
         fiatWallet.rows[0].id,
         netAmount,
-        fiat_currency.toUpperCase(),
+        to_fiat.toUpperCase(),
         JSON.stringify({
-          crypto_currency: crypto_currency.toUpperCase(),
-          crypto_amount,
+          crypto_currency: from_coin.toUpperCase(),
+          crypto_amount: qty,
           exchange_rate: rate,
           fee,
         }),
@@ -191,19 +191,19 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
 
   logger.info('Crypto to fiat exchange:', {
     userId: req.user.id,
-    from: crypto_currency,
-    to: fiat_currency,
-    amount: crypto_amount,
+    from: from_coin,
+    to: to_fiat,
+    amount: qty,
   });
 
   res.status(200).json({
     success: true,
     message: 'Exchange completed successfully',
     data: {
-      crypto_amount,
-      crypto_currency: crypto_currency.toUpperCase(),
+      crypto_amount: qty,
+      crypto_currency: from_coin.toUpperCase(),
       fiat_amount: result.fiatAmount,
-      fiat_currency: fiat_currency.toUpperCase(),
+      fiat_currency: to_fiat.toUpperCase(),
       exchange_rate: result.rate,
       fee: result.fee,
       net_amount: result.netAmount,
@@ -249,12 +249,13 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
 
     // Get exchange rate (Live from Quidax)
     const rate = await getLiveExchangeRate(from_fiat, to_coin);
-    const cryptoAmount = qty * rate;
     const fee = qty * 0.01; // 1% fee
-    const netFiat = qty + fee;
+    const netFiat = qty; // qty (You Pay) is the total deducted
+    const amountToExchange = qty - fee;
+    const cryptoAmount = amountToExchange * rate;
 
     if (parseFloat(fiatWallet.rows[0].balance) < netFiat) {
-      throw new AppError('Insufficient balance to cover fees', 400);
+      throw new AppError('Insufficient balance to cover trade and fees', 400);
     }
 
     // Get or create crypto wallet
@@ -290,9 +291,9 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
     try {
       if (process.env.QUIDAX_SECRET_KEY) {
         const quote = await quidax.getSwapQuote({
-          from: fiat_currency,
-          to: crypto_currency,
-          amount: fiat_amount,
+          from: from_fiat,
+          to: to_coin,
+          amount: qty,
           side: 'from'
         });
         if (quote && quote.id) {
@@ -312,10 +313,10 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       [
         fiatWallet.rows[0].id,
         netFiat,
-        fiat_currency.toUpperCase(),
+        from_fiat.toUpperCase(),
         JSON.stringify({
           exchange_rate: rate,
-          crypto_currency: crypto_currency.toUpperCase(),
+          crypto_currency: to_coin.toUpperCase(),
           crypto_amount: cryptoAmount,
           fee,
           quidax_swap_id: quidaxSwapId,
@@ -332,10 +333,10 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       [
         cryptoWallet.rows[0].id,
         cryptoAmount,
-        crypto_currency.toUpperCase(),
+        to_coin.toUpperCase(),
         JSON.stringify({
-          fiat_currency: fiat_currency.toUpperCase(),
-          fiat_amount,
+          fiat_currency: from_fiat.toUpperCase(),
+          fiat_amount: qty,
           exchange_rate: rate,
           fee,
         }),
@@ -347,19 +348,19 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
 
   logger.info('Fiat to crypto exchange:', {
     userId: req.user.id,
-    from: fiat_currency,
-    to: crypto_currency,
-    amount: fiat_amount,
+    from: from_fiat,
+    to: to_coin,
+    amount: qty,
   });
 
   res.status(200).json({
     success: true,
     message: 'Exchange completed successfully',
     data: {
-      fiat_amount,
-      fiat_currency: fiat_currency.toUpperCase(),
+      fiat_amount: qty,
+      fiat_currency: from_fiat.toUpperCase(),
       crypto_amount: result.cryptoAmount,
-      crypto_currency: crypto_currency.toUpperCase(),
+      crypto_currency: to_coin.toUpperCase(),
       exchange_rate: result.rate,
       fee: result.fee,
     },
