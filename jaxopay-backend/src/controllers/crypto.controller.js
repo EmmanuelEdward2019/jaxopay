@@ -4,6 +4,12 @@ import logger from '../utils/logger.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
 
+const usdRates = {
+  BTC: 93450, ETH: 3620, USDT: 1.0, BNB: 685, SOL: 242,
+  XRP: 1.6, USDC: 1.0, ADA: 0.8, DOGE: 0.4, TRX: 0.2,
+  USD: 1.0, NGN: 1 / 1650, EUR: 1.05, GBP: 1.25
+};
+
 // Get supported cryptocurrencies
 export const getSupportedCryptos = catchAsync(async (req, res) => {
   const cryptos = [
@@ -53,7 +59,10 @@ export const getExchangeRates = catchAsync(async (req, res) => {
 
 // Exchange crypto to fiat
 export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
-  const { crypto_currency, fiat_currency, crypto_amount } = req.body;
+  const { crypto_currency, fiat_currency, crypto_amount, coin, amount, fiat } = req.body;
+  const from_coin = crypto_currency || coin;
+  const to_fiat = fiat_currency || fiat;
+  const qty = crypto_amount || amount;
 
   // Check KYC tier (Tier 2+ required for crypto)
   if (req.user.kyc_tier < 2) {
@@ -80,13 +89,13 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
       throw new AppError(`No ${crypto_currency} wallet found`, 404);
     }
 
-    if (parseFloat(cryptoWallet.rows[0].balance) < crypto_amount) {
+    if (parseFloat(cryptoWallet.rows[0].balance) < qty) {
       throw new AppError('Insufficient crypto balance', 400);
     }
 
-    // Get exchange rate (Live from MEXC)
-    const rate = await getLiveExchangeRate(crypto_currency, fiat_currency);
-    const fiatAmount = crypto_amount * rate;
+    // Get exchange rate (Live from Quidax)
+    const rate = await getLiveExchangeRate(from_coin, to_fiat);
+    const fiatAmount = qty * rate;
     const fee = fiatAmount * 0.01; // 1% fee
     const netAmount = fiatAmount - fee;
 
@@ -94,7 +103,7 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
     let fiatWallet = await client.query(
       `SELECT id FROM wallets
        WHERE user_id = $1 AND currency = $2 AND wallet_type = 'fiat' AND deleted_at IS NULL`,
-      [req.user.id, fiat_currency.toUpperCase()]
+      [req.user.id, to_fiat.toUpperCase()]
     );
 
     if (fiatWallet.rows.length === 0) {
@@ -204,7 +213,10 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
 
 // Exchange fiat to crypto
 export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
-  const { fiat_currency, crypto_currency, fiat_amount } = req.body;
+  const { fiat_currency, crypto_currency, fiat_amount, fiat, coin, amount } = req.body;
+  const from_fiat = fiat_currency || fiat;
+  const to_coin = crypto_currency || coin;
+  const qty = fiat_amount || amount;
 
   // Check KYC tier
   if (req.user.kyc_tier < 2) {
@@ -231,15 +243,15 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       throw new AppError(`No ${fiat_currency} wallet found`, 404);
     }
 
-    if (parseFloat(fiatWallet.rows[0].balance) < fiat_amount) {
+    if (parseFloat(fiatWallet.rows[0].balance) < qty) {
       throw new AppError('Insufficient fiat balance', 400);
     }
 
-    // Get exchange rate (Live from MEXC)
-    const rate = await getLiveExchangeRate(fiat_currency, crypto_currency);
-    const cryptoAmount = fiat_amount * rate;
-    const fee = fiat_amount * 0.01; // 1% fee
-    const netFiat = fiat_amount + fee;
+    // Get exchange rate (Live from Quidax)
+    const rate = await getLiveExchangeRate(from_fiat, to_coin);
+    const cryptoAmount = qty * rate;
+    const fee = qty * 0.01; // 1% fee
+    const netFiat = qty + fee;
 
     if (parseFloat(fiatWallet.rows[0].balance) < netFiat) {
       throw new AppError('Insufficient balance to cover fees', 400);
@@ -403,18 +415,37 @@ async function getLiveExchangeRate(from, to) {
   to = to.toUpperCase();
 
   try {
-    // 1. Try Quidax (Ticker)
+    // 1. Try Quidax Swap Quote (Most accurate for instant swaps)
+    try {
+      const cryptoAssets = ['BTC', 'ETH', 'USDT', 'BNB', 'SOL', 'XRP', 'USDC', 'ADA', 'DOGE', 'TRX'];
+      const isFromCrypto = cryptoAssets.includes(from);
+      const isToCrypto = cryptoAssets.includes(to);
+
+      if (isFromCrypto || isToCrypto) {
+         const quote = await quidax.getSwapQuote({
+           from: from,
+           to: to,
+           amount: 1,
+           side: 'from'
+         });
+         if (quote && quote.rate) return parseFloat(quote.rate);
+      }
+    } catch (e) {
+      logger.debug(`[ExchangeRate] Swap Quote failed for ${from}->${to}:`, e.message);
+    }
+
+    // 2. Try Quidax (Ticker)
     let rate = await quidax.getExchangeRate(from, to);
     if (rate !== null && rate > 0) return rate;
 
-    // 2. Identify Crypto vs Fiat to bridge through USD/NGN
+    // 3. Identify Crypto vs Fiat to bridge through USD/NGN
     const cryptoAssets = ['BTC', 'ETH', 'USDT', 'BNB', 'SOL', 'XRP', 'USDC', 'ADA', 'DOGE', 'TRX'];
     const isFromCrypto = cryptoAssets.includes(from);
     const isToCrypto = cryptoAssets.includes(to);
 
     // Case: Crypto to Fiat (e.g. BTC to NGN)
     if (isFromCrypto && !isToCrypto) {
-      const cryptoToUsd = (await quidax.getExchangeRate(from, 'USDT')) || (await quidax.getExchangeRate(from, 'USDC')) || 1.0;
+      const cryptoToUsd = (await quidax.getExchangeRate(from, 'USDT')) || (await quidax.getExchangeRate(from, 'USDC')) || (usdRates[from] || 1.0);
       const usdToFiat = await fxService.getExchangeRate('USD', to);
       return cryptoToUsd * (usdToFiat?.rate || (to === 'NGN' ? 1650 : 1.0));
     }
@@ -422,7 +453,7 @@ async function getLiveExchangeRate(from, to) {
     // Case: Fiat to Crypto (e.g. NGN to BTC)
     if (!isFromCrypto && isToCrypto) {
       const fiatToUsd = await fxService.getExchangeRate(from, 'USD');
-      const usdToCrypto = (await quidax.getExchangeRate('USDT', to)) || (await quidax.getExchangeRate('USDC', to)) || 1.0;
+      const usdToCrypto = (await quidax.getExchangeRate('USDT', to)) || (await quidax.getExchangeRate('USDC', to)) || (1 / (usdRates[to] || 1.0));
       return (fiatToUsd?.rate || (from === 'NGN' ? 1 / 1650 : 1.0)) * usdToCrypto;
     }
 
@@ -442,14 +473,9 @@ async function getLiveExchangeRate(from, to) {
 
 // Fallback logic for safety
 async function getMockExchangeRate(from, to) {
-  const usdRates = {
-    BTC: 93450, ETH: 3620, USDT: 1.0, BNB: 685, SOL: 242,
-    XRP: 1.6, USDC: 1.0, ADA: 0.8, DOGE: 0.4, TRX: 0.2,
-    USD: 1.0, NGN: 1 / 1650
-  };
   const f = usdRates[from.toUpperCase()] || 1.0;
   const t = usdRates[to.toUpperCase()] || 1.0;
-  return f / t;
+  return t / f;
 }
 
 // Get deposit address for crypto
@@ -693,22 +719,30 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
 // Get crypto config (networks, etc)
 export const getCryptoConfig = catchAsync(async (req, res) => {
   try {
-    // Quidax mapping: getAllWallets provides currency configs too 
-    // In a real scenario, we might want a specific Currency Config endpoint if Quidax has one.
-    // For now, providing a normalized mock-hybrid or the basic coin list.
-    const dataResponse = await quidax.getAllWallets();
+    const currencies = await quidax.getCurrencies();
+    
+    // Map Quidax response to our unified config format
+    const configData = currencies.map(cur => ({
+      coin: cur.code.toUpperCase(),
+      name: cur.name,
+      networks: cur.networks || [
+        { network: cur.code.toUpperCase(), name: cur.name, withdrawFee: '0', withdrawMin: '0' }
+      ],
+      // Compatibility for older frontend versions
+      networkList: cur.networks || [
+        { network: cur.code.toUpperCase(), name: cur.name, withdrawFee: '0', withdrawMin: '0' }
+      ]
+    }));
+
     res.status(200).json({
       success: true,
-      data: dataResponse
+      data: configData
     });
   } catch (err) {
-    logger.error('[CryptoConfig] Quidax Failed:', err.message);
-
-    // Provide mock config if not in production or keys missing
-    if (process.env.NODE_ENV !== 'production' || err.message.includes('not configured')) {
-      logger.info('[CryptoConfig] Providing MOCK fallback config');
-
-      const mockConfig = [
+    logger.error('[CryptoConfig] Quidax Config Failed:', err.message);
+    
+    // Fallback to static config if Quidax is down
+    const mockConfig = [
         { coin: 'BTC', networkList: [{ network: 'BTC', name: 'Bitcoin', withdrawFee: '0.0005', withdrawMax: '100', withdrawMin: '0.001' }] },
         { coin: 'ETH', networkList: [{ network: 'ERC20', name: 'Ethereum', withdrawFee: '0.005', withdrawMax: '1000', withdrawMin: '0.01' }] },
         {
@@ -723,12 +757,10 @@ export const getCryptoConfig = catchAsync(async (req, res) => {
         { coin: 'TRX', networkList: [{ network: 'TRC20', name: 'TRON', withdrawFee: '1', withdrawMax: '1000000', withdrawMin: '2' }] }
       ];
 
-      return res.status(200).json({
-        success: true,
-        data: mockConfig
-      });
-    }
-
+    res.status(200).json({
+      success: true,
+      data: mockConfig
+    });
   }
 });
 

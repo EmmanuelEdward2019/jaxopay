@@ -30,20 +30,19 @@ import TradeDashboard from '../../components/crypto/TradeDashboard';
 const ASSETS = {
     fiat: [
         { code: 'USD', name: 'US Dollar', symbol: '$', flag: '🇺🇸' },
-        { code: 'EUR', name: 'Euro', symbol: '€', flag: '🇪🇺' },
-        { code: 'GBP', name: 'British Pound', symbol: '£', flag: '🇬🇧' },
         { code: 'NGN', name: 'Nigerian Naira', symbol: '₦', flag: '🇳🇬' },
         { code: 'GHS', name: 'Ghanaian Cedi', symbol: '₵', flag: '🇬🇭' },
         { code: 'KES', name: 'Kenyan Shilling', symbol: 'KSh', flag: '🇰🇪' },
-        { code: 'ZAR', name: 'South African Rand', symbol: 'R', flag: '🇿🇦' },
+        { code: 'EUR', name: 'Euro', symbol: '€', flag: '🇪🇺' },
+        { code: 'GBP', name: 'British Pound', symbol: '£', flag: '🇬🇧' },
     ],
     crypto: [
-        { code: 'BTC', name: 'Bitcoin', symbol: '₿', flag: '🪙' },
-        { code: 'ETH', name: 'Ethereum', symbol: 'Ξ', flag: '🪙' },
-        { code: 'USDT', name: 'Tether', symbol: '₮', flag: '🪙' },
-        { code: 'USDC', name: 'USD Coin', symbol: '$', flag: '🪙' },
-        { code: 'BNB', name: 'Binance Coin', symbol: 'BNB', flag: '🪙' },
-        { code: 'SOL', name: 'Solana', symbol: 'SOL', flag: '🪙' },
+        { code: 'USDT', name: 'Tether', symbol: '₮', flag: '💵' },
+        { code: 'BTC', name: 'Bitcoin', symbol: '₿', flag: '₿' },
+        { code: 'ETH', name: 'Ethereum', symbol: 'Ξ', flag: 'Ξ' },
+        { code: 'USDC', name: 'USD Coin', symbol: '$', flag: '💵' },
+        { code: 'BNB', name: 'Binance Coin', symbol: 'BNB', flag: '🔶' },
+        { code: 'SOL', name: 'Solana', symbol: 'SOL', flag: '☀️' },
     ]
 };
 
@@ -114,6 +113,25 @@ const Exchange = () => {
         fetchConfig();
     }, []);
 
+    // Update networks when coin changes
+    useEffect(() => {
+        if (!cryptoConfig) return;
+        const config = cryptoConfig.find(c => c.coin === depositCoin);
+        const nets = config?.networks || config?.networkList || [];
+        if (nets.length > 0 && !nets.find(n => n.network === depositNetwork)) {
+            setDepositNetwork(nets[0].network);
+        }
+    }, [depositCoin, cryptoConfig]);
+
+    useEffect(() => {
+        if (!cryptoConfig) return;
+        const config = cryptoConfig.find(c => c.coin === withdrawCoin);
+        const nets = config?.networks || config?.networkList || [];
+        if (nets.length > 0 && !nets.find(n => n.network === withdrawNetwork)) {
+            setWithdrawNetwork(nets[0].network);
+        }
+    }, [withdrawCoin, cryptoConfig]);
+
     const fetchWallets = async () => {
         const result = await walletService.getWallets();
         if (result.success) {
@@ -155,39 +173,45 @@ const Exchange = () => {
     };
 
     const handleExchange = async () => {
-        if (!payAmount || parseFloat(payAmount) <= 0) return;
+        if (!payAmount || parseFloat(payAmount) <= 0) {
+            setError("Please enter a valid amount");
+            return;
+        }
         setLoading(true);
         setError(null);
         setSuccess(null);
 
-        let result;
-        const amount = parseFloat(payAmount);
+        try {
+            let result;
+            const amount = parseFloat(payAmount);
 
-        if (fromAsset.type === 'fiat' && toAsset.type === 'crypto') {
-            const wallet = wallets.find(w => w.currency === fromAsset.code && w.wallet_type === 'fiat');
-            result = await cryptoService.buyCrypto(toAsset.code, amount, fromAsset.code, wallet?.id);
-        } else if (fromAsset.type === 'crypto' && toAsset.type === 'fiat') {
-            const wallet = wallets.find(w => w.currency === toAsset.code && w.wallet_type === 'fiat');
-            result = await cryptoService.sellCrypto(fromAsset.code, amount, toAsset.code, wallet?.id);
-        } else if (fromAsset.type === 'crypto' && toAsset.type === 'crypto') {
-            result = await cryptoService.swap({ from_coin: fromAsset.code, to_coin: toAsset.code, amount });
-        } else {
-            setError("Exchange combination not supported");
+            if (fromAsset.type === 'fiat' && toAsset.type === 'crypto') {
+                result = await cryptoService.buyCrypto(toAsset.code, amount, fromAsset.code);
+            } else if (fromAsset.type === 'crypto' && toAsset.type === 'fiat') {
+                result = await cryptoService.sellCrypto(fromAsset.code, amount, toAsset.code);
+            } else if (fromAsset.type === 'crypto' && toAsset.type === 'crypto') {
+                result = await cryptoService.swap({ from_coin: fromAsset.code, to_coin: toAsset.code, amount });
+            } else {
+                setError("Exchange combination not supported");
+                setLoading(false);
+                return;
+            }
+
+            if (result && result.success) {
+                setSuccess(`Exchange completed successfully!`);
+                setPayAmount('');
+                setReceiveAmount('');
+                setRates(null);
+                fetchWallets();
+                fetchHistory();
+            } else {
+                setError(result?.error || "Transaction failed. Please try again.");
+            }
+        } catch (err) {
+            setError("An unexpected error occurred: " + err.message);
+        } finally {
             setLoading(false);
-            return;
         }
-
-        if (result.success) {
-            setSuccess(`Exchange completed!`);
-            setPayAmount('');
-            setReceiveAmount('');
-            setRates(null);
-            fetchWallets();
-            fetchHistory();
-        } else {
-            setError(result.error);
-        }
-        setLoading(false);
     };
 
     const handleFetchDepositAddress = async () => {
@@ -229,8 +253,8 @@ const Exchange = () => {
         setLoading(false);
     };
 
-    const selectedDepositCoinConfig = cryptoConfig?.find(c => c.coin === depositCoin);
-    const selectedWithdrawCoinConfig = cryptoConfig?.find(c => c.coin === withdrawCoin);
+    const selectedDepositCoinConfig = cryptoConfig?.find(c => c.coin?.toUpperCase() === depositCoin?.toUpperCase());
+    const selectedWithdrawCoinConfig = cryptoConfig?.find(c => c.coin?.toUpperCase() === withdrawCoin?.toUpperCase());
 
     return (
         <div className="max-w-7xl mx-auto py-8 px-4">

@@ -166,6 +166,30 @@ class QuidaxAdapter {
     }
 
     /**
+     * Get all supported markets
+     */
+    async getMarkets() {
+        try {
+            const response = await this.client.get('/markets');
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
+     * Get all supported currencies (with network info)
+     */
+    async getCurrencies() {
+        try {
+            const response = await this.client.get('/currencies');
+            return response.data;
+        } catch (err) {
+            throw this._normalizeError(err);
+        }
+    }
+
+    /**
      * Trading: Create Order (Limit or Market)
      */
     async createOrder({ market, side, type, volume, price, total, userId = 'me' }) {
@@ -192,12 +216,25 @@ class QuidaxAdapter {
     async getExchangeRate(from, to) {
         try {
             // Quidax markets are usually btcngn, usdtngn, etc.
-            const market = `${from.toLowerCase()}${to.toLowerCase()}`;
-            const response = await this.client.get(`/markets/${market}/tickers`);
-            return parseFloat(response.data?.ticker?.last || 0);
+            // Try direct market first
+            const markets = [`${from.toLowerCase()}${to.toLowerCase()}`, `${to.toLowerCase()}${from.toLowerCase()}`];
+            
+            for (const market of markets) {
+                try {
+                    const response = await this.client.get(`/markets/${market}/tickers`);
+                    let lastPrice = parseFloat(response.data?.ticker?.last || 0);
+                    
+                    // If we found the inverse market, flip the price
+                    if (market.startsWith(to.toLowerCase())) {
+                        return lastPrice > 0 ? 1 / lastPrice : 0;
+                    }
+                    return lastPrice;
+                } catch (e) {
+                    continue;
+                }
+            }
+            return null;
         } catch (err) {
-            // Fallback for cross-rates if direct market doesn't exist
-            // (e.g. BTC to ETH -> BTC/USDT to ETH/USDT)
             return null; 
         }
     }

@@ -12,7 +12,7 @@ const TradingViewChart = ({ symbol = 'USDTNGN', theme = 'light' }) => {
       if (typeof TradingView !== 'undefined') {
         new TradingView.widget({
           "autosize": true,
-          "symbol": `QUIDAX:${symbol}`,
+          "symbol": symbol.toUpperCase().includes('NGN') ? `QUIDAX:${symbol.toUpperCase()}` : `BINANCE:${symbol.toUpperCase()}`,
           "interval": "D",
           "timezone": "Africa/Lagos",
           "theme": theme,
