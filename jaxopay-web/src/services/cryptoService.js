@@ -94,8 +94,9 @@ const cryptoService = {
   // Swap crypto for crypto
   swap: async (payload) => {
     try {
-      const response = await apiClient.post('/crypto/swap', payload);
-      return { success: true, data: response.data };
+      const body = await apiClient.post('/crypto/swap', payload);
+      if (body?.success && body?.data) return { success: true, data: body.data };
+      return { success: false, error: body?.error || body?.message || 'Swap failed' };
     } catch (error) {
       return { success: false, error: error.message };
     }

@@ -260,10 +260,16 @@ const Exchange = () => {
             if (result.success && result.data) {
                 setRates(result.data);
                 setRateError(null);
-                // Backend returns: { rate, rate_with_fee, exchange_amount, converted_amount }
+                // Backend returns: { rate, rate_with_fee, exchange_amount, expiry }
                 const amt = result.data.exchange_amount ?? result.data.converted_amount;
                 setReceiveAmount(amt != null ? Number(amt).toFixed(toAsset.type === 'crypto' ? 6 : 2) : '');
-                setQuoteExpiry(30);
+                // Use actual expiry from Quidax quotation (15s) or fallback to 30s
+                if (result.data.expiry) {
+                    const secsLeft = Math.max(5, Math.floor((new Date(result.data.expiry).getTime() - Date.now()) / 1000));
+                    setQuoteExpiry(secsLeft);
+                } else {
+                    setQuoteExpiry(30);
+                }
             } else {
                 setReceiveAmount('');
                 setRates(null);

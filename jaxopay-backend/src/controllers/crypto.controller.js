@@ -212,11 +212,29 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
       throw new AppError('Insufficient crypto balance', 400);
     }
 
-    // Get exchange rate (Live from Quidax)
-    const rate = await getLiveExchangeRate(from_coin, to_fiat);
-    const fiatAmount = qty * rate;
-    const fee = fiatAmount * 0.01; // 1% fee
-    const netAmount = fiatAmount - fee;
+    // Get live rate + exact to_amount via Quidax swap quotation
+    let quotation;
+    try {
+      quotation = await quidax.getSwapQuote({ from: from_coin, to: to_fiat, amount: qty, side: 'from' });
+      if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) throw new Error('Bad quotation');
+    } catch (e) {
+      logger.warn('[Exchange] Quidax quotation failed, falling back to ticker:', e.message);
+      quotation = null;
+    }
+
+    let rate, fiatAmount, fee, netAmount;
+    if (quotation) {
+      fiatAmount = parseFloat(quotation.to_amount);
+      rate       = fiatAmount / qty;
+      fee        = 0; // fee already baked into Quidax quote
+      netAmount  = fiatAmount;
+    } else {
+      rate      = await getLiveExchangeRate(from_coin, to_fiat);
+      if (!rate || rate <= 0) throw new AppError('Exchange rate unavailable. Please try again.', 503);
+      fiatAmount = qty * rate;
+      fee        = fiatAmount * 0.01;
+      netAmount  = fiatAmount - fee;
+    }
 
     // Get or create fiat wallet
     let fiatWallet = await client.query(
@@ -230,40 +248,29 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
         `INSERT INTO wallets (user_id, currency, wallet_type, balance)
          VALUES ($1, $2, 'fiat', 0)
          RETURNING id`,
-        [req.user.id, fiat_currency.toUpperCase()]
+        [req.user.id, to_fiat.toUpperCase()]
       );
     }
 
-    // Deduct crypto
+    // Deduct crypto, add fiat
     await client.query(
       'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
-      [crypto_amount, cryptoWallet.rows[0].id]
+      [qty, cryptoWallet.rows[0].id]
     );
-
-    // Add fiat
     await client.query(
       'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
       [netAmount, fiatWallet.rows[0].id]
     );
 
-    // Optional: Synchronize Liquidity with Quidax
-    let quidaxSwapId = null;
-    try {
-      if (process.env.QUIDAX_SECRET_KEY) {
-        // Use Instant Swap for liquidity
-        const quote = await quidax.getSwapQuote({
-          from: crypto_currency,
-          to: fiat_currency,
-          amount: crypto_amount,
-          side: 'from'
-        });
-        if (quote && quote.id) {
-          const swap = await quidax.executeSwap(quote.id);
-          quidaxSwapId = swap.id;
-        }
+    // Confirm Quidax swap if we used a real quotation
+    let quidaxSwapId = quotation?.id || null;
+    if (quotation?.id) {
+      try {
+        const confirmed = await quidax.executeSwap(quotation.id);
+        if (confirmed?.id) quidaxSwapId = confirmed.id;
+      } catch (e) {
+        logger.warn('[Exchange] Quidax confirm failed (balances already updated):', e.message);
       }
-    } catch (e) {
-      logger.warn('[Exchange] Quidax Swap Sync Failed (Processed internally):', e.message);
     }
 
     // Create crypto transaction
@@ -366,12 +373,29 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       throw new AppError('Insufficient fiat balance', 400);
     }
 
-    // Get exchange rate (Live from Quidax)
-    const rate = await getLiveExchangeRate(from_fiat, to_coin);
-    const fee = qty * 0.01; // 1% fee
-    const netFiat = qty; // qty (You Pay) is the total deducted
-    const amountToExchange = qty - fee;
-    const cryptoAmount = amountToExchange * rate;
+    // Get live rate + exact crypto_amount via Quidax swap quotation
+    let quotation;
+    try {
+      quotation = await quidax.getSwapQuote({ from: from_fiat, to: to_coin, amount: qty, side: 'from' });
+      if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) throw new Error('Bad quotation');
+    } catch (e) {
+      logger.warn('[Exchange] Quidax quotation failed, falling back to ticker:', e.message);
+      quotation = null;
+    }
+
+    let rate, fee, netFiat, cryptoAmount;
+    if (quotation) {
+      cryptoAmount = parseFloat(quotation.to_amount);
+      rate         = cryptoAmount / qty;
+      fee          = 0;    // Quidax handles fee internally
+      netFiat      = qty;
+    } else {
+      rate         = await getLiveExchangeRate(from_fiat, to_coin);
+      if (!rate || rate <= 0) throw new AppError('Exchange rate unavailable. Please try again.', 503);
+      fee          = qty * 0.01;
+      netFiat      = qty;
+      cryptoAmount = (qty - fee) * rate;
+    }
 
     if (parseFloat(fiatWallet.rows[0].balance) < netFiat) {
       throw new AppError('Insufficient balance to cover trade and fees', 400);
@@ -393,35 +417,25 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       );
     }
 
-    // Deduct fiat (including fee)
+    // Deduct fiat, add crypto
     await client.query(
       'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
       [netFiat, fiatWallet.rows[0].id]
     );
-
-    // Add crypto
     await client.query(
       'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
       [cryptoAmount, cryptoWallet.rows[0].id]
     );
 
-    // Optional: Synchronize Liquidity with Quidax
-    let quidaxSwapId = null;
-    try {
-      if (process.env.QUIDAX_SECRET_KEY) {
-        const quote = await quidax.getSwapQuote({
-          from: from_fiat,
-          to: to_coin,
-          amount: qty,
-          side: 'from'
-        });
-        if (quote && quote.id) {
-          const swap = await quidax.executeSwap(quote.id);
-          quidaxSwapId = swap.id;
-        }
+    // Confirm Quidax swap if we used a real quotation
+    let quidaxSwapId = quotation?.id || null;
+    if (quotation?.id) {
+      try {
+        const confirmed = await quidax.executeSwap(quotation.id);
+        if (confirmed?.id) quidaxSwapId = confirmed.id;
+      } catch (e) {
+        logger.warn('[Exchange] Quidax confirm failed (balances already updated):', e.message);
       }
-    } catch (e) {
-      logger.warn('[Exchange] Quidax Swap Sync Failed (Processed internally):', e.message);
     }
 
     // Create fiat transaction
@@ -925,22 +939,28 @@ export const getSwapQuote = catchAsync(async (req, res) => {
     throw new AppError('from, to, and amount are required', 400);
   }
   try {
-    const data = await quidax.getSwapQuote({ from, to, amount, side });
+    // Use temporary_swap_quotation for preview — doesn't create a real swap
+    const data = await quidax.getTemporarySwapQuote({
+      from,
+      to,
+      from_amount: side !== 'to' ? amount : undefined,
+      to_amount:   side === 'to' ? amount : undefined,
+    });
     res.status(200).json({ success: true, data });
   } catch (err) {
     logger.warn(`[SwapQuote] Quidax failed for ${from}->${to}:`, err.message);
-    // Return a best-effort quote using ticker cache
+    // Ticker cache fallback
     const rate = await getLiveExchangeRate(from, to).catch(() => 0);
     const toAmount = rate > 0 ? parseFloat(amount) * rate : 0;
     res.status(200).json({
       success: true,
       data: {
         from_currency: from.toUpperCase(),
-        to_currency: to.toUpperCase(),
-        from_amount: String(amount),
-        to_amount: String(toAmount.toFixed(8)),
-        rate: String(rate),
-        source: 'internal',
+        to_currency:   to.toUpperCase(),
+        from_amount:   String(amount),
+        to_amount:     String(toAmount.toFixed(8)),
+        rate:          String(rate),
+        source:        'internal',
       },
     });
   }
