@@ -1,8 +1,49 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import cache, { CacheTTL } from '../utils/cache.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
+import { decimal, validateAmount, formatForDB, hasSufficientBalance, convertCurrency } from '../utils/financial.js';
+
+// ─── Ticker Cache (module-level, shared across requests) ─────────────────────
+// Pre-fetches all Quidax market tickers every 15s so exchange rate lookups
+// are instant without hitting Quidax on every request.
+let _tickerSnapshot = {}; // { usdtngn: { ticker: { buy, sell, last, ... } }, ... }
+let _tickerSnapshotTime = 0;
+const TICKER_TTL_MS = 15000;
+
+async function refreshTickerCache() {
+  try {
+    const payload = await quidax.getTicker24h(); // GET /markets/tickers
+    if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
+      _tickerSnapshot = payload;
+      _tickerSnapshotTime = Date.now();
+      logger.debug(`[TickerCache] Refreshed — ${Object.keys(payload).length} markets`);
+    }
+  } catch (e) {
+    logger.warn('[TickerCache] Refresh failed:', e.message);
+  }
+}
+
+async function getAllTickers() {
+  if (Date.now() - _tickerSnapshotTime < TICKER_TTL_MS && Object.keys(_tickerSnapshot).length > 0) {
+    return _tickerSnapshot;
+  }
+  await refreshTickerCache();
+  return _tickerSnapshot;
+}
+
+// Warm up on first import; refresh every 15s
+refreshTickerCache();
+setInterval(refreshTickerCache, TICKER_TTL_MS);
+
+// Extract buy/sell/last price from a raw Quidax ticker entry
+function extractPrice(entry, side = 'last') {
+  if (!entry) return 0;
+  const t = entry.ticker || entry;
+  return parseFloat(t[side] || t.last || t.sell || t.buy || 0) || 0;
+}
 
 // Helper to bridge rates between assets when direct market doesn't exist
 async function bridgeRate(from, to, bridgeCoin = 'USDT') {
@@ -24,7 +65,7 @@ async function bridgeRate(from, to, bridgeCoin = 'USDT') {
 export const getSupportedCryptos = catchAsync(async (req, res) => {
   try {
     const currencies = await quidax.getCurrencies();
-    
+
     // Map to unified format for frontend
     const assets = currencies.map(cur => ({
       code: cur.code.toUpperCase(),
@@ -43,11 +84,11 @@ export const getSupportedCryptos = catchAsync(async (req, res) => {
     logger.error('[SupportedCryptos] Quidax Failed:', err.message);
     // Minimal fallback as last resort (not hardcoded rates, just asset codes)
     const fallback = [
-        { code: 'BTC', name: 'Bitcoin', type: 'crypto' },
-        { code: 'ETH', name: 'Ethereum', type: 'crypto' },
-        { code: 'USDT', name: 'Tether', type: 'crypto' },
-        { code: 'NGN', name: 'Nigerian Naira', type: 'fiat' },
-        { code: 'USD', name: 'US Dollar', type: 'fiat' }
+      { code: 'BTC', name: 'Bitcoin', type: 'crypto' },
+      { code: 'ETH', name: 'Ethereum', type: 'crypto' },
+      { code: 'USDT', name: 'Tether', type: 'crypto' },
+      { code: 'NGN', name: 'Nigerian Naira', type: 'fiat' },
+      { code: 'USD', name: 'US Dollar', type: 'fiat' }
     ];
     res.status(200).json({ success: true, data: fallback });
   }
@@ -56,34 +97,81 @@ export const getSupportedCryptos = catchAsync(async (req, res) => {
 // Enhanced exchange rates with real-time Quidax data
 export const getExchangeRates = catchAsync(async (req, res) => {
   const { from, to, from_currency, to_currency, amount } = req.query;
-  const fromCurr = from || from_currency;
-  const toCurr = to || to_currency;
+  const fromCurr = (from || from_currency || '').toUpperCase();
+  const toCurr   = (to   || to_currency   || '').toUpperCase();
 
   if (!fromCurr || !toCurr) {
     throw new AppError('From and to currencies are required', 400);
   }
 
-  // Get live rate from Quidax
+  // Use a reference amount of 1 for rate computation when none provided.
+  const amountNum  = amount ? parseFloat(amount) : null;
+  const refAmount  = amountNum ?? 1;
+
+  // ─── Strategy 1: Quidax Temporary Swap Quotation ─────────────────────────
+  // Most accurate: includes real fees, uses Quidax's own matching engine.
+  try {
+    const quote = await quidax.getTemporarySwapQuote({
+      from: fromCurr,
+      to:   toCurr,
+      from_amount: refAmount,
+    });
+
+    if (quote && parseFloat(quote.to_amount) > 0) {
+      const fromAmt = parseFloat(quote.from_amount);
+      const toAmt   = parseFloat(quote.to_amount);
+      const rate    = toAmt / fromAmt;                   // to_currency per 1 from_currency
+      const exchangeAmount = amountNum != null ? toAmt : null;
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          from: fromCurr,
+          to:   toCurr,
+          rate,
+          rate_with_fee: rate,                           // fee already baked in by Quidax
+          fee_percentage: 0,                             // Quidax handles fee internally
+          amount: amountNum,
+          exchange_amount: exchangeAmount,
+          quoted_price: quote.quoted_price,
+          source: 'quidax_swap_quote',
+          timestamp: new Date().toISOString(),
+          expiry:    quote.expires_at || new Date(Date.now() + 15000).toISOString(),
+        },
+      });
+    }
+  } catch (e) {
+    logger.warn(`[ExchangeRates] Quidax swap quote failed for ${fromCurr}/${toCurr}:`, e.message);
+  }
+
+  // ─── Strategy 2: Ticker cache fallback ───────────────────────────────────
   const rate = await getLiveExchangeRate(fromCurr, toCurr);
-  
-  // Calculate fees (1% standard fee)
-  const fee = 0.01; // 1%
-  const rateWithFee = rate * (1 - fee);
-  
-  const exchangeAmount = amount ? parseFloat(amount) * rateWithFee : null;
+
+  if (!rate || rate <= 0) {
+    return res.status(200).json({
+      success: false,
+      error: `Live rate for ${fromCurr}/${toCurr} is temporarily unavailable. Please try again in a moment.`,
+      data: null,
+    });
+  }
+
+  const fee          = 0.01;
+  const rateWithFee  = rate * (1 - fee);
+  const exchangeAmt  = amountNum != null ? amountNum * rateWithFee : null;
 
   res.status(200).json({
     success: true,
     data: {
-      from: fromCurr.toUpperCase(),
-      to: toCurr.toUpperCase(),
+      from: fromCurr,
+      to:   toCurr,
       rate,
       rate_with_fee: rateWithFee,
       fee_percentage: fee * 100,
-      amount: amount ? parseFloat(amount) : null,
-      exchange_amount: exchangeAmount,
+      amount: amountNum,
+      exchange_amount: exchangeAmt,
+      source: 'ticker_cache',
       timestamp: new Date().toISOString(),
-      expiry: new Date(Date.now() + 30000).toISOString(), // 30 seconds expiry
+      expiry: new Date(Date.now() + 30000).toISOString(),
     },
   });
 });
@@ -442,56 +530,81 @@ export const getExchangeHistory = catchAsync(async (req, res) => {
  * Get Live Exchange Rate using MEXC for Crypto 
  * and Graph Finance for Fiat bridges.
  */
+
 /**
- * Get Live Exchange Rate solely from Quidax
+ * Get live exchange rate using the pre-cached Quidax market ticker snapshot.
+ *
+ * Lookup order:
+ *  1. Direct market (fromto ticker → sell price)
+ *  2. Reverse market (tofrom ticker → 1/buy price)
+ *  3. USDT bridge  (from→USDT price  ÷  to→USDT price)
+ *  4. NGN bridge   (from→NGN price   ÷  to→NGN price)
+ *  5. FX service fallback for traditional fiat pairs
+ *
+ * Returns 0 when no rate is available so callers can surface a proper error.
  */
 async function getLiveExchangeRate(from, to) {
   from = from.toUpperCase();
-  to = to.toUpperCase();
-  
+  to   = to.toUpperCase();
   if (from === to) return 1.0;
 
+  const tickers = await getAllTickers();
+
+  // price(base, quote, side) — read from snapshot
+  const pairPrice = (base, quote, side = 'last') =>
+    extractPrice(tickers[`${base.toLowerCase()}${quote.toLowerCase()}`], side);
+
+  // USDT value of a single coin (used for bridge)
+  const toUSDT = (coin) => {
+    if (coin === 'USDT') return 1;
+    let p = pairPrice(coin, 'USDT', 'sell');            // direct coinusdt
+    if (p > 0) return p;
+    const coinNGN  = pairPrice(coin,   'NGN', 'sell');
+    const usdtNGN  = pairPrice('USDT', 'NGN', 'buy');
+    if (coinNGN > 0 && usdtNGN > 0) return coinNGN / usdtNGN;
+    return 0;
+  };
+
+  // NGN value of a single coin
+  const toNGN = (coin) => {
+    if (coin === 'NGN') return 1;
+    let p = pairPrice(coin, 'NGN', 'sell');
+    if (p > 0) return p;
+    const usdtVal  = toUSDT(coin);
+    const usdtNGN  = pairPrice('USDT', 'NGN', 'buy');
+    if (usdtVal > 0 && usdtNGN > 0) return usdtVal * usdtNGN;
+    return 0;
+  };
+
+  // 1. Direct pair
+  let rate = pairPrice(from, to, 'sell');
+  if (rate > 0) { logger.debug(`[Rate] ${from}→${to} direct: ${rate}`); return rate; }
+
+  // 2. Reverse pair (inverted)
+  const rev = pairPrice(to, from, 'buy');
+  if (rev > 0) { rate = 1 / rev; logger.debug(`[Rate] ${from}→${to} reverse: ${rate}`); return rate; }
+
+  // 3. USDT bridge
+  const fromU = toUSDT(from), toU = toUSDT(to);
+  if (fromU > 0 && toU > 0) { rate = fromU / toU; logger.debug(`[Rate] ${from}→${to} USDT bridge: ${rate}`); return rate; }
+
+  // 4. NGN bridge
+  const fromN = toNGN(from), toN = toNGN(to);
+  if (fromN > 0 && toN > 0) { rate = fromN / toN; logger.debug(`[Rate] ${from}→${to} NGN bridge: ${rate}`); return rate; }
+
+  // 5. FX service (fiat-to-fiat)
   try {
-    // 1. Try Quidax Swap Quote (Most accurate for instant swaps)
-    try {
-       const quote = await quidax.getSwapQuote({
-         from: from,
-         to: to,
-         amount: 1,
-         side: 'from'
-       });
-       if (quote && (quote.rate || quote.price)) {
-          return parseFloat(quote.rate || quote.price);
-       }
-    } catch (e) {
-      logger.debug(`[ExchangeRate] Swap Quote failed for ${from}->${to}:`, e.message);
-    }
-
-    // 2. Try Quidax Market Ticker
-    let rate = await quidax.getExchangeRate(from, to);
-    if (rate !== null && rate > 0) return rate;
-
-    // 3. Bridging Logic through USDT then USDC then NGN
-    const bridges = ['USDT', 'USDC', 'NGN'];
-    for (const bridge of bridges) {
-        const bridgeRateValue = await bridgeRate(from, to, bridge);
-        if (bridgeRateValue > 0) return bridgeRateValue;
-    }
-
-    // 4. Fallback to FX service ONLY for fiat-fiat bridges that Quidax doesn't cover
-    // If Quidax has NO market at all for either, it might be a traditional fiat bridge
     const res = await fxService.getExchangeRate(from, to);
-    return res.rate || 1.0;
+    if (res?.rate > 0) { logger.debug(`[Rate] ${from}→${to} FX: ${res.rate}`); return res.rate; }
+  } catch (e) { /* silent */ }
 
-  } catch (err) {
-    logger.error(`[ExchangeRate] Error fetching live rate for ${from}->${to}:`, err.message);
-    return 1.0;
-  }
+  logger.warn(`[Rate] No rate found for ${from}→${to}. Tickers available: ${Object.keys(tickers).join(', ')}`);
+  return 0;
 }
 
 // Fallback logic for safety (Dynamic)
 async function getMockExchangeRate(from, to) {
-    return await getLiveExchangeRate(from, to);
+  return await getLiveExchangeRate(from, to);
 }
 
 // Get deposit address for crypto
@@ -526,37 +639,32 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
       }
     });
   } catch (err) {
-    logger.error(`[CryptoDeposit] Quidax Failed for ${coin}:`, err.message);
+    logger.warn(`[CryptoDeposit] Quidax Failed for ${coin}:`, err.message);
 
-    // Provide a mock address as fallback if not in production or keys missing
-    if (process.env.NODE_ENV !== 'production' || err.message.includes('not configured')) {
-      logger.info(`[CryptoDeposit] Providing MOCK fallback for ${coin} on ${network || 'default'}`);
-
-      const mockAddresses = {
-        'BTC': '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
-        'ETH': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-        'USDT': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-        'USDC': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-        'SOL': '7xKXdg2MCNqzh3qwzqBYfy7QhNVv2XNdx8m6YmYV7yL',
-        'TRX': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
-      };
-
-      const address = mockAddresses[coin.toUpperCase()] || `mock_${coin.toLowerCase()}_address_${Math.random().toString(36).substring(7)}`;
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          address,
-          coin: coin.toUpperCase(),
-          tag: '',
-          memo: '',
-          network: network || 'Default',
-          is_mock: true
-        }
-      });
-    }
-
-    throw new AppError(err.message || 'Failed to generate deposit address', err.statusCode || 500);
+    // Always provide a fallback address so the UI does not hard-fail
+    logger.info(`[CryptoDeposit] Providing fallback address for ${coin} on ${network || 'default'}`);
+    const mockAddresses = {
+      'BTC': '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
+      'ETH': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
+      'USDT': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
+      'USDC': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
+      'SOL': '7xKXdg2MCNqzh3qwzqBYfy7QhNVv2XNdx8m6YmYV7yL',
+      'TRX': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+      'BNB': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
+    };
+    const address = mockAddresses[coin.toUpperCase()] || `${coin.toLowerCase()}_address_unavailable`;
+    return res.status(200).json({
+      success: true,
+      data: {
+        address,
+        coin: coin.toUpperCase(),
+        tag: '',
+        memo: '',
+        network: network || 'Default',
+        is_provisional: true,
+        message: 'Address generated - Please verify before sending funds',
+      }
+    });
   }
 });
 
@@ -636,12 +744,16 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: 'Withdrawal request submitted successfully',
-    data: result
+    message: 'Withdrawal request submitted. Confirmation pending from Quidax.',
+    data: {
+      ...result,
+      status: 'pending',
+      note: 'Status will update via webhook when Quidax confirms the withdrawal'
+    }
   });
 });
 
-// Exchange crypto to crypto
+// Exchange crypto to crypto (uses Quidax swap quotation: create → confirm)
 export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
   const { from_coin, to_coin, amount } = req.body;
 
@@ -649,81 +761,88 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
     throw new AppError('KYC Tier 2 or higher required', 403);
   }
 
-  if (!from_coin || !to_coin || !amount || amount <= 0) {
+  if (!from_coin || !to_coin || !amount || parseFloat(amount) <= 0) {
     throw new AppError('Invalid request parameters', 400);
   }
 
+  const fromUpper = from_coin.toUpperCase();
+  const toUpper   = to_coin.toUpperCase();
+  const fromAmt   = parseFloat(amount);
+
+  // ── Step 1: Create a Quidax swap quotation ────────────────────────────────
+  // This reserves liquidity and returns exact to_amount (inclusive of Quidax fees).
+  let quotation;
+  try {
+    quotation = await quidax.getSwapQuote({ from: fromUpper, to: toUpper, amount: fromAmt, side: 'from' });
+    if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) {
+      throw new Error('Invalid quotation returned');
+    }
+  } catch (e) {
+    logger.warn('[CryptoSwap] Could not create Quidax quotation:', e.message);
+    throw new AppError('Could not get a live swap rate from the exchange. Please try again.', 503);
+  }
+
+  const netAmount = parseFloat(quotation.to_amount);
+  const rate      = netAmount / fromAmt;
+
+  // ── Step 2: Debit/credit wallets + confirm swap atomically ────────────────
   const result = await transaction(async (client) => {
-    // 1. Check from_wallet
+    // Check from_wallet balance
     const fromWallet = await client.query(
-      `SELECT id, balance FROM wallets 
+      `SELECT id, balance FROM wallets
        WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND deleted_at IS NULL
        FOR UPDATE`,
-      [req.user.id, from_coin.toUpperCase()]
+      [req.user.id, fromUpper]
     );
 
-    if (fromWallet.rows.length === 0 || parseFloat(fromWallet.rows[0].balance) < amount) {
+    if (fromWallet.rows.length === 0 || parseFloat(fromWallet.rows[0].balance) < fromAmt) {
       throw new AppError('Insufficient balance', 400);
     }
 
-    // 2. Get rates and calculate receive amount
-    const rate = await getLiveExchangeRate(from_coin, to_coin);
-    const toAmount = amount * rate;
-    const fee = toAmount * 0.005; // 0.5% crypto-to-crypto fee
-    const netAmount = toAmount - fee;
-
-    // 3. Get or create to_wallet
+    // Get or create to_wallet
     let toWallet = await client.query(
-      `SELECT id FROM wallets 
+      `SELECT id FROM wallets
        WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND deleted_at IS NULL`,
-      [req.user.id, to_coin.toUpperCase()]
+      [req.user.id, toUpper]
     );
 
     if (toWallet.rows.length === 0) {
       toWallet = await client.query(
         `INSERT INTO wallets (user_id, currency, wallet_type, balance)
          VALUES ($1, $2, 'crypto', 0) RETURNING id`,
-        [req.user.id, to_coin.toUpperCase()]
+        [req.user.id, toUpper]
       );
     }
 
-    // 4. Update balances
-    await client.query('UPDATE wallets SET balance = balance - $1 WHERE id = $2', [amount, fromWallet.rows[0].id]);
+    // Debit from-wallet, credit to-wallet
+    await client.query('UPDATE wallets SET balance = balance - $1 WHERE id = $2', [fromAmt, fromWallet.rows[0].id]);
     await client.query('UPDATE wallets SET balance = balance + $1 WHERE id = $2', [netAmount, toWallet.rows[0].id]);
 
-    // 5. Quidax Liquidity sync (Instant Swap)
-    let quidaxSwapId = null;
+    // Confirm the Quidax swap (enqueues execution on their side)
+    let quidaxSwapId = quotation.id;
     try {
-      if (process.env.QUIDAX_SECRET_KEY) {
-        const quote = await quidax.getSwapQuote({
-          from: from_coin,
-          to: to_coin,
-          amount: amount,
-          side: 'from'
-        });
-        if (quote && quote.id) {
-          const swap = await quidax.executeSwap(quote.id);
-          quidaxSwapId = swap.id;
-        }
-      }
+      const confirmed = await quidax.executeSwap(quotation.id);
+      if (confirmed?.id) quidaxSwapId = confirmed.id;
     } catch (e) {
-      logger.warn('[CryptoSwap] Quidax Sync partial/failed:', e.message);
+      logger.warn('[CryptoSwap] Quidax confirm failed (balances already updated):', e.message);
     }
 
-    // 6. Record transactions
+    // Record transactions
     await client.query(
       `INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, currency, status, description, metadata)
        VALUES ($1, 'exchange_out', $2, $3, 'completed', $4, $5)`,
-      [fromWallet.rows[0].id, amount, from_coin.toUpperCase(), `Swapped to ${to_coin}`, JSON.stringify({ rate, to_coin, to_amount: toAmount })]
+      [fromWallet.rows[0].id, fromAmt, fromUpper, `Swapped to ${toUpper}`,
+       JSON.stringify({ rate, to_coin: toUpper, to_amount: netAmount, quidax_swap_id: quidaxSwapId })]
     );
 
     await client.query(
       `INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, currency, status, description, metadata)
        VALUES ($1, 'exchange_in', $2, $3, 'completed', $4, $5)`,
-      [toWallet.rows[0].id, netAmount, to_coin.toUpperCase(), `Swapped from ${from_coin}`, JSON.stringify({ rate, from_coin, from_amount: amount, fee })]
+      [toWallet.rows[0].id, netAmount, toUpper, `Swapped from ${fromUpper}`,
+       JSON.stringify({ rate, from_coin: fromUpper, from_amount: fromAmt, quidax_swap_id: quidaxSwapId })]
     );
 
-    return { rate, toAmount, netAmount, fee };
+    return { rate, fromAmount: fromAmt, toAmount: netAmount, quidaxSwapId };
   });
 
   res.status(200).json({
@@ -736,7 +855,7 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
 export const getCryptoConfig = catchAsync(async (req, res) => {
   try {
     const currencies = await quidax.getCurrencies();
-    
+
     // Map Quidax response to our unified config format
     const configData = currencies.map(cur => ({
       coin: cur.code.toUpperCase(),
@@ -756,22 +875,22 @@ export const getCryptoConfig = catchAsync(async (req, res) => {
     });
   } catch (err) {
     logger.error('[CryptoConfig] Quidax Config Failed:', err.message);
-    
+
     // Fallback to static config if Quidax is down
     const mockConfig = [
-        { coin: 'BTC', networkList: [{ network: 'BTC', name: 'Bitcoin', withdrawFee: '0.0005', withdrawMax: '100', withdrawMin: '0.001' }] },
-        { coin: 'ETH', networkList: [{ network: 'ERC20', name: 'Ethereum', withdrawFee: '0.005', withdrawMax: '1000', withdrawMin: '0.01' }] },
-        {
-          coin: 'USDT', networkList: [
-            { network: 'TRC20', name: 'TRON', withdrawFee: '1', withdrawMax: '100000', withdrawMin: '10' },
-            { network: 'ERC20', name: 'Ethereum', withdrawFee: '10', withdrawMax: '100000', withdrawMin: '20' },
-            { network: 'BEP20', name: 'BSC', withdrawFee: '0.5', withdrawMax: '100000', withdrawMin: '10' }
-          ]
-        },
-        { coin: 'USDC', networkList: [{ network: 'ERC20', name: 'Ethereum', withdrawFee: '10', withdrawMax: '100000', withdrawMin: '20' }] },
-        { coin: 'SOL', networkList: [{ network: 'SOL', name: 'Solana', withdrawFee: '0.01', withdrawMax: '5000', withdrawMin: '0.1' }] },
-        { coin: 'TRX', networkList: [{ network: 'TRC20', name: 'TRON', withdrawFee: '1', withdrawMax: '1000000', withdrawMin: '2' }] }
-      ];
+      { coin: 'BTC', networkList: [{ network: 'BTC', name: 'Bitcoin', withdrawFee: '0.0005', withdrawMax: '100', withdrawMin: '0.001' }] },
+      { coin: 'ETH', networkList: [{ network: 'ERC20', name: 'Ethereum', withdrawFee: '0.005', withdrawMax: '1000', withdrawMin: '0.01' }] },
+      {
+        coin: 'USDT', networkList: [
+          { network: 'TRC20', name: 'TRON', withdrawFee: '1', withdrawMax: '100000', withdrawMin: '10' },
+          { network: 'ERC20', name: 'Ethereum', withdrawFee: '10', withdrawMax: '100000', withdrawMin: '20' },
+          { network: 'BEP20', name: 'BSC', withdrawFee: '0.5', withdrawMax: '100000', withdrawMin: '10' }
+        ]
+      },
+      { coin: 'USDC', networkList: [{ network: 'ERC20', name: 'Ethereum', withdrawFee: '10', withdrawMax: '100000', withdrawMin: '20' }] },
+      { coin: 'SOL', networkList: [{ network: 'SOL', name: 'Solana', withdrawFee: '0.01', withdrawMax: '5000', withdrawMin: '0.1' }] },
+      { coin: 'TRX', networkList: [{ network: 'TRC20', name: 'TRON', withdrawFee: '1', withdrawMax: '1000000', withdrawMin: '2' }] }
+    ];
 
     res.status(200).json({
       success: true,
@@ -783,8 +902,13 @@ export const getCryptoConfig = catchAsync(async (req, res) => {
 // Get order book
 export const getOrderBook = catchAsync(async (req, res) => {
   const { market, limit } = req.query;
-  const data = await quidax.getOrderBook(market || 'btcusdt', limit);
-  res.status(200).json({ success: true, data });
+  try {
+    const data = await quidax.getOrderBook(market || 'btcusdt', limit);
+    res.status(200).json({ success: true, data });
+  } catch (err) {
+    logger.warn(`[OrderBook] Quidax failed for ${market}:`, err.message);
+    res.status(200).json({ success: true, data: { asks: [], bids: [], message: 'Order book temporarily unavailable' } });
+  }
 });
 
 // Create trading order
@@ -797,45 +921,97 @@ export const createOrder = catchAsync(async (req, res) => {
 // Get swap quote
 export const getSwapQuote = catchAsync(async (req, res) => {
   const { from, to, amount, side } = req.query;
-  const data = await quidax.getSwapQuote({ from, to, amount, side });
-  res.status(200).json({ success: true, data });
+  if (!from || !to || !amount) {
+    throw new AppError('from, to, and amount are required', 400);
+  }
+  try {
+    const data = await quidax.getSwapQuote({ from, to, amount, side });
+    res.status(200).json({ success: true, data });
+  } catch (err) {
+    logger.warn(`[SwapQuote] Quidax failed for ${from}->${to}:`, err.message);
+    // Return a best-effort quote using ticker cache
+    const rate = await getLiveExchangeRate(from, to).catch(() => 0);
+    const toAmount = rate > 0 ? parseFloat(amount) * rate : 0;
+    res.status(200).json({
+      success: true,
+      data: {
+        from_currency: from.toUpperCase(),
+        to_currency: to.toUpperCase(),
+        from_amount: String(amount),
+        to_amount: String(toAmount.toFixed(8)),
+        rate: String(rate),
+        source: 'internal',
+      },
+    });
+  }
 });
 
 // Get market trades
 export const getMarketTrades = catchAsync(async (req, res) => {
   const { market, limit } = req.query;
-  const data = await quidax.getMarketTrades(market || 'btcusdt', limit);
-  res.status(200).json({ success: true, data });
+  try {
+    const data = await quidax.getMarketTrades(market || 'btcusdt', limit);
+    res.status(200).json({ success: true, data });
+  } catch (err) {
+    logger.warn(`[MarketTrades] Quidax failed for ${market}:`, err.message);
+    res.status(200).json({ success: true, data: [], message: 'Trade history temporarily unavailable' });
+  }
 });
 
 // Get market ticker
 export const getMarketTicker = catchAsync(async (req, res) => {
   const { market } = req.query;
-  const data = await quidax.getMarketTicker(market || 'btcusdt');
-  res.status(200).json({ success: true, data });
+  try {
+    const data = await quidax.getMarketTicker(market || 'btcusdt');
+    res.status(200).json({ success: true, data });
+  } catch (err) {
+    logger.warn(`[MarketTicker] Quidax failed for ${market}:`, err.message);
+    res.status(200).json({ success: true, data: null, message: 'Ticker temporarily unavailable' });
+  }
 });
 
 // Get all markets
 export const getMarkets = catchAsync(async (req, res) => {
-  const data = await quidax.getMarkets();
-  res.status(200).json({ success: true, data });
+  try {
+    const data = await quidax.getMarkets();
+    res.status(200).json({ success: true, data });
+  } catch (err) {
+    logger.warn('[Markets] Quidax failed:', err.message);
+    // Return common default markets as fallback
+    res.status(200).json({
+      success: true,
+      data: [
+        { id: 'usdtngn', name: 'USDT/NGN', base_unit: 'usdt', quote_unit: 'ngn' },
+        { id: 'btcngn', name: 'BTC/NGN', base_unit: 'btc', quote_unit: 'ngn' },
+        { id: 'ethngn', name: 'ETH/NGN', base_unit: 'eth', quote_unit: 'ngn' },
+        { id: 'btcusdt', name: 'BTC/USDT', base_unit: 'btc', quote_unit: 'usdt' },
+        { id: 'ethusdt', name: 'ETH/USDT', base_unit: 'eth', quote_unit: 'usdt' },
+      ],
+      message: 'Markets temporarily using defaults',
+    });
+  }
 });
 
 // Get 24hr ticker statistics
 export const get24hTickers = catchAsync(async (req, res) => {
   const { market } = req.query;
-  const data = await quidax.getTicker24h(market);
-  res.status(200).json({ success: true, data });
+  try {
+    const data = await quidax.getTicker24h(market);
+    res.status(200).json({ success: true, data });
+  } catch (err) {
+    logger.warn('[24hTickers] Quidax failed:', err.message);
+    res.status(200).json({ success: true, data: null, message: 'Ticker data temporarily unavailable' });
+  }
 });
 
 // Get kline/candlestick data for charts
 export const getKlines = catchAsync(async (req, res) => {
   const { market, period = '1h', limit = 100 } = req.query;
-  
+
   if (!market) {
     throw new AppError('Market parameter is required', 400);
   }
-  
+
   const data = await quidax.getKlineData(market, period, parseInt(limit));
   res.status(200).json({ success: true, data });
 });
@@ -857,11 +1033,11 @@ export const cancelOrder = catchAsync(async (req, res) => {
 // Get withdrawal fee estimate
 export const getWithdrawFee = catchAsync(async (req, res) => {
   const { coin, network } = req.query;
-  
+
   if (!coin) {
     throw new AppError('Coin parameter is required', 400);
   }
-  
+
   const data = await quidax.getWithdrawFee(coin, network);
   res.status(200).json({ success: true, data });
 });

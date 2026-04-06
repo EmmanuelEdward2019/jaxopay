@@ -26,6 +26,13 @@ import {
   getWithdrawFee
 } from '../controllers/crypto.controller.js';
 
+// Enhanced endpoints with full Quidax integration
+import {
+  getCryptoNetworks,
+  getLiveOrderBook,
+  getLiveExchangeRate
+} from '../controllers/crypto-enhanced.controller.js';
+
 const router = express.Router();
 
 // All crypto routes require authentication
@@ -38,8 +45,8 @@ router.get('/supported', getSupportedCryptos);
 // Get exchange rates
 router.get(
   '/rates',
-  query('from').isString(),
-  query('to').isString(),
+  query('from').isString().notEmpty(),
+  query('to').isString().notEmpty(),
   query('amount').optional().isFloat({ min: 0 }),
   validate,
   getExchangeRates
@@ -111,6 +118,31 @@ router.post(
 
 // Get crypto config (networks, etc)
 router.get('/config', getCryptoConfig);
+
+// ========== ENHANCED ENDPOINTS (REAL-TIME QUIDAX DATA) ==========
+
+// Get supported networks for a cryptocurrency (dynamic from Quidax)
+router.get(
+  '/networks',
+  query('coin').isString().notEmpty(),
+  validate,
+  getCryptoNetworks
+);
+
+// Get live order book from Quidax
+router.get('/order-book/live', getLiveOrderBook);
+
+// Get live exchange rate from Quidax
+router.get(
+  '/exchange-rate/live',
+  query('from').isString().notEmpty(),
+  query('to').isString().notEmpty(),
+  query('amount').optional().isFloat({ min: 0 }),
+  validate,
+  getLiveExchangeRate
+);
+
+// ========== EXISTING ENDPOINTS ==========
 
 // Get order book
 router.get('/order-book', getOrderBook);

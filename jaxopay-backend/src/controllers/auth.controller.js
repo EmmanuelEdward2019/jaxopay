@@ -26,53 +26,76 @@ const generateRefreshToken = (userId) => {
   });
 };
 
-// Create session
+// Create session (with error handling and defaults)
 const createSession = async (userId, token, deviceInfo, executor = query) => {
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+  try {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
 
-  const result = await executor(
-    `INSERT INTO user_sessions (user_id, session_token, device_fingerprint, ip_address, user_agent, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (session_token) DO UPDATE 
-     SET last_activity_at = NOW(), expires_at = $6
-     RETURNING id`,
-    [userId, token, deviceInfo.fingerprint, deviceInfo.ipAddress, deviceInfo.userAgent, expiresAt]
-  );
-
-  return result.rows[0].id;
-};
-
-// Store device information
-const storeDeviceInfo = async (userId, deviceInfo, executor = query) => {
-  const parsedDevice = parseUserAgent(deviceInfo.userAgent);
-
-  // Check if device already exists
-  const existingDevice = await executor(
-    'SELECT id FROM user_devices WHERE user_id = $1 AND device_fingerprint = $2',
-    [userId, deviceInfo.fingerprint]
-  );
-
-  if (existingDevice.rows.length === 0) {
-    await executor(
-      `INSERT INTO user_devices (user_id, device_fingerprint, device_name, device_type, os, browser, ip_address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    const result = await executor(
+      `INSERT INTO user_sessions (user_id, session_token, device_fingerprint, ip_address, user_agent, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (session_token) DO UPDATE
+       SET last_activity_at = NOW(), expires_at = $6
+       RETURNING id`,
       [
         userId,
-        deviceInfo.fingerprint,
-        parsedDevice.deviceName,
-        parsedDevice.deviceType,
-        parsedDevice.os,
-        parsedDevice.browser,
-        deviceInfo.ipAddress,
+        token,
+        deviceInfo?.fingerprint || 'unknown',
+        deviceInfo?.ipAddress || null,
+        deviceInfo?.userAgent || '',
+        expiresAt
       ]
     );
-  } else {
-    // Update last seen
-    await executor(
-      'UPDATE user_devices SET last_seen_at = NOW(), ip_address = $1 WHERE id = $2',
-      [deviceInfo.ipAddress, existingDevice.rows[0].id]
+
+    return result.rows[0].id;
+  } catch (error) {
+    logger.error('Failed to create session:', error.message);
+    // Return null if session creation fails - login can still proceed
+    return null;
+  }
+};
+
+// Store device information (with error handling for missing table/columns)
+const storeDeviceInfo = async (userId, deviceInfo, executor = query) => {
+  try {
+    if (!deviceInfo || !deviceInfo.fingerprint) {
+      logger.warn('Device info missing, skipping device storage');
+      return;
+    }
+
+    const parsedDevice = parseUserAgent(deviceInfo.userAgent || '');
+
+    // Check if device already exists
+    const existingDevice = await executor(
+      'SELECT id FROM user_devices WHERE user_id = $1 AND device_fingerprint = $2',
+      [userId, deviceInfo.fingerprint]
     );
+
+    if (existingDevice.rows.length === 0) {
+      await executor(
+        `INSERT INTO user_devices (user_id, device_fingerprint, device_name, device_type, os, browser, ip_address, last_seen_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+        [
+          userId,
+          deviceInfo.fingerprint,
+          parsedDevice.deviceName || 'Unknown',
+          parsedDevice.deviceType || 'Unknown',
+          parsedDevice.os || 'Unknown',
+          parsedDevice.browser || 'Unknown',
+          deviceInfo.ipAddress,
+        ]
+      );
+    } else {
+      // Update last seen
+      await executor(
+        'UPDATE user_devices SET last_seen_at = NOW(), ip_address = $1 WHERE id = $2',
+        [deviceInfo.ipAddress, existingDevice.rows[0].id]
+      );
+    }
+  } catch (error) {
+    // Don't fail login if device tracking fails
+    logger.error('Failed to store device info (non-critical):', error.message);
   }
 };
 
@@ -294,11 +317,25 @@ export const login = catchAsync(async (req, res) => {
   const accessToken = generateToken(user.id);
   const refreshToken = generateRefreshToken(user.id);
 
-  // Create session
-  await createSession(user.id, accessToken, req.deviceInfo);
+  // Create session (with timeout protection)
+  try {
+    await Promise.race([
+      createSession(user.id, accessToken, req.deviceInfo),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Session creation timeout')), 5000))
+    ]);
+  } catch (error) {
+    logger.warn('Session creation failed or timed out (non-critical):', error.message);
+  }
 
-  // Store device info
-  await storeDeviceInfo(user.id, req.deviceInfo);
+  // Store device info (with timeout protection)
+  try {
+    await Promise.race([
+      storeDeviceInfo(user.id, req.deviceInfo),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Device storage timeout')), 5000))
+    ]);
+  } catch (error) {
+    logger.warn('Device info storage failed or timed out (non-critical):', error.message);
+  }
 
   // Update last login
   await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
@@ -536,21 +573,27 @@ export const refreshToken = catchAsync(async (req, res) => {
   }
 
   // Get user info
-  const result = await query(
-    'SELECT id, email, role, kyc_tier, kyc_status, created_at FROM users WHERE id = $1 AND deleted_at IS NULL',
-    [decoded.userId]
-  );
-
-  if (result.rows.length === 0) {
-    throw new AppError('The user belonging to this token no longer exists.', 401);
+  let user;
+  try {
+    const result = await query(
+      'SELECT id, email, role, kyc_tier, kyc_status, created_at FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [decoded.userId],
+      { timeout: 8000, retries: 1 }
+    );
+    if (result.rows.length === 0) {
+      throw new AppError('The user belonging to this token no longer exists.', 401);
+    }
+    user = result.rows[0];
+  } catch (err) {
+    if (err.statusCode === 401 || err.status === 401) throw err;
+    // DB is unavailable — return 503 so clients know to retry, not log out
+    throw new AppError('Session service temporarily unavailable. Please try again.', 503);
   }
-
-  const user = result.rows[0];
 
   // Generate new access token
   const accessToken = generateToken(user.id);
 
-  // Create new session in DB so verifyToken recognizes it
+  // Create new session in DB so verifyToken recognizes it (best-effort)
   await createSession(user.id, accessToken, req.deviceInfo);
 
   res.status(200).json({

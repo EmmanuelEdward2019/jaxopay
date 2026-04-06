@@ -25,10 +25,15 @@ export const rateLimiter = rateLimit({
 });
 
 // Strict rate limiter for authentication endpoints
+// Production: 10 attempts per 15 min, Development: 50 attempts
+const authMaxAttempts = process.env.NODE_ENV === 'production' ? 10 : 50;
+
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // Increased to 50 for development
+  max: authMaxAttempts,
   skipSuccessfulRequests: true, // Don't count successful requests
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   message: {
     success: false,
     message: 'Too many authentication attempts, please try again later.',
@@ -38,18 +43,25 @@ export const authRateLimiter = rateLimit({
       ip: req.ip,
       url: req.originalUrl,
       email: req.body.email,
+      userAgent: req.get('user-agent'),
     });
     res.status(429).json({
       success: false,
-      message: 'Too many authentication attempts, please try again in 15 minutes.',
+      message: `Too many authentication attempts from this IP. Please try again in 15 minutes.`,
+      retryAfter: Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000),
     });
   },
 });
 
-// OTP rate limiter
+// OTP rate limiter (stricter) - Production: 3 attempts, Development: 10
+const otpMaxAttempts = process.env.NODE_ENV === 'production' ? 3 : 10;
+
 export const otpRateLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 20, // Increased to 20 for development
+  max: otpMaxAttempts,
+  skipSuccessfulRequests: false,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: {
     success: false,
     message: 'Too many OTP requests, please try again later.',
@@ -58,10 +70,12 @@ export const otpRateLimiter = rateLimit({
     logger.warn('OTP rate limit exceeded:', {
       ip: req.ip,
       phone: req.body.phone,
+      userAgent: req.get('user-agent'),
     });
     res.status(429).json({
       success: false,
-      message: 'Too many OTP requests, please try again in 5 minutes.',
+      message: `Too many OTP requests. Please try again in ${Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000 / 60)} minutes.`,
+      retryAfter: Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000),
     });
   },
 });

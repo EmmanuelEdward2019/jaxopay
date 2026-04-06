@@ -5,6 +5,7 @@ import { ledgerService } from '../orchestration/index.js';
 import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js';
 import complianceEngine from '../orchestration/compliance/ComplianceEngine.js';
 import axios from 'axios';
+import { decimal, validateAmount, calculateFee, formatForDB, hasSufficientBalance } from '../utils/financial.js';
 
 const korapay = new KorapayAdapter();
 
@@ -40,18 +41,26 @@ export const getFXQuote = catchAsync(async (req, res) => {
 
   if (!exchangeRate) throw new AppError(`Exchange rate not available for ${from} to ${to}`, 400);
 
-  const sourceAmount = parseFloat(amount);
-  const fee = sourceAmount * 0.015;
-  const destinationAmount = (sourceAmount - fee) * exchangeRate;
+  // Use decimal.js for precision
+  const sourceAmount = validateAmount(amount, 1, 1000000);
+  const feeConfig = { type: 'percentage', value: 1.5 };
+  const fee = calculateFee(sourceAmount, feeConfig);
+  const amountAfterFee = sourceAmount.minus(fee);
+  const destinationAmount = amountAfterFee.times(decimal(exchangeRate));
+  const totalDebit = sourceAmount.plus(fee);
 
   res.status(200).json({
     success: true,
     data: {
-      from: from.toUpperCase(), to: to.toUpperCase(),
-      source_amount: sourceAmount, destination_amount: parseFloat(destinationAmount.toFixed(2)),
-      exchange_rate: exchangeRate, fee: parseFloat(fee.toFixed(4)),
-      total_debit: parseFloat((sourceAmount + fee).toFixed(2)),
-      timestamp: new Date().toISOString(), valid_for_seconds: 300
+      from: from.toUpperCase(),
+      to: to.toUpperCase(),
+      source_amount: sourceAmount.toString(),
+      destination_amount: destinationAmount.toFixed(2),
+      exchange_rate: exchangeRate,
+      fee: fee.toFixed(4),
+      total_debit: totalDebit.toFixed(2),
+      timestamp: new Date().toISOString(),
+      valid_for_seconds: 300
     }
   });
 });
@@ -123,32 +132,56 @@ export const sendMoney = catchAsync(async (req, res) => {
   );
   if (sourceWallet.rows.length === 0) throw new AppError(`No ${source_currency} wallet found`, 404);
 
+  // Calculate amounts using decimal.js for precision
   const rates = await getLiveRates();
   const rateKey = `${source_currency.toUpperCase()}_${(destination_currency || source_currency).toUpperCase()}`;
   const exchangeRate = rates[rateKey] || 1;
-  const fee = parseFloat(source_amount) * 0.015;
-  const totalDebit = parseFloat(source_amount) + fee;
-  const destinationAmount = parseFloat(source_amount) * exchangeRate;
+
+  const sourceAmountDecimal = validateAmount(source_amount, 1, 1000000);
+  const feeConfig = { type: 'percentage', value: 1.5 };
+  const fee = calculateFee(sourceAmountDecimal, feeConfig);
+  const totalDebit = sourceAmountDecimal.plus(fee);
+  const destinationAmount = sourceAmountDecimal.times(decimal(exchangeRate));
   const reference = `JAXO-PAY-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
-  if (parseFloat(sourceWallet.rows[0].balance) < totalDebit) {
-    throw new AppError('Insufficient wallet balance (including 1.5% fee)', 400);
+  // Check sufficient balance
+  if (!hasSufficientBalance(sourceWallet.rows[0].balance, formatForDB(totalDebit))) {
+    throw new AppError(`Insufficient wallet balance. Need ${totalDebit.toFixed(2)} ${source_currency} (including 1.5% fee)`, 400);
   }
 
-  // 4. Record in DB via transactions table (actual DB table that exists)
+  // 4. Record in DB via transactions table with proper atomic operations
   await transaction(async (client) => {
-    await client.query('UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2', [totalDebit, sourceWallet.rows[0].id]);
+    // Lock and debit wallet
+    await client.query(
+      'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
+      [formatForDB(totalDebit), sourceWallet.rows[0].id]
+    );
+
+    // Record transaction
     await client.query(
       `INSERT INTO transactions
          (user_id, from_wallet_id, transaction_type, from_amount, from_currency, to_amount, to_currency,
           exchange_rate, fee_amount, fee_currency, status, description, reference, metadata)
        VALUES ($1,$2,'cross_border_payment',$3,$4,$5,$6,$7,$8,$9,'processing',$10,$11,$12)`,
-      [req.user.id, sourceWallet.rows[0].id,
-        source_amount, source_currency.toUpperCase(),
-      destinationAmount.toFixed(2), (destination_currency || source_currency).toUpperCase(),
-        exchangeRate, fee, source_currency.toUpperCase(),
-        purpose, reference,
-      JSON.stringify({ beneficiary_id, beneficiary_name: benName, bank: ben.bank_name, account: ben.account_number })]
+      [
+        req.user.id,
+        sourceWallet.rows[0].id,
+        formatForDB(sourceAmountDecimal),
+        source_currency.toUpperCase(),
+        formatForDB(destinationAmount),
+        (destination_currency || source_currency).toUpperCase(),
+        exchangeRate,
+        formatForDB(fee),
+        source_currency.toUpperCase(),
+        purpose,
+        reference,
+        JSON.stringify({
+          beneficiary_id,
+          beneficiary_name: benName,
+          bank: ben.bank_name,
+          account: ben.account_number
+        })
+      ]
     );
   });
 
@@ -158,7 +191,7 @@ export const sendMoney = catchAsync(async (req, res) => {
 
   try {
     providerResult = await korapay.execute({
-      amount: source_amount,
+      amount: parseFloat(sourceAmountDecimal.toString()), // Convert for API
       currency: source_currency.toUpperCase(),
       userId: req.user.id,
       type: 'payout',
@@ -167,7 +200,7 @@ export const sendMoney = catchAsync(async (req, res) => {
         narration: purpose,
         destination: {
           type: 'bank_account',
-          amount: destinationAmount,
+          amount: parseFloat(destinationAmount.toString()),
           currency: (destination_currency || source_currency).toUpperCase(),
           bank_account: { bank: ben.bank_code, account: ben.account_number },
           customer: { name: benName }
@@ -190,12 +223,12 @@ export const sendMoney = catchAsync(async (req, res) => {
     message: 'Payment initiated successfully',
     data: {
       reference,
-      source_amount: parseFloat(source_amount),
+      source_amount: sourceAmountDecimal.toString(),
       source_currency: source_currency.toUpperCase(),
-      destination_amount: parseFloat(destinationAmount.toFixed(2)),
+      destination_amount: destinationAmount.toFixed(2),
       destination_currency: (destination_currency || source_currency).toUpperCase(),
       exchange_rate: exchangeRate,
-      fee: parseFloat(fee.toFixed(4)),
+      fee: fee.toFixed(4),
       status: finalStatus,
       provider: 'integrated',
       beneficiary: { name: benName, account: ben.account_number, bank: ben.bank_name }

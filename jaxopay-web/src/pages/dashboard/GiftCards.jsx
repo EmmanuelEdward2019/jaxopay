@@ -45,56 +45,52 @@ const GiftCards = () => {
     const [success, setSuccess] = useState(null);
     const [revealedCodes, setRevealedCodes] = useState({});
 
+    // Single mount effect — load gift cards + supporting data in parallel
     useEffect(() => {
-        fetchInitialData();
+        loadPage();
     }, []);
 
+    // Re-fetch cards when country or search changes (debounced by user action)
     useEffect(() => {
         fetchGiftCards();
-    }, [searchQuery, selectedCountry]);
+    }, [searchQuery, selectedCountry]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const fetchInitialData = async () => {
-        fetchMyCards();
-        fetchWallets();
-        const countriesRes = await giftCardService.getCountries();
-        if (countriesRes.success) {
-            setCountries(countriesRes.data || []);
-        }
+    const loadPage = async () => {
+        // Fire non-critical requests in parallel; they don't block gift card display
+        Promise.allSettled([
+            giftCardService.getCountries().then(r => { if (r.success) setCountries(r.data || []); }),
+            giftCardService.getMyGiftCards().then(r => { if (r.success) setMyCards(r.data?.gift_cards || []); }),
+            walletService.getWallets().then(r => {
+                if (r.success) {
+                    const arr = Array.isArray(r.data) ? r.data : (r.data?.wallets || []);
+                    const active = arr.filter(w => w.is_active !== false && w.status !== 'frozen');
+                    setWallets(active);
+                    if (active.length > 0) setSelectedWallet(active[0].id);
+                }
+            }),
+        ]);
+        // Gift cards are the primary content — fetch separately so loading state is correct
+        await fetchGiftCards();
     };
 
     const fetchGiftCards = async () => {
         setLoading(true);
-        const params = {
-            country: selectedCountry,
-            size: 50
-        };
+        setError(null);
+        const params = { country: selectedCountry, size: 50 };
         if (searchQuery) params.search = searchQuery;
 
         const result = await giftCardService.getGiftCards(params);
         if (result.success) {
-            setGiftCards(result.data.gift_cards || []);
+            const data = result.data?.data || result.data;
+            setGiftCards(data?.gift_cards || []);
+            // Show API-level error if gift cards are empty but service still returned success
+            if (result.data?.error || data?.error) {
+                setError(result.data?.error || data?.error);
+            }
+        } else {
+            setError(result.error || 'Failed to load gift cards');
         }
         setLoading(false);
-    };
-
-    const fetchMyCards = async () => {
-        const result = await giftCardService.getMyGiftCards();
-        if (result.success) {
-            setMyCards(result.data.gift_cards || []);
-        }
-    };
-
-    const fetchWallets = async () => {
-        const result = await walletService.getWallets();
-        if (result.success) {
-            // Updated to handle both array directly or wrapped in data.wallets
-            const arr = Array.isArray(result.data) ? result.data : (result.data?.wallets || []);
-            const activeWallets = arr.filter(w => w.is_active !== false && w.status !== 'frozen');
-            setWallets(activeWallets);
-            if (activeWallets.length > 0) {
-                setSelectedWallet(activeWallets[0].id);
-            }
-        }
     };
 
     const handleBuyCard = async (card, amount) => {
@@ -111,8 +107,16 @@ const GiftCards = () => {
         if (result.success) {
             setSuccess('Gift card purchased successfully!');
             setShowBuyModal(false);
-            fetchMyCards();
-            fetchWallets();
+            // Refresh my cards and wallets inline
+            giftCardService.getMyGiftCards().then(r => { if (r.success) setMyCards(r.data?.gift_cards || []); });
+            walletService.getWallets().then(r => {
+                if (r.success) {
+                    const arr = Array.isArray(r.data) ? r.data : (r.data?.wallets || []);
+                    const active = arr.filter(w => w.is_active !== false && w.status !== 'frozen');
+                    setWallets(active);
+                    if (active.length > 0 && !selectedWallet) setSelectedWallet(active[0].id);
+                }
+            });
         } else {
             setError(result.error);
         }

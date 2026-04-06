@@ -25,7 +25,8 @@ const giftCardService = {
   // params: { country, search, page, size }
   getGiftCards: async (params = {}) => {
     try {
-      const response = await apiClient.get('/gift-cards', { params });
+      // Reloadly can be slow — use a generous 50s timeout for this endpoint
+      const response = await apiClient.get('/gift-cards', { params, timeout: 50000 });
       return { success: true, data: response.data ?? response };
     } catch (error) {
       return { success: false, error: error.message };

@@ -2,6 +2,7 @@ import express from 'express';
 import { verifyToken, requireKYCTier } from '../middleware/auth.js';
 import { requireFeature } from '../middleware/featureGuard.js';
 import { validate } from '../middleware/validator.js';
+import { useIdempotency } from '../middleware/idempotency.js';
 import { body, param, query } from 'express-validator';
 import {
   getCards,
@@ -63,9 +64,10 @@ router.post(
   createCard
 );
 
-// Fund card
+// Fund card (with idempotency to prevent duplicate charges)
 router.post(
   '/:cardId/fund',
+  useIdempotency, // Prevent duplicate funding on retry
   param('cardId').isUUID(),
   body('amount').isFloat({ min: 0.01 }),
   validate,

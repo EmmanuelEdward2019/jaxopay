@@ -75,7 +75,7 @@ const getErrorMessage = (status, serverMessage) => {
     typeof serverMessage === 'string' &&
     /connection terminated|connection timeout/i.test(serverMessage)
   ) {
-    return 'The server took too long to finish this step. Your verification photos are large — please try again on a stable connection. If it keeps failing, contact support.';
+    return 'The server is experiencing connectivity issues. Please try again in a moment.';
   }
   const cleaned =
     serverMessage && typeof serverMessage === 'string' && !serverMessage.includes('status code')
@@ -139,11 +139,18 @@ apiClient.interceptors.response.use(
       const msg = error.message || '';
       if (error.code === 'ECONNABORTED' || /timeout/i.test(msg)) {
         const url = String(originalRequest?.url || '');
-        const isBill = url.includes('/bills/');
+        let timeoutMessage;
+        if (url.includes('/bills/')) {
+          timeoutMessage = 'This bill step is taking longer than usual (provider checks can be slow). Check your connection and try again.';
+        } else if (url.includes('/gift-cards') && !url.includes('/gift-cards/my-cards')) {
+          timeoutMessage = 'Gift cards are taking longer than expected to load. Please try again in a moment.';
+        } else if (url.includes('/kyc') || url.includes('/verify')) {
+          timeoutMessage = 'The request took too long. Try again on a stable connection — verification uploads can be large.';
+        } else {
+          timeoutMessage = 'The server is taking longer than expected. Please check your connection and try again.';
+        }
         return Promise.reject({
-          message: isBill
-            ? 'This bill step is taking longer than usual (provider checks can be slow). Check your connection and try again.'
-            : 'The request took too long. Try again on a stable connection — verification uploads can be large.',
+          message: timeoutMessage,
           status: 0,
           data: null,
         });
@@ -230,7 +237,14 @@ apiClient.interceptors.response.use(
         processQueue(refreshError, null);
         isRefreshing = false;
 
-        // Refresh failed - clear auth and redirect to login
+        const refreshStatus = refreshError?.response?.status;
+        // 503 = DB/service down, NOT an invalid token — preserve session
+        if (refreshStatus === 503 || refreshStatus === 500) {
+          console.warn('⚠️ Refresh service unavailable, preserving session');
+          return Promise.reject({ message: 'Service temporarily unavailable. Please try again.' });
+        }
+
+        // True auth failure (401, 403, etc.) — clear auth and redirect to login
         localStorage.removeItem('jaxopay-auth');
         if (!window.location.pathname.startsWith('/login')) {
           window.location.href = '/login';

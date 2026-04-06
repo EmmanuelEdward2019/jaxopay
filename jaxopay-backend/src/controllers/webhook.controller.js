@@ -424,16 +424,72 @@ async function processQuidax(payload) {
         }
         case 'withdraw.successful':
         case 'withdraw.success': {
-            await updateTransactionStatus(data.id, 'completed', data);
+            await updateQuidaxWithdrawal(data.id, 'completed', data);
             break;
         }
         case 'withdraw.failed':
         case 'withdraw.rejected': {
-            await updateTransactionStatus(data.id, 'failed', data);
+            await updateQuidaxWithdrawal(data.id, 'failed', data);
             break;
         }
         default:
             logger.info(`[WEBHOOK] Quidax unhandled event: ${event}`);
+    }
+}
+
+/**
+ * Update Quidax withdrawal status
+ * Matches by quidax_withdraw_id in metadata
+ */
+async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
+    try {
+        await transaction(async (client) => {
+            // Find transaction by Quidax withdrawal ID in metadata
+            const txRes = await client.query(
+                `SELECT id, wallet_id, amount, currency
+                 FROM wallet_transactions
+                 WHERE metadata->>'quidax_withdraw_id' = $1
+                 FOR UPDATE`,
+                [String(quidaxWithdrawId)]
+            );
+
+            if (txRes.rows.length === 0) {
+                logger.warn(`[WEBHOOK] Quidax withdrawal not found: ${quidaxWithdrawId}`);
+                return;
+            }
+
+            const tx = txRes.rows[0];
+
+            // Update transaction status
+            await client.query(
+                `UPDATE wallet_transactions
+                 SET status = $1,
+                     metadata = metadata || $2::jsonb,
+                     updated_at = NOW(),
+                     completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
+                 WHERE id = $3`,
+                [
+                    status,
+                    JSON.stringify({ webhook_data: webhookData, updated_at: new Date().toISOString() }),
+                    tx.id
+                ]
+            );
+
+            // If withdrawal failed, refund the amount back to wallet
+            if (status === 'failed') {
+                await client.query(
+                    'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
+                    [tx.amount, tx.wallet_id]
+                );
+
+                logger.info(`[WEBHOOK] ✅ Quidax withdrawal failed - refunded ${tx.amount} ${tx.currency} to wallet ${tx.wallet_id}`);
+            } else {
+                logger.info(`[WEBHOOK] ✅ Quidax withdrawal ${status}: ${tx.amount} ${tx.currency} (TX: ${tx.id})`);
+            }
+        });
+    } catch (err) {
+        logger.error('[WEBHOOK] updateQuidaxWithdrawal error:', err);
+        throw err;
     }
 }
 

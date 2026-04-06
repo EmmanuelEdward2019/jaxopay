@@ -74,13 +74,13 @@ class ReloadlyAdapter {
     async _fetchToken() {
         this._ensureCredentials();
         try {
-            logger.info(`[Reloadly] Fetching OAuth token (env=${this.env})`);
+            logger.info(`[Reloadly] Fetching OAuth token (env=${this.env}, audience=${this.urls.audience})`);
             const res = await axios.post(AUTH_URL, {
                 client_id: this.clientId,
                 client_secret: this.clientSecret,
                 grant_type: 'client_credentials',
                 audience: this.urls.audience,
-            }, { timeout: 15000 });
+            }, { timeout: 8000 }); // 8s — must complete well before frontend's 30s limit
 
             this._token = res.data.access_token;
             // expires_in is in seconds; convert to ms
@@ -88,7 +88,13 @@ class ReloadlyAdapter {
             logger.info(`[Reloadly] ✅ Token obtained, expires in ${res.data.expires_in}s`);
             return this._token;
         } catch (err) {
-            logger.error('[Reloadly] Token fetch failed:', err.response?.data || err.message);
+            logger.error('[Reloadly] Token fetch failed:', {
+                message: err.message,
+                status: err.response?.status,
+                data: err.response?.data,
+                clientId: this.clientId ? 'set' : 'missing',
+                clientSecret: this.clientSecret ? 'set' : 'missing'
+            });
             throw { message: 'Gift card service authentication failed. Please try again later.', statusCode: 502 };
         }
     }
@@ -107,8 +113,11 @@ class ReloadlyAdapter {
         const url = `${baseUrl}${path}`;
         const headers = { ...(await this._headers()), ...extraHeaders };
 
+        // 15s per request — token (8s) + this = max ~23s, safely under frontend's 30s limit
+        const REQUEST_TIMEOUT = 15000;
+
         try {
-            const res = await axios({ method, url, data, headers, timeout: 30000 });
+            const res = await axios({ method, url, data, headers, timeout: REQUEST_TIMEOUT });
             return res.data;
         } catch (err) {
             // If 401, token might be stale — clear and retry once
@@ -118,7 +127,7 @@ class ReloadlyAdapter {
                 this._tokenExpiresAt = 0;
                 const retryHeaders = { ...(await this._headers()), ...extraHeaders };
                 try {
-                    const res = await axios({ method, url, data, headers: retryHeaders, timeout: 30000 });
+                    const res = await axios({ method, url, data, headers: retryHeaders, timeout: REQUEST_TIMEOUT });
                     return res.data;
                 } catch (retryErr) {
                     logger.error('[Reloadly] Retry failed:', retryErr.response?.data || retryErr.message);
@@ -129,9 +138,10 @@ class ReloadlyAdapter {
                     };
                 }
             }
-            logger.error(`[Reloadly] ${method.toUpperCase()} ${path} failed:`, err.response?.data || err.message);
+            const errMsg = err.response?.data?.message || err.response?.data?.errorMessage || err.message || 'Gift card service unavailable';
+            logger.error(`[Reloadly] ${method.toUpperCase()} ${path} failed:`, errMsg);
             throw {
-                message: err.response?.data?.message || err.response?.data?.errorMessage || 'Gift card service unavailable',
+                message: errMsg,
                 statusCode: 502,
                 raw: err.response?.data,
             };
@@ -154,6 +164,7 @@ class ReloadlyAdapter {
     /** Get gift card products, optionally filtered by country */
     async getProducts(params = {}) {
         if (!this.clientId || !this.clientSecret) {
+            logger.warn('[Reloadly] No credentials configured, returning mock data');
             return [
                 { productId: 1, productName: 'Amazon Gift Card', country: { isoName: 'US' }, senderCurrencyCode: 'USD', minRecipientDenomination: 5, maxRecipientDenomination: 500, logoUrls: ['https://cdn.reloadly.com/giftcards/1.png'] },
                 { productId: 2, productName: 'Netflix Subscription', country: { isoName: 'US' }, senderCurrencyCode: 'USD', minRecipientDenomination: 15, maxRecipientDenomination: 100, logoUrls: ['https://cdn.reloadly.com/giftcards/2.png'] },
@@ -167,7 +178,22 @@ class ReloadlyAdapter {
         if (params.page) query.set('page', params.page);
         if (params.size) query.set('size', params.size);
         const qs = query.toString();
-        return this._request('get', `/products${qs ? '?' + qs : ''}`);
+        const path = `/products${qs ? '?' + qs : ''}`;
+
+        logger.info(`[Reloadly] Fetching products from ${path}`);
+
+        try {
+            const response = await this._request('get', path);
+            logger.info(`[Reloadly] Products fetched successfully:`, {
+                isArray: Array.isArray(response),
+                hasContent: !!response?.content,
+                totalElements: response?.totalElements || response?.length || 0
+            });
+            return response;
+        } catch (err) {
+            logger.error(`[Reloadly] Failed to fetch products:`, err);
+            throw err;
+        }
     }
 
     /** Get single product by ID */

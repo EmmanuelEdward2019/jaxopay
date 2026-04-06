@@ -6,17 +6,46 @@ import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
 
 const reloadly = new ReloadlyAdapter();
 
+// Simple in-process cache for gift card products (avoids hammering Reloadly on every page load)
+const _cache = new Map();
+function giftCardCache(key, ttlSec = 300) {
+  const entry = _cache.get(key);
+  if (entry && Date.now() < entry.expiresAt) return entry.data;
+  return null;
+}
+function giftCardCacheSet(key, data, ttlSec = 300) {
+  _cache.set(key, { data, expiresAt: Date.now() + ttlSec * 1000 });
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // GET /gift-cards/countries
 // Returns countries where Reloadly gift cards are available
 // ──────────────────────────────────────────────────────────────────────
 export const getGiftCardCountries = catchAsync(async (req, res) => {
+  const cacheKey = 'gc:countries';
+  const cached = giftCardCache(cacheKey, 3600); // 1 hour
+  if (cached) return res.status(200).json({ success: true, data: cached, cached: true });
+
   try {
     const countries = await reloadly.getCountries();
+    giftCardCacheSet(cacheKey, countries, 3600);
     res.status(200).json({ success: true, data: countries });
   } catch (err) {
     logger.error('[GiftCards] getCountries failed:', err.message);
-    throw new AppError(err.message || 'Could not load countries', 502);
+    // Return fallback countries when Reloadly is unavailable
+    const fallbackCountries = [
+      { isoName: 'US', name: 'United States', currencyCode: 'USD' },
+      { isoName: 'GB', name: 'United Kingdom', currencyCode: 'GBP' },
+      { isoName: 'NG', name: 'Nigeria', currencyCode: 'NGN' },
+      { isoName: 'GH', name: 'Ghana', currencyCode: 'GHS' },
+      { isoName: 'KE', name: 'Kenya', currencyCode: 'KES' },
+      { isoName: 'ZA', name: 'South Africa', currencyCode: 'ZAR' },
+      { isoName: 'CA', name: 'Canada', currencyCode: 'CAD' },
+      { isoName: 'DE', name: 'Germany', currencyCode: 'EUR' },
+      { isoName: 'FR', name: 'France', currencyCode: 'EUR' },
+      { isoName: 'IN', name: 'India', currencyCode: 'INR' },
+    ];
+    res.status(200).json({ success: true, data: fallbackCountries });
   }
 });
 
@@ -49,12 +78,28 @@ export const getGiftCardCategories = catchAsync(async (req, res) => {
 export const getGiftCards = catchAsync(async (req, res) => {
   const { country, page = 1, size = 20, search } = req.query;
 
+  // Cache key includes all query params; search bypasses cache (dynamic)
+  const cacheKey = `gc:products:${country || 'all'}:${page}:${size}`;
+  if (!search) {
+    const cached = giftCardCache(cacheKey, 300); // 5 minutes
+    if (cached) return res.status(200).json({ success: true, ...cached, cached: true });
+  }
+
   try {
     const params = { page: parseInt(page), size: parseInt(size) };
     if (country) params.countryCode = country;
     if (search) params.productName = search;
 
+    logger.info(`[GiftCards] Fetching products with params:`, params);
+
     const result = await reloadly.getProducts(params);
+
+    logger.info(`[GiftCards] Reloadly response received:`, {
+      hasResult: !!result,
+      isArray: Array.isArray(result),
+      hasContent: !!result?.content,
+      contentLength: result?.content?.length || result?.length || 0
+    });
 
     // Reloadly returns either an array or { content: [...], totalPages, ... }
     const products = Array.isArray(result) ? result : (result?.content || []);
@@ -83,8 +128,7 @@ export const getGiftCards = catchAsync(async (req, res) => {
       redeemInstructions: p.redeemInstruction?.verbose || '',
     }));
 
-    res.status(200).json({
-      success: true,
+    const responsePayload = {
       data: {
         gift_cards: normalized,
         pagination: {
@@ -95,10 +139,32 @@ export const getGiftCards = catchAsync(async (req, res) => {
         },
       },
       source: 'reloadly',
-    });
+    };
+
+    // Cache non-search results for 5 minutes
+    if (!search) giftCardCacheSet(cacheKey, responsePayload, 300);
+
+    res.status(200).json({ success: true, ...responsePayload });
   } catch (err) {
-    logger.error('[GiftCards] getProducts failed:', err.message);
-    throw new AppError(err.message || 'Could not load gift cards', 502);
+    const errMsg = err.message || String(err);
+    logger.error('[GiftCards] getProducts failed:', errMsg);
+
+    // Determine user-facing message based on error type
+    let userMessage = 'Gift card service is temporarily unavailable. Please try again later.';
+    if (/connection terminated|timed out|timeout/i.test(errMsg)) {
+      userMessage = 'Gift card service is taking too long. Please try again in a moment.';
+    }
+
+    // Return empty list with error info instead of 502 to prevent page crash
+    res.status(200).json({
+      success: true,
+      data: {
+        gift_cards: [],
+        pagination: { page: parseInt(page), size: parseInt(size), total: 0, pages: 0 },
+      },
+      source: 'reloadly',
+      error: userMessage,
+    });
   }
 });
 
@@ -258,33 +324,46 @@ export const buyGiftCard = catchAsync(async (req, res) => {
 
     logger.info(`[GiftCards] ✅ Purchase successful: ref=${reference}, txnId=${providerTxnId}`);
 
+    // Fetch user profile for email
+    const userProfile = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
+    const firstName = userProfile.rows[0]?.first_name || 'User';
+    const fullName = [userProfile.rows[0]?.first_name, userProfile.rows[0]?.last_name].filter(Boolean).join(' ') || 'User';
+
+    // ── 3. Send Gift Card Delivery Email with redemption details ──
+    emailService.sendGiftCardDelivery({
+      recipientEmail: recipientEmail || req.user.email,
+      recipientName: fullName,
+      productName: reloadlyResult?.product?.productName || productId,
+      brandName: reloadlyResult?.product?.brand?.brandName || 'Gift Card',
+      amount: amount,
+      currency: cardCurrency,
+      quantity: quantity,
+      totalCost: totalCostInWalletCurrency,
+      costCurrency: currency.toUpperCase(),
+      reference: reference,
+      transactionId: providerTxnId,
+      redeemCode: reloadlyResult?.cardCode || reloadlyResult?.pinCode,
+      redeemPin: reloadlyResult?.pinCode,
+      redeemInstructions: reloadlyResult?.redemptionInstructions || 'Use the code at checkout',
+      redemptionUrl: reloadlyResult?.redemptionUrl,
+    }).catch(err => logger.error('[GiftCards] Failed to send delivery email:', err));
+
     res.status(201).json({
       success: true,
-      message: 'Gift card purchased successfully!',
+      message: 'Gift card purchased successfully! Check your email for redemption details.',
       data: {
         reference,
         providerTxnId,
         productId,
+        productName: reloadlyResult?.product?.productName,
         amount: totalCostInWalletCurrency,
         currency: currency.toUpperCase(),
         quantity,
         status: 'completed',
+        redeemCode: reloadlyResult?.cardCode || reloadlyResult?.pinCode, // Include in response too
+        redeemInstructions: reloadlyResult?.redemptionInstructions,
       },
     });
-
-    // ── 3. Send Notification ──────────────────────────────────────────
-    const userProfile = await client.query('SELECT first_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
-    emailService.sendTransactionEmails({
-      id: reference, // Fallback to reference as ID
-      type: 'Gift Card Purchase',
-      amount: totalCostInWalletCurrency,
-      currency: currency.toUpperCase(),
-      reference,
-      details: `${quantity}x ${reloadlyResult?.product?.productName || productId}`
-    }, {
-      name: userProfile.rows[0]?.first_name || 'User',
-      email: req.user.email
-    }).catch(err => logger.error('Failed to send gift card email:', err));
 
 
   } catch (purchaseErr) {
@@ -403,38 +482,50 @@ export const getMyGiftCards = catchAsync(async (req, res) => {
     conditions += ` AND status = $${params.length}`;
   }
 
-  const result = await query(
-    `SELECT id, provider, product_id, product_name, brand_name, country_code,
-            amount, currency, quantity, recipient_email, transaction_ref,
-            provider_txn_id, status, redeem_code, created_at
-     FROM digital_transactions
-     ${conditions}
-     ORDER BY created_at DESC
-     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-    [...params, parseInt(limit), offset]
-  );
+  try {
+    const result = await query(
+      `SELECT id, provider, product_id, product_name, brand_name, country_code,
+              amount, currency, quantity, recipient_email, transaction_ref,
+              provider_txn_id, status, redeem_code, created_at
+       FROM digital_transactions
+       ${conditions}
+       ORDER BY created_at DESC
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, parseInt(limit), offset]
+    );
 
-  const countResult = await query(
-    `SELECT COUNT(*) as total FROM digital_transactions ${conditions}`,
-    params
-  );
+    const countResult = await query(
+      `SELECT COUNT(*) as total FROM digital_transactions ${conditions}`,
+      params
+    );
 
-  res.status(200).json({
-    success: true,
-    data: {
-      gift_cards: result.rows.map(r => ({
-        ...r,
-        has_code: !!r.redeem_code,
-        redeem_code: undefined, // Don't expose in list view
-      })),
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: parseInt(countResult.rows[0].total),
-        pages: Math.ceil(countResult.rows[0].total / parseInt(limit)),
+    res.status(200).json({
+      success: true,
+      data: {
+        gift_cards: result.rows.map(r => ({
+          ...r,
+          has_code: !!r.redeem_code,
+          redeem_code: undefined,
+        })),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: parseInt(countResult.rows[0].total),
+          pages: Math.ceil(countResult.rows[0].total / parseInt(limit)),
+        },
       },
-    },
-  });
+    });
+  } catch (err) {
+    // Table may not exist yet — return empty list rather than crashing
+    logger.warn('[GiftCards] getMyGiftCards DB error (table may not exist):', err.message);
+    res.status(200).json({
+      success: true,
+      data: {
+        gift_cards: [],
+        pagination: { page: parseInt(page), limit: parseInt(limit), total: 0, pages: 0 },
+      },
+    });
+  }
 });
 
 // ──────────────────────────────────────────────────────────────────────

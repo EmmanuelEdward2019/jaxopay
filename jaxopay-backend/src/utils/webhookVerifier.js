@@ -3,6 +3,51 @@ import logger from './logger.js';
 import { verifySmileCallbackSignature } from '../services/smileId.service.js';
 
 class WebhookVerifier {
+    constructor() {
+        // Store recent webhook IDs to prevent replay attacks
+        this.recentWebhooks = new Map();
+        this.REPLAY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+        this.cleanupInterval = setInterval(() => this._cleanupOldWebhooks(), 60000); // Clean every minute
+    }
+
+    /**
+     * Clean up old webhook entries to prevent memory leak
+     */
+    _cleanupOldWebhooks() {
+        const now = Date.now();
+        for (const [id, timestamp] of this.recentWebhooks.entries()) {
+            if (now - timestamp > this.REPLAY_WINDOW_MS) {
+                this.recentWebhooks.delete(id);
+            }
+        }
+    }
+
+    /**
+     * Check for replay attacks
+     */
+    _checkReplayAttack(webhookId, timestamp) {
+        if (!webhookId) return true; // No ID to check, allow (provider-specific)
+
+        // Check if we've seen this webhook before
+        if (this.recentWebhooks.has(webhookId)) {
+            logger.warn(`[WEBHOOK] Replay attack detected: ${webhookId}`);
+            return false;
+        }
+
+        // Check timestamp if provided (within 5 minutes)
+        if (timestamp) {
+            const age = Date.now() - timestamp * 1000; // Convert to ms
+            if (age > this.REPLAY_WINDOW_MS || age < -60000) { // Allow 1 min clock skew
+                logger.warn(`[WEBHOOK] Webhook timestamp outside acceptable window: ${webhookId}`);
+                return false;
+            }
+        }
+
+        // Store this webhook ID
+        this.recentWebhooks.set(webhookId, Date.now());
+        return true;
+    }
+
     /**
      * Verifies the signature for various providers
      * @param {string} provider - The provider name (e.g., 'flutterwave', 'paystack')
@@ -46,14 +91,34 @@ class WebhookVerifier {
     _verifyFlutterwave(headers, payload) {
         const secret = process.env.FLUTTERWAVE_SECRET_HASH;
         const signature = headers['verif-hash'];
-        if (!secret) return true; // Fail open for setup if not configured
+
+        // NEVER fail open in production
+        if (!secret) {
+            logger.warn('[WEBHOOK] Flutterwave webhook secret not configured');
+            return process.env.NODE_ENV === 'development';
+        }
+
+        if (!signature) {
+            logger.warn('[WEBHOOK] Flutterwave signature missing');
+            return false;
+        }
+
         return signature === secret;
     }
 
     _verifyPaystack(headers, payload) {
         const secret = process.env.PAYSTACK_SECRET_KEY;
         const signature = headers['x-paystack-signature'];
-        if (!secret || !signature) return false;
+
+        if (!secret) {
+            logger.warn('[WEBHOOK] Paystack secret not configured');
+            return process.env.NODE_ENV === 'development';
+        }
+
+        if (!signature) {
+            logger.warn('[WEBHOOK] Paystack signature missing');
+            return false;
+        }
 
         const hash = crypto
             .createHmac('sha512', secret)
@@ -66,7 +131,16 @@ class WebhookVerifier {
     _verifyKorapay(headers, payload) {
         const secret = process.env.KORAPAY_SECRET_KEY;
         const signature = headers['x-korapay-signature'];
-        if (!secret || !signature) return false;
+
+        if (!secret) {
+            logger.warn('[WEBHOOK] Korapay secret not configured');
+            return process.env.NODE_ENV === 'development';
+        }
+
+        if (!signature) {
+            logger.warn('[WEBHOOK] Korapay signature missing');
+            return false;
+        }
 
         const hash = crypto
             .createHmac('sha256', secret)
@@ -79,13 +153,37 @@ class WebhookVerifier {
     _verifyFincra(headers, payload) {
         const secret = process.env.FINCRA_SECRET_KEY;
         const signature = headers['x-fincra-signature'];
-        if (!secret) return true;
-        return signature === secret; // Fincra often uses a shared secret/hash
+
+        if (!secret) {
+            logger.warn('[WEBHOOK] Fincra secret not configured');
+            return process.env.NODE_ENV === 'development';
+        }
+
+        if (!signature) {
+            logger.warn('[WEBHOOK] Fincra signature missing');
+            return false;
+        }
+
+        return signature === secret;
     }
 
     _verifySafeHaven(headers, payload) {
-        // Safe Haven logic varies, placeholder
-        return true;
+        const secret = process.env.SAFEHAVEN_WEBHOOK_SECRET;
+        const signature = headers['x-safehaven-signature'];
+
+        if (!secret) {
+            logger.warn('[WEBHOOK] SafeHaven secret not configured');
+            return process.env.NODE_ENV === 'development';
+        }
+
+        if (!signature) {
+            logger.warn('[WEBHOOK] SafeHaven signature missing');
+            return false;
+        }
+
+        // Implement actual SafeHaven signature verification
+        const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+        return hash === signature;
     }
 
     _verifySudo(headers, payload) {

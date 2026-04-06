@@ -1,105 +1,210 @@
 import { createApiClient } from '../../../utils/apiClient.js';
 import logger from '../../../utils/logger.js';
+import { circuitBreakers } from '../../../utils/circuitBreaker.js';
 
 /**
  * QuidaxAdapter
- * 
+ *
  * Integration with Quidax for crypto/fiat wallets, swaps, and trading.
  * Docs: https://docs.quidax.io
+ *
+ * Features:
+ * - Circuit breaker pattern for resilience
+ * - Response caching for frequently accessed data
+ * - Automatic retries with exponential backoff
+ * - Comprehensive error handling
  */
 class QuidaxAdapter {
     constructor() {
         this.secretKey = process.env.QUIDAX_SECRET_KEY;
         this.apiKey = process.env.QUIDAX_API_KEY || process.env.QUIDAX_PUBLIC_KEY;
-        this.baseURL = process.env.QUIDAX_BASE_URL || 'https://api.quidax.com/v1';
+        this.baseURL = process.env.QUIDAX_BASE_URL || 'https://app.quidax.io/api/v1';
 
         this.client = createApiClient({
             baseURL: this.baseURL,
             headers: {
                 'Authorization': `Bearer ${this.secretKey}`,
-                'X-Quidax-Api-Key': this.apiKey, // Sometimes used instead of Bearer or alongside
+                'X-Quidax-Api-Key': this.apiKey,
                 'Content-Type': 'application/json',
             },
             timeout: 15000,
             label: 'Quidax'
         });
 
-        this._rateCache = {};
-        this._cacheTime = 0;
+        this.circuitBreaker = circuitBreakers.quidax;
+
+        // In-memory cache with TTL - OPTIMIZED for lower latency
+        this._cache = new Map();
+        this._cacheTTL = {
+            currencies: 10 * 60 * 1000,     // 10 minutes (static data)
+            markets: 10 * 60 * 1000,        // 10 minutes (static data)
+            ticker: 15 * 1000,              // 15 seconds (price data)
+            orderBook: 3 * 1000,            // 3 seconds (frequent updates)
+            rates: 5 * 1000,                // 5 seconds (exchange rates)
+        };
+        // Start periodic cache cleanup
+        this._startCacheCleanup();
+    }
+
+    // Periodic cache cleanup to prevent memory leaks
+    _startCacheCleanup() {
+        setInterval(() => {
+            this._clearExpiredCache();
+        }, 60 * 1000); // Run every minute
+    }
+
+    // Cache helper methods
+    _getCacheKey(method, ...args) {
+        return `${method}:${args.join(':')}`;
+    }
+
+    _getFromCache(key, ttl) {
+        const cached = this._cache.get(key);
+        if (!cached) return null;
+
+        if (Date.now() - cached.timestamp > ttl) {
+            this._cache.delete(key);
+            return null;
+        }
+
+        return cached.data;
+    }
+
+    _setCache(key, data) {
+        this._cache.set(key, {
+            data,
+            timestamp: Date.now(),
+        });
+    }
+
+    _clearExpiredCache() {
+        const now = Date.now();
+        for (const [key, value] of this._cache.entries()) {
+            // Check if any TTL applies (use minimum for safety)
+            const minTTL = Math.min(...Object.values(this._cacheTTL));
+            if (now - value.timestamp > minTTL * 2) {
+                this._cache.delete(key);
+            }
+        }
+    }
+
+    /**
+     * Execute request with circuit breaker and retry logic
+     */
+    async _executeWithCircuitBreaker(operation, operationName) {
+        return this.circuitBreaker.execute(async () => {
+            let lastError;
+            const maxRetries = 2;
+
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    return await operation();
+                } catch (error) {
+                    lastError = error;
+
+                    // Don't retry on 4xx errors (client errors)
+                    if (error.statusCode >= 400 && error.statusCode < 500) {
+                        throw error;
+                    }
+
+                    // Don't retry on auth errors
+                    if (error.statusCode === 401) {
+                        throw error;
+                    }
+
+                    if (attempt < maxRetries - 1) {
+                        const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+                        logger.warn(`[Quidax] Retrying ${operationName} after ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+            }
+
+            throw lastError;
+        });
     }
 
     /**
      * Get summary of all wallets for the authenticated user
      */
     async getAllWallets(userId = 'me') {
-        try {
+        return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/wallets`);
             return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+        }, 'getAllWallets');
     }
 
     /**
      * Get a specific currency wallet
      */
     async getWallet(currency, userId = 'me') {
-        try {
+        return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/wallets/${currency.toLowerCase()}`);
             return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+        }, 'getWallet');
     }
 
     /**
      * Get deposit address for a currency
      */
     async getDepositAddress(currency, userId = 'me') {
-        try {
-            // First try to fetch existing
-            const response = await this.client.get(`/users/${userId}/wallets/${currency.toLowerCase()}/address`);
-            return response.data;
-        } catch (err) {
-            // If none exists, create one
-            if (err.statusCode === 404) {
-                try {
+        return this._executeWithCircuitBreaker(async () => {
+            try {
+                const response = await this.client.get(`/users/${userId}/wallets/${currency.toLowerCase()}/address`);
+                return response.data?.data || response.data;
+            } catch (err) {
+                if (err.statusCode === 404 || err.response?.status === 404) {
                     const createRes = await this.client.post(`/users/${userId}/wallets/${currency.toLowerCase()}/addresses`);
-                    return createRes.data;
-                } catch (createErr) {
-                    throw this._normalizeError(createErr);
+                    return createRes.data?.data || createRes.data;
                 }
+                throw err;
             }
-            throw this._normalizeError(err);
-        }
+        }, 'getDepositAddress');
     }
 
     /**
      * Request a withdrawal (Crypto or Fiat)
-     * For Fiat, fund_uid should be the beneficiary_id
      */
     async withdraw({ currency, amount, fund_uid, fund_uid2 = '', network = '', userId = 'me' }) {
-        try {
+        return this._executeWithCircuitBreaker(async () => {
             const body = {
                 currency: currency.toLowerCase(),
                 amount: String(amount),
-                fund_uid: fund_uid, // address or beneficiary_id
+                fund_uid: fund_uid,
             };
-            if (fund_uid2) body.fund_uid2 = fund_uid2; // destination tag / memo
+            if (fund_uid2) body.fund_uid2 = fund_uid2;
             if (network) body.network = network.toLowerCase();
 
             const response = await this.client.post(`/users/${userId}/withdraws`, body);
-            return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+            return response.data?.data || response.data;
+        }, 'withdraw');
     }
 
     /**
-     * SWAP: Get Quote
+     * SWAP: Temporary quotation — get a rate preview WITHOUT creating a real swap.
+     * Use this for "You Receive" computation. Endpoint: POST /users/{id}/temporary_swap_quotation
+     * Response: { id, from_currency, to_currency, quoted_price, from_amount, to_amount, expires_at }
+     */
+    async getTemporarySwapQuote({ from, to, from_amount, to_amount, userId = 'me' }) {
+        return this._executeWithCircuitBreaker(async () => {
+            const body = {
+                from_currency: from.toLowerCase(),
+                to_currency: to.toLowerCase(),
+            };
+            if (from_amount != null) body.from_amount = String(from_amount);
+            if (to_amount != null) body.to_amount = String(to_amount);
+
+            const response = await this.client.post(`/users/${userId}/temporary_swap_quotation`, body);
+            return response.data?.data || response.data;
+        }, 'getTemporarySwapQuote');
+    }
+
+    /**
+     * SWAP: Create a real quotation (valid 15s). Returns id for confirm/refresh.
+     * Endpoint: POST /users/{id}/swap_quotation
      */
     async getSwapQuote({ from, to, amount, side = 'from', userId = 'me' }) {
-        try {
+        return this._executeWithCircuitBreaker(async () => {
             const body = {
                 from_currency: from.toLowerCase(),
                 to_currency: to.toLowerCase(),
@@ -107,170 +212,196 @@ class QuidaxAdapter {
             if (side === 'from') body.from_amount = String(amount);
             else body.to_amount = String(amount);
 
-            const response = await this.client.post(`/users/${userId}/swap_quotes`, body);
-            return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+            const response = await this.client.post(`/users/${userId}/swap_quotation`, body);
+            return response.data?.data || response.data;
+        }, 'getSwapQuote');
     }
 
     /**
-     * SWAP: Confirm/Execute
+     * SWAP: Confirm/Execute a quotation by ID.
+     * Endpoint: POST /users/{id}/swap_quotation/{quotation_id}/confirm
      */
-    async executeSwap(quoteId, userId = 'me') {
-        try {
-            const response = await this.client.post(`/users/${userId}/swaps/${quoteId}/confirm`);
-            return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+    async executeSwap(quotationId, userId = 'me') {
+        return this._executeWithCircuitBreaker(async () => {
+            const response = await this.client.post(`/users/${userId}/swap_quotation/${quotationId}/confirm`);
+            return response.data?.data || response.data;
+        }, 'executeSwap');
     }
 
     /**
-     * Markets: Get Order Book
+     * SWAP: Refresh an expired quotation (valid 15s).
+     * Endpoint: POST /users/{id}/swap_quotation/{quotation_id}/refresh
+     */
+    async refreshSwapQuotation(quotationId, userId = 'me') {
+        return this._executeWithCircuitBreaker(async () => {
+            const response = await this.client.post(`/users/${userId}/swap_quotation/${quotationId}/refresh`);
+            return response.data?.data || response.data;
+        }, 'refreshSwapQuotation');
+    }
+
+    /**
+     * Markets: Get Order Book (with caching)
      */
     async getOrderBook(market, limit = 50) {
-        try {
+        const cacheKey = this._getCacheKey('orderBook', market, limit);
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.orderBook);
+        if (cached) return cached;
+
+        return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/markets/${market.toLowerCase()}/order_book`, {
                 params: { asks_limit: limit, bids_limit: limit }
             });
-            return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+            const payload = response.data?.data || response.data;
+            this._setCache(cacheKey, payload);
+            return payload;
+        }, 'getOrderBook');
     }
+
     /**
-     * Get market trade history (Recent trades)
+     * Get market trade history (Recent trades) (with caching)
      */
     async getMarketTrades(market, limit = 50) {
-        try {
+        const cacheKey = this._getCacheKey('marketTrades', market, limit);
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.orderBook);
+        if (cached) return cached;
+
+        return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/markets/${market.toLowerCase()}/trades`, {
                 params: { limit }
             });
-            return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+            const payload = response.data?.data || response.data;
+            this._setCache(cacheKey, payload);
+            return payload;
+        }, 'getMarketTrades');
     }
 
     /**
-     * Get market ticker summary
+     * Get market ticker summary (with caching)
      */
     async getMarketTicker(market) {
-        try {
+        const cacheKey = this._getCacheKey('marketTicker', market);
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.ticker);
+        if (cached) return cached;
+
+        return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/markets/${market.toLowerCase()}/tickers`);
-            return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+            const payload = response.data?.data || response.data;
+            this._setCache(cacheKey, payload);
+            return payload;
+        }, 'getMarketTicker');
     }
 
     /**
-     * Get all supported markets
+     * Get all supported markets (with caching - extended TTL for static data)
      */
     async getMarkets() {
-        try {
-            const response = await this.client.get('/markets');
-            return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
+        const cacheKey = 'markets:global'; // Global key for sharing across instances
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.markets);
+        if (cached) {
+            logger.debug('[Quidax] Returning cached markets');
+            return cached;
         }
+
+        return this._executeWithCircuitBreaker(async () => {
+            const response = await this.client.get('/markets', { timeout: 10000 });
+            const payload = response.data?.data || response.data;
+            this._setCache(cacheKey, payload);
+            logger.debug('[Quidax] Fetched and cached markets from API');
+            return payload;
+        }, 'getMarkets');
     }
 
     /**
-     * Get 24-hour ticker statistics for a market or all markets
+     * Get 24-hour ticker statistics (with caching)
      */
     async getTicker24h(market = null) {
-        try {
+        const cacheKey = this._getCacheKey('ticker24h', market || 'all');
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.ticker);
+        if (cached) return cached;
+
+        return this._executeWithCircuitBreaker(async () => {
             const url = market ? `/markets/${market.toLowerCase()}/tickers` : '/markets/tickers';
             const response = await this.client.get(url);
-            return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+            const payload = response.data?.data || response.data;
+            this._setCache(cacheKey, payload);
+            return payload;
+        }, 'getTicker24h');
     }
 
     /**
-     * Get candlestick/kline data for charts
-     * @param {string} market - Market pair (e.g., 'btcusdt')
-     * @param {string} interval - Time interval (1m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 12h, 1d, 1w, 1M)
-     * @param {number} limit - Number of candles (default: 100, max: 1000)
+     * Get candlestick/kline data for charts (with caching)
      */
     async getKlineData(market, interval = '1h', limit = 100) {
-        try {
+        const cacheKey = this._getCacheKey('kline', market, interval, limit);
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.ticker);
+        if (cached) return cached;
+
+        return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/markets/${market.toLowerCase()}/k`, {
                 params: { period: interval, limit }
             });
-            return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+            const payload = response.data?.data || response.data;
+            this._setCache(cacheKey, payload);
+            return payload;
+        }, 'getKlineData');
     }
 
     /**
      * Get user's orders
-     * @param {string} userId - User ID
-     * @param {string} market - Optional market filter
-     * @param {string} status - Optional status filter (wait, cancel, done)
      */
     async getUserOrders(userId = 'me', market = null, status = null) {
-        try {
+        return this._executeWithCircuitBreaker(async () => {
             const params = {};
             if (market) params.market = market.toLowerCase();
             if (status) params.state = status.toLowerCase();
-            
+
             const response = await this.client.get(`/users/${userId}/orders`, { params });
             return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+        }, 'getUserOrders');
     }
 
     /**
      * Get a single order by ID
      */
     async getOrder(orderId, userId = 'me') {
-        try {
+        return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/orders/${orderId}`);
             return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+        }, 'getOrder');
     }
 
     /**
      * Cancel an order
      */
     async cancelOrder(orderId, userId = 'me') {
-        try {
+        return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.post(`/users/${userId}/orders/${orderId}/cancel`);
             return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+        }, 'cancelOrder');
     }
 
     /**
-     * Get user's wallets from Quidax
+     * Get user's wallets
      */
     async getUserWallets(userId = 'me') {
-        try {
+        return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/wallets`);
             return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+        }, 'getUserWallets');
     }
 
     /**
-     * Get withdrawal fee estimate
+     * Get withdrawal fee estimate (with caching)
      */
     async getWithdrawFee(currency, network = null) {
-        try {
-            // Quidax typically includes fee info in currency/network config
+        const cacheKey = this._getCacheKey('withdrawFee', currency, network || 'default');
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.markets);
+        if (cached) return cached;
+
+        return this._executeWithCircuitBreaker(async () => {
             const currencies = await this.getCurrencies();
             const currencyData = currencies.find(c => c.code.toLowerCase() === currency.toLowerCase());
-            
+
             if (!currencyData) {
                 throw new Error('Currency not found');
             }
@@ -283,63 +414,76 @@ class QuidaxAdapter {
                 fee = currencyData.withdraw_fee || '0';
             }
 
-            return { fee: parseFloat(fee), currency: currency.toUpperCase() };
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+            const result = { fee: parseFloat(fee), currency: currency.toUpperCase() };
+            this._setCache(cacheKey, result);
+            return result;
+        }, 'getWithdrawFee');
     }
 
     /**
-     * Get all supported currencies (with network info)
+     * Get all supported currencies (with caching - extended TTL for static data)
      */
     async getCurrencies() {
-        try {
-            const response = await this.client.get('/currencies');
-            return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
+        const cacheKey = 'currencies:global'; // Use global key to share across instances
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.currencies);
+        if (cached) {
+            logger.debug('[Quidax] Returning cached currencies');
+            return cached;
         }
+
+        return this._executeWithCircuitBreaker(async () => {
+            const response = await this.client.get('/currencies', { timeout: 10000 });
+            // Quidax wraps: { status: 'success', data: [...currencies] }
+            const payload = response.data?.data || response.data;
+            this._setCache(cacheKey, payload);
+            logger.debug('[Quidax] Fetched and cached currencies from API');
+            return payload;
+        }, 'getCurrencies');
     }
 
     /**
      * Trading: Create Order (Limit or Market)
      */
     async createOrder({ market, side, type, volume, price, total, userId = 'me' }) {
-        try {
+        return this._executeWithCircuitBreaker(async () => {
             const body = {
                 market: market.toLowerCase(),
-                side: side.toLowerCase(), // buy / sell
-                ord_type: type.toLowerCase(), // limit / market
+                side: side.toLowerCase(),
+                ord_type: type.toLowerCase(),
             };
             if (volume) body.volume = String(volume);
             if (price) body.price = String(price);
-            if (total) body.total = String(total); // used for market buy total spend
+            if (total) body.total = String(total);
 
             const response = await this.client.post(`/users/${userId}/orders`, body);
             return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+        }, 'createOrder');
     }
 
     /**
-     * Get live exchange rate (Ticker)
+     * Get live exchange rate (with caching)
      */
     async getExchangeRate(from, to) {
+        const cacheKey = this._getCacheKey('exchangeRate', from, to);
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.rates);
+        if (cached) return cached;
+
         try {
-            // Quidax markets are usually btcngn, usdtngn, etc.
-            // Try direct market first
             const markets = [`${from.toLowerCase()}${to.toLowerCase()}`, `${to.toLowerCase()}${from.toLowerCase()}`];
-            
+
             for (const market of markets) {
                 try {
-                    const response = await this.client.get(`/markets/${market}/tickers`);
-                    let lastPrice = parseFloat(response.data?.ticker?.last || 0);
-                    
-                    // If we found the inverse market, flip the price
+                    const response = await this.client.get(`/markets/${market}/tickers`, { timeout: 10000 });
+                    // Quidax wraps: { status, data: { ticker: { last: ... } } }
+                    const tickerData = response.data?.data || response.data;
+                    let lastPrice = parseFloat(tickerData?.ticker?.last || 0);
+
                     if (market.startsWith(to.toLowerCase())) {
-                        return lastPrice > 0 ? 1 / lastPrice : 0;
+                        const result = lastPrice > 0 ? 1 / lastPrice : 0;
+                        this._setCache(cacheKey, result);
+                        return result;
                     }
+                    this._setCache(cacheKey, lastPrice);
                     return lastPrice;
                 } catch (e) {
                     continue;
@@ -347,7 +491,7 @@ class QuidaxAdapter {
             }
             return null;
         } catch (err) {
-            return null; 
+            return null;
         }
     }
 
@@ -355,7 +499,7 @@ class QuidaxAdapter {
      * Initiate Fiat Deposit (On-Ramp) via Kora/Bank
      */
     async initiateFiatDeposit({ currency, amount, first_name, last_name, email }) {
-        try {
+        return this._executeWithCircuitBreaker(async () => {
             const body = {
                 from_currency: currency.toUpperCase(),
                 to_currency: currency.toUpperCase(),
@@ -368,9 +512,22 @@ class QuidaxAdapter {
             };
             const response = await this.client.post(`/custodial/on_ramp_transactions/initiate`, body);
             return response.data;
-        } catch (err) {
-            throw this._normalizeError(err);
-        }
+        }, 'initiateFiatDeposit');
+    }
+
+    /**
+     * Get circuit breaker state (for health checks)
+     */
+    getCircuitBreakerState() {
+        return this.circuitBreaker.getState();
+    }
+
+    /**
+     * Clear the cache (useful for testing or manual refresh)
+     */
+    clearCache() {
+        this._cache.clear();
+        logger.info('[QuidaxAdapter] Cache cleared');
     }
 
     _normalizeError(err) {

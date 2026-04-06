@@ -2,6 +2,7 @@ import express from 'express';
 import { verifyToken, requireKYCTier } from '../middleware/auth.js';
 import { requireFeature } from '../middleware/featureGuard.js';
 import { validate } from '../middleware/validator.js';
+import { useIdempotency } from '../middleware/idempotency.js';
 import { body, param, query } from 'express-validator';
 import {
   getBillProviders,
@@ -69,9 +70,10 @@ router.post(
   validateBillAccount
 );
 
-// Pay bill (requires KYC Tier 1+)
+// Pay bill (requires KYC Tier 1+ with idempotency)
 router.post(
   '/pay',
+  useIdempotency, // Prevent duplicate bill payments on retry
   requireKYCTier(1),
   body('provider_id').isString(),
   body('account_number').isString(),

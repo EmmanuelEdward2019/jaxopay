@@ -14,14 +14,14 @@ const cryptoService = {
   // Get exchange rates
   getExchangeRates: async (fromCurrency, toCurrency, amount) => {
     try {
-      const response = await apiClient.get('/crypto/rates', {
-        params: {
-          from: fromCurrency,
-          to: toCurrency,
-          amount,
-        },
+      // apiClient interceptor returns response.data (the full JSON body: { success, data, error })
+      const body = await apiClient.get('/crypto/rates', {
+        params: { from: fromCurrency, to: toCurrency, amount },
       });
-      return { success: true, data: response.data };
+      if (body?.success && body?.data) {
+        return { success: true, data: body.data };
+      }
+      return { success: false, error: body?.error || 'Rate temporarily unavailable.' };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -228,6 +228,42 @@ const cryptoService = {
       const params = { coin };
       if (network) params.network = network;
       const response = await apiClient.get('/crypto/withdraw-fee', { params });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get supported networks for a coin
+  getNetworks: async (coin) => {
+    try {
+      const response = await apiClient.get('/crypto/networks', {
+        params: { coin },
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get live exchange rate
+  getLiveExchangeRate: async (from, to, amount = null) => {
+    try {
+      const params = { from, to };
+      if (amount) params.amount = amount;
+      const response = await apiClient.get('/crypto/exchange-rate/live', { params });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get live order book
+  getLiveOrderBook: async (market = 'btcusdt', limit = 50) => {
+    try {
+      const response = await apiClient.get('/crypto/order-book/live', {
+        params: { market, limit },
+      });
       return { success: true, data: response.data };
     } catch (error) {
       return { success: false, error: error.message };

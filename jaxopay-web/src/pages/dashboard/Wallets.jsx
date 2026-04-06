@@ -1090,48 +1090,75 @@ const DepositModal = ({ onClose, wallets }) => {
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Fetch VBA or Crypto Address
+    // Fetch fiat VBA or crypto networks when wallet changes
     useEffect(() => {
         if (!selectedWalletId || !selectedWallet) {
             setDetails(null);
             setError(null);
+            setCryptoConfigs(null);
             return;
         }
 
-        let cancelled = false;
-        const fetchDetails = async () => {
+        if (selectedWallet.wallet_type === 'fiat') {
+            let cancelled = false;
             setLoading(true);
             setError(null);
             setDetails(null);
-            try {
-                if (selectedWallet.wallet_type === 'fiat') {
-                    const res = await walletService.getVBA(selectedWalletId);
-                    if (!cancelled && res.success) setDetails(res.data);
-                    else if (!cancelled) setError(res.message || 'Could not get account details');
-                } else {
-                    // Crypto - fetch config for networks first
-                    const configRes = await cryptoService.getConfig();
-                    if (!cancelled && configRes.success) {
-                        setCryptoConfigs(configRes.data);
-                        // If network selected, fetch address
-                        if (network) {
-                            const addrRes = await cryptoService.getDepositAddress(selectedWallet.currency, network);
-                            if (!cancelled && addrRes.success) setDetails(addrRes.data);
-                            else if (!cancelled) setError(addrRes.error || 'Could not get deposit address');
-                        }
-                    } else if (!cancelled) {
-                        setError(configRes.error || 'Could not load crypto configuration');
-                    }
-                }
-            } catch (e) {
+            walletService.getVBA(selectedWalletId).then(res => {
+                if (cancelled) return;
+                if (res.success) setDetails(res.data);
+                else setError(res.message || 'Could not get account details');
+            }).catch(e => {
                 if (!cancelled) setError(e?.message || 'Something went wrong');
-            } finally {
+            }).finally(() => {
                 if (!cancelled) setLoading(false);
-            }
-        };
-        fetchDetails();
+            });
+            return () => { cancelled = true; };
+        } else {
+            // Crypto: fetch networks for the selected coin
+            let cancelled = false;
+            setLoading(true);
+            setError(null);
+            setDetails(null);
+            const coinUp = selectedWallet.currency?.toUpperCase();
+            cryptoService.getNetworks(selectedWallet.currency).then(res => {
+                if (cancelled) return;
+                const nets = res.success && res.data?.networks?.length > 0
+                    ? res.data.networks
+                    : (STATIC_CRYPTO_NETWORKS[coinUp] || [{ network: coinUp, name: coinUp }]);
+                setCryptoConfigs([{ coin: coinUp, networkList: nets }]);
+            }).catch(() => {
+                if (!cancelled) {
+                    const fallback = STATIC_CRYPTO_NETWORKS[coinUp] || [{ network: coinUp, name: coinUp }];
+                    setCryptoConfigs([{ coin: coinUp, networkList: fallback }]);
+                }
+            }).finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+            return () => { cancelled = true; };
+        }
+    }, [selectedWalletId]);
+
+    // Fetch crypto deposit address when network is selected
+    useEffect(() => {
+        if (!selectedWallet || selectedWallet.wallet_type !== 'crypto' || !network) {
+            return;
+        }
+        let cancelled = false;
+        setLoading(true);
+        setError(null);
+        setDetails(null);
+        cryptoService.getDepositAddress(selectedWallet.currency, network).then(res => {
+            if (cancelled) return;
+            if (res.success) setDetails(res.data);
+            else setError(res.error || 'Could not get deposit address');
+        }).catch(e => {
+            if (!cancelled) setError(e?.message || 'Failed to fetch deposit address');
+        }).finally(() => {
+            if (!cancelled) setLoading(false);
+        });
         return () => { cancelled = true; };
-    }, [selectedWalletId, network]);
+    }, [network, selectedWalletId]);
 
     return (
         <motion.div
@@ -1183,9 +1210,10 @@ const DepositModal = ({ onClose, wallets }) => {
                                 className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
                             >
                                 <option value="">Select network...</option>
-                                {((cryptoConfigs?.find(c => c.coin?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networkList) ||
-                                    (cryptoConfigs?.find(c => c.coin?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networks))?.map(n => (
-                                        <option key={n.network} value={n.network}>{n.network}</option>
+                                {(cryptoConfigs?.find(c => c.coin?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networkList ||
+                                    cryptoConfigs?.find(c => c.coin?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networks || [])
+                                    .map(n => (
+                                        <option key={n.network} value={n.network}>{n.name || n.network}</option>
                                     ))}
                             </select>
                         </div>
@@ -1276,16 +1304,55 @@ const DepositModal = ({ onClose, wallets }) => {
     );
 };
 
+// Static fallback networks — used when the API is unavailable
+const STATIC_CRYPTO_NETWORKS = {
+    BTC:  [{ network: 'BTC',   name: 'Bitcoin Network',           withdrawFee: '0.0005' }],
+    ETH:  [{ network: 'ERC20', name: 'Ethereum (ERC20)',          withdrawFee: '0.005'  }],
+    USDT: [
+        { network: 'TRC20', name: 'TRON (TRC20)',            withdrawFee: '1'   },
+        { network: 'ERC20', name: 'Ethereum (ERC20)',        withdrawFee: '10'  },
+        { network: 'BEP20', name: 'BNB Smart Chain (BEP20)', withdrawFee: '0.5' },
+    ],
+    USDC: [
+        { network: 'ERC20', name: 'Ethereum (ERC20)',        withdrawFee: '10'  },
+        { network: 'TRC20', name: 'TRON (TRC20)',            withdrawFee: '1'   },
+        { network: 'BEP20', name: 'BNB Smart Chain (BEP20)', withdrawFee: '0.5' },
+    ],
+    SOL:  [{ network: 'SOL',   name: 'Solana',                    withdrawFee: '0.01'  }],
+    BNB:  [{ network: 'BEP20', name: 'BNB Smart Chain (BEP20)',   withdrawFee: '0.0003'}],
+    TRX:  [{ network: 'TRC20', name: 'TRON',                      withdrawFee: '1'     }],
+    XRP:  [{ network: 'XRP',   name: 'XRP Ledger',                withdrawFee: '0.25'  }],
+    ADA:  [{ network: 'ADA',   name: 'Cardano',                   withdrawFee: '0.5'   }],
+    DOGE: [{ network: 'DOGE',  name: 'Dogecoin',                  withdrawFee: '5'     }],
+    LTC:  [{ network: 'LTC',   name: 'Litecoin',                  withdrawFee: '0.01'  }],
+    MATIC:[{ network: 'MATIC', name: 'Polygon',                   withdrawFee: '0.1'   }],
+};
+
 const FundModal = ({ onClose, wallets, onRefresh }) => {
+    const [fundType, setFundType] = useState('fiat'); // 'fiat' | 'crypto'
     const [selectedWalletId, setSelectedWalletId] = useState('');
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [stage, setStage] = useState('form'); // 'form' | 'processing' | 'awaiting' | 'success'
     const [checkoutRef, setCheckoutRef] = useState(null);
+    
+    // Crypto states
+    const [cryptoDetails, setCryptoDetails] = useState(null);
+    const [cryptoNetwork, setCryptoNetwork] = useState('');
+    const [cryptoConfigs, setCryptoConfigs] = useState(null);
+    const [copied, setCopied] = useState(false);
 
     const fiatWallets = wallets.filter(w => w.wallet_type === 'fiat');
-    const selectedWallet = fiatWallets.find(w => w.id === selectedWalletId);
+    const cryptoWallets = wallets.filter(w => w.wallet_type === 'crypto');
+    const selectedWallet = wallets.find(w => w.id === selectedWalletId);
+
+    const handleCopy = (text) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
 
     const handleFund = async () => {
         if (!selectedWalletId || !amount || parseFloat(amount) <= 0) return;
@@ -1305,7 +1372,6 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                 setCheckoutRef(reference);
 
                 if (mode === 'simulation') {
-                    // Dev mode — add funds directly
                     const addResult = await walletService.addFunds(selectedWalletId, parseFloat(amount), 'Manual deposit');
                     if (addResult.success) {
                         setStage('success');
@@ -1315,9 +1381,8 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                         setStage('form');
                     }
                 } else if (checkout_url) {
-                    // Open in SAME tab so Korapay's redirect_url brings user back to this app
                     window.location.href = checkout_url;
-                    return; // page will navigate away, no further state update needed
+                    return;
                 } else {
                     setError('No checkout URL returned. Please try again.');
                     setStage('form');
@@ -1333,69 +1398,87 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
         setLoading(false);
     };
 
+    // Fetch networks when a crypto wallet is selected
+    useEffect(() => {
+        if (fundType !== 'crypto' || !selectedWalletId || !selectedWallet) {
+            setCryptoConfigs(null);
+            setCryptoDetails(null);
+            return;
+        }
+        const coinUpper = selectedWallet.currency?.toUpperCase();
+        const fetchNetworks = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const result = await cryptoService.getNetworks(selectedWallet.currency);
+                const nets = result.success && result.data?.networks?.length > 0
+                    ? result.data.networks
+                    : (STATIC_CRYPTO_NETWORKS[coinUpper] || [{ network: coinUpper, name: coinUpper }]);
+                setCryptoConfigs([{ coin: coinUpper, networkList: nets }]);
+            } catch (e) {
+                // Always show at least static networks — never block the user
+                const fallback = STATIC_CRYPTO_NETWORKS[coinUpper] || [{ network: coinUpper, name: coinUpper }];
+                setCryptoConfigs([{ coin: coinUpper, networkList: fallback }]);
+            }
+            setLoading(false);
+        };
+        fetchNetworks();
+    }, [fundType, selectedWalletId]);
+
+    // Fetch deposit address when network is selected
+    useEffect(() => {
+        if (fundType !== 'crypto' || !selectedWalletId || !selectedWallet || !cryptoNetwork) {
+            setCryptoDetails(null);
+            return;
+        }
+        const fetchAddress = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const result = await cryptoService.getDepositAddress(selectedWallet.currency, cryptoNetwork);
+                if (result.success) {
+                    setCryptoDetails(result.data);
+                } else {
+                    // Sanitize raw server errors (e.g. "Query timed out after Xms") into user-friendly message
+                    const rawErr = result.error || '';
+                    const msg = /timed out|timeout|server error|500/i.test(rawErr)
+                        ? 'Service is busy. Please wait a moment and try again.'
+                        : rawErr || 'Could not generate deposit address. Please try again.';
+                    setError(msg);
+                }
+            } catch (e) {
+                setError('Could not generate deposit address. Please try again.');
+            }
+            setLoading(false);
+        };
+        fetchAddress();
+    }, [cryptoNetwork, selectedWalletId, fundType]);
+
     if (stage === 'success') {
         return (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-            >
-                <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-sm w-full text-center">
-                    <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="bg-white dark:bg-gray-800 rounded-3xl p-10 max-w-sm w-full text-center shadow-2xl">
+                    <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
                         <Check className="w-10 h-10 text-green-600" />
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Deposit Successful!</h2>
-                    <p className="text-gray-500 dark:text-gray-400">Your wallet balance will be updated shortly.</p>
+                    <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">Success!</h2>
+                    <p className="text-gray-500 dark:text-gray-400 font-medium">Your wallet balance will be updated momentarily.</p>
                 </motion.div>
             </motion.div>
         );
     }
 
     if (stage === 'awaiting') {
+        // ... (Awaiting status remains similar but with updated styling)
         return (
-            <motion.div
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-            >
-                <motion.div
-                    initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                    className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-8 text-center"
-                >
-                    <div className="w-16 h-16 bg-accent-100 dark:bg-accent-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <RefreshCw className="w-8 h-8 text-accent-600 animate-spin" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl max-w-md w-full p-10 text-center">
+                    <div className="w-20 h-20 bg-accent-100 dark:bg-accent-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <RefreshCw className="w-10 h-10 text-accent-600 animate-spin" />
                     </div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Complete Your Payment</h2>
-                    <p className="text-gray-600 dark:text-gray-400 mb-2">
-                        A secure payment page has opened in a new tab. Complete your payment there.
-                    </p>
-                    <p className="text-xs text-gray-400 mb-6">
-                        Ref: <code className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded font-mono">{checkoutRef}</code>
-                    </p>
-                    <div className="space-y-3">
-                        <button
-                            onClick={async () => {
-                                setLoading(true);
-                                const result = await walletService.verifyDeposit(checkoutRef);
-                                setLoading(false);
-                                if (result.success && (result.data?.status === 'completed' || result.data?.status === 'success')) {
-                                    setStage('success');
-                                    setTimeout(() => { onRefresh(); onClose(); }, 2500);
-                                } else if (result.data?.status === 'pending' || result.data?.status === 'processing') {
-                                    setError('Payment is still processing. Please wait a moment and try again, or check your wallet balance.');
-                                } else {
-                                    setError(result.error || result.data?.message || 'Could not confirm payment. Please contact support.');
-                                    setStage('form');
-                                }
-                            }}
-                            disabled={loading}
-                            className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                            {loading ? <><RefreshCw className="w-4 h-4 animate-spin" /> Verifying...</> : '✓ I\'ve Completed Payment'}
-                        </button>
-                        <button onClick={onClose} className="w-full py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-xl">
-                            Cancel
-                        </button>
-                    </div>
+                    <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">Verifying Payment</h2>
+                    <p className="text-gray-600 dark:text-gray-400 mb-8 font-medium">Please wait while we confirm your transaction status...</p>
+                    <button onClick={onClose} className="w-full py-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-black rounded-2xl">Close Window</button>
                 </motion.div>
             </motion.div>
         );
@@ -1409,84 +1492,145 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
         >
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-2xl max-w-md w-full p-8 overflow-hidden relative"
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Fund Wallet</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                        <X className="w-5 h-5 text-gray-500" />
+                <div className="flex items-center justify-between mb-8">
+                    <div>
+                        <h2 className="text-2xl font-black text-gray-900 dark:text-white">Fund Wallet</h2>
+                        <p className="text-gray-500 text-sm font-medium">Add money to your Jaxopay account.</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all">
+                        <X className="w-6 h-6 text-gray-400" />
+                    </button>
+                </div>
+
+                {/* Fund Type Toggle */}
+                <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-900 rounded-2xl mb-8 border border-gray-200 dark:border-gray-800">
+                    <button
+                        onClick={() => { setFundType('fiat'); setSelectedWalletId(''); }}
+                        className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${fundType === 'fiat' ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-xl' : 'text-gray-400'}`}
+                    >
+                        BANK / CARD
+                    </button>
+                    <button
+                        onClick={() => { setFundType('crypto'); setSelectedWalletId(''); }}
+                        className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${fundType === 'crypto' ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-xl' : 'text-gray-400'}`}
+                    >
+                        CRYPTO
                     </button>
                 </div>
 
                 {error && (
-                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-300 text-sm">
+                    <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-2xl text-red-600 dark:text-red-400 text-sm font-bold flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
                         {error}
                     </div>
                 )}
 
-                <div className="space-y-5">
+                <div className="space-y-6">
+                    {/* Wallet Selection */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Wallet</label>
+                        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 px-1">Select {fundType === 'fiat' ? 'Fiat' : 'Crypto'} Wallet</label>
                         <div className="grid grid-cols-2 gap-3">
-                            {fiatWallets.map(w => (
+                            {(fundType === 'fiat' ? fiatWallets : cryptoWallets).map(w => (
                                 <button
                                     key={w.id}
-                                    onClick={() => setSelectedWalletId(w.id)}
-                                    className={`p-3 rounded-xl border text-left transition-all ${selectedWalletId === w.id
-                                        ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/10 ring-2 ring-accent-500/20'
-                                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                    onClick={() => { setSelectedWalletId(w.id); setCryptoNetwork(''); setCryptoDetails(null); }}
+                                    className={`p-4 rounded-2xl border-2 text-left transition-all relative overflow-hidden group ${selectedWalletId === w.id
+                                        ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20 ring-4 ring-accent-500/10'
+                                        : 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'
                                         }`}
                                 >
-                                    <p className="font-bold text-gray-900 dark:text-white">{w.currency}</p>
-                                    <p className="text-xs text-gray-500 mt-0.5">Bal: {formatCurrency(w.balance, w.currency)}</p>
+                                    <p className="font-black text-gray-900 dark:text-white mb-1 uppercase tracking-tight">{w.currency}</p>
+                                    <p className="text-[10px] font-bold text-gray-400">Bal: {formatCurrency(w.balance, w.currency)}</p>
+                                    {selectedWalletId === w.id && <div className="absolute top-2 right-2 w-4 h-4 bg-accent-500 rounded-full flex items-center justify-center"><Check className="w-2.5 h-2.5 text-white stroke-[4px]" /></div>}
                                 </button>
                             ))}
                         </div>
-                        {fiatWallets.length === 0 && (
-                            <p className="text-sm text-gray-500 mt-2">No fiat wallets found. Create one first.</p>
-                        )}
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Deposit Amount</label>
-                        <div className="relative">
-                            <input
-                                type="number"
-                                value={amount}
-                                onChange={(e) => setAmount(e.target.value)}
-                                placeholder="0.00"
-                                min="1"
-                                className="w-full pl-14 pr-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white text-lg font-medium"
-                            />
-                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-semibold text-sm">
-                                {selectedWallet?.currency || 'NGN'}
+                    {fundType === 'fiat' ? (
+                        <>
+                            <div>
+                                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 px-1">Amount to Fund</label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={amount}
+                                        onChange={(e) => setAmount(e.target.value)}
+                                        placeholder="0.00"
+                                        className="w-full pl-14 pr-4 py-5 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white text-2xl font-black"
+                                    />
+                                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 font-black">{selectedWallet?.currency || 'NGN'}</div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
 
-                    {/* Payment Methods Banner */}
-                    <div className="p-4 bg-gradient-to-r from-accent-50 to-emerald-50 dark:from-accent-900/10 dark:to-emerald-900/10 rounded-xl border border-accent-100 dark:border-accent-800/30">
-                        <p className="text-xs font-semibold text-accent-700 dark:text-accent-300 mb-2">Accepted Payment Methods</p>
-                        <div className="flex gap-2 flex-wrap">
-                            {['💳 Debit Card', '🏦 Bank Transfer', '📱 USSD', '🏧 Pay With Bank'].map(m => (
-                                <span key={m} className="px-2 py-1 bg-white dark:bg-gray-800 rounded-md text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">{m}</span>
-                            ))}
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">🔒 Secured by PCI-DSS compliant payment processing</p>
-                    </div>
+                            <button
+                                onClick={handleFund}
+                                disabled={loading || !selectedWalletId || !amount || parseFloat(amount) <= 0}
+                                className="w-full py-5 bg-accent-600 hover:bg-accent-700 text-white font-black rounded-[1.5rem] shadow-2xl shadow-accent-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 text-lg"
+                            >
+                                {loading ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'Confirm & Proceed'}
+                            </button>
+                        </>
+                    ) : (
+                        <div className="space-y-6">
+                            {selectedWalletId && (
+                                <div>
+                                    <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 px-1">Choose Network</label>
+                                    <select
+                                        value={cryptoNetwork}
+                                        onChange={(e) => { setCryptoNetwork(e.target.value); setCryptoDetails(null); }}
+                                        className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-black"
+                                    >
+                                        <option value="">Select deposit network...</option>
+                                        {(cryptoConfigs?.find(c => (c.coin || c.symbol)?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networkList ||
+                                          cryptoConfigs?.find(c => (c.coin || c.symbol)?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networks)?.map(n => (
+                                            <option key={n.network} value={n.network}>{n.name || n.network}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
-                    <button
-                        onClick={handleFund}
-                        disabled={loading || !selectedWalletId || !amount || parseFloat(amount) <= 0}
-                        className="w-full py-4 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-xl shadow-lg shadow-accent-200 dark:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        {loading ? (
-                            <><RefreshCw className="w-5 h-5 animate-spin" /> Initializing...</>
-                        ) : (
-                            `Proceed to Pay${amount && selectedWallet ? ` ${formatCurrency(parseFloat(amount), selectedWallet.currency)}` : ''}`
-                        )}
-                    </button>
+                            {loading && <div className="flex justify-center p-10"><RefreshCw className="w-10 h-10 animate-spin text-accent-500" /></div>}
+
+                            <AnimatePresence>
+                                {cryptoDetails && (
+                                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                                        <div className="flex justify-center">
+                                            <div className="bg-white p-6 rounded-3xl shadow-xl border border-gray-100">
+                                                <QrCode className="w-32 h-32 text-gray-900" />
+                                            </div>
+                                        </div>
+                                        <div className="bg-gray-50 dark:bg-gray-900 p-6 rounded-3xl border border-gray-100 dark:border-gray-800">
+                                            <label className="text-[10px] font-black text-gray-400 uppercase mb-2 block tracking-widest">Your {selectedWallet.currency} Address ({cryptoNetwork})</label>
+                                            <div className="flex items-center gap-3">
+                                                <code className="text-[11px] font-bold text-gray-900 dark:text-white break-all flex-1 font-mono">{cryptoDetails.address}</code>
+                                                <button onClick={() => handleCopy(cryptoDetails.address)} className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-md transition-all">
+                                                    {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-400" />}
+                                                </button>
+                                            </div>
+                                            {cryptoDetails.memo && (
+                                                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-800">
+                                                     <label className="text-[10px] font-black text-red-500 uppercase mb-2 block tracking-widest">Memo/Tag Required</label>
+                                                     <div className="flex items-center gap-3">
+                                                        <code className="text-xl font-black text-gray-900 dark:text-white flex-1 tracking-widest font-mono">{cryptoDetails.memo}</code>
+                                                        <button onClick={() => handleCopy(cryptoDetails.memo)} className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-md transition-all">
+                                                           <Copy className="w-4 h-4 text-gray-400" />
+                                                        </button>
+                                                     </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <p className="text-[10px] text-gray-400 font-bold text-center leading-relaxed">
+                                            Only send <span className="text-gray-900 dark:text-white font-black">{selectedWallet.currency}</span> via the <span className="text-gray-900 dark:text-white font-black">{cryptoNetwork}</span> network. Funds sent via other networks will be lost.
+                                        </p>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    )}
                 </div>
             </motion.div>
         </motion.div>

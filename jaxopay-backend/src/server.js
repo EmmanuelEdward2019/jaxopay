@@ -2,16 +2,23 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import compression from 'compression';
+import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import logger from './utils/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
+import { attachRequestId, logRequest } from './middleware/requestId.js';
 import routes from './routes/index.js';
-import { connectDatabase } from './config/database.js';
+import { connectDatabase, checkDatabaseHealth, closeDatabaseConnections } from './config/database.js';
+import { enforceEnvironmentValidation } from './config/envValidator.js';
 
 // Load environment variables
 dotenv.config();
+
+// Validate environment variables before starting
+enforceEnvironmentValidation();
 
 const app = express();
 const server = createServer(app);
@@ -23,6 +30,20 @@ const API_VERSION = process.env.API_VERSION || 'v1';
 
 // Trust proxy (for rate limiting behind reverse proxy)
 app.set('trust proxy', 1);
+
+// Compression middleware (gzip responses)
+app.use(compression({
+  level: 6, // Default compression level (balance between speed and compression)
+  threshold: 1024, // Only compress responses larger than 1KB
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      // don't compress responses with this request header
+      return false;
+    }
+    // fallback to standard filter function
+    return compression.filter(req, res);
+  }
+}));
 
 // Security middleware
 app.use(helmet({
@@ -59,12 +80,21 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
+// Request ID tracking (must be first)
+app.use(attachRequestId);
+
+// Cookie parsing middleware
+app.use(cookieParser());
+
 // Body parsing middleware
 // Large limit for Smile ID biometric payloads (selfie + liveness + ID images as base64)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Logging middleware
+// Request logging (after parsing)
+app.use(logRequest);
+
+// Standard logging middleware
 if (NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
@@ -79,14 +109,18 @@ if (NODE_ENV === 'development') {
 app.use(rateLimiter);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'ok',
+app.get('/health', async (req, res) => {
+  const dbHealth = await checkDatabaseHealth();
+  const statusCode = dbHealth.healthy ? 200 : 503;
+
+  res.status(statusCode).json({
+    status: dbHealth.healthy ? 'ok' : 'degraded',
     service: 'jaxopay-backend',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: NODE_ENV,
     version: API_VERSION,
+    database: dbHealth,
   });
 });
 
@@ -137,8 +171,8 @@ const gracefulShutdown = async (signal) => {
     logger.info('HTTP server closed');
 
     try {
-      // Close database connections
-      // await pool.end();
+      // Close database connections properly
+      await closeDatabaseConnections();
       logger.info('Database connections closed');
       process.exit(0);
     } catch (error) {
@@ -147,11 +181,11 @@ const gracefulShutdown = async (signal) => {
     }
   });
 
-  // Force shutdown after 10 seconds
+  // Force shutdown after 25 seconds (allowing for transaction completion)
   setTimeout(() => {
     logger.error('Forced shutdown after timeout');
     process.exit(1);
-  }, 10000);
+  }, 25000);
 };
 
 // Handle shutdown signals

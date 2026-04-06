@@ -21,6 +21,11 @@ import ticketRoutes from './ticket.routes.js';
 import webhookRoutes from './webhook.routes.js';
 import transferRoutes from './transfer.routes.js';
 
+import { checkDatabaseHealth } from '../config/database.js';
+import cache, { CacheNamespaces } from '../utils/cache.js';
+import { circuitBreakers } from '../utils/circuitBreaker.js';
+import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
+
 const router = express.Router();
 
 // API status endpoint
@@ -53,6 +58,43 @@ router.get('/', (req, res) => {
       webhooks: '/webhooks',
     },
   });
+});
+
+// Detailed health check endpoint (for monitoring)
+router.get('/health', async (req, res) => {
+  try {
+    const dbHealth = await checkDatabaseHealth();
+    const quidaxState = quidax.getCircuitBreakerState();
+
+    const health = {
+      status: dbHealth.healthy ? 'healthy' : 'degraded',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      database: dbHealth,
+      services: {
+        quidax: {
+          circuitBreaker: quidaxState.state,
+          failures: quidaxState.failureCount,
+        },
+        strowallet: {
+          circuitBreaker: circuitBreakers.strowallet.getState().state,
+        },
+        korapay: {
+          circuitBreaker: circuitBreakers.korapay.getState().state,
+        },
+      },
+      cache: cache.getStats(),
+    };
+
+    res.status(dbHealth.healthy ? 200 : 503).json(health);
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      error: error.message,
+    });
+  }
 });
 
 // Mount routes

@@ -4,6 +4,7 @@ import logger from '../utils/logger.js';
 import emailService from '../services/email.service.js';
 import axios from 'axios';
 import crypto from 'crypto';
+import { decimal, validateAmount, formatForDB, hasSufficientBalance } from '../utils/financial.js';
 
 
 // Get all user wallets
@@ -116,26 +117,33 @@ export const initializeDeposit = catchAsync(async (req, res) => {
   const korapaySecret = process.env.KORAPAY_SECRET_KEY;
   const frontendUrl = process.env.FRONTEND_URL || 'https://jaxopay.com';
 
+  // Validate and format amount using decimal.js
+  const amountDecimal = validateAmount(amount, 1, 10000000); // Min 1, Max 10M
+  const amountForDB = formatForDB(amountDecimal);
+
   // Record a pending deposit transaction in DB so we can verify it later
   await query(
     `INSERT INTO transactions
        (user_id, to_wallet_id, transaction_type, from_amount, to_amount,
         from_currency, to_currency, net_amount, fee_amount, status, description, reference)
      VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $3, 0, 'pending', 'Wallet deposit', $5)`,
-    [req.user.id, wallet_id, parseFloat(amount), depositCurrency, reference]
+    [req.user.id, wallet_id, amountForDB, depositCurrency, reference]
   );
 
   if (!korapaySecret || korapaySecret === 'your_korapay_secret_key') {
-    // Dev similation — immediately complete the deposit
+    // Dev simulation — immediately complete the deposit using transaction
     logger.info('[Wallet] No real Korapay key — simulating instant deposit for dev');
-    await query(
-      `UPDATE wallets SET balance = balance + $1, available_balance = available_balance + $1, updated_at = NOW() WHERE id = $2`,
-      [parseFloat(amount), wallet_id]
-    );
-    await query(
-      `UPDATE transactions SET status = 'completed', completed_at = NOW() WHERE reference = $1`,
-      [reference]
-    );
+
+    await transaction(async (client) => {
+      await client.query(
+        `UPDATE wallets SET balance = balance + $1, available_balance = available_balance + $1, updated_at = NOW() WHERE id = $2`,
+        [amountForDB, wallet_id]
+      );
+      await client.query(
+        `UPDATE transactions SET status = 'completed', completed_at = NOW() WHERE reference = $1`,
+        [reference]
+      );
+    });
     return res.status(200).json({
       success: true,
       message: 'Dev mode: deposit completed instantly',
@@ -148,7 +156,7 @@ export const initializeDeposit = catchAsync(async (req, res) => {
     const profile = profileResult.rows[0] || {};
 
     const payload = {
-      amount: parseFloat(amount),
+      amount: parseFloat(amountDecimal.toString()), // Convert decimal to float for API
       currency: depositCurrency,
       reference,
       notification_url: `${process.env.API_BASE_URL || 'http://localhost:3001'}/api/v1/webhooks/korapay`,
@@ -271,13 +279,12 @@ import complianceEngine from '../orchestration/compliance/ComplianceEngine.js';
 export const transferBetweenWallets = catchAsync(async (req, res) => {
   const { recipient_email, amount, currency, description } = req.body;
 
-  // 1. Validate amount
-  if (amount <= 0) {
-    throw new AppError('Amount must be greater than zero', 400);
-  }
+  // 1. Validate amount using decimal.js
+  const amountDecimal = validateAmount(amount, 0.01, 10000000);
+  const amountForDB = formatForDB(amountDecimal);
 
   // 2. Comprehensive Compliance Check
-  await complianceEngine.validateTransaction(req.user.id, amount, 'INTERNAL_TRANSFER');
+  await complianceEngine.validateTransaction(req.user.id, parseFloat(amountDecimal.toString()), 'INTERNAL_TRANSFER');
 
   // Find recipient by email
   const recipientUser = await query('SELECT id FROM users WHERE email = $1', [recipient_email.toLowerCase()]);
@@ -305,7 +312,8 @@ export const transferBetweenWallets = catchAsync(async (req, res) => {
     throw new AppError(`You don't have a ${currency} wallet`, 404);
   }
 
-  if (parseFloat(senderWallet.rows[0].balance) < amount) {
+  // Check sufficient balance using decimal comparison
+  if (!hasSufficientBalance(senderWallet.rows[0].balance, amountForDB)) {
     throw new AppError('Insufficient funds', 400);
   }
 
@@ -313,11 +321,11 @@ export const transferBetweenWallets = catchAsync(async (req, res) => {
     throw new AppError(`The recipient does not have a ${currency} wallet to receive this transfer.`, 404);
   }
 
-  // 4. Execute via Ledger Service (Atomic movement)
+  // 4. Execute via Ledger Service (Atomic movement) - uses decimal internally
   const result = await ledgerService.recordMovement({
     fromWalletId: senderWallet.rows[0].id,
     toWalletId: recipientWallet.rows[0].id,
-    amount,
+    amount: amountForDB, // Use formatted decimal
     currency,
     transactionId: crypto.randomUUID(), // In production, this would be the transaction table record ID
     description: description || 'Internal wallet transfer'
@@ -326,7 +334,7 @@ export const transferBetweenWallets = catchAsync(async (req, res) => {
   logger.info('Wallet transfer completed via orchestration:', {
     senderId: req.user.id,
     recipientId: recipient_id,
-    amount,
+    amount: amountDecimal.toString(),
     currency,
   });
 
@@ -337,7 +345,7 @@ export const transferBetweenWallets = catchAsync(async (req, res) => {
   emailService.sendTransactionEmails({
     id: result.transactionId,
     type: 'Transfer',
-    amount,
+    amount: amountDecimal.toString(),
     currency,
     reference: result.transactionId,
     description: description || 'Internal wallet transfer'
@@ -349,7 +357,10 @@ export const transferBetweenWallets = catchAsync(async (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Transfer completed successfully',
-    data: result,
+    data: {
+      ...result,
+      amount: amountDecimal.toString(), // Send as string to avoid float conversion
+    },
   });
 });
 

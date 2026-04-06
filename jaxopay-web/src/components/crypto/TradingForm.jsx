@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { RefreshCw, Wallet, ArrowRight, Info, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { RefreshCw, Info } from 'lucide-react';
 
 const TradingForm = ({ market = 'USDTNGN', base = 'USDT', quote = 'NGN', onSubmit, loading, balances = {} }) => {
   const [side, setSide] = useState('buy'); // buy | sell
@@ -9,9 +8,10 @@ const TradingForm = ({ market = 'USDTNGN', base = 'USDT', quote = 'NGN', onSubmi
   const [amount, setAmount] = useState('');
   const [total, setTotal] = useState('');
 
+  const currentBalance = side === 'buy' ? (balances[quote] || 0) : (balances[base] || 0);
+
   const handleSideChange = (newSide) => {
     setSide(newSide);
-    setPrice('');
     setAmount('');
     setTotal('');
   };
@@ -28,7 +28,24 @@ const TradingForm = ({ market = 'USDTNGN', base = 'USDT', quote = 'NGN', onSubmi
 
   const handleTotalChange = (val) => {
     setTotal(val);
-    if (price && val) setAmount((parseFloat(val) / parseFloat(price)).toFixed(8));
+    if (price && val && parseFloat(price) > 0) setAmount((parseFloat(val) / parseFloat(price)).toFixed(8));
+  };
+
+  const handlePercentageClick = (percent) => {
+    if (side === 'buy') {
+        const affordableTotal = (currentBalance * percent) / 100;
+        setTotal(affordableTotal.toFixed(2));
+        if (price && parseFloat(price) > 0) {
+            setAmount((affordableTotal / parseFloat(price)).toFixed(8));
+        } else if (type === 'market') {
+            // Suggest an amount based on percentage of balance
+            setTotal(affordableTotal.toFixed(2));
+        }
+    } else {
+        const sellAmount = (currentBalance * percent) / 100;
+        setAmount(sellAmount.toFixed(8));
+        if (price) setTotal((sellAmount * parseFloat(price)).toFixed(2));
+    }
   };
 
   const handleSubmit = (e) => {
@@ -36,123 +53,137 @@ const TradingForm = ({ market = 'USDTNGN', base = 'USDT', quote = 'NGN', onSubmi
     onSubmit({ market, side, type, price, volume: amount, total: type === 'market' ? total : undefined });
   };
 
-  const currentBalance = side === 'buy' ? balances[quote] : balances[base];
-
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-xl overflow-hidden flex flex-col h-full">
+    <div className="flex flex-col h-full bg-white dark:bg-gray-800">
       {/* Side Selector */}
-      <div className="flex p-2 bg-gray-50/50 dark:bg-gray-900/50">
+      <div className="flex border-b border-gray-100 dark:border-gray-700">
         <button
           onClick={() => handleSideChange('buy')}
-          className={`flex-1 py-3 font-black text-sm rounded-xl transition-all ${side === 'buy' ? 'bg-green-500 text-white shadow-lg shadow-green-500/20' : 'text-gray-400 hover:text-green-500'}`}
+          className={`flex-1 py-3 text-[11px] font-black uppercase transition-all border-b-2 ${side === 'buy' ? 'text-green-500 border-green-500 bg-green-50 dark:bg-green-900/10' : 'text-gray-400 border-transparent hover:text-green-500'}`}
         >
-          BUY {base}
+          Buy
         </button>
         <button
           onClick={() => handleSideChange('sell')}
-          className={`flex-1 py-3 font-black text-sm rounded-xl transition-all ${side === 'sell' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-gray-400 hover:text-red-500'}`}
+          className={`flex-1 py-3 text-[11px] font-black uppercase transition-all border-b-2 ${side === 'sell' ? 'text-red-500 border-red-500 bg-red-50 dark:bg-red-900/10' : 'text-gray-400 border-transparent hover:text-red-500'}`}
         >
-          SELL {base}
+          Sell
         </button>
       </div>
 
-      <div className="p-6 flex-1 space-y-6">
+      <div className="p-3 flex-1 flex flex-col space-y-4">
         {/* Order Type */}
-        <div className="flex bg-gray-100 dark:bg-gray-800/50 p-1 rounded-xl">
+        <div className="flex bg-gray-50 dark:bg-gray-900/50 p-0.5 rounded-lg border border-gray-100 dark:border-gray-700">
           <button
             onClick={() => setType('limit')}
-            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${type === 'limit' ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-sm' : 'text-gray-500'}`}
+            className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-md transition-all ${type === 'limit' ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-sm' : 'text-gray-400'}`}
           >
             Limit
           </button>
           <button
             onClick={() => setType('market')}
-            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${type === 'market' ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-sm' : 'text-gray-500'}`}
+            className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-md transition-all ${type === 'market' ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-sm' : 'text-gray-400'}`}
           >
             Market
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col space-y-3">
+          <div className="space-y-3">
             {type === 'limit' ? (
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Price ({quote})</label>
-                <div className="relative group">
-                  <input
+                <div className="flex justify-between items-center px-1">
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">Price</label>
+                    <span className="text-[9px] font-bold text-gray-400 uppercase">{quote}</span>
+                </div>
+                <input
                     type="number"
                     step="0.01"
                     placeholder="0.00"
                     value={price}
                     onChange={(e) => handlePriceChange(e.target.value)}
-                    className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold transition-all text-lg"
-                  />
-                  <div className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-300 font-bold text-xs">{quote}</div>
-                </div>
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-lg focus:ring-1 focus:ring-accent-500 focus:outline-none dark:text-white font-bold transition-all text-xs"
+                />
               </div>
             ) : (
-              <div className="p-4 bg-accent-50 dark:bg-accent-900/10 rounded-2xl border border-accent-100 dark:border-accent-800/20 text-center">
-                   <p className="text-xs text-accent-600 font-bold">Executing at Best Market Price</p>
-              </div>
+                <div className="p-2.5 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700 border-dashed text-center">
+                   <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest leading-none">Executing at Best Market Price</p>
+                </div>
             )}
 
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Amount ({base})</label>
-              <div className="relative">
+                <div className="flex justify-between items-center px-1">
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">Amount</label>
+                    <span className="text-[9px] font-bold text-gray-400 uppercase">{base}</span>
+                </div>
                 <input
                   type="number"
                   step="0.0001"
                   placeholder="0.00"
                   value={amount}
                   onChange={(e) => handleAmountChange(e.target.value)}
-                  className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold transition-all text-lg"
+                  className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-lg focus:ring-1 focus:ring-accent-500 focus:outline-none dark:text-white font-bold transition-all text-xs"
                 />
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-300 font-bold text-xs">{base}</div>
-              </div>
+            </div>
+
+            {/* Percentage Slider / Buttons */}
+            <div className="flex gap-1">
+                {[25, 50, 75, 100].map(p => (
+                    <button
+                        key={p}
+                        type="button"
+                        onClick={() => handlePercentageClick(p)}
+                        className="flex-1 py-1 text-[8px] font-black text-gray-400 uppercase hover:text-accent-600 hover:bg-accent-50 dark:hover:bg-accent-900/20 rounded border border-gray-100 dark:border-gray-700 transition-all"
+                    >
+                        {p}%
+                    </button>
+                ))}
             </div>
 
             {type === 'limit' && (
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Total ({quote})</label>
-                <div className="relative">
-                  <input
+                <div className="flex justify-between items-center px-1">
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">Total</label>
+                    <span className="text-[9px] font-bold text-gray-400 uppercase">{quote}</span>
+                </div>
+                <input
                     type="number"
                     step="0.01"
                     placeholder="0.00"
                     value={total}
                     onChange={(e) => handleTotalChange(e.target.value)}
-                    className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:border-accent-500 focus:outline-none dark:text-white font-bold transition-all text-lg"
-                  />
-                  <div className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-300 font-bold text-xs">{quote}</div>
-                </div>
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-lg focus:ring-1 focus:ring-accent-500 focus:outline-none dark:text-white font-bold transition-all text-xs"
+                />
               </div>
             )}
           </div>
 
-          <div className="pt-2">
-            <div className="flex justify-between items-center mb-4 px-1">
-                <span className="text-[10px] font-bold text-gray-400 uppercase">Available Balance</span>
-                <span className="text-[11px] font-black text-accent-600 px-2 py-1 bg-accent-50 dark:bg-accent-900/20 rounded-lg">
-                    {currentBalance?.toLocaleString() || '0.00'} {side === 'buy' ? quote : base}
-                </span>
+          <div className="mt-auto pt-4 space-y-3">
+            <div className="space-y-1 px-1">
+                <div className="flex justify-between text-[9px] font-bold">
+                    <span className="text-gray-400 uppercase">Available</span>
+                    <span className="text-gray-600 dark:text-gray-300">
+                        {parseFloat(currentBalance).toFixed(side === 'buy' ? 2 : 8)} {side === 'buy' ? quote : base}
+                    </span>
+                </div>
             </div>
 
              <button
               type="submit"
-              disabled={loading || !amount}
-              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed ${
+              disabled={loading || (type === 'limit' ? (!amount || !price) : (!amount && !total))}
+              className={`w-full py-2.5 rounded-lg font-black text-[11px] uppercase shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
                 side === 'buy' ? 'bg-green-500 hover:bg-green-600 shadow-green-500/20 text-white' : 'bg-red-500 hover:bg-red-600 shadow-red-500/20 text-white'
               }`}
             >
-              {loading ? <RefreshCw className="w-6 h-6 animate-spin" /> : `${side.toUpperCase()} ${base}`}
+              {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : `${side} ${base}`}
             </button>
           </div>
         </form>
       </div>
       
-      <div className="px-8 py-4 bg-gray-50 dark:bg-gray-900/30 border-t border-gray-100 dark:border-gray-700 flex items-center gap-2">
-           <Info className="w-4 h-4 text-gray-400" />
-           <span className="text-[10px] text-gray-400 font-medium">Fee: 0.1% | Instant Execution</span>
+      <div className="px-4 py-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-700 flex items-center gap-2">
+           <Info className="w-3 h-3 text-gray-400" />
+           <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider">Fee: 0.1% | Instant</span>
       </div>
     </div>
   );

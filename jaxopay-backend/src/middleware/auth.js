@@ -1,9 +1,11 @@
 import jwt from 'jsonwebtoken';
+import speakeasy from 'speakeasy';
 import { AppError, catchAsync } from './errorHandler.js';
 import { query } from '../config/database.js';
 import logger from '../utils/logger.js';
+import cache, { CacheNamespaces, CacheTTL } from '../utils/cache.js';
 
-// Verify JWT token
+// Verify JWT token - OPTIMIZED with caching and combined queries
 export const verifyToken = catchAsync(async (req, res, next) => {
   // Get token from header
   let token;
@@ -26,46 +28,79 @@ export const verifyToken = catchAsync(async (req, res, next) => {
     throw new AppError('Invalid token. Please log in again.', 401);
   }
 
-  // Check if user still exists
+  // Check cache for user data first (reduces DB load)
+  const cacheKey = `${decoded.userId}:${token}`;
+  const cachedAuth = cache.get(CacheNamespaces.USER_SESSIONS, cacheKey);
+
+  if (cachedAuth) {
+    // Update last activity in background (don't wait)
+    query(
+      'UPDATE user_sessions SET last_activity_at = NOW() WHERE id = $1',
+      [cachedAuth.sessionId]
+    ).catch(() => {}); // Silent fail for background update
+
+    req.user = cachedAuth.user;
+    req.sessionId = cachedAuth.sessionId;
+    return next();
+  }
+
+  // Single optimized query combining user + session lookup (reduces round-trips)
+  // Use fast timeout — auth checks on indexed columns should be sub-second
   const result = await query(
-    'SELECT id, email, role, kyc_tier, is_active, two_fa_enabled FROM users WHERE id = $1 AND deleted_at IS NULL',
-    [decoded.userId]
+    `SELECT
+      u.id, u.email, u.role, u.kyc_tier, u.is_active, u.two_fa_enabled,
+      s.id as session_id, s.is_active as session_active, s.expires_at
+     FROM users u
+     LEFT JOIN user_sessions s ON s.user_id = u.id AND s.session_token = $2
+     WHERE u.id = $1 AND u.deleted_at IS NULL`,
+    [decoded.userId, token],
+    { timeout: 8000, retries: 1 }
   );
 
   if (result.rows.length === 0) {
     throw new AppError('The user belonging to this token no longer exists.', 401);
   }
 
-  const user = result.rows[0];
+  const row = result.rows[0];
 
   // Check if user is active
-  if (!user.is_active) {
+  if (!row.is_active) {
     throw new AppError('Your account has been deactivated. Please contact support.', 403);
   }
 
-  // Check if session is still valid
-  const sessionResult = await query(
-    'SELECT id, is_active, expires_at FROM user_sessions WHERE session_token = $1 AND user_id = $2',
-    [token, user.id]
-  );
-
-  if (sessionResult.rows.length === 0 || !sessionResult.rows[0].is_active) {
+  // Check session validity
+  if (!row.session_id || !row.session_active) {
     throw new AppError('Your session has expired. Please log in again.', 401);
   }
 
-  if (new Date(sessionResult.rows[0].expires_at) < new Date()) {
+  if (new Date(row.expires_at) < new Date()) {
     throw new AppError('Your session has expired. Please log in again.', 401);
   }
 
-  // Update last activity
-  await query(
+  const user = {
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    kyc_tier: row.kyc_tier,
+    is_active: row.is_active,
+    two_fa_enabled: row.two_fa_enabled,
+  };
+
+  // Cache the auth data for 30 seconds (reduces DB load for repeated requests)
+  cache.set(CacheNamespaces.USER_SESSIONS, cacheKey, {
+    user,
+    sessionId: row.session_id,
+  }, CacheTTL.SHORT);
+
+  // Update last activity in background
+  query(
     'UPDATE user_sessions SET last_activity_at = NOW() WHERE id = $1',
-    [sessionResult.rows[0].id]
-  );
+    [row.session_id]
+  ).catch(() => {});
 
   // Grant access to protected route
   req.user = user;
-  req.sessionId = sessionResult.rows[0].id;
+  req.sessionId = row.session_id;
   next();
 });
 
@@ -147,11 +182,57 @@ export const captureDeviceFingerprint = (req, res, next) => {
   next();
 };
 
-// Helper function to verify 2FA token
+// Helper function to verify 2FA token using speakeasy TOTP
 const verify2FAToken = async (userId, token) => {
-  // This will be implemented in the auth service
-  // For now, return true as placeholder
-  return true;
+  try {
+    // Check cache for 2FA secret first
+    const cacheKey = `2fa:${userId}`;
+    let secret = cache.get(CacheNamespaces.USER_PROFILES, cacheKey);
+
+    if (!secret) {
+      // Get user's 2FA secret from database
+      const result = await query(
+        'SELECT two_fa_secret FROM users WHERE id = $1 AND deleted_at IS NULL',
+        [userId]
+      );
+
+      if (result.rows.length === 0 || !result.rows[0].two_fa_secret) {
+        logger.warn(`[2FA] No 2FA secret found for user ${userId}`);
+        return false;
+      }
+
+      secret = result.rows[0].two_fa_secret;
+      // Cache the secret for 5 minutes
+      cache.set(CacheNamespaces.USER_PROFILES, cacheKey, secret, CacheTTL.LONG);
+    }
+
+    // Verify TOTP token using speakeasy
+    const verified = speakeasy.totp.verify({
+      secret: secret,
+      encoding: 'base32',
+      token: token,
+      window: 2, // Allow 1 minute before/after for time drift
+    });
+
+    if (verified) {
+      logger.info(`[2FA] Token verified successfully for user ${userId}`);
+    } else {
+      logger.warn(`[2FA] Invalid token provided for user ${userId}`);
+    }
+
+    return verified;
+  } catch (error) {
+    logger.error(`[2FA] Error verifying token for user ${userId}:`, error.message);
+    return false;
+  }
+};
+
+// Clear user cache (call this when user data changes, e.g., role/tier updates)
+export const clearUserCache = (userId) => {
+  // Clear all user session cache entries
+  cache.clearNamespace(CacheNamespaces.USER_SESSIONS);
+  cache.delete(CacheNamespaces.USER_PROFILES, `2fa:${userId}`);
+  logger.debug(`[Auth] Cleared cache for user ${userId}`);
 };
 
 // Optional authentication (doesn't throw error if no token)
@@ -171,5 +252,6 @@ export default {
   verify2FA,
   captureDeviceFingerprint,
   optionalAuth,
+  clearUserCache,
 };
 

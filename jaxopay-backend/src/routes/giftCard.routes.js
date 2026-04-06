@@ -2,6 +2,7 @@ import express from 'express';
 import { verifyToken, requireKYCTier } from '../middleware/auth.js';
 import { requireFeature } from '../middleware/featureGuard.js';
 import { validate } from '../middleware/validator.js';
+import { useIdempotency } from '../middleware/idempotency.js';
 import { body, query, param } from 'express-validator';
 import {
   getGiftCards,
