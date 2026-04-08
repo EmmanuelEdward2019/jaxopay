@@ -62,7 +62,16 @@ class CircuitBreaker {
       this.onSuccess();
       return result;
     } catch (error) {
-      this.onFailure();
+      // Only count 5xx/network errors as circuit-breaker failures.
+      // 4xx errors (400, 401, 403, 404, 422…) are client-side problems
+      // (bad credentials, bad request) — NOT indicators that the service is down.
+      const statusCode = error.statusCode || error.status || error.response?.status;
+      if (!statusCode || statusCode >= 500) {
+        this.onFailure();
+      } else {
+        // Still track the failed call in stats, but don't trip the breaker.
+        this.stats.failedCalls++;
+      }
       throw error;
     }
   }

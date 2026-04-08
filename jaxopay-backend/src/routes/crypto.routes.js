@@ -23,7 +23,11 @@ import {
   getKlines,
   getUserOrders,
   cancelOrder,
-  getWithdrawFee
+  getWithdrawFee,
+  createSwapQuotation,
+  refreshSwapQuotation,
+  confirmSwapQuotation,
+  getSwapTransaction,
 } from '../controllers/crypto.controller.js';
 
 // Enhanced endpoints with full Quidax integration
@@ -150,8 +154,25 @@ router.get('/order-book', getOrderBook);
 // Create order (spot/limit)
 router.post('/orders', requireKYCTier(2), createOrder);
 
-// Get swap quote
+// Get swap quote (temporary preview — no timer)
 router.get('/swap/quote', requireKYCTier(2), getSwapQuote);
+
+// ── Quotation-based swap lifecycle ──────────────────────────────────────────
+// Step 2: Create real quotation (15s window)
+router.post(
+  '/swap/quotation',
+  requireKYCTier(2),
+  body('from_currency').isString().notEmpty(),
+  body('to_currency').isString().notEmpty(),
+  validate,
+  createSwapQuotation
+);
+// Step 3: Refresh quotation
+router.post('/swap/quotation/:id/refresh', requireKYCTier(2), refreshSwapQuotation);
+// Step 4: Confirm quotation (executes swap)
+router.post('/swap/quotation/:id/confirm', requireKYCTier(2), confirmSwapQuotation);
+// Step 5: Poll swap transaction status
+router.get('/swap/transactions/:id', verifyToken, getSwapTransaction);
 
 // Get market trades
 router.get('/market/trades', getMarketTrades);

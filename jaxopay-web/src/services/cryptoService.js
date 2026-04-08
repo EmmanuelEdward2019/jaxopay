@@ -91,12 +91,61 @@ const cryptoService = {
     }
   },
 
-  // Swap crypto for crypto
+  // Swap crypto for crypto (legacy single-step)
   swap: async (payload) => {
     try {
       const body = await apiClient.post('/crypto/swap', payload);
       if (body?.success && body?.data) return { success: true, data: body.data };
       return { success: false, error: body?.error || body?.message || 'Swap failed' };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // ── Quotation-based swap lifecycle ──────────────────────────────────────
+  // Step 2: Create real quotation (returns id + expires_at for 15s countdown)
+  createSwapQuotation: async (from_currency, to_currency, from_amount) => {
+    try {
+      const body = await apiClient.post('/crypto/swap/quotation', {
+        from_currency,
+        to_currency,
+        from_amount,
+      });
+      if (body?.success && body?.data) return { success: true, data: body.data };
+      return { success: false, error: body?.message || 'Could not create quotation' };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Step 3: Refresh an existing quotation (pass original params so Quidax can re-price)
+  refreshSwapQuotation: async (quotation_id, body = {}) => {
+    try {
+      const res = await apiClient.post(`/crypto/swap/quotation/${quotation_id}/refresh`, body);
+      if (res?.success && res?.data) return { success: true, data: res.data };
+      return { success: false, error: res?.message || 'Refresh failed' };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Step 4: Confirm a quotation — executes the swap
+  confirmSwapQuotation: async (quotation_id) => {
+    try {
+      const body = await apiClient.post(`/crypto/swap/quotation/${quotation_id}/confirm`);
+      if (body?.success && body?.data) return { success: true, data: body.data };
+      return { success: false, error: body?.message || 'Confirmation failed' };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Step 5: Poll swap transaction status
+  getSwapTransaction: async (transaction_id) => {
+    try {
+      const body = await apiClient.get(`/crypto/swap/transactions/${transaction_id}`);
+      if (body?.success && body?.data) return { success: true, data: body.data };
+      return { success: false, error: body?.message || 'Status unavailable' };
     } catch (error) {
       return { success: false, error: error.message };
     }

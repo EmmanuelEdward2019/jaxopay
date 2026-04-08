@@ -19,6 +19,25 @@ export const notFoundHandler = (req, res, next) => {
 
 // Global error handler
 export const errorHandler = (err, req, res, next) => {
+  // Normalize raw Axios/upstream errors into operational AppError-shaped objects
+  // so they surface with meaningful status codes instead of generic 500s.
+  if (!err.isOperational && err.response) {
+    const upstreamStatus = err.response.status;
+    const upstreamMsg = err.response.data?.message || err.message;
+    if (upstreamStatus === 401 || upstreamStatus === 403) {
+      err.statusCode = 502;
+      err.message = 'Payment provider authentication failed. Please contact support.';
+    } else if (upstreamStatus >= 400 && upstreamStatus < 500) {
+      err.statusCode = upstreamStatus;
+      err.message = upstreamMsg || 'Invalid request to payment provider.';
+    } else {
+      err.statusCode = 502;
+      err.message = 'Payment provider is temporarily unavailable. Please try again.';
+    }
+    err.isOperational = true;
+    err.status = `${err.statusCode}`.startsWith('4') ? 'fail' : 'error';
+  }
+
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
 

@@ -120,7 +120,20 @@ export const getExchangeRates = catchAsync(async (req, res) => {
     if (quote && parseFloat(quote.to_amount) > 0) {
       const fromAmt = parseFloat(quote.from_amount);
       const toAmt   = parseFloat(quote.to_amount);
-      const rate    = toAmt / fromAmt;                   // to_currency per 1 from_currency
+      const rate    = toAmt / fromAmt;  // to_currency per 1 from_currency
+
+      // Sanity-check: if both currencies are crypto the rate should NOT be ~1.0
+      // (1 BTC ≠ 1 USDT). A rate of ~1 for cross-crypto pairs means the API
+      // returned bad data — discard and fall through to the ticker cache.
+      const isCrossAsset = CRYPTO_SYMBOLS.has(fromCurr) && CRYPTO_SYMBOLS.has(toCurr)
+                        && fromCurr !== toCurr
+                        && !(fromCurr === 'USDT' || toCurr === 'USDT'
+                          || fromCurr === 'USDC' || toCurr === 'USDC');
+      if (isCrossAsset && rate >= 0.9 && rate <= 1.1) {
+        logger.warn(`[ExchangeRates] Quidax quote for ${fromCurr}/${toCurr} returned suspicious rate ${rate} — discarding`);
+        throw new Error('Suspicious rate');
+      }
+
       const exchangeAmount = amountNum != null ? toAmt : null;
 
       return res.status(200).json({
@@ -129,8 +142,8 @@ export const getExchangeRates = catchAsync(async (req, res) => {
           from: fromCurr,
           to:   toCurr,
           rate,
-          rate_with_fee: rate,                           // fee already baked in by Quidax
-          fee_percentage: 0,                             // Quidax handles fee internally
+          rate_with_fee: rate,          // fee already baked in by Quidax
+          fee_percentage: 0,
           amount: amountNum,
           exchange_amount: exchangeAmount,
           quoted_price: quote.quoted_price,
@@ -557,6 +570,16 @@ export const getExchangeHistory = catchAsync(async (req, res) => {
  *
  * Returns 0 when no rate is available so callers can surface a proper error.
  */
+// Known crypto currencies — never use FX service (a forex API) for these
+const CRYPTO_SYMBOLS = new Set([
+  'BTC','ETH','USDT','USDC','BNB','SOL','XRP','ADA','DOGE','TRX',
+  'LTC','DOT','MATIC','BCH','LINK','UNI','AVAX','ATOM','FIL','EOS',
+  'ETC','XLM','ALGO','VET','THETA','HBAR','NEAR','FTM','ONE','SAND',
+  'MANA','AXS','SHIB','LRC','ENJ','GRT','AAVE','COMP','MKR','SNX',
+  'CRV','SUSHI','YFI','BAL','REN','KNC','ZRX','BAT','OMG','DASH',
+  'ZEC','XMR','IOTA','XTZ','WAVES','QTUM','NEO','ONT','ZIL','ICX',
+]);
+
 async function getLiveExchangeRate(from, to) {
   from = from.toUpperCase();
   to   = to.toUpperCase();
@@ -571,10 +594,10 @@ async function getLiveExchangeRate(from, to) {
   // USDT value of a single coin (used for bridge)
   const toUSDT = (coin) => {
     if (coin === 'USDT') return 1;
-    let p = pairPrice(coin, 'USDT', 'sell');            // direct coinusdt
+    let p = pairPrice(coin, 'USDT', 'sell');
     if (p > 0) return p;
-    const coinNGN  = pairPrice(coin,   'NGN', 'sell');
-    const usdtNGN  = pairPrice('USDT', 'NGN', 'buy');
+    const coinNGN = pairPrice(coin,   'NGN', 'sell');
+    const usdtNGN = pairPrice('USDT', 'NGN', 'buy');
     if (coinNGN > 0 && usdtNGN > 0) return coinNGN / usdtNGN;
     return 0;
   };
@@ -584,13 +607,13 @@ async function getLiveExchangeRate(from, to) {
     if (coin === 'NGN') return 1;
     let p = pairPrice(coin, 'NGN', 'sell');
     if (p > 0) return p;
-    const usdtVal  = toUSDT(coin);
-    const usdtNGN  = pairPrice('USDT', 'NGN', 'buy');
+    const usdtVal = toUSDT(coin);
+    const usdtNGN = pairPrice('USDT', 'NGN', 'buy');
     if (usdtVal > 0 && usdtNGN > 0) return usdtVal * usdtNGN;
     return 0;
   };
 
-  // 1. Direct pair
+  // 1. Direct pair (from the cache)
   let rate = pairPrice(from, to, 'sell');
   if (rate > 0) { logger.debug(`[Rate] ${from}→${to} direct: ${rate}`); return rate; }
 
@@ -606,13 +629,49 @@ async function getLiveExchangeRate(from, to) {
   const fromN = toNGN(from), toN = toNGN(to);
   if (fromN > 0 && toN > 0) { rate = fromN / toN; logger.debug(`[Rate] ${from}→${to} NGN bridge: ${rate}`); return rate; }
 
-  // 5. FX service (fiat-to-fiat)
-  try {
-    const res = await fxService.getExchangeRate(from, to);
-    if (res?.rate > 0) { logger.debug(`[Rate] ${from}→${to} FX: ${res.rate}`); return res.rate; }
-  } catch (e) { /* silent */ }
+  // 5. Direct Quidax market ticker fetch (bypasses cache — handles cold-start / stale cache)
+  // Try the most likely markets for this pair before giving up.
+  const candidateMarkets = [
+    `${from.toLowerCase()}${to.toLowerCase()}`,
+    `${to.toLowerCase()}${from.toLowerCase()}`,
+    `${from.toLowerCase()}usdt`,
+    `${to.toLowerCase()}usdt`,
+    `${from.toLowerCase()}ngn`,
+    `${to.toLowerCase()}ngn`,
+  ];
+  for (const mkt of candidateMarkets) {
+    try {
+      const t = await quidax.getMarketTicker(mkt);
+      if (!t) continue;
+      const ticker = t.ticker || t;
+      const p = parseFloat(ticker.sell || ticker.last || ticker.buy || 0);
+      if (p <= 0) continue;
 
-  logger.warn(`[Rate] No rate found for ${from}→${to}. Tickers available: ${Object.keys(tickers).join(', ')}`);
+      // Determine if this market gives from→to directly or needs inversion
+      if (mkt === `${from.toLowerCase()}${to.toLowerCase()}`) {
+        logger.debug(`[Rate] ${from}→${to} live ticker (${mkt}): ${p}`);
+        return p;
+      }
+      if (mkt === `${to.toLowerCase()}${from.toLowerCase()}`) {
+        logger.debug(`[Rate] ${from}→${to} live ticker inverse (${mkt}): ${1/p}`);
+        return 1 / p;
+      }
+      // Bridge via USDT
+      if (mkt === `${from.toLowerCase()}usdt` && to === 'USDT') return p;
+      if (mkt === `${to.toLowerCase()}usdt`   && from === 'USDT') return 1 / p;
+      // Store for bridge calculation — don't return early
+    } catch (e) { /* continue */ }
+  }
+
+  // 6. FX service — ONLY for pure fiat-to-fiat (never for crypto)
+  if (!CRYPTO_SYMBOLS.has(from) && !CRYPTO_SYMBOLS.has(to)) {
+    try {
+      const res = await fxService.getExchangeRate(from, to);
+      if (res?.rate > 0) { logger.debug(`[Rate] ${from}→${to} FX: ${res.rate}`); return res.rate; }
+    } catch (e) { /* silent */ }
+  }
+
+  logger.warn(`[Rate] No rate found for ${from}→${to}. Cache has: ${Object.keys(tickers).slice(0,10).join(', ')}...`);
   return 0;
 }
 
@@ -631,10 +690,10 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
 
   try {
     const dataResponse = await quidax.getDepositAddress(coin.toLowerCase());
-    // Direct Quidax mapping: data.data.address
+    // Quidax wallet objects use deposit_address / destination_tag field names
     const addressData = dataResponse?.data || dataResponse;
-    const address = addressData.address;
-    const tag = addressData.tag || addressData.memo || '';
+    const address = addressData.deposit_address || addressData.address;
+    const tag = addressData.destination_tag || addressData.tag || addressData.memo || '';
 
     // Persist to DB for webhook matching
     await query(
@@ -1059,5 +1118,146 @@ export const getWithdrawFee = catchAsync(async (req, res) => {
   }
 
   const data = await quidax.getWithdrawFee(coin, network);
+  res.status(200).json({ success: true, data });
+});
+
+// ── Quotation-based Swap Flow ─────────────────────────────────────────────────
+// Fiat currencies that use 'fiat' wallet_type in our DB
+const FIAT_CURRENCIES = new Set(['NGN', 'USD', 'EUR', 'GBP', 'GHS', 'KES', 'ZAR', 'CAD', 'AUD']);
+const getWalletType = (currency) => FIAT_CURRENCIES.has(currency.toUpperCase()) ? 'fiat' : 'crypto';
+
+// Step 2 — Create a real swap quotation (15-second window)
+// POST /crypto/swap/quotation
+export const createSwapQuotation = catchAsync(async (req, res) => {
+  const { from_currency, to_currency, from_amount, to_amount } = req.body;
+
+  if (req.user.kyc_tier < 2) throw new AppError('KYC Tier 2+ required for swaps', 403);
+  if (!from_currency || !to_currency) throw new AppError('from_currency and to_currency are required', 400);
+  if (from_amount != null && to_amount != null) throw new AppError('Provide exactly one of from_amount or to_amount', 400);
+  if (from_amount == null && to_amount == null) throw new AppError('Exactly one of from_amount or to_amount is required', 400);
+
+  const quotation = await quidax.getSwapQuote({
+    from: from_currency,
+    to: to_currency,
+    amount: from_amount != null ? from_amount : to_amount,
+    side: from_amount != null ? 'from' : 'to',
+  });
+
+  if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) {
+    throw new AppError('Could not create a live swap quotation. Please try again.', 503);
+  }
+
+  res.status(200).json({ success: true, data: quotation });
+});
+
+// Step 3 — Refresh an existing quotation before it expires
+// POST /crypto/swap/quotation/:id/refresh
+export const refreshSwapQuotation = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { from_currency, to_currency, from_amount, to_amount } = req.body;
+
+  if (!id) throw new AppError('Quotation ID is required', 400);
+
+  // Build refresh body — Quidax requires the same params as the original quote
+  const body = {};
+  if (from_currency) body.from_currency = from_currency.toLowerCase();
+  if (to_currency)   body.to_currency   = to_currency.toLowerCase();
+  if (from_amount != null) body.from_amount = String(from_amount);
+  else if (to_amount != null) body.to_amount = String(to_amount);
+
+  const quotation = await quidax.refreshSwapQuotation(id, body);
+
+  if (!quotation?.id) throw new AppError('Could not refresh swap quotation. Please try again.', 503);
+
+  res.status(200).json({ success: true, data: quotation });
+});
+
+// Step 4 — Confirm a quotation, execute the swap, and record in DB
+// POST /crypto/swap/quotation/:id/confirm
+export const confirmSwapQuotation = catchAsync(async (req, res) => {
+  const { id } = req.params;
+
+  if (req.user.kyc_tier < 2) throw new AppError('KYC Tier 2+ required for swaps', 403);
+  if (!id) throw new AppError('Quotation ID is required', 400);
+
+  // Execute swap on Quidax — this is the authoritative action
+  const confirmed = await quidax.executeSwap(id);
+
+  if (!confirmed?.id) throw new AppError('Swap execution failed. Please refresh and try again.', 503);
+
+  // Extract amounts and currencies from Quidax's response
+  const fromCurrency = (confirmed.from_currency || confirmed.swap_quotation?.from_currency || '').toUpperCase();
+  const toCurrency   = (confirmed.to_currency   || confirmed.swap_quotation?.to_currency   || '').toUpperCase();
+  const fromAmount   = parseFloat(confirmed.from_amount || confirmed.swap_quotation?.from_amount || 0);
+  const toAmount     = parseFloat(confirmed.received_amount || confirmed.swap_quotation?.to_amount || 0);
+  const fromType     = getWalletType(fromCurrency);
+  const toType       = getWalletType(toCurrency);
+
+  // Update our local wallets — best-effort (swap already executed on Quidax)
+  if (fromCurrency && toCurrency && fromAmount > 0 && toAmount > 0) {
+    try {
+      await transaction(async (client) => {
+        const fromWallet = await client.query(
+          `SELECT id, balance FROM wallets
+           WHERE user_id = $1 AND currency = $2 AND wallet_type = $3 AND deleted_at IS NULL
+           FOR UPDATE`,
+          [req.user.id, fromCurrency, fromType]
+        );
+
+        if (fromWallet.rows.length === 0 || parseFloat(fromWallet.rows[0].balance) < fromAmount) {
+          throw new Error('Insufficient local balance for DB update');
+        }
+
+        let toWallet = await client.query(
+          `SELECT id FROM wallets
+           WHERE user_id = $1 AND currency = $2 AND wallet_type = $3 AND deleted_at IS NULL`,
+          [req.user.id, toCurrency, toType]
+        );
+
+        if (toWallet.rows.length === 0) {
+          toWallet = await client.query(
+            `INSERT INTO wallets (user_id, currency, wallet_type, balance)
+             VALUES ($1, $2, $3, 0) RETURNING id`,
+            [req.user.id, toCurrency, toType]
+          );
+        }
+
+        await client.query(
+          'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
+          [fromAmount, fromWallet.rows[0].id]
+        );
+        await client.query(
+          'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
+          [toAmount, toWallet.rows[0].id]
+        );
+
+        const meta = JSON.stringify({ quidax_swap_id: confirmed.id, quotation_id: id });
+
+        await client.query(
+          `INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, currency, status, description, metadata)
+           VALUES ($1, 'exchange_out', $2, $3, 'completed', $4, $5)`,
+          [fromWallet.rows[0].id, fromAmount, fromCurrency, `Swapped to ${toCurrency}`, meta]
+        );
+        await client.query(
+          `INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, currency, status, description, metadata)
+           VALUES ($1, 'exchange_in', $2, $3, 'completed', $4, $5)`,
+          [toWallet.rows[0].id, toAmount, toCurrency, `Swapped from ${fromCurrency}`, meta]
+        );
+      });
+    } catch (dbErr) {
+      // DB update failed but swap succeeded on Quidax — log and continue
+      logger.error('[ConfirmSwap] DB update failed (swap executed on Quidax):', dbErr.message);
+    }
+  }
+
+  res.status(200).json({ success: true, data: confirmed });
+});
+
+// Step 5 — Poll swap transaction status
+// GET /crypto/swap/transactions/:id
+export const getSwapTransaction = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  if (!id) throw new AppError('Transaction ID is required', 400);
+  const data = await quidax.getSwapTransaction(id);
   res.status(200).json({ success: true, data });
 });

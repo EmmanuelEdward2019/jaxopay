@@ -46,6 +46,7 @@ import {
     LayoutGrid,
     BarChart3
 } from 'lucide-react';
+import QRCode from 'react-qr-code';
 import cryptoService from '../../services/cryptoService';
 import walletService from '../../services/walletService';
 import { formatCurrency } from '../../utils/formatters';
@@ -111,27 +112,19 @@ const Exchange = () => {
     // UI
     const [showTokenModal, setShowTokenModal] = useState(false);
     const [tokenModalSide, setTokenModalSide] = useState('from');
-    const [quoteExpiry, setQuoteExpiry] = useState(0);
     const [rateError, setRateError] = useState(null);
 
-    useEffect(() => {
-        let timer;
-        if (quoteExpiry > 0) {
-            timer = setInterval(() => setQuoteExpiry(prev => prev - 1), 1000);
-        }
-        return () => clearInterval(timer);
-    }, [quoteExpiry]);
-
-    // Auto-refresh rates every 5 seconds when on exchange tab
-    useEffect(() => {
-        if (activeTab !== 'exchange' || !payAmount || parseFloat(payAmount) <= 0) return;
-        
-        const interval = setInterval(() => {
-            fetchRates();
-        }, 5000);
-        
-        return () => clearInterval(interval);
-    }, [activeTab, payAmount, fromAsset, toAsset]);
+    // ── Quotation lifecycle ───────────────────────────────────────────────────
+    const [quotation, setQuotation] = useState(null);     // active Quidax quotation object
+    const [swapPhase, setSwapPhase] = useState('idle');   // idle|quoting|quoted|refreshing|confirming|polling|completed|failed
+    const [swapTxId, setSwapTxId] = useState(null);
+    const [swapResult, setSwapResult] = useState(null);
+    const [swapError, setSwapError] = useState(null);
+    const [countdownSecs, setCountdownSecs] = useState(0);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const quotationIdRef = useRef(null);
+    const autoRefreshFiredRef = useRef(false);
+    const refreshCallbackRef = useRef(null);
 
     useEffect(() => {
         if (activeTab === 'exchange') {
@@ -142,7 +135,6 @@ const Exchange = () => {
                     setReceiveAmount('');
                     setRates(null);
                     setRateError(null);
-                    setQuoteExpiry(0);
                 }
             }, 200);
             return () => clearTimeout(timer);
@@ -154,6 +146,39 @@ const Exchange = () => {
         fetchHistory();
         fetchAssets();
     }, []);
+
+    // Keep refreshCallbackRef current so the countdown timer always calls the latest version
+    useEffect(() => { refreshCallbackRef.current = handleQuotationRefresh; });
+
+    // Countdown timer — driven by quotation.expires_at; auto-refreshes at 0
+    useEffect(() => {
+        if (!quotation?.expires_at) { setCountdownSecs(0); return; }
+        autoRefreshFiredRef.current = false;
+        const expiresAt = new Date(quotation.expires_at).getTime();
+
+        const interval = setInterval(() => {
+            const secsLeft = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+            setCountdownSecs(secsLeft);
+            if (secsLeft === 0 && !autoRefreshFiredRef.current) {
+                autoRefreshFiredRef.current = true;
+                clearInterval(interval);
+                refreshCallbackRef.current?.();
+            }
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [quotation?.expires_at]);
+
+    // Reset to idle when the user changes currency or amount while a quote is active
+    useEffect(() => {
+        if (swapPhase === 'quoted' || swapPhase === 'refreshing') {
+            setSwapPhase('idle');
+            setQuotation(null);
+            setSwapError(null);
+            quotationIdRef.current = null;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fromAsset.code, toAsset.code, payAmount]);
 
     const fetchAssets = async () => {
         const result = await cryptoService.getSupportedCryptos();
@@ -263,13 +288,6 @@ const Exchange = () => {
                 // Backend returns: { rate, rate_with_fee, exchange_amount, expiry }
                 const amt = result.data.exchange_amount ?? result.data.converted_amount;
                 setReceiveAmount(amt != null ? Number(amt).toFixed(toAsset.type === 'crypto' ? 6 : 2) : '');
-                // Use actual expiry from Quidax quotation (15s) or fallback to 30s
-                if (result.data.expiry) {
-                    const secsLeft = Math.max(5, Math.floor((new Date(result.data.expiry).getTime() - Date.now()) / 1000));
-                    setQuoteExpiry(secsLeft);
-                } else {
-                    setQuoteExpiry(30);
-                }
             } else {
                 setReceiveAmount('');
                 setRates(null);
@@ -331,6 +349,184 @@ const Exchange = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    // ── Swap rate display helper ──────────────────────────────────────────────
+    const formatRate = (rate) => {
+        if (!rate || rate <= 0) return '—';
+        if (rate < 0.000001) return rate.toFixed(12);
+        if (rate < 0.001) return rate.toFixed(8);
+        if (rate < 1) return rate.toFixed(6);
+        if (rate < 1000) return rate.toFixed(4);
+        return rate.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    };
+
+    // ── Quotation handlers ────────────────────────────────────────────────────
+
+    // Step 3: Refresh an active quotation (manual or auto)
+    const handleQuotationRefresh = async () => {
+        const qid = quotationIdRef.current;
+        if (!qid || isRefreshing) return;
+        setIsRefreshing(true);
+        setSwapPhase('refreshing');
+        try {
+            const result = await cryptoService.refreshSwapQuotation(qid, {
+                from_currency: fromAsset.code,
+                to_currency: toAsset.code,
+                from_amount: parseFloat(payAmount),
+            });
+            if (result.success && result.data?.id) {
+                const q = result.data;
+                quotationIdRef.current = q.id;
+                setQuotation(q);
+                setReceiveAmount(parseFloat(q.to_amount).toFixed(toAsset.type === 'crypto' ? 6 : 2));
+                setSwapPhase('quoted');
+            } else {
+                setSwapError(result.error || 'Rate refresh failed. Please try again.');
+                setSwapPhase('failed');
+            }
+        } catch (e) {
+            setSwapError('Rate refresh failed. Please try again.');
+            setSwapPhase('failed');
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+
+    // Keep refreshCallbackRef always pointing to the latest version (avoids stale closures in timer)
+    // This useEffect is placed here (before the countdown effect) to ensure it runs on every render
+    // Note: effects are collected in order and all run after render; this pattern is safe.
+
+    // Step 2: Create a real quotation (user clicks "Get Quote")
+    const handleGetQuote = async () => {
+        if (!payAmount || parseFloat(payAmount) <= 0) {
+            setSwapError('Please enter an amount first.');
+            return;
+        }
+        setSwapPhase('quoting');
+        setSwapError(null);
+        setQuotation(null);
+        setSwapResult(null);
+        quotationIdRef.current = null;
+
+        try {
+            const result = await cryptoService.createSwapQuotation(
+                fromAsset.code,
+                toAsset.code,
+                parseFloat(payAmount)
+            );
+            if (result.success && result.data?.id) {
+                const q = result.data;
+                quotationIdRef.current = q.id;
+                setQuotation(q);
+                setReceiveAmount(parseFloat(q.to_amount).toFixed(toAsset.type === 'crypto' ? 6 : 2));
+                setSwapPhase('quoted');
+            } else {
+                setSwapError(result.error || 'Could not get a quote. Please try again.');
+                setSwapPhase('failed');
+            }
+        } catch (e) {
+            setSwapError('Failed to get quote: ' + (e.message || 'Please try again.'));
+            setSwapPhase('failed');
+        }
+    };
+
+    // Step 4: Confirm the active quotation (with pre-confirm safety refresh if near expiry)
+    const handleConfirmSwap = async () => {
+        const qid = quotationIdRef.current;
+        if (!qid) { setSwapError('No active quote. Please get a new quote.'); return; }
+
+        setLoading(true);
+        setSwapError(null);
+
+        try {
+            // Safety check: refresh first if less than 1 second left
+            const secsLeft = quotation
+                ? Math.max(0, Math.floor((new Date(quotation.expires_at).getTime() - Date.now()) / 1000))
+                : 0;
+
+            if (secsLeft < 1) {
+                setIsRefreshing(true);
+                const refreshResult = await cryptoService.refreshSwapQuotation(qid, {
+                    from_currency: fromAsset.code,
+                    to_currency: toAsset.code,
+                    from_amount: parseFloat(payAmount),
+                });
+                setIsRefreshing(false);
+                if (!refreshResult.success || !refreshResult.data?.id) {
+                    setSwapError(refreshResult.error || 'Could not refresh rate. Please try again.');
+                    setSwapPhase('failed');
+                    setLoading(false);
+                    return;
+                }
+                const q = refreshResult.data;
+                quotationIdRef.current = q.id;
+                setQuotation(q);
+            }
+
+            setSwapPhase('confirming');
+            const confirmResult = await cryptoService.confirmSwapQuotation(quotationIdRef.current);
+
+            if (!confirmResult.success || !confirmResult.data?.id) {
+                setSwapError(confirmResult.error || 'Swap confirmation failed.');
+                setSwapPhase('failed');
+                return;
+            }
+
+            const txId = confirmResult.data.id;
+            setSwapTxId(txId);
+            setSwapPhase('polling');
+
+            // Step 5: Poll for final status
+            await pollSwapStatus(txId);
+        } catch (e) {
+            setSwapError('Swap failed: ' + (e.message || 'Please try again.'));
+            setSwapPhase('failed');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Step 5: Poll swap transaction until completed or failed (max 10 × 3s = 30s)
+    const pollSwapStatus = async (txId) => {
+        for (let i = 0; i < 10; i++) {
+            await new Promise(r => setTimeout(r, 3000));
+            try {
+                const result = await cryptoService.getSwapTransaction(txId);
+                if (result.success && result.data) {
+                    const { status } = result.data;
+                    if (status === 'completed') {
+                        setSwapResult(result.data);
+                        setSwapPhase('completed');
+                        fetchWallets();
+                        fetchHistory();
+                        return;
+                    }
+                    if (status === 'failed') {
+                        setSwapError('The swap was rejected by the exchange.');
+                        setSwapPhase('failed');
+                        return;
+                    }
+                }
+            } catch (_) { /* ignore individual poll errors */ }
+        }
+        // Timed out — swap was initiated, treat as success and refresh wallets
+        setSwapResult({ status: 'initiated', received_amount: null });
+        setSwapPhase('completed');
+        fetchWallets();
+    };
+
+    // Reset the entire swap flow
+    const handleSwapReset = () => {
+        setSwapPhase('idle');
+        setQuotation(null);
+        setSwapResult(null);
+        setSwapTxId(null);
+        setSwapError(null);
+        quotationIdRef.current = null;
+        setPayAmount('');
+        setReceiveAmount('');
+        setRates(null);
     };
 
     const handleFetchDepositAddress = async () => {
@@ -550,49 +746,139 @@ const Exchange = () => {
                                 </div>
                             </div>
 
-                            {rates && (
-                                <motion.div 
+                            {/* ── Rate / Quotation display ───────────────────────────── */}
+
+                            {/* Preview rate (indicative, shown before a quotation is locked) */}
+                            {rates && swapPhase === 'idle' && !loadingRates && (
+                                <motion.div
                                     initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                                     className="mt-8 p-6 bg-accent-50 dark:bg-accent-900/10 rounded-3xl border border-accent-100 dark:border-accent-800/30"
                                 >
-                                    <div className="flex justify-between items-center mb-4">
-                                        <div className="flex items-center gap-2 text-sm font-bold text-gray-600 dark:text-gray-400">
-                                            <RefreshCw className={`w-4 h-4 ${loadingRates ? 'animate-spin' : ''}`} />
-                                            <span>Real-time Rate (Powered by Quidax)</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="text-[10px] font-black text-accent-600 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-accent-100 uppercase tracking-tighter">
-                                                Secures for {quoteExpiry}s
-                                            </div>
-                                            {quoteExpiry <= 10 && (
-                                                <button 
-                                                    onClick={fetchRates}
-                                                    disabled={loadingRates}
-                                                    className="p-2 bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition-all disabled:opacity-50"
-                                                >
-                                                    <RefreshCw className={`w-4 h-4 ${loadingRates ? 'animate-spin' : ''}`} />
-                                                </button>
-                                            )}
-                                        </div>
+                                    <div className="flex items-center gap-2 text-sm font-bold text-gray-500 dark:text-gray-400 mb-3">
+                                        <RefreshCw className="w-4 h-4" />
+                                        <span>Indicative Rate</span>
+                                        <span className="ml-auto text-[10px] font-black text-gray-400 uppercase tracking-wider">Click "Get Quote" to lock</span>
                                     </div>
                                     <p className="text-xl font-black text-gray-900 dark:text-white">
-                                        1 {fromAsset.code} = {rates.rate?.toFixed(toAsset.type === 'crypto' ? 8 : 4)} {toAsset.code}
+                                        1 {fromAsset.code} = {formatRate(rates.rate)} {toAsset.code}
                                     </p>
-                                    {rates.rate_with_fee && (
-                                        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-2">
-                                            After fees (1%): 1 {fromAsset.code} = {rates.rate_with_fee?.toFixed(toAsset.type === 'crypto' ? 8 : 4)} {toAsset.code}
+                                    {rates.fee_percentage > 0 && rates.rate_with_fee && rates.rate_with_fee !== rates.rate && (
+                                        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-1">
+                                            After fees ({rates.fee_percentage}%): 1 {fromAsset.code} = {formatRate(rates.rate_with_fee)} {toAsset.code}
                                         </p>
+                                    )}
+                                    {rates.source === 'quidax_swap_quote' && (
+                                        <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-medium">Live rate — fees included</p>
                                     )}
                                 </motion.div>
                             )}
 
-                            <button
-                                onClick={handleExchange}
-                                disabled={loading || !payAmount || parseFloat(payAmount) <= 0 || loadingRates}
-                                className="w-full mt-10 py-6 bg-accent-600 hover:bg-accent-700 text-white font-black text-xl rounded-3xl shadow-2xl shadow-accent-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-4"
-                            >
-                                {loading ? <RefreshCw className="w-8 h-8 animate-spin" /> : 'Confirm Swap'}
-                            </button>
+                            {/* Locked quotation (active 15s window) */}
+                            {quotation && (swapPhase === 'quoted' || swapPhase === 'refreshing') && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                                    className="mt-8 p-6 bg-green-50 dark:bg-green-900/10 rounded-3xl border border-green-200 dark:border-green-800/30"
+                                >
+                                    <div className="flex justify-between items-center mb-3">
+                                        <div className="flex items-center gap-2 text-sm font-bold text-green-700 dark:text-green-400">
+                                            <ShieldCheck className="w-4 h-4" />
+                                            <span>Locked Rate</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-tighter ${countdownSecs <= 5 ? 'text-red-600 bg-red-50 border-red-200' : 'text-accent-600 bg-white dark:bg-gray-800 border-accent-100'}`}>
+                                                Refreshes in {countdownSecs}s
+                                            </span>
+                                            <button
+                                                onClick={handleQuotationRefresh}
+                                                disabled={isRefreshing}
+                                                title="Refresh rate"
+                                                className="p-2 bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition-all disabled:opacity-50"
+                                            >
+                                                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p className="text-xl font-black text-gray-900 dark:text-white">
+                                        1 {fromAsset.code} = {formatRate(parseFloat(quotation.to_amount) / parseFloat(quotation.from_amount))} {toAsset.code}
+                                    </p>
+                                    <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-medium">Live rate — fees included</p>
+                                </motion.div>
+                            )}
+
+                            {/* Processing state (confirming + polling) */}
+                            {(swapPhase === 'confirming' || swapPhase === 'polling') && (
+                                <div className="mt-8 p-8 bg-accent-50 dark:bg-accent-900/10 rounded-3xl border border-accent-100 dark:border-accent-800/30 text-center">
+                                    <RefreshCw className="w-10 h-10 text-accent-600 animate-spin mx-auto mb-3" />
+                                    <p className="font-black text-gray-900 dark:text-white text-lg">
+                                        {swapPhase === 'confirming' ? 'Confirming swap…' : 'Processing swap…'}
+                                    </p>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">This may take a few seconds</p>
+                                </div>
+                            )}
+
+                            {/* Success state */}
+                            {swapPhase === 'completed' && swapResult && (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                                    className="mt-8 p-8 bg-green-50 dark:bg-green-900/10 rounded-3xl border border-green-200 dark:border-green-800/30 text-center"
+                                >
+                                    <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <Check className="w-8 h-8 text-green-600" />
+                                    </div>
+                                    <p className="text-2xl font-black text-gray-900 dark:text-white mb-2">Swap Complete!</p>
+                                    {swapResult.received_amount ? (
+                                        <>
+                                            <p className="text-gray-600 dark:text-gray-300 font-bold mb-1">
+                                                You received: <span className="text-gray-900 dark:text-white">{parseFloat(swapResult.received_amount).toFixed(toAsset.type === 'crypto' ? 6 : 2)} {toAsset.code}</span>
+                                            </p>
+                                            <p className="text-xs text-gray-400 dark:text-gray-500">Execution price: {swapResult.execution_price}</p>
+                                        </>
+                                    ) : (
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">Your swap was submitted. Funds will appear shortly.</p>
+                                    )}
+                                    <button
+                                        onClick={handleSwapReset}
+                                        className="mt-6 px-10 py-3 bg-accent-600 text-white font-black rounded-2xl hover:bg-accent-700 transition-all shadow-lg"
+                                    >
+                                        New Swap
+                                    </button>
+                                </motion.div>
+                            )}
+
+                            {/* Error state (inline, within the form) */}
+                            {swapPhase === 'failed' && swapError && (
+                                <div className="mt-6 p-5 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-200 dark:border-red-800 flex items-start gap-3">
+                                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                                    <div className="flex-1">
+                                        <p className="font-bold text-red-700 dark:text-red-400 text-sm">{swapError}</p>
+                                    </div>
+                                    <button onClick={() => { setSwapPhase('idle'); setSwapError(null); }} className="text-xs text-red-400 hover:text-red-600 font-bold uppercase">Dismiss</button>
+                                </div>
+                            )}
+
+                            {/* Action button — adapts to current phase */}
+                            {swapPhase !== 'completed' && swapPhase !== 'polling' && swapPhase !== 'confirming' && (
+                                <button
+                                    onClick={swapPhase === 'quoted' || swapPhase === 'refreshing' ? handleConfirmSwap : handleGetQuote}
+                                    disabled={
+                                        !payAmount || parseFloat(payAmount) <= 0 ||
+                                        swapPhase === 'quoting' ||
+                                        (swapPhase === 'idle' && loadingRates) ||
+                                        isRefreshing || loading
+                                    }
+                                    className="w-full mt-8 py-6 bg-accent-600 hover:bg-accent-700 text-white font-black text-xl rounded-3xl shadow-2xl shadow-accent-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-4"
+                                >
+                                    {(swapPhase === 'quoting' || loading) ? (
+                                        <RefreshCw className="w-8 h-8 animate-spin" />
+                                    ) : swapPhase === 'quoted' || swapPhase === 'refreshing' ? (
+                                        isRefreshing ? <><RefreshCw className="w-5 h-5 animate-spin" /> Refreshing…</> : 'Confirm Swap'
+                                    ) : swapPhase === 'failed' ? (
+                                        'Try Again'
+                                    ) : (
+                                        'Get Quote'
+                                    )}
+                                </button>
+                            )}
                         </motion.div>
                     )}
 
@@ -659,7 +945,7 @@ const Exchange = () => {
                             {depositDetails ? (
                                 <div className="p-10 bg-gray-50 dark:bg-gray-900/50 rounded-[3rem] border-2 border-dashed border-accent-200 dark:border-accent-800 text-center animate-in fade-in zoom-in slide-in-from-bottom-4">
                                     <div className="inline-block bg-white p-6 rounded-[2rem] shadow-xl mb-8">
-                                        <QrCode className="w-40 h-40 text-gray-900" />
+                                        <QRCode value={depositDetails.address} size={160} />
                                     </div>
                                     <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Your Secure {depositCoin} Address</p>
                                     <div className="flex items-center gap-4 bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 mb-8 shadow-sm">
