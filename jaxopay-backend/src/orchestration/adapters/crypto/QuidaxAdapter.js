@@ -25,14 +25,12 @@ class QuidaxAdapter {
         logger.info(`[Quidax] Initialising adapter → ${this.baseURL}`);
 
         // Authenticated client — used for user-scoped operations (swap, wallets, orders, etc.)
-        // We send all known auth header variants so the adapter works regardless of
-        // which Quidax API version (app.quidax.io vs openapi.quidax.io) is configured.
+        // Quidax OpenAPI requires: Authorization: Bearer {API_KEY}
+        // (NOT the secret key — confirmed by Quidax support)
         this.client = createApiClient({
             baseURL: this.baseURL,
             headers: {
-                'Authorization': `Bearer ${this.secretKey}`,
-                'X-API-KEY':        this.apiKey,
-                'X-Quidax-Api-Key': this.apiKey,
+                'Authorization': `Bearer ${this.apiKey}`,
                 'Content-Type': 'application/json',
             },
             timeout: 20000,
@@ -112,31 +110,10 @@ class QuidaxAdapter {
     }
 
     /**
-     * Resolve the Quidax authenticated user UID.
-     *
-     * openapi.quidax.io does NOT support the "me" alias for user-scoped endpoints —
-     * it requires the actual UID (e.g. "vb53dpvp"). We fetch it once via
-     * GET /users/me and cache it for the lifetime of the process.
-     *
-     * Falls back to "me" so the app keeps working if the endpoint is unavailable.
+     * Return the Quidax user ID for authenticated endpoints.
+     * Quidax docs confirm "me" is valid for the main authenticated user.
      */
     async _getAuthUserId() {
-        if (this._quidaxUserId) return this._quidaxUserId;
-
-        try {
-            const response = await this.client.get('/users/me', { timeout: 8000 });
-            const data = response.data?.data || response.data;
-            // Quidax returns { data: { uid: "vb53dpvp", ... } }
-            const uid = data?.uid || data?.id || data?.user_id;
-            if (uid) {
-                this._quidaxUserId = String(uid);
-                logger.info(`[Quidax] Resolved authenticated user UID: ${this._quidaxUserId}`);
-                return this._quidaxUserId;
-            }
-        } catch (err) {
-            logger.warn(`[Quidax] Could not resolve user UID (falling back to "me"): ${err.message}`);
-        }
-
         return 'me';
     }
 
@@ -308,17 +285,22 @@ class QuidaxAdapter {
     }
 
     /**
-     * SWAP: Temporary quotation — redirects to the real swap_quotation endpoint.
-     * POST /users/{id}/temporary_swap_quotation does NOT exist on openapi.quidax.io;
-     * this method is kept for backward compat and delegates to getSwapQuote.
+     * SWAP: Temporary quotation — preview rate WITHOUT creating a real swap.
+     * Endpoint: POST /users/{id}/temporary_swap_quotation
      */
     async getTemporarySwapQuote({ from, to, from_amount, to_amount }) {
-        return this.getSwapQuote({
-            from,
-            to,
-            amount: from_amount != null ? from_amount : to_amount,
-            side:   from_amount != null ? 'from' : 'to',
-        });
+        const userId = await this._getAuthUserId();
+        return this._executeWithCircuitBreaker(async () => {
+            const body = {
+                from_currency: from.toLowerCase(),
+                to_currency: to.toLowerCase(),
+            };
+            if (from_amount != null) body.from_amount = String(from_amount);
+            if (to_amount != null) body.to_amount = String(to_amount);
+
+            const response = await this.client.post(`/users/${userId}/temporary_swap_quotation`, body);
+            return response.data?.data || response.data;
+        }, 'getTemporarySwapQuote');
     }
 
     /**
