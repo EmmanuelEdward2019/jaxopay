@@ -46,6 +46,17 @@ export default {
           800: '#1e293b',
           900: '#0f172a',
         },
+        // Trading UI colors
+        trade: {
+          bg:    '#0b0e11',   // deepest background (Binance style)
+          card:  '#161a1f',   // card / panel background
+          panel: '#1e2329',   // slightly lighter panel
+          border:'#2b3139',   // border color
+          hover: '#2b3139',   // hover state
+          muted: '#848e9c',   // muted text
+        },
+        bull:  '#0ecb81',     // green — price up / buy
+        bear:  '#f6465d',     // red  — price down / sell
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],

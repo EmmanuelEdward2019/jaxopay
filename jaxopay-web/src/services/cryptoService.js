@@ -72,10 +72,16 @@ const cryptoService = {
   // Get crypto deposit address
   getDepositAddress: async (coin, network) => {
     try {
-      const response = await apiClient.get('/crypto/deposit-address', {
+      // apiClient interceptor returns response.data (the full JSON body)
+      // Backend: 200 → { success: true, data: { address, coin, network, ... } }
+      //          202 → { success: false, pending: true, data: null, error: '...' }
+      const body = await apiClient.get('/crypto/deposit-address', {
         params: { coin, network },
       });
-      return { success: true, data: response.data };
+      if (body?.pending) {
+        return { success: false, pending: true, error: body.error || 'Address is being generated.' };
+      }
+      return { success: body?.success !== false, data: body?.data };
     } catch (error) {
       return { success: false, error: error.message };
     }

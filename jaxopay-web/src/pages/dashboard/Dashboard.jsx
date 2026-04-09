@@ -9,6 +9,9 @@ import {
   CreditCard,
   Receipt,
   RefreshCw,
+  BarChart2,
+  Activity,
+  Zap,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
@@ -138,7 +141,9 @@ const Dashboard = () => {
   const quickActions = [
     { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'bg-accent-600', enabled: true },
     { name: 'Deposit', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-emerald-600', enabled: true },
-    { name: 'Exchange', icon: ArrowLeftRight, href: '/dashboard/exchange', color: 'bg-accent-800', enabled: isFeatureEnabled('crypto') },
+    { name: 'Markets', icon: BarChart2, href: '/dashboard/markets', color: 'bg-blue-600', enabled: true },
+    { name: 'Spot Trade', icon: Activity, href: '/dashboard/trade', color: 'bg-violet-600', enabled: isFeatureEnabled('crypto') },
+    { name: 'Instant Swap', icon: Zap, href: '/dashboard/swap', color: 'bg-orange-500', enabled: isFeatureEnabled('crypto') },
     { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', color: 'bg-emerald-800', enabled: isFeatureEnabled('bill_payments') },
   ].filter(action => action.enabled);
 
@@ -197,6 +202,41 @@ const Dashboard = () => {
           </button>
         </div>
       )}
+
+      {/* Crypto Trading Hero */}
+      <div className="rounded-xl overflow-hidden bg-[#0b0e11] border border-[#2b3139] relative">
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 via-transparent to-purple-900/20 pointer-events-none" />
+        <div className="relative z-10 px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between">
+          <div>
+            <p className="text-[11px] font-bold text-[#848e9c] uppercase tracking-widest mb-1">Jaxopay Exchange</p>
+            <h3 className="text-xl font-black text-white">Trade Crypto. Track Markets. Swap Instantly.</h3>
+            <p className="text-sm text-[#848e9c] mt-1">Real-time order book · Spot trading · 50+ trading pairs</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <Link
+              to="/dashboard/markets"
+              className="flex items-center gap-2 px-4 py-2 bg-[#1e2329] border border-[#2b3139] rounded-lg text-sm font-semibold text-white hover:bg-[#2b3139] transition-colors"
+            >
+              <BarChart2 size={15} />
+              Markets
+            </Link>
+            <Link
+              to="/dashboard/trade"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-lg text-sm font-bold text-white hover:bg-blue-500 transition-colors"
+            >
+              <Activity size={15} />
+              Spot Trade
+            </Link>
+            <Link
+              to="/dashboard/swap"
+              className="flex items-center gap-2 px-4 py-2 bg-[#f0b90b] rounded-lg text-sm font-bold text-[#0b0e11] hover:opacity-90 transition-colors"
+            >
+              <Zap size={15} />
+              Swap
+            </Link>
+          </div>
+        </div>
+      </div>
 
       {/* Welcome Section */}
       <div className="card bg-gradient-to-br from-accent-600 to-accent-800 text-white border-none shadow-xl transform hover:scale-[1.01] transition-all shadow-accent-500/20 overflow-hidden relative group">

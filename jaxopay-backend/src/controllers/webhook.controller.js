@@ -432,6 +432,20 @@ async function processQuidax(payload) {
             await updateQuidaxWithdrawal(data.id, 'failed', data);
             break;
         }
+        // ── Instant Swap lifecycle ──────────────────────────────────────────
+        case 'swap_transaction.complete':
+        case 'swap_transaction.completed': {
+            await updateQuidaxSwap(data, 'completed');
+            break;
+        }
+        case 'swap_transaction.reversed': {
+            await updateQuidaxSwap(data, 'reversed');
+            break;
+        }
+        case 'swap_transaction.failed': {
+            await updateQuidaxSwap(data, 'failed');
+            break;
+        }
         default:
             logger.info(`[WEBHOOK] Quidax unhandled event: ${event}`);
     }
@@ -489,6 +503,103 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
         });
     } catch (err) {
         logger.error('[WEBHOOK] updateQuidaxWithdrawal error:', err);
+        throw err;
+    }
+}
+
+/**
+ * Handle swap_transaction.complete / .reversed / .failed webhooks from Quidax.
+ *
+ * Webhook payload (from Quidax):
+ *   { id, from_currency, to_currency, from_amount, received_amount, status, ... }
+ *
+ * For completed swaps: update local transaction status and credit the to_currency wallet.
+ * For reversed/failed: refund the from_currency wallet.
+ */
+async function updateQuidaxSwap(data, status) {
+    const quidaxSwapId  = data?.id;
+    const fromCurrency  = (data?.from_currency || '').toUpperCase();
+    const toCurrency    = (data?.to_currency   || '').toUpperCase();
+    const fromAmount    = parseFloat(data?.from_amount    || 0);
+    const receivedAmt   = parseFloat(data?.received_amount || data?.to_amount || 0);
+
+    if (!quidaxSwapId) {
+        logger.warn('[WEBHOOK] Quidax swap: missing id');
+        return;
+    }
+
+    logger.info(`[WEBHOOK] Quidax swap ${quidaxSwapId}: ${fromCurrency}->${toCurrency} status=${status}`);
+
+    try {
+        await transaction(async (client) => {
+            // Find local transaction by Quidax swap ID
+            const txRes = await client.query(
+                `SELECT t.id, t.user_id, t.from_wallet_id, t.to_wallet_id, t.status
+                 FROM transactions t
+                 WHERE t.metadata->>'quidax_swap_id' = $1
+                    OR t.external_reference = $1
+                 FOR UPDATE`,
+                [String(quidaxSwapId)]
+            );
+
+            if (txRes.rows.length === 0) {
+                // No matching transaction — still log but don't crash
+                logger.warn(`[WEBHOOK] Quidax swap: no local transaction for swap ${quidaxSwapId}`);
+                return;
+            }
+
+            const tx = txRes.rows[0];
+            if (tx.status === status) return; // Already up to date (idempotent)
+
+            // Update the transaction record
+            await client.query(
+                `UPDATE transactions
+                 SET status = $1,
+                     metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+                     updated_at = NOW(),
+                     completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
+                 WHERE id = $3`,
+                [
+                    status,
+                    JSON.stringify({ quidax_swap_status: status, webhook_at: new Date().toISOString() }),
+                    tx.id,
+                ]
+            );
+
+            if (status === 'completed' && receivedAmt > 0 && toCurrency) {
+                // Ensure the to_currency wallet exists and credit it
+                let toWallet = await client.query(
+                    `SELECT id FROM wallets
+                     WHERE user_id = $1 AND currency = $2 AND deleted_at IS NULL`,
+                    [tx.user_id, toCurrency]
+                );
+                if (toWallet.rows.length === 0) {
+                    const wType = ['NGN','USD','EUR','GBP','GHS','KES','ZAR'].includes(toCurrency) ? 'fiat' : 'crypto';
+                    toWallet = await client.query(
+                        `INSERT INTO wallets (user_id, currency, wallet_type, balance)
+                         VALUES ($1, $2, $3, 0) RETURNING id`,
+                        [tx.user_id, toCurrency, wType]
+                    );
+                }
+                await client.query(
+                    'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
+                    [receivedAmt, toWallet.rows[0].id]
+                );
+                logger.info(`[WEBHOOK] ✅ Swap complete: credited ${receivedAmt} ${toCurrency} to user ${tx.user_id}`);
+
+            } else if ((status === 'reversed' || status === 'failed') && fromAmount > 0 && fromCurrency) {
+                // Refund the from_currency amount
+                await client.query(
+                    `UPDATE wallets
+                     SET balance = balance + $1, updated_at = NOW()
+                     WHERE user_id = $2 AND currency = $3 AND deleted_at IS NULL`,
+                    [fromAmount, tx.user_id, fromCurrency]
+                );
+                logger.info(`[WEBHOOK] ✅ Swap ${status}: refunded ${fromAmount} ${fromCurrency} to user ${tx.user_id}`);
+            }
+        });
+    } catch (err) {
+        logger.error('[WEBHOOK] updateQuidaxSwap error:', err);
         throw err;
     }
 }

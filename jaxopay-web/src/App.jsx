@@ -44,6 +44,8 @@ import Profile from './pages/dashboard/Profile';
 import Settings from './pages/dashboard/Settings';
 import Bills from './pages/dashboard/Bills';
 import Exchange from './pages/dashboard/Exchange';
+import Markets from './pages/dashboard/Markets';
+import Trade from './pages/dashboard/Trade';
 import DashboardGiftCards from './pages/dashboard/GiftCards';
 import KYC from './pages/dashboard/KYC';
 import CrossBorder from './pages/dashboard/CrossBorder';
@@ -245,10 +247,28 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Dashboard />} />
+            <Route index element={<Navigate to="markets" replace />} />
+            <Route path="portfolio" element={<Dashboard />} />
 
             {/* Dashboard Features */}
             <Route path="wallets" element={<Wallets />} />
+            {/* Crypto trading routes */}
+            <Route path="markets" element={<Markets />} />
+            <Route path="trade" element={
+              <FeatureGuard feature="crypto">
+                <Trade />
+              </FeatureGuard>
+            } />
+            <Route path="trade/:pair" element={
+              <FeatureGuard feature="crypto">
+                <Trade />
+              </FeatureGuard>
+            } />
+            <Route path="swap" element={
+              <FeatureGuard feature="crypto">
+                <Exchange />
+              </FeatureGuard>
+            } />
             <Route path="exchange" element={
               <FeatureGuard feature="crypto">
                 <Exchange />

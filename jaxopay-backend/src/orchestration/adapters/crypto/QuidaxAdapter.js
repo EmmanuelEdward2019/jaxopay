@@ -16,15 +16,22 @@ import { circuitBreakers } from '../../../utils/circuitBreaker.js';
  */
 class QuidaxAdapter {
     constructor() {
-        this.secretKey = process.env.QUIDAX_SECRET_KEY;
-        this.apiKey = process.env.QUIDAX_API_KEY || process.env.QUIDAX_PUBLIC_KEY;
-        this.baseURL = process.env.QUIDAX_BASE_URL || 'https://app.quidax.io/api/v1';
+        // Trim keys to prevent hidden-whitespace auth failures
+        this.secretKey = (process.env.QUIDAX_SECRET_KEY || '').trim();
+        this.apiKey    = (process.env.QUIDAX_API_KEY || process.env.QUIDAX_PUBLIC_KEY || '').trim();
+        // Strip trailing slash so axios combineURLs works correctly with all path formats
+        this.baseURL   = (process.env.QUIDAX_BASE_URL || 'https://app.quidax.io/api/v1').trim().replace(/\/+$/, '');
 
-        // Authenticated client — used for user-scoped operations (swap, wallets, etc.)
+        logger.info(`[Quidax] Initialising adapter → ${this.baseURL}`);
+
+        // Authenticated client — used for user-scoped operations (swap, wallets, orders, etc.)
+        // We send all known auth header variants so the adapter works regardless of
+        // which Quidax API version (app.quidax.io vs openapi.quidax.io) is configured.
         this.client = createApiClient({
             baseURL: this.baseURL,
             headers: {
                 'Authorization': `Bearer ${this.secretKey}`,
+                'X-API-KEY':        this.apiKey,
                 'X-Quidax-Api-Key': this.apiKey,
                 'Content-Type': 'application/json',
             },
@@ -32,7 +39,7 @@ class QuidaxAdapter {
             label: 'Quidax'
         });
 
-        // Public client — for market data endpoints that don't require auth.
+        // Public client — market data endpoints that don't require auth.
         // Keeps market-data 401s from tripping the shared circuit breaker.
         this.publicClient = createApiClient({
             baseURL: this.baseURL,
@@ -52,6 +59,12 @@ class QuidaxAdapter {
             orderBook: 3 * 1000,            // 3 seconds (frequent updates)
             rates: 5 * 1000,                // 5 seconds (exchange rates)
         };
+
+        // Cached Quidax authenticated user UID.
+        // On openapi.quidax.io the literal string "me" is NOT supported —
+        // the actual UID returned by GET /users/me must be used.
+        this._quidaxUserId = null;
+
         // Start periodic cache cleanup
         this._startCacheCleanup();
     }
@@ -99,6 +112,35 @@ class QuidaxAdapter {
     }
 
     /**
+     * Resolve the Quidax authenticated user UID.
+     *
+     * openapi.quidax.io does NOT support the "me" alias for user-scoped endpoints —
+     * it requires the actual UID (e.g. "vb53dpvp"). We fetch it once via
+     * GET /users/me and cache it for the lifetime of the process.
+     *
+     * Falls back to "me" so the app keeps working if the endpoint is unavailable.
+     */
+    async _getAuthUserId() {
+        if (this._quidaxUserId) return this._quidaxUserId;
+
+        try {
+            const response = await this.client.get('/users/me', { timeout: 8000 });
+            const data = response.data?.data || response.data;
+            // Quidax returns { data: { uid: "vb53dpvp", ... } }
+            const uid = data?.uid || data?.id || data?.user_id;
+            if (uid) {
+                this._quidaxUserId = String(uid);
+                logger.info(`[Quidax] Resolved authenticated user UID: ${this._quidaxUserId}`);
+                return this._quidaxUserId;
+            }
+        } catch (err) {
+            logger.warn(`[Quidax] Could not resolve user UID (falling back to "me"): ${err.message}`);
+        }
+
+        return 'me';
+    }
+
+    /**
      * Execute request with circuit breaker and retry logic
      */
     async _executeWithCircuitBreaker(operation, operationName) {
@@ -135,7 +177,8 @@ class QuidaxAdapter {
     /**
      * Get summary of all wallets for the authenticated user
      */
-    async getAllWallets(userId = 'me') {
+    async getAllWallets() {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/wallets`);
             return response.data;
@@ -145,7 +188,8 @@ class QuidaxAdapter {
     /**
      * Get a specific currency wallet
      */
-    async getWallet(currency, userId = 'me') {
+    async getWallet(currency) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/wallets/${currency.toLowerCase()}`);
             return response.data;
@@ -153,49 +197,102 @@ class QuidaxAdapter {
     }
 
     /**
-     * Get deposit address for a currency.
+     * Get deposit address for a currency and network.
      *
-     * Quidax sub-user flow:
-     *   1. POST /addresses — triggers background address generation (idempotent, safe to call if exists)
-     *   2. GET  /address  — first call may return deposit_address: null while generation is pending
-     *   3. Poll GET /address with back-off until deposit_address is non-null (up to ~10 s)
+     * Quidax multi-network flow:
+     *   1. GET  /addresses — check if an address for this network already exists
+     *   2. If not found: POST /addresses?network={network} — trigger background generation
+     *   3. Poll GET /addresses until the address for the requested network is non-null (up to ~15 s)
+     *
+     * @param {string} currency - lowercase currency ticker (e.g. "usdt")
+     * @param {string} [network] - network id from wallet.networks (e.g. "trc20"). If omitted, uses default.
+     * @param {string} [userId]
      */
-    async getDepositAddress(currency, userId = 'me') {
+    async getDepositAddress(currency, network = null) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const cur = currency.toLowerCase();
+            const net = network ? network.toLowerCase() : null;
 
-            // Step 1: Trigger address creation (no-op if already created)
+            // Helper: fetch all existing addresses for this currency
+            const fetchAddresses = async () => {
+                try {
+                    const res = await this.client.get(`/users/${userId}/wallets/${cur}/addresses`);
+                    return res.data?.data || res.data || [];
+                } catch {
+                    return [];
+                }
+            };
+
+            // Helper: find the address matching the requested network
+            const findAddress = (list) => {
+                if (!Array.isArray(list)) return null;
+                if (net) {
+                    return list.find(a => a.network?.toLowerCase() === net && a.address) || null;
+                }
+                // No network specified — return the first populated address
+                return list.find(a => a.address) || null;
+            };
+
+            // Step 1: Check if address for this network already exists
+            const existing = findAddress(await fetchAddresses());
+            if (existing) {
+                return {
+                    deposit_address: existing.address,
+                    address: existing.address,
+                    network: existing.network,
+                    destination_tag: existing.destination_tag || null,
+                };
+            }
+
+            // Step 2: Trigger address generation for the requested network.
+            // Docs: POST .../addresses/?network={net}  (trailing slash before query param is required)
             try {
-                await this.client.post(`/users/${userId}/wallets/${cur}/addresses`);
+                const url = net
+                    ? `/users/${userId}/wallets/${cur}/addresses/?network=${net}`
+                    : `/users/${userId}/wallets/${cur}/addresses/`;
+                await this.client.post(url);
+                logger.info(`[Quidax] Address generation triggered for ${cur}/${net || 'default'}`);
             } catch (createErr) {
-                // 422 / 409 = address already exists — that's fine, continue
+                // 422 / 409 = address already exists — safe to continue polling
                 const status = createErr.response?.status || createErr.statusCode;
-                if (status !== 422 && status !== 409 && status !== 404) {
-                    logger.debug(`[Quidax] Address create hint: ${createErr.message}`);
+                if (status !== 422 && status !== 409) {
+                    logger.warn(`[Quidax] Address create for ${cur}/${net}: ${createErr.message}`);
                 }
             }
 
-            // Step 2: Poll until deposit_address is populated (max ~10 s)
-            const delays = [500, 1500, 2500, 3000, 3000]; // cumulative ~10.5 s
+            // Step 3: Poll until the address appears (max ~10 s then return pending).
+            // The frontend will retry automatically at 5-second intervals.
+            const delays = [1000, 2000, 3000, 4000]; // cumulative ~10 s
             for (const delay of delays) {
                 await new Promise(resolve => setTimeout(resolve, delay));
-                const res = await this.client.get(`/users/${userId}/wallets/${cur}/address`);
-                const data = res.data?.data || res.data;
-                if (data?.deposit_address) {
-                    return data;
+                const found = findAddress(await fetchAddresses());
+                if (found) {
+                    return {
+                        deposit_address: found.address,
+                        address: found.address,
+                        network: found.network,
+                        destination_tag: found.destination_tag || null,
+                    };
                 }
             }
 
-            // Return whatever the final fetch gives (address may still be generating)
-            const finalRes = await this.client.get(`/users/${userId}/wallets/${cur}/address`);
-            return finalRes.data?.data || finalRes.data;
+            // Return null address — caller must inform the user to wait
+            return {
+                deposit_address: null,
+                address: null,
+                network: net,
+                destination_tag: null,
+                pending: true,
+            };
         }, 'getDepositAddress');
     }
 
     /**
      * Request a withdrawal (Crypto or Fiat)
      */
-    async withdraw({ currency, amount, fund_uid, fund_uid2 = '', network = '', userId = 'me' }) {
+    async withdraw({ currency, amount, fund_uid, fund_uid2 = '', network = '' }) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const body = {
                 currency: currency.toLowerCase(),
@@ -211,29 +308,25 @@ class QuidaxAdapter {
     }
 
     /**
-     * SWAP: Temporary quotation — get a rate preview WITHOUT creating a real swap.
-     * Use this for "You Receive" computation. Endpoint: POST /users/{id}/temporary_swap_quotation
-     * Response: { id, from_currency, to_currency, quoted_price, from_amount, to_amount, expires_at }
+     * SWAP: Temporary quotation — redirects to the real swap_quotation endpoint.
+     * POST /users/{id}/temporary_swap_quotation does NOT exist on openapi.quidax.io;
+     * this method is kept for backward compat and delegates to getSwapQuote.
      */
-    async getTemporarySwapQuote({ from, to, from_amount, to_amount, userId = 'me' }) {
-        return this._executeWithCircuitBreaker(async () => {
-            const body = {
-                from_currency: from.toLowerCase(),
-                to_currency: to.toLowerCase(),
-            };
-            if (from_amount != null) body.from_amount = String(from_amount);
-            if (to_amount != null) body.to_amount = String(to_amount);
-
-            const response = await this.client.post(`/users/${userId}/temporary_swap_quotation`, body);
-            return response.data?.data || response.data;
-        }, 'getTemporarySwapQuote');
+    async getTemporarySwapQuote({ from, to, from_amount, to_amount }) {
+        return this.getSwapQuote({
+            from,
+            to,
+            amount: from_amount != null ? from_amount : to_amount,
+            side:   from_amount != null ? 'from' : 'to',
+        });
     }
 
     /**
      * SWAP: Create a real quotation (valid 15s). Returns id for confirm/refresh.
      * Endpoint: POST /users/{id}/swap_quotation
      */
-    async getSwapQuote({ from, to, amount, side = 'from', userId = 'me' }) {
+    async getSwapQuote({ from, to, amount, side = 'from' }) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const body = {
                 from_currency: from.toLowerCase(),
@@ -242,6 +335,7 @@ class QuidaxAdapter {
             if (side === 'from') body.from_amount = String(amount);
             else body.to_amount = String(amount);
 
+            logger.info(`[Quidax] Creating swap quotation: ${from}->${to} amount=${amount} (userId=${userId})`);
             const response = await this.client.post(`/users/${userId}/swap_quotation`, body);
             return response.data?.data || response.data;
         }, 'getSwapQuote');
@@ -251,7 +345,8 @@ class QuidaxAdapter {
      * SWAP: Confirm/Execute a quotation by ID.
      * Endpoint: POST /users/{id}/swap_quotation/{quotation_id}/confirm
      */
-    async executeSwap(quotationId, userId = 'me') {
+    async executeSwap(quotationId) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.post(`/users/${userId}/swap_quotation/${quotationId}/confirm`);
             return response.data?.data || response.data;
@@ -263,7 +358,8 @@ class QuidaxAdapter {
      * Endpoint: POST /users/{id}/swap_quotation/{quotation_id}/refresh
      * Body (optional): { from_currency, to_currency, from_amount OR to_amount }
      */
-    async refreshSwapQuotation(quotationId, body = {}, userId = 'me') {
+    async refreshSwapQuotation(quotationId, body = {}) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.post(
                 `/users/${userId}/swap_quotation/${quotationId}/refresh`,
@@ -278,7 +374,8 @@ class QuidaxAdapter {
      * Endpoint: GET /users/{id}/swap_transactions/{transaction_id}
      * Returns: { id, status: "initiated"|"completed"|"failed", received_amount, execution_price, ... }
      */
-    async getSwapTransaction(transactionId, userId = 'me') {
+    async getSwapTransaction(transactionId) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/swap_transactions/${transactionId}`);
             return response.data?.data || response.data;
@@ -383,7 +480,8 @@ class QuidaxAdapter {
     /**
      * Get user's orders
      */
-    async getUserOrders(userId = 'me', market = null, status = null) {
+    async getUserOrders(market = null, status = null) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const params = {};
             if (market) params.market = market.toLowerCase();
@@ -397,7 +495,8 @@ class QuidaxAdapter {
     /**
      * Get a single order by ID
      */
-    async getOrder(orderId, userId = 'me') {
+    async getOrder(orderId) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/orders/${orderId}`);
             return response.data;
@@ -407,7 +506,8 @@ class QuidaxAdapter {
     /**
      * Cancel an order
      */
-    async cancelOrder(orderId, userId = 'me') {
+    async cancelOrder(orderId) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.post(`/users/${userId}/orders/${orderId}/cancel`);
             return response.data;
@@ -417,11 +517,8 @@ class QuidaxAdapter {
     /**
      * Get user's wallets
      */
-    async getUserWallets(userId = 'me') {
-        return this._executeWithCircuitBreaker(async () => {
-            const response = await this.client.get(`/users/${userId}/wallets`);
-            return response.data;
-        }, 'getUserWallets');
+    async getUserWallets() {
+        return this.getAllWallets();
     }
 
     /**
@@ -475,7 +572,8 @@ class QuidaxAdapter {
     /**
      * Trading: Create Order (Limit or Market)
      */
-    async createOrder({ market, side, type, volume, price, total, userId = 'me' }) {
+    async createOrder({ market, side, type, volume, price, total }) {
+        const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const body = {
                 market: market.toLowerCase(),

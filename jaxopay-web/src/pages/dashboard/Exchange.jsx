@@ -51,7 +51,7 @@ import cryptoService from '../../services/cryptoService';
 import walletService from '../../services/walletService';
 import { formatCurrency } from '../../utils/formatters';
 import TradeDashboard from '../../components/crypto/TradeDashboard';
-import LivePriceTicker from '../../components/crypto/LivePriceTicker';
+// LivePriceTicker is now rendered globally in DashboardLayout
 
 const GET_FLAG = (code) => {
     const flags = {
@@ -595,11 +595,6 @@ const Exchange = () => {
 
     return (
         <div className="max-w-7xl mx-auto py-8 px-4">
-            {/* Live Price Ticker - Breaking News Style */}
-            <div className="mb-8 -mx-4 sm:-mx-6 lg:-mx-8">
-                <LivePriceTicker />
-            </div>
-            
             <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-gray-900 dark:text-white mb-2 tracking-tight">Crypto Hub</h1>

@@ -11,30 +11,53 @@ import logger from '../utils/logger.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import cache from '../utils/cache.js';
 
-// Static fallback networks for common coins when Quidax is unavailable
+// Static fallback networks — used when Quidax API is unavailable or credentials are invalid.
+// Network ids match Quidax's id field (lowercase). All entries include deposits_enabled /
+// withdraws_enabled so the frontend filters work correctly even on the fallback path.
+const n = (id, name, opts = {}) => ({
+  network: id,
+  name,
+  deposits_enabled: opts.deposits_enabled !== false,
+  withdraws_enabled: opts.withdraws_enabled !== false,
+  withdrawFee: opts.withdrawFee || '0',
+  withdrawMin: opts.withdrawMin || '0',
+  depositMin: opts.depositMin || '0',
+  isDefault: opts.isDefault || false,
+  confirmations: opts.confirmations || 0,
+});
+
 const STATIC_NETWORKS = {
-  BTC: [{ network: 'BTC', name: 'Bitcoin Network', withdrawFee: '0.0005', withdrawMin: '0.001', depositMin: '0.0001', isDefault: true, confirmations: 3 }],
-  ETH: [{ network: 'ERC20', name: 'Ethereum (ERC20)', withdrawFee: '0.005', withdrawMin: '0.01', depositMin: '0.001', isDefault: true, confirmations: 12 }],
+  BTC:  [n('btc',    'Bitcoin Network',          { withdrawFee: '0.0005', withdrawMin: '0.001', depositMin: '0.0001', isDefault: true, confirmations: 3 })],
+  ETH:  [n('erc20',  'Ethereum (ERC20)',          { withdrawFee: '0.005',  withdrawMin: '0.01',  depositMin: '0.001',  isDefault: true, confirmations: 12 })],
   USDT: [
-    { network: 'TRC20', name: 'TRON (TRC20)', withdrawFee: '1', withdrawMin: '10', depositMin: '1', isDefault: true, confirmations: 20 },
-    { network: 'ERC20', name: 'Ethereum (ERC20)', withdrawFee: '10', withdrawMin: '20', depositMin: '10', isDefault: false, confirmations: 12 },
-    { network: 'BEP20', name: 'BNB Smart Chain (BEP20)', withdrawFee: '0.5', withdrawMin: '10', depositMin: '1', isDefault: false, confirmations: 15 },
+    n('trc20',   'Tron (TRC20)',                  { withdrawFee: '1',    withdrawMin: '10',  depositMin: '1',   isDefault: true,  confirmations: 20 }),
+    n('erc20',   'Ethereum (ERC20)',              { withdrawFee: '10',   withdrawMin: '20',  depositMin: '10',  isDefault: false, confirmations: 12 }),
+    n('bep20',   'BNB Smart Chain (BEP20)',        { withdrawFee: '0.5',  withdrawMin: '10',  depositMin: '1',   isDefault: false, confirmations: 15 }),
+    n('solana',  'Solana',                         { withdrawFee: '1',    withdrawMin: '10',  depositMin: '1',   isDefault: false, confirmations: 32 }),
+    n('celo',    'Celo',                           { withdrawFee: '0.5',  withdrawMin: '10',  depositMin: '1',   isDefault: false, confirmations: 3  }),
+    n('ton',     'TON (The Open Network)',          { withdrawFee: '0.5',  withdrawMin: '10',  depositMin: '1',   isDefault: false, confirmations: 3  }),
+    n('avaxc',   'Avalanche C-Chain',              { withdrawFee: '1',    withdrawMin: '10',  depositMin: '1',   isDefault: false, confirmations: 12 }),
+    n('matic',   'Polygon (MATIC)',                { withdrawFee: '0.5',  withdrawMin: '10',  depositMin: '1',   isDefault: false, confirmations: 100 }),
   ],
   USDC: [
-    { network: 'ERC20', name: 'Ethereum (ERC20)', withdrawFee: '10', withdrawMin: '20', depositMin: '10', isDefault: true, confirmations: 12 },
-    { network: 'TRC20', name: 'TRON (TRC20)', withdrawFee: '1', withdrawMin: '10', depositMin: '1', isDefault: false, confirmations: 20 },
-    { network: 'BEP20', name: 'BNB Smart Chain (BEP20)', withdrawFee: '0.5', withdrawMin: '10', depositMin: '1', isDefault: false, confirmations: 15 },
+    n('erc20',   'Ethereum (ERC20)',              { withdrawFee: '10',   withdrawMin: '20',  depositMin: '10',  isDefault: true,  confirmations: 12 }),
+    n('trc20',   'Tron (TRC20)',                  { withdrawFee: '1',    withdrawMin: '10',  depositMin: '1',   isDefault: false, confirmations: 20 }),
+    n('bep20',   'BNB Smart Chain (BEP20)',        { withdrawFee: '0.5',  withdrawMin: '10',  depositMin: '1',   isDefault: false, confirmations: 15 }),
+    n('solana',  'Solana',                         { withdrawFee: '1',    withdrawMin: '10',  depositMin: '1',   isDefault: false, confirmations: 32 }),
   ],
-  SOL: [{ network: 'SOL', name: 'Solana', withdrawFee: '0.01', withdrawMin: '0.1', depositMin: '0.01', isDefault: true, confirmations: 32 }],
-  BNB: [{ network: 'BEP20', name: 'BNB Smart Chain (BEP20)', withdrawFee: '0.0003', withdrawMin: '0.01', depositMin: '0.001', isDefault: true, confirmations: 15 }],
-  TRX: [{ network: 'TRC20', name: 'TRON', withdrawFee: '1', withdrawMin: '2', depositMin: '0.1', isDefault: true, confirmations: 20 }],
-  XRP: [{ network: 'XRP', name: 'XRP Ledger', withdrawFee: '0.25', withdrawMin: '0.5', depositMin: '0.1', isDefault: true, confirmations: 4 }],
-  ADA: [{ network: 'ADA', name: 'Cardano', withdrawFee: '0.5', withdrawMin: '1', depositMin: '0.5', isDefault: true, confirmations: 15 }],
-  DOGE: [{ network: 'DOGE', name: 'Dogecoin', withdrawFee: '5', withdrawMin: '10', depositMin: '5', isDefault: true, confirmations: 40 }],
-  LTC: [{ network: 'LTC', name: 'Litecoin', withdrawFee: '0.01', withdrawMin: '0.02', depositMin: '0.001', isDefault: true, confirmations: 6 }],
-  DOT: [{ network: 'DOT', name: 'Polkadot', withdrawFee: '0.1', withdrawMin: '1', depositMin: '0.1', isDefault: true, confirmations: 10 }],
-  MATIC: [{ network: 'MATIC', name: 'Polygon', withdrawFee: '0.1', withdrawMin: '1', depositMin: '0.1', isDefault: true, confirmations: 100 }],
-  LINK: [{ network: 'ERC20', name: 'Ethereum (ERC20)', withdrawFee: '0.5', withdrawMin: '1', depositMin: '0.5', isDefault: true, confirmations: 12 }],
+  SOL:  [n('solana', 'Solana',                    { withdrawFee: '0.01', withdrawMin: '0.1', depositMin: '0.01', isDefault: true, confirmations: 32 })],
+  BNB:  [n('bep20',  'BNB Smart Chain (BEP20)',   { withdrawFee: '0.0003', withdrawMin: '0.01', depositMin: '0.001', isDefault: true, confirmations: 15 })],
+  TRX:  [n('trc20',  'Tron (TRC20)',              { withdrawFee: '1',    withdrawMin: '2',   depositMin: '0.1',  isDefault: true, confirmations: 20 })],
+  XRP:  [n('xrp',    'XRP Ledger',               { withdrawFee: '0.25', withdrawMin: '0.5', depositMin: '0.1',  isDefault: true, confirmations: 4  })],
+  ADA:  [n('ada',    'Cardano',                   { withdrawFee: '0.5',  withdrawMin: '1',   depositMin: '0.5',  isDefault: true, confirmations: 15 })],
+  DOGE: [n('doge',   'Dogecoin',                  { withdrawFee: '5',    withdrawMin: '10',  depositMin: '5',    isDefault: true, confirmations: 40 })],
+  LTC:  [n('ltc',    'Litecoin',                  { withdrawFee: '0.01', withdrawMin: '0.02', depositMin: '0.001', isDefault: true, confirmations: 6 })],
+  DOT:  [n('dot',    'Polkadot',                  { withdrawFee: '0.1',  withdrawMin: '1',   depositMin: '0.1',  isDefault: true, confirmations: 10 })],
+  MATIC:[n('matic',  'Polygon (MATIC)',            { withdrawFee: '0.1',  withdrawMin: '1',   depositMin: '0.1',  isDefault: true, confirmations: 100 })],
+  LINK: [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0.5',  withdrawMin: '1',   depositMin: '0.5',  isDefault: true, confirmations: 12 })],
+  DASH: [n('dash',   'Dash',                       { withdrawFee: '0.01', withdrawMin: '0.1', depositMin: '0.01', isDefault: true, confirmations: 6  })],
+  XLM:  [n('xlm',    'Stellar',                   { withdrawFee: '0.01', withdrawMin: '1',   depositMin: '1',    isDefault: true, confirmations: 1  })],
+  SHIB: [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0', withdrawMin: '0', depositMin: '0', isDefault: true })],
 };
 
 /**
@@ -58,45 +81,45 @@ export const getCryptoNetworks = catchAsync(async (req, res) => {
   }
 
   try {
-    // Get all currencies from Quidax
-    const currencies = await quidax.getCurrencies();
+    // Fetch the user's wallet for this currency — networks live in the wallet object
+    const walletRes = await quidax.getWallet(coin);
+    const wallet = walletRes?.data || walletRes;
 
-    // Find the requested coin
-    const currency = currencies.find(
-      c => c.code.toLowerCase() === coin.toLowerCase()
-    );
-
-    // Extract networks from Quidax data
-    const quidaxNetworks = currency?.networks || [];
+    // wallet.networks contains { id, name, deposits_enabled, withdraws_enabled }
+    const quidaxNetworks = wallet?.networks || [];
     const networkList = quidaxNetworks.map(n => ({
-      network: n.network || n.name,
-      name: n.name || n.network,
-      withdrawFee: n.withdraw_fee || n.fee || '0',
-      withdrawMin: n.withdraw_min || n.min || '0',
-      withdrawMax: n.withdraw_max || n.max || '1000000',
-      depositMin: n.deposit_min || '0',
-      isDefault: n.is_default || false,
-      confirmations: n.confirmations || 6,
+      network: n.id,                              // id is the value used in API calls (e.g. "trc20")
+      name: n.name,                               // human-readable label
+      deposits_enabled: n.deposits_enabled !== false,
+      withdraws_enabled: n.withdraws_enabled !== false,
+      withdrawFee: '0',                           // Quidax wallet networks don't expose fee here
+      withdrawMin: '0',
+      withdrawMax: '1000000',
+      depositMin: '0',
+      isDefault: wallet?.default_network ? wallet.default_network === n.id : false,
+      confirmations: 0,
     }));
 
-    // If Quidax returned no networks, fall back to static
+    // If wallet returned no networks, fall back to static
     if (networkList.length === 0 && STATIC_NETWORKS[coinUpper]) {
       const result = { coin: coinUpper, networks: STATIC_NETWORKS[coinUpper], source: 'static' };
       await cache.set(cacheKey, result, 300);
       return res.status(200).json({ success: true, data: result });
     }
 
-    // If coin not found at all on Quidax AND we have no static data, create a default
+    // If still empty, create a single default entry so the UI never hard-fails
     if (networkList.length === 0) {
       networkList.push({
         network: coinUpper,
         name: coinUpper,
+        deposits_enabled: true,
+        withdraws_enabled: true,
         withdrawFee: '0',
         withdrawMin: '0',
         withdrawMax: '1000000',
         depositMin: '0',
         isDefault: true,
-        confirmations: 6,
+        confirmations: 0,
       });
     }
 

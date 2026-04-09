@@ -21,8 +21,8 @@ import { formatCurrency } from '../../utils/formatters';
  * - Market statistics bar
  * - Pair selection with favorites
  */
-const TradeDashboard = ({ wallets = [] }) => {
-  const [market, setMarket] = useState('usdtngn');
+const TradeDashboard = ({ wallets = [], initialMarket = 'usdtngn' }) => {
+  const [market, setMarket] = useState(initialMarket);
   const [ticker, setTicker] = useState(null);
   const [orderBook, setOrderBook] = useState({ asks: [], bids: [] });
   const [trades, setTrades] = useState([]);

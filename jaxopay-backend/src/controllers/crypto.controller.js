@@ -689,17 +689,29 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
   }
 
   try {
-    const dataResponse = await quidax.getDepositAddress(coin.toLowerCase());
+    // Pass network so the adapter generates/fetches the address for the correct network
+    const dataResponse = await quidax.getDepositAddress(coin.toLowerCase(), network || null);
     // Quidax wallet objects use deposit_address / destination_tag field names
     const addressData = dataResponse?.data || dataResponse;
     const address = addressData.deposit_address || addressData.address;
     const tag = addressData.destination_tag || addressData.tag || addressData.memo || '';
 
-    // Persist to DB for webhook matching
-    await query(
-      'UPDATE wallets SET crypto_address = $1, crypto_tag = $2, updated_at = NOW() WHERE user_id = $3 AND currency = $4 AND wallet_type = \'crypto\'',
-      [address, tag, req.user.id, coin.toUpperCase()]
-    );
+    if (address) {
+      // Persist to DB for webhook matching
+      await query(
+        'UPDATE wallets SET crypto_address = $1, crypto_tag = $2, updated_at = NOW() WHERE user_id = $3 AND currency = $4 AND wallet_type = \'crypto\'',
+        [address, tag, req.user.id, coin.toUpperCase()]
+      );
+    }
+
+    if (!address && dataResponse?.pending) {
+      return res.status(202).json({
+        success: false,
+        pending: true,
+        data: null,
+        error: 'Address is being generated. Please try again in a few seconds.',
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -712,31 +724,25 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
       }
     });
   } catch (err) {
-    logger.warn(`[CryptoDeposit] Quidax Failed for ${coin}:`, err.message);
+    logger.warn(`[CryptoDeposit] Quidax failed for ${coin}/${network}:`, err.message);
 
-    // Always provide a fallback address so the UI does not hard-fail
-    logger.info(`[CryptoDeposit] Providing fallback address for ${coin} on ${network || 'default'}`);
-    const mockAddresses = {
-      'BTC': '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
-      'ETH': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-      'USDT': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-      'USDC': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-      'SOL': '7xKXdg2MCNqzh3qwzqBYfy7QhNVv2XNdx8m6YmYV7yL',
-      'TRX': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
-      'BNB': '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-    };
-    const address = mockAddresses[coin.toUpperCase()] || `${coin.toLowerCase()}_address_unavailable`;
-    return res.status(200).json({
-      success: true,
-      data: {
-        address,
-        coin: coin.toUpperCase(),
-        tag: '',
-        memo: '',
-        network: network || 'Default',
-        is_provisional: true,
-        message: 'Address generated - Please verify before sending funds',
-      }
+    // Detect "not permitted" (E0609) — currency not enabled for address generation
+    const isNotPermitted = /E0609|not permitted|not enabled/i.test(err.message);
+    if (isNotPermitted) {
+      return res.status(503).json({
+        success: false,
+        error: `Wallet address generation for ${coin.toUpperCase()} is not currently available. Please contact support.`,
+      });
+    }
+
+    // For all other errors return a pending signal so the frontend retries.
+    // IMPORTANT: Never return placeholder/mock addresses — funds sent to wrong
+    // addresses are permanently unrecoverable.
+    return res.status(202).json({
+      success: false,
+      pending: true,
+      data: null,
+      error: 'Address is being generated. Please wait a moment.',
     });
   }
 });
@@ -924,23 +930,35 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
   });
 });
 
-// Get crypto config (networks, etc)
+// Get crypto config (networks per coin, derived from user's wallets)
 export const getCryptoConfig = catchAsync(async (req, res) => {
   try {
-    const currencies = await quidax.getCurrencies();
+    // Networks live inside each wallet object — fetch all wallets at once
+    const walletsRes = await quidax.getAllWallets();
+    const walletList = walletsRes?.data || walletsRes || [];
+    const wallets = Array.isArray(walletList) ? walletList : [];
 
-    // Map Quidax response to our unified config format
-    const configData = currencies.map(cur => ({
-      coin: cur.code.toUpperCase(),
-      name: cur.name,
-      networks: cur.networks || [
-        { network: cur.code.toUpperCase(), name: cur.name, withdrawFee: '0', withdrawMin: '0' }
-      ],
-      // Compatibility for older frontend versions
-      networkList: cur.networks || [
-        { network: cur.code.toUpperCase(), name: cur.name, withdrawFee: '0', withdrawMin: '0' }
-      ]
-    }));
+    // Only include crypto wallets that have blockchain support
+    const configData = wallets
+      .filter(w => w.is_crypto || w.blockchain_enabled)
+      .map(w => {
+        const nets = (w.networks || []).map(n => ({
+          network: n.id,                              // id is used in API calls (e.g. "trc20")
+          name: n.name,
+          deposits_enabled: n.deposits_enabled !== false,
+          withdraws_enabled: n.withdraws_enabled !== false,
+          withdrawFee: '0',
+          withdrawMin: '0',
+          withdrawMax: '1000000',
+          isDefault: w.default_network === n.id,
+        }));
+        return {
+          coin: w.currency.toUpperCase(),
+          name: w.name,
+          networks: nets,
+          networkList: nets,   // kept for backwards compatibility
+        };
+      });
 
     res.status(200).json({
       success: true,
@@ -949,20 +967,41 @@ export const getCryptoConfig = catchAsync(async (req, res) => {
   } catch (err) {
     logger.error('[CryptoConfig] Quidax Config Failed:', err.message);
 
-    // Fallback to static config if Quidax is down
+    // Fallback to static config if Quidax is down or credentials are invalid
+    const d = (n, name, fee = '0') => ({ network: n, name, withdrawFee: fee, withdrawMax: '1000000', withdrawMin: '0', deposits_enabled: true, withdraws_enabled: true });
     const mockConfig = [
-      { coin: 'BTC', networkList: [{ network: 'BTC', name: 'Bitcoin', withdrawFee: '0.0005', withdrawMax: '100', withdrawMin: '0.001' }] },
-      { coin: 'ETH', networkList: [{ network: 'ERC20', name: 'Ethereum', withdrawFee: '0.005', withdrawMax: '1000', withdrawMin: '0.01' }] },
+      { coin: 'BTC',  networkList: [d('btc',   'Bitcoin Network',        '0.0005')] },
+      { coin: 'ETH',  networkList: [d('erc20', 'Ethereum (ERC20)',        '0.005')] },
       {
         coin: 'USDT', networkList: [
-          { network: 'TRC20', name: 'TRON', withdrawFee: '1', withdrawMax: '100000', withdrawMin: '10' },
-          { network: 'ERC20', name: 'Ethereum', withdrawFee: '10', withdrawMax: '100000', withdrawMin: '20' },
-          { network: 'BEP20', name: 'BSC', withdrawFee: '0.5', withdrawMax: '100000', withdrawMin: '10' }
+          d('trc20',  'Tron (TRC20)',           '1'),
+          d('erc20',  'Ethereum (ERC20)',        '10'),
+          d('bep20',  'BNB Smart Chain (BEP20)', '0.5'),
+          d('solana', 'Solana',                  '1'),
+          d('celo',   'Celo',                    '0.5'),
+          d('ton',    'TON (The Open Network)',   '0.5'),
+          d('avaxc',  'Avalanche C-Chain',        '1'),
+          d('matic',  'Polygon (MATIC)',           '0.5'),
         ]
       },
-      { coin: 'USDC', networkList: [{ network: 'ERC20', name: 'Ethereum', withdrawFee: '10', withdrawMax: '100000', withdrawMin: '20' }] },
-      { coin: 'SOL', networkList: [{ network: 'SOL', name: 'Solana', withdrawFee: '0.01', withdrawMax: '5000', withdrawMin: '0.1' }] },
-      { coin: 'TRX', networkList: [{ network: 'TRC20', name: 'TRON', withdrawFee: '1', withdrawMax: '1000000', withdrawMin: '2' }] }
+      {
+        coin: 'USDC', networkList: [
+          d('erc20',  'Ethereum (ERC20)',        '10'),
+          d('trc20',  'Tron (TRC20)',             '1'),
+          d('bep20',  'BNB Smart Chain (BEP20)', '0.5'),
+          d('solana', 'Solana',                   '1'),
+        ]
+      },
+      { coin: 'SOL',  networkList: [d('solana', 'Solana',                '0.01')] },
+      { coin: 'BNB',  networkList: [d('bep20',  'BNB Smart Chain (BEP20)', '0.0003')] },
+      { coin: 'TRX',  networkList: [d('trc20',  'Tron (TRC20)',           '1')] },
+      { coin: 'XRP',  networkList: [d('xrp',    'XRP Ledger',             '0.25')] },
+      { coin: 'ADA',  networkList: [d('ada',    'Cardano',                '0.5')] },
+      { coin: 'DOGE', networkList: [d('doge',   'Dogecoin',               '5')] },
+      { coin: 'LTC',  networkList: [d('ltc',    'Litecoin',               '0.01')] },
+      { coin: 'MATIC',networkList: [d('matic',  'Polygon (MATIC)',        '0.1')] },
+      { coin: 'DASH', networkList: [d('dash',   'Dash',                   '0.01')] },
+      { coin: 'XLM',  networkList: [d('xlm',    'Stellar',                '0.01')] },
     ];
 
     res.status(200).json({
@@ -991,24 +1030,25 @@ export const createOrder = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data });
 });
 
-// Get swap quote
+// Get swap quote (GET /crypto/swap/quote) — uses real swap_quotation endpoint
 export const getSwapQuote = catchAsync(async (req, res) => {
   const { from, to, amount, side } = req.query;
   if (!from || !to || !amount) {
     throw new AppError('from, to, and amount are required', 400);
   }
   try {
-    // Use temporary_swap_quotation for preview — doesn't create a real swap
-    const data = await quidax.getTemporarySwapQuote({
+    // Delegate to the real swap_quotation endpoint (temporary_swap_quotation
+    // does not exist on openapi.quidax.io)
+    const data = await quidax.getSwapQuote({
       from,
       to,
-      from_amount: side !== 'to' ? amount : undefined,
-      to_amount:   side === 'to' ? amount : undefined,
+      amount,
+      side: side === 'to' ? 'to' : 'from',
     });
     res.status(200).json({ success: true, data });
   } catch (err) {
     logger.warn(`[SwapQuote] Quidax failed for ${from}->${to}:`, err.message);
-    // Ticker cache fallback
+    // Ticker cache fallback — return indicative rate only (no quotation ID)
     const rate = await getLiveExchangeRate(from, to).catch(() => 0);
     const toAmount = rate > 0 ? parseFloat(amount) * rate : 0;
     res.status(200).json({
@@ -1098,14 +1138,14 @@ export const getKlines = catchAsync(async (req, res) => {
 // Get user's orders
 export const getUserOrders = catchAsync(async (req, res) => {
   const { market, status } = req.query;
-  const data = await quidax.getUserOrders(req.user.id, market, status);
+  const data = await quidax.getUserOrders(market, status);
   res.status(200).json({ success: true, data });
 });
 
 // Cancel order
 export const cancelOrder = catchAsync(async (req, res) => {
   const { id } = req.params;
-  const data = await quidax.cancelOrder(id, req.user.id);
+  const data = await quidax.cancelOrder(id);
   res.status(200).json({ success: true, data });
 });
 

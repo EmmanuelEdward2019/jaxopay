@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -789,7 +789,7 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
     const [network, setNetwork] = useState('');
-    const [cryptoConfigs, setCryptoConfigs] = useState(null);
+    const [withdrawNetworks, setWithdrawNetworks] = useState([]);
 
     // Bank Transfer States
     const [transferType, setTransferType] = useState('external'); // 'internal' | 'external'
@@ -803,15 +803,26 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
     const fromWalletData = wallets.find((w) => w.id === fromWallet);
     const isCrypto = fromWalletData?.wallet_type === 'crypto';
 
+    // Fetch networks for the selected crypto wallet, filtered to withdraws_enabled only
     useEffect(() => {
-        if (isCrypto && !cryptoConfigs) {
-            setLoading(true);
-            cryptoService.getConfig().then(res => {
-                if (res.success) setCryptoConfigs(res.data);
-                setLoading(false);
-            });
+        if (!isCrypto || !fromWalletData?.currency) {
+            setWithdrawNetworks([]);
+            setNetwork('');
+            return;
         }
-    }, [isCrypto, fromWallet, cryptoConfigs]);
+        let cancelled = false;
+        setLoading(true);
+        cryptoService.getNetworks(fromWalletData.currency).then(res => {
+            if (cancelled) return;
+            const all = (res.success && res.data?.networks?.length > 0) ? res.data.networks : [];
+            setWithdrawNetworks(all.filter(n => n.withdraws_enabled !== false));
+        }).catch(() => {
+            if (!cancelled) setWithdrawNetworks([]);
+        }).finally(() => {
+            if (!cancelled) setLoading(false);
+        });
+        return () => { cancelled = true; };
+    }, [isCrypto, fromWallet]);
 
     useEffect(() => {
         if (fromWalletData?.wallet_type === 'fiat' && transferType === 'external') {
@@ -1004,15 +1015,14 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
                                         className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-bold"
                                     >
                                         <option value="">Select network...</option>
-                                        {(cryptoConfigs?.find(c => (c.coin || c.symbol)?.toUpperCase() === fromWalletData.currency?.toUpperCase())?.networkList ||
-                                            cryptoConfigs?.find(c => (c.coin || c.symbol)?.toUpperCase() === fromWalletData.currency?.toUpperCase())?.networks)?.map(n => (
-                                                <option key={n.network} value={n.network}>
-                                                    {n.name || n.network} (Fee: {n.withdrawFee || n.fee || 0} {fromWalletData.currency})
-                                                </option>
-                                            ))}
+                                        {withdrawNetworks.map(n => (
+                                            <option key={n.network} value={n.network}>
+                                                {n.name || n.network}
+                                            </option>
+                                        ))}
                                         {loading && <option disabled>Loading networks...</option>}
-                                        {!loading && !cryptoConfigs?.find(c => (c.coin || c.symbol)?.toUpperCase() === fromWalletData.currency?.toUpperCase()) && (
-                                            <option disabled>No networks found for {fromWalletData.currency}</option>
+                                        {!loading && withdrawNetworks.length === 0 && (
+                                            <option disabled>No withdrawal networks available</option>
                                         )}
                                     </select>
                                 </div>
@@ -1080,6 +1090,9 @@ const DepositModal = ({ onClose, wallets }) => {
     const [error, setError] = useState(null);
     const [network, setNetwork] = useState('');
     const [cryptoConfigs, setCryptoConfigs] = useState(null);
+    const [addressPending, setAddressPending] = useState(false);
+    const depositRetryRef = useRef(0);
+    const depositRetryTimer = useRef(null);
 
     const selectedWallet = wallets.find(w => w.id === selectedWalletId);
 
@@ -1123,10 +1136,12 @@ const DepositModal = ({ onClose, wallets }) => {
             const coinUp = selectedWallet.currency?.toUpperCase();
             cryptoService.getNetworks(selectedWallet.currency).then(res => {
                 if (cancelled) return;
-                const nets = res.success && res.data?.networks?.length > 0
+                const raw = res.success && res.data?.networks?.length > 0
                     ? res.data.networks
                     : (STATIC_CRYPTO_NETWORKS[coinUp] || [{ network: coinUp, name: coinUp }]);
-                setCryptoConfigs([{ coin: coinUp, networkList: nets }]);
+                // Only show networks where deposits are enabled
+                const nets = raw.filter(n => n.deposits_enabled !== false);
+                setCryptoConfigs([{ coin: coinUp, networkList: nets.length > 0 ? nets : raw }]);
             }).catch(() => {
                 if (!cancelled) {
                     const fallback = STATIC_CRYPTO_NETWORKS[coinUp] || [{ network: coinUp, name: coinUp }];
@@ -1142,22 +1157,53 @@ const DepositModal = ({ onClose, wallets }) => {
     // Fetch crypto deposit address when network is selected
     useEffect(() => {
         if (!selectedWallet || selectedWallet.wallet_type !== 'crypto' || !network) {
+            setDetails(null);
+            setAddressPending(false);
+            if (depositRetryTimer.current) clearTimeout(depositRetryTimer.current);
             return;
         }
+
+        depositRetryRef.current = 0;
+        if (depositRetryTimer.current) clearTimeout(depositRetryTimer.current);
+
         let cancelled = false;
-        setLoading(true);
-        setError(null);
-        setDetails(null);
-        cryptoService.getDepositAddress(selectedWallet.currency, network).then(res => {
+
+        const fetchAddr = async () => {
             if (cancelled) return;
-            if (res.success) setDetails(res.data);
-            else setError(res.error || 'Could not get deposit address');
-        }).catch(e => {
-            if (!cancelled) setError(e?.message || 'Failed to fetch deposit address');
-        }).finally(() => {
+            setLoading(true);
+            setError(null);
+            try {
+                const res = await cryptoService.getDepositAddress(selectedWallet.currency, network);
+                if (cancelled) return;
+                if (res.success && res.data?.address) {
+                    setDetails(res.data);
+                    setAddressPending(false);
+                } else if (res.pending) {
+                    setAddressPending(true);
+                    setDetails(null);
+                    if (depositRetryRef.current < 12) {
+                        depositRetryRef.current += 1;
+                        depositRetryTimer.current = setTimeout(fetchAddr, 5000);
+                    } else {
+                        setAddressPending(false);
+                        setError('Address generation is taking longer than usual. Please try again in a minute.');
+                    }
+                } else {
+                    setAddressPending(false);
+                    setError(res.error || 'Could not get deposit address');
+                }
+            } catch (e) {
+                if (!cancelled) { setAddressPending(false); setError(e?.message || 'Failed to fetch deposit address'); }
+            }
             if (!cancelled) setLoading(false);
-        });
-        return () => { cancelled = true; };
+        };
+
+        fetchAddr();
+
+        return () => {
+            cancelled = true;
+            if (depositRetryTimer.current) clearTimeout(depositRetryTimer.current);
+        };
     }, [network, selectedWalletId]);
 
     return (
@@ -1263,8 +1309,17 @@ const DepositModal = ({ onClose, wallets }) => {
                         </div>
                     )}
 
+                    {/* Address pending generation */}
+                    {selectedWallet && addressPending && selectedWallet.wallet_type === 'crypto' && (
+                        <div className="flex flex-col items-center gap-3 py-6 text-center">
+                            <RefreshCw className="w-8 h-8 text-accent-500 animate-spin" />
+                            <p className="text-sm font-bold text-gray-900 dark:text-white">Generating your {selectedWallet.currency} address…</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">This takes 10–30 seconds. Refreshing automatically every 5 seconds.</p>
+                        </div>
+                    )}
+
                     {/* Crypto Details */}
-                    {selectedWallet && details && !loading && selectedWallet.wallet_type === 'crypto' && (
+                    {selectedWallet && details && !loading && !addressPending && selectedWallet.wallet_type === 'crypto' && (
                         <div className="text-center space-y-4">
                             <div className="bg-white p-4 rounded-xl inline-block shadow-sm">
                                 <QrCode className="w-32 h-32 text-gray-900" />
@@ -1304,28 +1359,44 @@ const DepositModal = ({ onClose, wallets }) => {
     );
 };
 
-// Static fallback networks — used when the API is unavailable
+// Static fallback networks — used when the API is unavailable.
+// Network ids are lowercase to match what Quidax returns in the live API.
+// deposits_enabled / withdraws_enabled are included so frontend filters work on the fallback path.
+const _net = (id, name, extra = {}) => ({
+    network: id, name,
+    deposits_enabled: true, withdraws_enabled: true,
+    ...extra,
+});
 const STATIC_CRYPTO_NETWORKS = {
-    BTC:  [{ network: 'BTC',   name: 'Bitcoin Network',           withdrawFee: '0.0005' }],
-    ETH:  [{ network: 'ERC20', name: 'Ethereum (ERC20)',          withdrawFee: '0.005'  }],
+    BTC:  [_net('btc',    'Bitcoin Network')],
+    ETH:  [_net('erc20',  'Ethereum (ERC20)')],
     USDT: [
-        { network: 'TRC20', name: 'TRON (TRC20)',            withdrawFee: '1'   },
-        { network: 'ERC20', name: 'Ethereum (ERC20)',        withdrawFee: '10'  },
-        { network: 'BEP20', name: 'BNB Smart Chain (BEP20)', withdrawFee: '0.5' },
+        _net('trc20',  'Tron (TRC20)'),
+        _net('erc20',  'Ethereum (ERC20)'),
+        _net('bep20',  'BNB Smart Chain (BEP20)'),
+        _net('solana', 'Solana'),
+        _net('celo',   'Celo'),
+        _net('ton',    'TON (The Open Network)'),
+        _net('avaxc',  'Avalanche C-Chain'),
+        _net('matic',  'Polygon (MATIC)'),
     ],
     USDC: [
-        { network: 'ERC20', name: 'Ethereum (ERC20)',        withdrawFee: '10'  },
-        { network: 'TRC20', name: 'TRON (TRC20)',            withdrawFee: '1'   },
-        { network: 'BEP20', name: 'BNB Smart Chain (BEP20)', withdrawFee: '0.5' },
+        _net('erc20',  'Ethereum (ERC20)'),
+        _net('trc20',  'Tron (TRC20)'),
+        _net('bep20',  'BNB Smart Chain (BEP20)'),
+        _net('solana', 'Solana'),
     ],
-    SOL:  [{ network: 'SOL',   name: 'Solana',                    withdrawFee: '0.01'  }],
-    BNB:  [{ network: 'BEP20', name: 'BNB Smart Chain (BEP20)',   withdrawFee: '0.0003'}],
-    TRX:  [{ network: 'TRC20', name: 'TRON',                      withdrawFee: '1'     }],
-    XRP:  [{ network: 'XRP',   name: 'XRP Ledger',                withdrawFee: '0.25'  }],
-    ADA:  [{ network: 'ADA',   name: 'Cardano',                   withdrawFee: '0.5'   }],
-    DOGE: [{ network: 'DOGE',  name: 'Dogecoin',                  withdrawFee: '5'     }],
-    LTC:  [{ network: 'LTC',   name: 'Litecoin',                  withdrawFee: '0.01'  }],
-    MATIC:[{ network: 'MATIC', name: 'Polygon',                   withdrawFee: '0.1'   }],
+    SOL:  [_net('solana', 'Solana')],
+    BNB:  [_net('bep20',  'BNB Smart Chain (BEP20)')],
+    TRX:  [_net('trc20',  'Tron (TRC20)')],
+    XRP:  [_net('xrp',    'XRP Ledger')],
+    ADA:  [_net('ada',    'Cardano')],
+    DOGE: [_net('doge',   'Dogecoin')],
+    LTC:  [_net('ltc',    'Litecoin')],
+    MATIC:[_net('matic',  'Polygon (MATIC)')],
+    DASH: [_net('dash',   'Dash')],
+    XLM:  [_net('xlm',    'Stellar')],
+    SHIB: [_net('erc20',  'Ethereum (ERC20)')],
 };
 
 const FundModal = ({ onClose, wallets, onRefresh }) => {
@@ -1342,6 +1413,9 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
     const [cryptoNetwork, setCryptoNetwork] = useState('');
     const [cryptoConfigs, setCryptoConfigs] = useState(null);
     const [copied, setCopied] = useState(false);
+    const [addressPending, setAddressPending] = useState(false);
+    const addressRetryRef = useRef(0);
+    const addressRetryTimer = useRef(null);
 
     const fiatWallets = wallets.filter(w => w.wallet_type === 'fiat');
     const cryptoWallets = wallets.filter(w => w.wallet_type === 'crypto');
@@ -1411,10 +1485,12 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
             setError(null);
             try {
                 const result = await cryptoService.getNetworks(selectedWallet.currency);
-                const nets = result.success && result.data?.networks?.length > 0
+                const raw = result.success && result.data?.networks?.length > 0
                     ? result.data.networks
                     : (STATIC_CRYPTO_NETWORKS[coinUpper] || [{ network: coinUpper, name: coinUpper }]);
-                setCryptoConfigs([{ coin: coinUpper, networkList: nets }]);
+                // Only show networks where deposits are enabled
+                const nets = raw.filter(n => n.deposits_enabled !== false);
+                setCryptoConfigs([{ coin: coinUpper, networkList: nets.length > 0 ? nets : raw }]);
             } catch (e) {
                 // Always show at least static networks — never block the user
                 const fallback = STATIC_CRYPTO_NETWORKS[coinUpper] || [{ network: coinUpper, name: coinUpper }];
@@ -1425,21 +1501,39 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
         fetchNetworks();
     }, [fundType, selectedWalletId]);
 
-    // Fetch deposit address when network is selected
+    // Fetch deposit address when network is selected — with auto-retry for pending generation
     useEffect(() => {
         if (fundType !== 'crypto' || !selectedWalletId || !selectedWallet || !cryptoNetwork) {
             setCryptoDetails(null);
+            setAddressPending(false);
+            if (addressRetryTimer.current) clearTimeout(addressRetryTimer.current);
             return;
         }
+
+        addressRetryRef.current = 0;
+        if (addressRetryTimer.current) clearTimeout(addressRetryTimer.current);
+
         const fetchAddress = async () => {
             setLoading(true);
             setError(null);
             try {
                 const result = await cryptoService.getDepositAddress(selectedWallet.currency, cryptoNetwork);
-                if (result.success) {
+                if (result.success && result.data?.address) {
                     setCryptoDetails(result.data);
+                    setAddressPending(false);
+                } else if (result.pending) {
+                    // Address is being generated in background — auto-retry up to 12 times (~60s)
+                    setAddressPending(true);
+                    setCryptoDetails(null);
+                    if (addressRetryRef.current < 12) {
+                        addressRetryRef.current += 1;
+                        addressRetryTimer.current = setTimeout(fetchAddress, 5000);
+                    } else {
+                        setAddressPending(false);
+                        setError('Address generation is taking longer than usual. Please close and try again in a minute.');
+                    }
                 } else {
-                    // Sanitize raw server errors (e.g. "Query timed out after Xms") into user-friendly message
+                    setAddressPending(false);
                     const rawErr = result.error || '';
                     const msg = /timed out|timeout|server error|500/i.test(rawErr)
                         ? 'Service is busy. Please wait a moment and try again.'
@@ -1447,11 +1541,17 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                     setError(msg);
                 }
             } catch (e) {
+                setAddressPending(false);
                 setError('Could not generate deposit address. Please try again.');
             }
             setLoading(false);
         };
+
         fetchAddress();
+
+        return () => {
+            if (addressRetryTimer.current) clearTimeout(addressRetryTimer.current);
+        };
     }, [cryptoNetwork, selectedWalletId, fundType]);
 
     if (stage === 'success') {
@@ -1593,10 +1693,32 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                                 </div>
                             )}
 
-                            {loading && <div className="flex justify-center p-10"><RefreshCw className="w-10 h-10 animate-spin text-accent-500" /></div>}
+                            {loading && !addressPending && <div className="flex justify-center p-10"><RefreshCw className="w-10 h-10 animate-spin text-accent-500" /></div>}
+
+                            {/* Pending address generation */}
+                            {addressPending && (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    className="flex flex-col items-center gap-3 py-8 text-center"
+                                >
+                                    <div className="relative">
+                                        <div className="w-16 h-16 rounded-full bg-accent-50 dark:bg-accent-900/20 flex items-center justify-center">
+                                            <RefreshCw className="w-8 h-8 text-accent-500 animate-spin" />
+                                        </div>
+                                    </div>
+                                    <p className="text-sm font-bold text-gray-900 dark:text-white">Generating your wallet address…</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs">
+                                        Your {selectedWallet?.currency} address is being created on the blockchain. This usually takes 10–30 seconds.
+                                    </p>
+                                    <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                                        Attempt {addressRetryRef.current}/12 — refreshing automatically
+                                    </p>
+                                </motion.div>
+                            )}
 
                             <AnimatePresence>
-                                {cryptoDetails && (
+                                {cryptoDetails && !addressPending && (
                                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                                         <div className="flex justify-center">
                                             <div className="bg-white p-6 rounded-3xl shadow-xl border border-gray-100">
