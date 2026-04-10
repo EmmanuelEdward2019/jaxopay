@@ -382,13 +382,14 @@ class QuidaxAdapter {
 
     /**
      * Get market trade history (Recent trades) (with caching) — public endpoint
+     * Quidax v3: GET /trades/{pair} (NOT /markets/{pair}/trades)
      */
     async getMarketTrades(market, limit = 50) {
         const cacheKey = this._getCacheKey('marketTrades', market, limit);
         const cached = this._getFromCache(cacheKey, this._cacheTTL.orderBook);
         if (cached) return cached;
 
-        const response = await this.publicClient.get(`/markets/${market.toLowerCase()}/trades`, {
+        const response = await this.publicClient.get(`/trades/${market.toLowerCase()}`, {
             params: { limit }
         });
         const payload = response.data?.data || response.data;
@@ -398,13 +399,31 @@ class QuidaxAdapter {
 
     /**
      * Get market ticker summary (with caching) — public endpoint
+     * Quidax v3: individual ticker per market is NOT supported;
+     * fetch all tickers and extract the requested market.
      */
     async getMarketTicker(market) {
         const cacheKey = this._getCacheKey('marketTicker', market);
         const cached = this._getFromCache(cacheKey, this._cacheTTL.ticker);
         if (cached) return cached;
 
-        const response = await this.publicClient.get(`/markets/${market.toLowerCase()}/tickers`);
+        const allTickers = await this.getTicker24h();
+        const m = market.toLowerCase();
+        const payload = allTickers?.[m] || null;
+        if (payload) this._setCache(cacheKey, payload);
+        return payload;
+    }
+
+    /**
+     * Get market depth (asks/bids aggregated) — public endpoint
+     * Quidax v3: GET /markets/{pair}/depth
+     */
+    async getMarketDepth(market) {
+        const cacheKey = this._getCacheKey('depth', market);
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.orderBook);
+        if (cached) return cached;
+
+        const response = await this.publicClient.get(`/markets/${market.toLowerCase()}/depth`);
         const payload = response.data?.data || response.data;
         this._setCache(cacheKey, payload);
         return payload;
@@ -430,17 +449,23 @@ class QuidaxAdapter {
 
     /**
      * Get 24-hour ticker statistics (with caching) — public endpoint
+     * Quidax v3: only GET /markets/tickers works (no per-market endpoint).
+     * If a specific market is requested, extract it from the full response.
      */
     async getTicker24h(market = null) {
-        const cacheKey = this._getCacheKey('ticker24h', market || 'all');
-        const cached = this._getFromCache(cacheKey, this._cacheTTL.ticker);
-        if (cached) return cached;
+        const cacheKey = 'ticker24h:all';
+        let allData = this._getFromCache(cacheKey, this._cacheTTL.ticker);
 
-        const url = market ? `/markets/${market.toLowerCase()}/tickers` : '/markets/tickers';
-        const response = await this.publicClient.get(url);
-        const payload = response.data?.data || response.data;
-        this._setCache(cacheKey, payload);
-        return payload;
+        if (!allData) {
+            const response = await this.publicClient.get('/markets/tickers');
+            allData = response.data?.data || response.data;
+            this._setCache(cacheKey, allData);
+        }
+
+        if (market) {
+            return allData?.[market.toLowerCase()] || null;
+        }
+        return allData;
     }
 
     /**
@@ -572,7 +597,7 @@ class QuidaxAdapter {
     }
 
     /**
-     * Get live exchange rate (with caching)
+     * Get live exchange rate (with caching) — uses all-tickers endpoint
      */
     async getExchangeRate(from, to) {
         const cacheKey = this._getCacheKey('exchangeRate', from, to);
@@ -580,25 +605,23 @@ class QuidaxAdapter {
         if (cached) return cached;
 
         try {
+            const allTickers = await this.getTicker24h();
             const markets = [`${from.toLowerCase()}${to.toLowerCase()}`, `${to.toLowerCase()}${from.toLowerCase()}`];
 
             for (const market of markets) {
-                try {
-                    const response = await this.publicClient.get(`/markets/${market}/tickers`, { timeout: 10000 });
-                    // Quidax wraps: { status, data: { ticker: { last: ... } } }
-                    const tickerData = response.data?.data || response.data;
-                    let lastPrice = parseFloat(tickerData?.ticker?.last || 0);
+                const tickerData = allTickers?.[market];
+                if (!tickerData) continue;
 
-                    if (market.startsWith(to.toLowerCase())) {
-                        const result = lastPrice > 0 ? 1 / lastPrice : 0;
-                        this._setCache(cacheKey, result);
-                        return result;
-                    }
-                    this._setCache(cacheKey, lastPrice);
-                    return lastPrice;
-                } catch (e) {
-                    continue;
+                let lastPrice = parseFloat(tickerData?.ticker?.last || 0);
+                if (lastPrice <= 0) continue;
+
+                if (market.startsWith(to.toLowerCase())) {
+                    const result = 1 / lastPrice;
+                    this._setCache(cacheKey, result);
+                    return result;
                 }
+                this._setCache(cacheKey, lastPrice);
+                return lastPrice;
             }
             return null;
         } catch (err) {
@@ -624,6 +647,17 @@ class QuidaxAdapter {
             const response = await this.client.post(`/custodial/on_ramp_transactions/initiate`, body);
             return response.data;
         }, 'initiateFiatDeposit');
+    }
+
+    /**
+     * SWAP: Get all swap transactions for user
+     * Endpoint: GET /users/{id}/swap_transactions
+     */
+    async getSwapTransactions(userId = 'me') {
+        return this._executeWithCircuitBreaker(async () => {
+            const response = await this.client.get(`/users/${userId}/swap_transactions`);
+            return response.data?.data || response.data;
+        }, 'getSwapTransactions');
     }
 
     /**

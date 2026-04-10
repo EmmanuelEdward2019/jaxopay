@@ -28,6 +28,8 @@ import {
   refreshSwapQuotation,
   confirmSwapQuotation,
   getSwapTransaction,
+  getSwapTransactions,
+  getMarketDepth,
 } from '../controllers/crypto.controller.js';
 
 // Enhanced endpoints with full Quidax integration
@@ -173,6 +175,11 @@ router.post('/swap/quotation/:id/refresh', requireKYCTier(2), refreshSwapQuotati
 router.post('/swap/quotation/:id/confirm', requireKYCTier(2), confirmSwapQuotation);
 // Step 5: Poll swap transaction status
 router.get('/swap/transactions/:id', verifyToken, getSwapTransaction);
+// List all swap transactions
+router.get('/swap/transactions', verifyToken, getSwapTransactions);
+
+// Get market depth (aggregated asks/bids)
+router.get('/market/depth', getMarketDepth);
 
 // Get market trades
 router.get('/market/trades', getMarketTrades);

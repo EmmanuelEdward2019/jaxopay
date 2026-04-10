@@ -1301,3 +1301,22 @@ export const getSwapTransaction = catchAsync(async (req, res) => {
   const data = await quidax.getSwapTransaction(id);
   res.status(200).json({ success: true, data });
 });
+
+// GET /crypto/swap/transactions — list all swap transactions
+export const getSwapTransactions = catchAsync(async (req, res) => {
+  const data = await quidax.getSwapTransactions();
+  res.status(200).json({ success: true, data });
+});
+
+// GET /crypto/market/depth — aggregated depth data for a market pair
+export const getMarketDepth = catchAsync(async (req, res) => {
+  const { market } = req.query;
+  if (!market) throw new AppError('market is required', 400);
+  try {
+    const data = await quidax.getMarketDepth(market);
+    res.status(200).json({ success: true, data });
+  } catch (err) {
+    logger.warn(`[MarketDepth] Quidax failed for ${market}:`, err.message);
+    res.status(200).json({ success: true, data: { asks: [], bids: [] }, message: 'Depth data temporarily unavailable' });
+  }
+});

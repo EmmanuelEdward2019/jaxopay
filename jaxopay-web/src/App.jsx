@@ -46,6 +46,7 @@ import Bills from './pages/dashboard/Bills';
 import Exchange from './pages/dashboard/Exchange';
 import Markets from './pages/dashboard/Markets';
 import Trade from './pages/dashboard/Trade';
+import InstantSwap from './pages/dashboard/InstantSwap';
 import DashboardGiftCards from './pages/dashboard/GiftCards';
 import KYC from './pages/dashboard/KYC';
 import CrossBorder from './pages/dashboard/CrossBorder';
@@ -267,6 +268,11 @@ function App() {
             <Route path="swap" element={
               <FeatureGuard feature="crypto">
                 <Exchange />
+              </FeatureGuard>
+            } />
+            <Route path="instant-swap" element={
+              <FeatureGuard feature="crypto">
+                <InstantSwap />
               </FeatureGuard>
             } />
             <Route path="exchange" element={

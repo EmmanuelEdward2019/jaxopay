@@ -25,6 +25,7 @@ import {
     ShieldCheck
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import QRCodeSVG from 'react-qr-code';
 import walletService from '../../services/walletService';
 import cryptoService from '../../services/cryptoService';
 import transferService from '../../services/transferService';
@@ -1322,7 +1323,7 @@ const DepositModal = ({ onClose, wallets }) => {
                     {selectedWallet && details && !loading && !addressPending && selectedWallet.wallet_type === 'crypto' && (
                         <div className="text-center space-y-4">
                             <div className="bg-white p-4 rounded-xl inline-block shadow-sm">
-                                <QrCode className="w-32 h-32 text-gray-900" />
+                                <QRCodeSVG value={details.address || ''} size={128} />
                                 <p className="text-[8px] mt-1 text-gray-400">Scan to copy address</p>
                             </div>
                             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
@@ -1360,7 +1361,7 @@ const DepositModal = ({ onClose, wallets }) => {
 };
 
 // Static fallback networks — used when the API is unavailable.
-// Network ids are lowercase to match what Quidax returns in the live API.
+// Network ids are lowercase to match what the exchange API returns.
 // deposits_enabled / withdraws_enabled are included so frontend filters work on the fallback path.
 const _net = (id, name, extra = {}) => ({
     network: id, name,
@@ -1722,7 +1723,7 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                                         <div className="flex justify-center">
                                             <div className="bg-white p-6 rounded-3xl shadow-xl border border-gray-100">
-                                                <QrCode className="w-32 h-32 text-gray-900" />
+                                                <QRCodeSVG value={cryptoDetails.address || ''} size={128} />
                                             </div>
                                         </div>
                                         <div className="bg-gray-50 dark:bg-gray-900 p-6 rounded-3xl border border-gray-100 dark:border-gray-800">

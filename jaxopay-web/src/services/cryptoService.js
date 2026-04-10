@@ -325,6 +325,26 @@ const cryptoService = {
       return { success: false, error: error.message };
     }
   },
+
+  // Get market depth (aggregated asks/bids)
+  getMarketDepth: async (market) => {
+    try {
+      const body = await apiClient.get('/crypto/market/depth', { params: { market } });
+      return { success: true, data: body?.data || body };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get all swap transactions
+  getSwapTransactions: async () => {
+    try {
+      const body = await apiClient.get('/crypto/swap/transactions');
+      return { success: true, data: body?.data || body };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
 };
 
 export default cryptoService;

@@ -34,7 +34,7 @@ const NAV_GROUPS = (isFeatureEnabled) => [
     items: [
       { name: 'Markets', href: '/dashboard/markets', icon: BarChart2, enabled: true },
       { name: 'Spot Trade', href: '/dashboard/trade', icon: Activity, enabled: isFeatureEnabled('crypto') },
-      { name: 'Instant Swap', href: '/dashboard/swap', icon: Zap, enabled: isFeatureEnabled('crypto') },
+      { name: 'Instant Swap', href: '/dashboard/instant-swap?from=USDT&to=NGN', icon: Zap, enabled: isFeatureEnabled('crypto') },
     ],
   },
   {
@@ -74,15 +74,16 @@ const DashboardLayout = () => {
   };
 
   const isActive = (href) => {
-    if (href === '/dashboard') return location.pathname === '/dashboard';
-    return location.pathname.startsWith(href);
+    const path = href.split('?')[0]; // strip query params for matching
+    if (path === '/dashboard') return location.pathname === '/dashboard';
+    return location.pathname.startsWith(path);
   };
 
   const navGroups = NAV_GROUPS(isFeatureEnabled);
   const isAdminUser = ['admin', 'super_admin', 'compliance_officer'].includes(user?.role);
 
   // Determine if we're on a trading page (use dark theme for those)
-  const isTrading = location.pathname.startsWith('/dashboard/trade') || location.pathname.startsWith('/dashboard/markets');
+  const isTrading = location.pathname.startsWith('/dashboard/trade') || location.pathname.startsWith('/dashboard/markets') || location.pathname.startsWith('/dashboard/instant-swap');
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0b0e11]">
