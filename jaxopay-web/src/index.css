@@ -1,43 +1,145 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --background: 220 20% 97%;
+    --foreground: 225 25% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 225 25% 10%;
+    --primary: 262 80% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 225 25% 10%;
+    --muted: 220 15% 92%;
+    --muted-foreground: 220 10% 40%;
+    --accent: 262 60% 45%;
+    --accent-foreground: 0 0% 100%;
+    --border: 220 15% 88%;
+    --input: 220 15% 88%;
+    --ring: 262 80% 55%;
+    --success: 145 65% 42%;
+    --danger: 0 72% 55%;
+    --warning: 38 92% 55%;
+    --sidebar-background: 220 20% 95%;
+    --sidebar-border: 220 15% 88%;
+    --sidebar-foreground: 225 25% 10%;
+    --sidebar-muted: 220 10% 40%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 225 25% 8%;
+    --foreground: 210 40% 96%;
+    --card: 225 20% 12%;
+    --card-foreground: 210 40% 96%;
+    --primary: 262 80% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 225 15% 18%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 225 15% 16%;
+    --muted-foreground: 215 15% 55%;
+    --accent: 262 60% 45%;
+    --accent-foreground: 0 0% 100%;
+    --border: 225 15% 20%;
+    --input: 225 15% 20%;
+    --ring: 262 80% 55%;
+    --success: 145 65% 42%;
+    --danger: 0 72% 55%;
+    --warning: 38 92% 55%;
+    --sidebar-background: 225 25% 6%;
+    --sidebar-border: 225 15% 15%;
+    --sidebar-foreground: 210 20% 70%;
+    --sidebar-muted: 215 15% 55%;
+    --radius: 0.75rem;
+  }
+
   html {
     scroll-behavior: smooth;
   }
 
   body {
-    @apply bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply bg-accent-600 hover:bg-accent-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+    background-color: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    @apply font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  .btn-primary:hover {
+    background-color: hsl(var(--primary) / 0.9);
   }
 
   .btn-secondary {
-    @apply bg-secondary-200 hover:bg-secondary-300 dark:bg-secondary-700 dark:hover:bg-secondary-600 text-secondary-900 dark:text-secondary-100 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+    background-color: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+    @apply font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  .btn-secondary:hover {
+    background-color: hsl(var(--secondary) / 0.8);
   }
 
   .btn-outline {
-    @apply border-2 border-accent-600 text-accent-600 hover:bg-accent-50 dark:hover:bg-accent-900/20 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+    border: 2px solid hsl(var(--primary));
+    color: hsl(var(--primary));
+    @apply font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  .btn-outline:hover {
+    background-color: hsl(var(--primary) / 0.1);
   }
 
   .input-field {
-    @apply w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100;
+    background-color: hsl(var(--card));
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--input));
+    @apply w-full px-4 py-2 rounded-lg transition-colors;
+  }
+  .input-field:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px hsl(var(--ring));
+    border-color: transparent;
+  }
+
+  /* Ensure all form elements inherit proper text color in both themes */
+  select,
+  input,
+  textarea {
+    color: hsl(var(--foreground));
+  }
+  select option {
+    background-color: hsl(var(--card));
+    color: hsl(var(--foreground));
   }
 
   .card {
-    @apply bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6;
+    background-color: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+    border: 1px solid hsl(var(--border));
+    @apply rounded-xl shadow-sm p-6;
+  }
+
+  .glass-card {
+    background-color: hsl(var(--card) / 0.7);
+    border: 1px solid hsl(var(--border) / 0.5);
+    @apply rounded-xl backdrop-blur-[24px];
   }
 
   .wallet-card {
-    @apply bg-gradient-to-br from-accent-500 to-accent-700 rounded-xl p-6 text-white shadow-lg;
+    @apply bg-gradient-to-br rounded-xl p-6 text-white shadow-lg;
+    background-image: linear-gradient(to bottom right, hsl(var(--primary)), hsl(var(--accent)));
+  }
+
+  .gradient-primary {
+    background: linear-gradient(135deg, #7430e8, #8e22c3);
   }
 }
 

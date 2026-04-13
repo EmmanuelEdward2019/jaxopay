@@ -142,8 +142,8 @@ const Settings = () => {
         <div className="space-y-6 max-w-5xl mx-auto">
             {/* Page Header */}
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
-                <p className="text-gray-600 dark:text-gray-400">Manage your account preferences</p>
+                <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+                <p className="text-muted-foreground">Manage your account preferences</p>
             </div>
 
             {/* Alerts */}
@@ -153,7 +153,7 @@ const Settings = () => {
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className={`p-4 rounded-xl flex items-start gap-3 ${error ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}
+                        className={`p-4 rounded-xl flex items-start gap-3 ${error ? 'bg-danger/10 text-danger border border-danger/20' : 'bg-success/10 text-success border border-success/20'}`}
                     >
                         {error ? <AlertTriangle className="w-5 h-5 shrink-0" /> : <Check className="w-5 h-5 shrink-0" />}
                         <div className="flex-1">
@@ -170,17 +170,17 @@ const Settings = () => {
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                 {/* Sidebar */}
                 <div className="lg:col-span-1">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-2 shadow-sm border border-gray-100 dark:border-gray-700 sticky top-24">
+                    <div className="bg-card rounded-2xl p-2 shadow-sm border border-border sticky top-24">
                         {settingsSections.map((section) => (
                             <button
                                 key={section.id}
                                 onClick={() => setActiveSection(section.id)}
                                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all ${activeSection === section.id
-                                    ? 'bg-accent-50 dark:bg-accent-900/20 text-accent-600 dark:text-accent-400 font-medium'
-                                    : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-400'
+                                    ? 'bg-primary/10 text-primary font-medium'
+                                    : 'hover:bg-muted/50 text-muted-foreground'
                                     }`}
                             >
-                                <section.icon className={`w-5 h-5 ${activeSection === section.id ? 'text-accent-600' : 'text-gray-400'}`} />
+                                <section.icon className={`w-5 h-5 ${activeSection === section.id ? 'text-primary' : 'text-muted-foreground'}`} />
                                 <span>{section.label}</span>
                             </button>
                         ))}
@@ -194,31 +194,31 @@ const Settings = () => {
                         <motion.div
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
+                            className="bg-card rounded-2xl p-6 shadow-sm border border-border"
                         >
-                            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-6">General Settings</h2>
+                            <h2 className="text-lg font-bold text-foreground mb-6">General Settings</h2>
 
                             {/* Theme */}
-                            <div className="flex items-center justify-between py-4 border-b border-gray-100 dark:border-gray-700">
+                            <div className="flex items-center justify-between py-4 border-b border-border">
                                 <div className="flex items-center gap-4">
-                                    <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                                        {theme === 'dark' ? <Moon className="w-5 h-5 text-gray-600 dark:text-gray-300" /> : <Sun className="w-5 h-5 text-gray-600 dark:text-gray-300" />}
+                                    <div className="p-2 bg-muted rounded-lg">
+                                        {theme === 'dark' ? <Moon className="w-5 h-5 text-muted-foreground" /> : <Sun className="w-5 h-5 text-muted-foreground" />}
                                     </div>
                                     <div>
-                                        <p className="font-semibold text-gray-900 dark:text-white">Appearance</p>
-                                        <p className="text-sm text-gray-500">Customize how the app looks</p>
+                                        <p className="font-semibold text-foreground">Appearance</p>
+                                        <p className="text-sm text-muted-foreground">Customize how the app looks</p>
                                     </div>
                                 </div>
-                                <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                <div className="flex gap-1 p-1 bg-muted rounded-lg">
                                     <button
                                         onClick={() => setTheme('light')}
-                                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${theme === 'light' ? 'bg-white dark:bg-gray-600 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}
+                                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${theme === 'light' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground'}`}
                                     >
                                         Light
                                     </button>
                                     <button
                                         onClick={() => setTheme('dark')}
-                                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${theme === 'dark' ? 'bg-white dark:bg-gray-600 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}
+                                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${theme === 'dark' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground'}`}
                                     >
                                         Dark
                                     </button>
@@ -226,14 +226,14 @@ const Settings = () => {
                             </div>
 
                             {/* Language */}
-                            <div className="flex items-center justify-between py-4 border-b border-gray-100 dark:border-gray-700">
+                            <div className="flex items-center justify-between py-4 border-b border-border">
                                 <div className="flex items-center gap-4">
-                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                        <Globe className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                    <div className="p-2 bg-primary/10 rounded-lg">
+                                        <Globe className="w-5 h-5 text-primary" />
                                     </div>
                                     <div>
-                                        <p className="font-semibold text-gray-900 dark:text-white">Language</p>
-                                        <p className="text-sm text-gray-500">Select your preferred language</p>
+                                        <p className="font-semibold text-foreground">Language</p>
+                                        <p className="text-sm text-muted-foreground">Select your preferred language</p>
                                     </div>
                                 </div>
                                 <select
@@ -242,7 +242,7 @@ const Settings = () => {
                                         setLanguage(e.target.value);
                                         handleUpdateSettings({ preferred_language: e.target.value });
                                     }}
-                                    className="px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-medium focus:ring-2 focus:ring-accent-500 outline-none"
+                                    className="px-4 py-2 bg-muted border border-border rounded-lg text-sm font-medium focus:ring-2 focus:ring-ring outline-none"
                                 >
                                     <option value="en">English</option>
                                     <option value="fr">Français</option>
@@ -253,12 +253,12 @@ const Settings = () => {
                             {/* Display Balance */}
                             <div className="flex items-center justify-between py-4">
                                 <div className="flex items-center gap-4">
-                                    <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                                        <Eye className="w-5 h-5 text-green-600 dark:text-green-400" />
+                                    <div className="p-2 bg-success/10 rounded-lg">
+                                        <Eye className="w-5 h-5 text-success" />
                                     </div>
                                     <div>
-                                        <p className="font-semibold text-gray-900 dark:text-white">Show Balances</p>
-                                        <p className="text-sm text-gray-500">Hide balances for privacy</p>
+                                        <p className="font-semibold text-foreground">Show Balances</p>
+                                        <p className="text-sm text-muted-foreground">Hide balances for privacy</p>
                                     </div>
                                 </div>
                                 <label className="relative inline-flex items-center cursor-pointer">
@@ -271,7 +271,7 @@ const Settings = () => {
                                         }}
                                         className="sr-only peer"
                                     />
-                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-ring rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-card after:border-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                 </label>
                             </div>
                         </motion.div>
@@ -282,52 +282,52 @@ const Settings = () => {
                         <motion.div
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
+                            className="bg-card rounded-2xl p-6 shadow-sm border border-border"
                         >
-                            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Security Settings</h2>
+                            <h2 className="text-lg font-bold text-foreground mb-6">Security Settings</h2>
 
                             {/* Passwords */}
                             <button
                                 onClick={() => setShowPasswordModal(true)}
-                                className="w-full flex items-center justify-between py-4 border-b border-gray-100 dark:border-gray-700 group"
+                                className="w-full flex items-center justify-between py-4 border-b border-border group"
                             >
                                 <div className="flex items-center gap-4">
-                                    <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                                        <Key className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                                    <div className="p-2 bg-purple-50 rounded-lg">
+                                        <Key className="w-5 h-5 text-purple-600" />
                                     </div>
                                     <div className="text-left">
-                                        <p className="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">Change Password</p>
-                                        <p className="text-sm text-gray-500">Update your password regularly</p>
+                                        <p className="font-semibold text-foreground group-hover:text-primary transition-colors">Change Password</p>
+                                        <p className="text-sm text-muted-foreground">Update your password regularly</p>
                                     </div>
                                 </div>
-                                <ChevronRight className="w-5 h-5 text-gray-400 group-hover:translate-x-1 transition-transform" />
+                                <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
                             </button>
 
                             {/* 2FA */}
                             <button
                                 onClick={() => setShow2FAModal(true)}
-                                className="w-full flex items-center justify-between py-4 border-b border-gray-100 dark:border-gray-700 group"
+                                className="w-full flex items-center justify-between py-4 border-b border-border group"
                             >
                                 <div className="flex items-center gap-4">
-                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                        <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                    <div className="p-2 bg-primary/10 rounded-lg">
+                                        <Shield className="w-5 h-5 text-primary" />
                                     </div>
                                     <div className="text-left">
-                                        <p className="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">Two-Factor Authentication</p>
-                                        <p className="text-sm text-gray-500">Secure your account with 2FA</p>
+                                        <p className="font-semibold text-foreground group-hover:text-primary transition-colors">Two-Factor Authentication</p>
+                                        <p className="text-sm text-muted-foreground">Secure your account with 2FA</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
                                     {user?.two_fa_enabled ? (
-                                        <span className="px-2.5 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full uppercase tracking-wide">
+                                        <span className="px-2.5 py-0.5 bg-success/10 text-success text-xs font-bold rounded-full uppercase tracking-wide">
                                             Enabled
                                         </span>
                                     ) : (
-                                        <span className="px-2.5 py-0.5 bg-gray-100 text-gray-600 text-xs font-bold rounded-full uppercase tracking-wide">
+                                        <span className="px-2.5 py-0.5 bg-muted text-muted-foreground text-xs font-bold rounded-full uppercase tracking-wide">
                                             Disabled
                                         </span>
                                     )}
-                                    <ChevronRight className="w-5 h-5 text-gray-400 group-hover:translate-x-1 transition-transform" />
+                                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
                                 </div>
                             </button>
 
@@ -335,18 +335,18 @@ const Settings = () => {
                             <button
                                 onClick={handleLogoutAll}
                                 disabled={loading}
-                                className="w-full flex items-center justify-between py-4 border-b border-gray-100 dark:border-gray-700 group"
+                                className="w-full flex items-center justify-between py-4 border-b border-border group"
                             >
                                 <div className="flex items-center gap-4">
-                                    <div className="p-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
-                                        <LogOut className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                                    <div className="p-2 bg-warning/10 rounded-lg">
+                                        <LogOut className="w-5 h-5 text-warning" />
                                     </div>
                                     <div className="text-left">
-                                        <p className="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">Logout All Devices</p>
-                                        <p className="text-sm text-gray-500">Sign out from all other active sessions</p>
+                                        <p className="font-semibold text-foreground group-hover:text-primary transition-colors">Logout All Devices</p>
+                                        <p className="text-sm text-muted-foreground">Sign out from all other active sessions</p>
                                     </div>
                                 </div>
-                                <ChevronRight className="w-5 h-5 text-gray-400 group-hover:translate-x-1 transition-transform" />
+                                <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
                             </button>
 
                             {/* Delete Account */}
@@ -355,12 +355,12 @@ const Settings = () => {
                                 className="w-full flex items-center justify-between py-4 group"
                             >
                                 <div className="flex items-center gap-4">
-                                    <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                                        <Trash2 className="w-5 h-5 text-red-600" />
+                                    <div className="p-2 bg-danger/10 rounded-lg">
+                                        <Trash2 className="w-5 h-5 text-danger" />
                                     </div>
                                     <div className="text-left">
-                                        <p className="font-semibold text-red-600">Delete Account</p>
-                                        <p className="text-sm text-gray-500">Permanently remove your data</p>
+                                        <p className="font-semibold text-danger">Delete Account</p>
+                                        <p className="text-sm text-muted-foreground">Permanently remove your data</p>
                                     </div>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-red-300 group-hover:translate-x-1 transition-transform" />
@@ -373,13 +373,13 @@ const Settings = () => {
                         <motion.div
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
+                            className="bg-card rounded-2xl p-6 shadow-sm border border-border"
                         >
-                            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Notification Preferences</h2>
+                            <h2 className="text-lg font-bold text-foreground mb-6">Notification Preferences</h2>
 
                             <div className="space-y-6">
                                 <div>
-                                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Email Notifications</h3>
+                                    <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-4">Email Notifications</h3>
                                     <div className="space-y-4">
                                         {[
                                             { key: 'email_transactions', label: 'Transaction Updates', desc: 'Receive emails for all deposits, withdrawals, and transfers' },
@@ -388,8 +388,8 @@ const Settings = () => {
                                         ].map((item) => (
                                             <div key={item.key} className="flex items-start justify-between">
                                                 <div>
-                                                    <p className="font-semibold text-gray-900 dark:text-white">{item.label}</p>
-                                                    <p className="text-sm text-gray-500">{item.desc}</p>
+                                                    <p className="font-semibold text-foreground">{item.label}</p>
+                                                    <p className="text-sm text-muted-foreground">{item.desc}</p>
                                                 </div>
                                                 <label className="relative inline-flex items-center cursor-pointer mt-1">
                                                     <input
@@ -402,17 +402,17 @@ const Settings = () => {
                                                         }}
                                                         className="sr-only peer"
                                                     />
-                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-accent-300 dark:peer-focus:ring-accent-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-600"></div>
+                                                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-ring rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-card after:border-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                                 </label>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
 
-                                <div className="h-px bg-gray-100 dark:bg-gray-700" />
+                                <div className="h-px bg-muted" />
 
                                 <div>
-                                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Push Notifications</h3>
+                                    <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-4">Push Notifications</h3>
                                     <div className="space-y-4">
                                         {[
                                             { key: 'push_transactions', label: 'Transaction Alerts', desc: 'Instant push notifications for account activity' },
@@ -420,8 +420,8 @@ const Settings = () => {
                                         ].map((item) => (
                                             <div key={item.key} className="flex items-start justify-between">
                                                 <div>
-                                                    <p className="font-semibold text-gray-900 dark:text-white">{item.label}</p>
-                                                    <p className="text-sm text-gray-500">{item.desc}</p>
+                                                    <p className="font-semibold text-foreground">{item.label}</p>
+                                                    <p className="text-sm text-muted-foreground">{item.desc}</p>
                                                 </div>
                                                 <label className="relative inline-flex items-center cursor-pointer mt-1">
                                                     <input
@@ -434,7 +434,7 @@ const Settings = () => {
                                                         }}
                                                         className="sr-only peer"
                                                     />
-                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                                                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-ring rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-card after:border-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                                 </label>
                                             </div>
                                         ))}
@@ -449,38 +449,38 @@ const Settings = () => {
                         <motion.div
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
+                            className="bg-card rounded-2xl p-6 shadow-sm border border-border"
                         >
                             <div className="flex items-center justify-between mb-6">
-                                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Active Sessions</h2>
-                                <button onClick={fetchSessions} className="text-accent-600 text-sm font-medium hover:underline flex items-center gap-1">
+                                <h2 className="text-lg font-bold text-foreground">Active Sessions</h2>
+                                <button onClick={fetchSessions} className="text-primary text-sm font-medium hover:underline flex items-center gap-1">
                                     <RefreshCw className="w-3.5 h-3.5" /> Refresh
                                 </button>
                             </div>
 
                             {sessions.length === 0 ? (
-                                <p className="text-gray-500 dark:text-gray-400 text-center py-8">Loading sessions...</p>
+                                <p className="text-muted-foreground text-center py-8">Loading sessions...</p>
                             ) : (
                                 <div className="space-y-4">
                                     {sessions.map((session, index) => (
                                         <div
                                             key={session.id || index}
-                                            className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl"
+                                            className="flex items-center justify-between p-4 bg-muted/30 rounded-xl"
                                         >
                                             <div className="flex items-center gap-4">
-                                                <div className="p-3 bg-white dark:bg-gray-700 rounded-xl shadow-sm">
-                                                    <Smartphone className="w-6 h-6 text-gray-500" />
+                                                <div className="p-3 bg-card rounded-xl shadow-sm">
+                                                    <Smartphone className="w-6 h-6 text-muted-foreground" />
                                                 </div>
                                                 <div>
-                                                    <p className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                                    <p className="font-bold text-foreground flex items-center gap-2">
                                                         {session.user_agent || 'Unknown Device'}
                                                         {session.is_current && (
-                                                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full uppercase">
+                                                            <span className="px-2 py-0.5 bg-success/10 text-success text-[10px] font-bold rounded-full uppercase">
                                                                 Current
                                                             </span>
                                                         )}
                                                     </p>
-                                                    <p className="text-xs text-gray-500 mt-1">
+                                                    <p className="text-xs text-muted-foreground mt-1">
                                                         IP: {session.ip_address || 'Unknown'} • Active: {new Date(session.last_activity_at).toLocaleString()}
                                                     </p>
                                                 </div>
@@ -488,7 +488,7 @@ const Settings = () => {
                                             {!session.is_current && (
                                                 <button
                                                     onClick={() => handleRevokeSession(session.id)}
-                                                    className="px-3 py-1.5 bg-white dark:bg-gray-700 text-red-600 text-sm font-medium rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                    className="px-3 py-1.5 bg-card text-danger text-sm font-medium rounded-lg border border-border hover:bg-danger/10 transition-colors"
                                                 >
                                                     Revoke
                                                 </button>
@@ -535,26 +535,26 @@ const ChangePasswordModal = ({ onClose }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Change Password</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-                        <X className="w-5 h-5 text-gray-500" />
+                    <h2 className="text-xl font-bold text-foreground">Change Password</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-muted rounded-full">
+                        <X className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
 
-                {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm font-medium flex gap-2"><AlertTriangle className="w-4 h-4" />{error}</div>}
+                {error && <div className="bg-danger/10 text-danger p-3 rounded-lg mb-4 text-sm font-medium flex gap-2"><AlertTriangle className="w-4 h-4" />{error}</div>}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {['current', 'new', 'confirm'].map((field) => (
                         <div key={field}>
-                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1 capitalize">
+                            <label className="block text-sm font-semibold text-foreground mb-1 capitalize">
                                 {field === 'confirm' ? 'Confirm New Password' : `${field} Password`}
                             </label>
                             <div className="relative">
@@ -562,13 +562,13 @@ const ChangePasswordModal = ({ onClose }) => {
                                     type={showPasswords[field] ? 'text' : 'password'}
                                     value={form[field]}
                                     onChange={(e) => setForm({ ...form, [field]: e.target.value })}
-                                    className="w-full px-4 py-3 pr-12 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 outline-none"
+                                    className="w-full px-4 py-3 pr-12 bg-card border border-border rounded-xl focus:ring-2 focus:ring-ring outline-none"
                                     required
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowPasswords({ ...showPasswords, [field]: !showPasswords[field] })}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground"
                                 >
                                     {showPasswords[field] ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                                 </button>
@@ -576,10 +576,10 @@ const ChangePasswordModal = ({ onClose }) => {
                         </div>
                     ))}
                     <div className="flex gap-3 pt-2">
-                        <button type="button" onClick={onClose} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold rounded-xl">
+                        <button type="button" onClick={onClose} className="flex-1 py-3 bg-muted text-foreground font-bold rounded-xl">
                             Cancel
                         </button>
-                        <button type="submit" disabled={loading} className="flex-1 py-3 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-xl disabled:opacity-50 shadow-lg shadow-accent-200">
+                        <button type="submit" disabled={loading} className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl disabled:opacity-50 shadow-lg shadow-accent-200">
                             {loading ? 'Saving...' : 'Update Password'}
                         </button>
                     </div>
@@ -637,44 +637,44 @@ const TwoFactorModal = ({ onClose, user, setUser }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Two-Factor Authentication</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-                        <X className="w-5 h-5 text-gray-500" />
+                    <h2 className="text-xl font-bold text-foreground">Two-Factor Authentication</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-muted rounded-full">
+                        <X className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
 
-                {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm font-medium">{error}</div>}
+                {error && <div className="bg-danger/10 text-danger p-3 rounded-lg mb-4 text-sm font-medium">{error}</div>}
 
                 {step === 'manage' && (
                     <div className="space-y-4">
                         <div className="text-center py-6">
-                            <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <div className="w-16 h-16 bg-success/10 text-success rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Shield className="w-8 h-8" />
                             </div>
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">2FA is Enabled</h3>
-                            <p className="text-sm text-gray-500 mt-2">Your account is secured with Authenticator App.</p>
+                            <h3 className="text-lg font-bold text-foreground">2FA is Enabled</h3>
+                            <p className="text-sm text-muted-foreground mt-2">Your account is secured with Authenticator App.</p>
                         </div>
-                        <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
-                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Password to Disable</label>
+                        <div className="pt-4 border-t border-border">
+                            <label className="block text-sm font-semibold text-foreground mb-2">Password to Disable</label>
                             <input
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl mb-4"
+                                className="w-full px-4 py-3 bg-card border border-border rounded-xl mb-4"
                                 placeholder="Enter your password"
                             />
                             <button
                                 onClick={handleDisable}
                                 disabled={!password || loading}
-                                className="w-full py-3 bg-red-100 text-red-600 hover:bg-red-200 font-bold rounded-xl transition-colors disabled:opacity-50"
+                                className="w-full py-3 bg-danger/10 text-danger hover:bg-red-200 font-bold rounded-xl transition-colors disabled:opacity-50"
                             >
                                 {loading ? 'Disabling...' : 'Disable 2FA'}
                             </button>
@@ -684,13 +684,13 @@ const TwoFactorModal = ({ onClose, user, setUser }) => {
 
                 {step === 'intro' && (
                     <div className="space-y-4">
-                        <p className="text-gray-600 dark:text-gray-300">
+                        <p className="text-muted-foreground">
                             Protect your account by requiring a code from an authenticator app (Google Authenticator, Authy, etc.) when you log in.
                         </p>
                         <button
                             onClick={handleStartSetup}
                             disabled={loading}
-                            className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-xl shadow-lg shadow-accent-200"
+                            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-accent-200"
                         >
                             {loading ? 'Starting...' : 'Setup Authenticator'}
                         </button>
@@ -700,25 +700,25 @@ const TwoFactorModal = ({ onClose, user, setUser }) => {
                 {step === 'scan' && qrData && (
                     <div className="space-y-6 text-center">
                         <div>
-                            <p className="text-sm font-semibold mb-4 text-gray-900 dark:text-white">1. Scan this QR Code with your app</p>
-                            <div className="bg-white p-4 rounded-xl border border-gray-200 inline-block">
+                            <p className="text-sm font-semibold mb-4 text-foreground">1. Scan this QR Code with your app</p>
+                            <div className="bg-card p-4 rounded-xl border border-border inline-block">
                                 <img src={qrData.qr_code} alt="2FA QR Code" className="w-48 h-48" />
                             </div>
                         </div>
                         <div>
-                            <p className="text-sm font-semibold mb-2 text-gray-900 dark:text-white">2. Enter the code</p>
+                            <p className="text-sm font-semibold mb-2 text-foreground">2. Enter the code</p>
                             <input
                                 type="text"
                                 value={code}
                                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                                 placeholder="000 000"
-                                className="w-32 text-center text-2xl font-bold tracking-widest px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
+                                className="w-32 text-center text-2xl font-bold tracking-widest px-2 py-2 bg-muted border border-border rounded-lg focus:ring-2 focus:ring-ring outline-none"
                             />
                         </div>
                         <button
                             onClick={handleVerify}
                             disabled={code.length !== 6 || loading}
-                            className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-xl shadow-lg shadow-accent-200 disabled:opacity-50"
+                            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-accent-200 disabled:opacity-50"
                         >
                             {loading ? 'Verifying...' : 'Verify & Enable'}
                         </button>
@@ -751,51 +751,51 @@ const DeleteAccountModal = ({ onClose }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
+            <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center gap-4 mb-6">
-                    <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-full">
-                        <AlertTriangle className="w-6 h-6 text-red-600" />
+                    <div className="p-3 bg-danger/10 rounded-full">
+                        <AlertTriangle className="w-6 h-6 text-danger" />
                     </div>
                     <div>
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Delete Account</h2>
-                        <p className="text-sm text-gray-500">This action cannot be undone</p>
+                        <h2 className="text-xl font-bold text-foreground">Delete Account</h2>
+                        <p className="text-sm text-muted-foreground">This action cannot be undone</p>
                     </div>
                 </div>
 
-                {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm font-medium">{error}</div>}
+                {error && <div className="bg-danger/10 text-danger p-3 rounded-lg mb-4 text-sm font-medium">{error}</div>}
 
                 <div className="space-y-4 mb-6">
                     <div>
-                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Password</label>
+                        <label className="block text-sm font-semibold text-foreground mb-2">Password</label>
                         <input
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            className="w-full px-4 py-3 bg-card border border-border rounded-lg"
                             placeholder="Enter your password"
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Type "DELETE" to confirm</label>
+                        <label className="block text-sm font-semibold text-foreground mb-2">Type "DELETE" to confirm</label>
                         <input
                             type="text"
                             value={confirmation}
                             onChange={(e) => setConfirmation(e.target.value)}
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            className="w-full px-4 py-3 bg-card border border-border rounded-lg"
                             placeholder="DELETE"
                         />
                     </div>
                 </div>
 
                 <div className="flex gap-3">
-                    <button onClick={onClose} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold rounded-xl">
+                    <button onClick={onClose} className="flex-1 py-3 bg-muted text-foreground font-bold rounded-xl">
                         Cancel
                     </button>
                     <button
                         onClick={handleDelete}
                         disabled={confirmation !== 'DELETE' || !password || loading}
-                        className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl disabled:opacity-50"
+                        className="flex-1 py-3 bg-danger hover:bg-red-700 text-white font-bold rounded-xl disabled:opacity-50"
                     >
                         {loading ? 'Deleting...' : 'Delete Account'}
                     </button>

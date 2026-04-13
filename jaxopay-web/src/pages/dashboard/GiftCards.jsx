@@ -150,8 +150,8 @@ const GiftCards = () => {
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Gift Cards</h1>
-                    <p className="text-gray-600 dark:text-gray-400">Buy, sell, and manage gift cards from global brands</p>
+                    <h1 className="text-2xl font-bold text-foreground">Gift Cards</h1>
+                    <p className="text-muted-foreground">Buy, sell, and manage gift cards from global brands</p>
                 </div>
                 <button
                     onClick={() => setShowSellModal(true)}
@@ -164,20 +164,20 @@ const GiftCards = () => {
 
             {/* Alerts */}
             {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                    <p className="text-red-700 dark:text-red-300">{error}</p>
-                    <button onClick={() => setError(null)} className="text-red-500 underline text-sm mt-1">Dismiss</button>
+                <div className="bg-danger/10 border border-danger/20 rounded-lg p-4">
+                    <p className="text-danger">{error}</p>
+                    <button onClick={() => setError(null)} className="text-danger underline text-sm mt-1">Dismiss</button>
                 </div>
             )}
             {success && (
-                <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-4">
-                    <p className="text-primary-700 dark:text-primary-300">{success}</p>
+                <div className="bg-primary-50 border border-primary-200 rounded-lg p-4">
+                    <p className="text-primary-700">{success}</p>
                     <button onClick={() => setSuccess(null)} className="text-primary-500 underline text-sm mt-1">Dismiss</button>
                 </div>
             )}
 
             {/* Tabs */}
-            <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg w-fit">
+            <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
                 {[
                     { id: 'buy', label: 'Browse Cards', icon: ShoppingCart },
                     { id: 'my-cards', label: 'My Cards', icon: Gift },
@@ -186,8 +186,8 @@ const GiftCards = () => {
                         key={t.id}
                         onClick={() => setTab(t.id)}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${tab === t.id
-                            ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-600 dark:text-gray-400'
+                            ? 'bg-card text-foreground shadow-sm'
+                            : 'text-muted-foreground'
                             }`}
                     >
                         <t.icon className="w-4 h-4" />
@@ -202,20 +202,20 @@ const GiftCards = () => {
                     {/* Search and Categories */}
                     <div className="flex flex-col sm:flex-row gap-4">
                         <div className="relative flex-1">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                             <input
                                 type="text"
                                 placeholder="Search gift cards..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
+                                className="w-full pl-10 pr-4 py-2.5 bg-card border border-border rounded-lg"
                             />
                         </div>
                         <div className="sm:w-48">
                             <select
                                 value={selectedCountry}
                                 onChange={(e) => setSelectedCountry(e.target.value)}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg appearance-none cursor-pointer"
+                                className="w-full px-4 py-2.5 bg-card border border-border rounded-lg appearance-none cursor-pointer"
                             >
                                 {countries.map((c) => (
                                     <option key={c.isoName} value={c.isoName}>
@@ -226,9 +226,9 @@ const GiftCards = () => {
                         </div>
                         <button
                             onClick={fetchGiftCards}
-                            className="p-2.5 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                            className="p-2.5 bg-muted rounded-lg hover:bg-muted transition-colors"
                         >
-                            <RefreshCw className={`w-5 h-5 text-gray-600 dark:text-gray-400 ${loading ? 'animate-spin' : ''}`} />
+                            <RefreshCw className={`w-5 h-5 text-muted-foreground ${loading ? 'animate-spin' : ''}`} />
                         </button>
                     </div>
 
@@ -240,7 +240,7 @@ const GiftCards = () => {
                                 onClick={() => setSelectedCategory(cat.id)}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium whitespace-nowrap transition-all ${selectedCategory === cat.id
                                     ? 'bg-primary-600 text-white shadow-md scale-105'
-                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                    : 'bg-muted text-foreground hover:bg-muted'
                                     }`}
                             >
                                 <span>{cat.icon}</span>
@@ -256,9 +256,9 @@ const GiftCards = () => {
                         </div>
                     ) : giftCards.length === 0 ? (
                         <div className="text-center py-12">
-                            <Gift className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No gift cards found</h3>
-                            <p className="text-gray-600 dark:text-gray-400">Try adjusting your search or filters</p>
+                            <Gift className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                            <h3 className="text-lg font-medium text-foreground mb-2">No gift cards found</h3>
+                            <p className="text-muted-foreground">Try adjusting your search or filters</p>
                         </div>
                     ) : (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -289,15 +289,15 @@ const GiftCards = () => {
                                     >
                                         <div className="aspect-[3/2] bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
                                             {card.image_url ? (
-                                                <img src={card.image_url} alt={card.productName} className="w-full h-full object-contain bg-white" />
+                                                <img src={card.image_url} alt={card.productName} className="w-full h-full object-contain bg-card" />
                                             ) : (
                                                 <Gift className="w-12 h-12 text-white/50" />
                                             )}
                                         </div>
-                                        <h3 className="font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 transition-colors line-clamp-1 text-sm">
+                                        <h3 className="font-semibold text-foreground mb-1 group-hover:text-primary-600 transition-colors line-clamp-1 text-sm">
                                             {card.productName}
                                         </h3>
-                                        <p className="text-xs text-gray-500 mb-2">{card.countryCode} • {card.currency}</p>
+                                        <p className="text-xs text-muted-foreground mb-2">{card.countryCode} • {card.currency}</p>
                                         <div className="flex items-center justify-between">
                                             <span className="text-xs font-medium text-primary-600">
                                                 {card.denominationType === 'FIXED'
@@ -318,9 +318,9 @@ const GiftCards = () => {
                 <div>
                     {myCards.length === 0 ? (
                         <div className="text-center py-12">
-                            <Gift className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No gift cards yet</h3>
-                            <p className="text-gray-600 dark:text-gray-400 mb-4">Purchase a gift card to get started</p>
+                            <Gift className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                            <h3 className="text-lg font-medium text-foreground mb-2">No gift cards yet</h3>
+                            <p className="text-muted-foreground mb-4">Purchase a gift card to get started</p>
                             <button
                                 onClick={() => setTab('buy')}
                                 className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
@@ -339,35 +339,35 @@ const GiftCards = () => {
                                                 <Gift className="w-8 h-8 text-white/50" />
                                             </div>
                                             <div className="flex-1">
-                                                <h3 className="font-semibold text-gray-900 dark:text-white">{card.product_name || card.brand_name}</h3>
+                                                <h3 className="font-semibold text-foreground">{card.product_name || card.brand_name}</h3>
                                                 <p className="text-xl font-bold text-primary-600 mt-1">
                                                     {formatCurrency(card.amount, card.currency)}
                                                 </p>
 
                                                 <div className="mt-2">
                                                     {revealData ? (
-                                                        <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
+                                                        <div className="bg-muted p-2 rounded border border-border">
                                                             <div className="flex justify-between items-center mb-1">
-                                                                <span className="text-xs text-gray-500">Card Code</span>
+                                                                <span className="text-xs text-muted-foreground">Card Code</span>
                                                                 <div className="flex gap-2">
                                                                     <button onClick={() => {
                                                                         navigator.clipboard.writeText(revealData.code);
                                                                         setSuccess('Code copied to clipboard!');
-                                                                    }} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded">
-                                                                        <Copy className="w-3 h-3 text-gray-500" />
+                                                                    }} className="p-1 hover:bg-muted rounded">
+                                                                        <Copy className="w-3 h-3 text-muted-foreground" />
                                                                     </button>
-                                                                    <button onClick={() => handleRevealCode(card.transaction_ref)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded">
-                                                                        <EyeOff className="w-3 h-3 text-gray-500" />
+                                                                    <button onClick={() => handleRevealCode(card.transaction_ref)} className="p-1 hover:bg-muted rounded">
+                                                                        <EyeOff className="w-3 h-3 text-muted-foreground" />
                                                                     </button>
                                                                 </div>
                                                             </div>
-                                                            <code className="text-sm font-mono text-gray-900 dark:text-white break-all">
+                                                            <code className="text-sm font-mono text-foreground break-all">
                                                                 {revealData.code}
                                                             </code>
                                                             {revealData.pin && (
-                                                                <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                                                                    <span className="text-xs text-gray-500 block mb-1">PIN</span>
-                                                                    <code className="text-sm font-mono text-gray-900 dark:text-white break-all">
+                                                                <div className="mt-2 pt-2 border-t border-border">
+                                                                    <span className="text-xs text-muted-foreground block mb-1">PIN</span>
+                                                                    <code className="text-sm font-mono text-foreground break-all">
                                                                         {revealData.pin}
                                                                     </code>
                                                                 </div>
@@ -384,11 +384,11 @@ const GiftCards = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-sm">
-                                            <span className="text-gray-500">Purchased {formatDateTime(card.created_at)}</span>
+                                        <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-sm">
+                                            <span className="text-muted-foreground">Purchased {formatDateTime(card.created_at)}</span>
                                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${card.status === 'completed' ? 'bg-primary-100 text-primary-700' :
-                                                card.status === 'failed' ? 'bg-red-100 text-red-700' :
-                                                    'bg-yellow-100 text-yellow-700'
+                                                card.status === 'failed' ? 'bg-danger/10 text-danger' :
+                                                    'bg-warning/10 text-yellow-700'
                                                 }`}>
                                                 {card.status}
                                             </span>
@@ -455,38 +455,38 @@ const BuyGiftCardModal = ({ card, wallets, selectedWallet, setSelectedWallet, on
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={onClose}
         >
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Buy Gift Card</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                        <X className="w-5 h-5 text-gray-500" />
+                    <h2 className="text-xl font-bold text-foreground">Buy Gift Card</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-muted rounded-lg">
+                        <X className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
 
                 {/* Card Preview */}
-                <div className="aspect-[3/2] bg-white border border-gray-100 dark:border-gray-700 rounded-xl mb-6 flex items-center justify-center overflow-hidden p-4">
+                <div className="aspect-[3/2] bg-card border border-border rounded-xl mb-6 flex items-center justify-center overflow-hidden p-4">
                     {card.image_url ? (
                         <img src={card.image_url} alt={card.productName} className="object-contain max-h-full" />
                     ) : (
-                        <div className="text-center text-gray-400">
+                        <div className="text-center text-muted-foreground">
                             <Gift className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                            <p className="font-bold text-sm text-gray-600 dark:text-gray-300">{card.productName}</p>
+                            <p className="font-bold text-sm text-muted-foreground">{card.productName}</p>
                         </div>
                     )}
                 </div>
 
                 {/* Denomination Selection */}
                 <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                    <label className="block text-sm font-medium text-foreground mb-3">
                         Select Amount ({card.currency})
                     </label>
                     {isFixed ? (
@@ -497,7 +497,7 @@ const BuyGiftCardModal = ({ card, wallets, selectedWallet, setSelectedWallet, on
                                     onClick={() => setAmount(denom)}
                                     className={`py-3 rounded-lg font-semibold transition-colors ${amount === denom
                                         ? 'bg-primary-600 text-white'
-                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                                        : 'bg-muted text-foreground'
                                         }`}
                                 >
                                     {formatCurrency(denom, card.currency)}
@@ -512,23 +512,23 @@ const BuyGiftCardModal = ({ card, wallets, selectedWallet, setSelectedWallet, on
                                 max={card.maxAmount}
                                 value={amount}
                                 onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
-                                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-lg font-medium"
+                                className="w-full px-4 py-3 bg-card border border-border rounded-lg text-lg font-medium"
                                 placeholder={`Enter amount (${card.minAmount} - ${card.maxAmount})`}
                             />
-                            <p className="text-xs text-gray-500 mt-1">Specify an amount between {formatCurrency(card.minAmount, card.currency)} - {formatCurrency(card.maxAmount, card.currency)}</p>
+                            <p className="text-xs text-muted-foreground mt-1">Specify an amount between {formatCurrency(card.minAmount, card.currency)} - {formatCurrency(card.maxAmount, card.currency)}</p>
                         </div>
                     )}
                 </div>
 
                 {/* Wallet Selection */}
                 <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-foreground mb-2">
                         Pay From Wallet
                     </label>
                     <select
                         value={selectedWallet}
                         onChange={(e) => setSelectedWallet(e.target.value)}
-                        className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                        className="w-full px-4 py-3 bg-card border border-border rounded-lg"
                     >
                         {wallets.map((w) => (
                             <option key={w.id} value={w.id}>
@@ -540,7 +540,7 @@ const BuyGiftCardModal = ({ card, wallets, selectedWallet, setSelectedWallet, on
 
                 {/* Actions */}
                 <div className="flex gap-3">
-                    <button onClick={onClose} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-lg">
+                    <button onClick={onClose} className="flex-1 py-3 bg-muted text-foreground font-semibold rounded-lg">
                         Cancel
                     </button>
                     <button
@@ -586,62 +586,62 @@ const SellGiftCardModal = ({ onClose, onSuccess }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={onClose}
         >
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Sell Gift Card</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                        <X className="w-5 h-5 text-gray-500" />
+                    <h2 className="text-xl font-bold text-foreground">Sell Gift Card</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-muted rounded-lg">
+                        <X className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
 
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Brand</label>
+                        <label className="block text-sm font-medium text-foreground mb-2">Brand</label>
                         <input
                             type="text"
                             value={brand}
                             onChange={(e) => setBrand(e.target.value)}
                             placeholder="e.g. Amazon, iTunes, Steam"
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            className="w-full px-4 py-3 bg-card border border-border rounded-lg"
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Value (USD)</label>
+                        <label className="block text-sm font-medium text-foreground mb-2">Value (USD)</label>
                         <input
                             type="number"
                             value={value}
                             onChange={(e) => setValue(e.target.value)}
                             placeholder="Card value"
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            className="w-full px-4 py-3 bg-card border border-border rounded-lg"
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Gift Card Code</label>
+                        <label className="block text-sm font-medium text-foreground mb-2">Gift Card Code</label>
                         <input
                             type="text"
                             value={code}
                             onChange={(e) => setCode(e.target.value)}
                             placeholder="Enter gift card code"
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            className="w-full px-4 py-3 bg-card border border-border rounded-lg"
                         />
                     </div>
                 </div>
 
-                <p className="text-sm text-gray-500 mt-4 mb-6">
+                <p className="text-sm text-muted-foreground mt-4 mb-6">
                     We'll verify your card and credit your wallet within 24 hours. You'll receive 80-90% of the card value.
                 </p>
 
                 <div className="flex gap-3">
-                    <button onClick={onClose} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-lg">
+                    <button onClick={onClose} className="flex-1 py-3 bg-muted text-foreground font-semibold rounded-lg">
                         Cancel
                     </button>
                     <button

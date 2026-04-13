@@ -22,17 +22,17 @@ import { formatCurrency } from '../../utils/formatters';
 const TIER_INFO = {
     tier_0: {
         name: 'Unverified',
-        color: 'bg-gray-100 text-gray-700',
+        color: 'bg-muted text-foreground',
         limits: { daily: 100, monthly: 500, card: false, crypto: false },
     },
     tier_1: {
         name: 'Basic',
-        color: 'bg-blue-100 text-blue-700',
+        color: 'bg-primary/10 text-blue-700',
         limits: { daily: 1000, monthly: 5000, card: false, crypto: true },
     },
     tier_2: {
         name: 'Verified',
-        color: 'bg-accent-100 text-accent-700',
+        color: 'bg-primary/10 text-primary',
         limits: { daily: 10000, monthly: 50000, card: true, crypto: true },
     },
 };
@@ -395,7 +395,7 @@ const KYC = () => {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-600"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
             </div>
         );
     }
@@ -404,29 +404,29 @@ const KYC = () => {
         <div className="space-y-6">
             {/* Page Header */}
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">KYC Verification</h1>
-                <p className="text-gray-600 dark:text-gray-400">Verify your identity to unlock higher limits</p>
+                <h1 className="text-2xl font-bold text-foreground">KYC Verification</h1>
+                <p className="text-muted-foreground">Verify your identity to unlock higher limits</p>
             </div>
 
             {/* Alerts */}
             {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                    <p className="text-red-700 dark:text-red-300">{error}</p>
-                    <button onClick={() => setError(null)} className="text-red-500 underline text-sm mt-1">Dismiss</button>
+                <div className="bg-danger/10 border border-danger/20 rounded-lg p-4">
+                    <p className="text-danger">{error}</p>
+                    <button onClick={() => setError(null)} className="text-danger underline text-sm mt-1">Dismiss</button>
                 </div>
             )}
             {success && (
-                <div className="bg-accent-50 dark:bg-accent-900/20 border border-accent-200 dark:border-accent-800 rounded-lg p-4">
-                    <p className="text-accent-700 dark:text-accent-300">{success}</p>
-                    <button onClick={() => setSuccess(null)} className="text-accent-500 underline text-sm mt-1">Dismiss</button>
+                <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
+                    <p className="text-primary">{success}</p>
+                    <button onClick={() => setSuccess(null)} className="text-primary underline text-sm mt-1">Dismiss</button>
                 </div>
             )}
 
             {/* Current Status Card */}
-            <div className="card bg-gradient-to-br from-accent-600 to-emerald-700 text-white shadow-lg shadow-accent-500/20">
+            <div className="card bg-gradient-to-br from-primary to-accent text-white shadow-lg shadow-primary/20">
                 <div className="flex items-start justify-between">
                     <div>
-                        <p className="text-primary-100 text-sm mb-1">Current Verification Level</p>
+                        <p className="text-white/80 text-sm mb-1">Current Verification Level</p>
                         <div className="flex items-center gap-3 mb-4">
                             <h2 className="text-2xl font-bold">{tierData.name}</h2>
                             <span className={`px-3 py-1 rounded-full text-sm font-medium ${tierData.color}`}>
@@ -440,7 +440,7 @@ const KYC = () => {
                             </div>
                         )}
                     </div>
-                    <div className="p-4 bg-white/10 rounded-2xl">
+                    <div className="p-4 bg-card/10 rounded-2xl">
                         <Shield className="w-12 h-12" />
                     </div>
                 </div>
@@ -448,44 +448,44 @@ const KYC = () => {
 
             {/* Tier Comparison */}
             <div className="card">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Verification Tiers</h3>
+                <h3 className="text-lg font-semibold text-foreground mb-4">Verification Tiers</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {Object.entries(TIER_INFO).map(([tier, info]) => (
                         <div
                             key={tier}
                             className={`p-4 rounded-xl border-2 ${currentTier === tier
-                                ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
-                                : 'border-gray-200 dark:border-gray-700'
+                                ? 'border-primary bg-primary/10'
+                                : 'border-border'
                                 }`}
                         >
                             <div className="flex items-center justify-between mb-3">
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${info.color}`}>
                                     {info.name}
                                 </span>
-                                {currentTier === tier && <Check className="w-5 h-5 text-accent-600" />}
+                                {currentTier === tier && <Check className="w-5 h-5 text-primary" />}
                             </div>
                             <div className="space-y-2 text-sm">
                                 <div className="flex justify-between">
-                                    <span className="text-gray-500">Daily Limit</span>
-                                    <span className="font-medium text-gray-900 dark:text-white">
+                                    <span className="text-muted-foreground">Daily Limit</span>
+                                    <span className="font-medium text-foreground">
                                         {formatCurrency(info.limits.daily, 'USD')}
                                     </span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-gray-500">Monthly Limit</span>
-                                    <span className="font-medium text-gray-900 dark:text-white">
+                                    <span className="text-muted-foreground">Monthly Limit</span>
+                                    <span className="font-medium text-foreground">
                                         {formatCurrency(info.limits.monthly, 'USD')}
                                     </span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-gray-500">Virtual Cards</span>
-                                    <span className={info.limits.crypto ? 'text-accent-600' : 'text-red-600'}>
+                                    <span className="text-muted-foreground">Virtual Cards</span>
+                                    <span className={info.limits.crypto ? 'text-primary' : 'text-danger'}>
                                         {info.limits.card ? '✓' : '✗'}
                                     </span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-gray-500">Crypto Trading</span>
-                                    <span className={info.limits.crypto ? 'text-primary-600' : 'text-red-600'}>
+                                    <span className="text-muted-foreground">Crypto Trading</span>
+                                    <span className={info.limits.crypto ? 'text-primary' : 'text-danger'}>
                                         {info.limits.crypto ? '✓' : '✗'}
                                     </span>
                                 </div>
@@ -497,13 +497,13 @@ const KYC = () => {
 
             {/* Smile ID — liveness + ID capture (primary when configured) */}
             {smileConfigured && currentTier !== 'tier_2' && !showSmileWizard && !showUploadForm && (
-                <div className="card border-2 border-accent-200 dark:border-accent-800">
+                <div className="card border-2 border-primary/20">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>
-                            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
+                            <h3 className="font-semibold text-foreground mb-1">
                                 Verify with live face check
                             </h3>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                            <p className="text-sm text-muted-foreground">
                                 Complete guided camera capture: liveness photos, selfie, and ID images. Your details are
                                 checked against official records. Use Chrome, Safari, or Edge on HTTPS (or localhost).
                             </p>
@@ -514,7 +514,7 @@ const KYC = () => {
                                 setShowSmileWizard(true);
                                 setError(null);
                             }}
-                            className="shrink-0 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-medium rounded-lg shadow-lg shadow-accent-500/20"
+                            className="shrink-0 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg shadow-lg shadow-primary/20"
                         >
                             Start liveness verification
                         </button>
@@ -529,45 +529,45 @@ const KYC = () => {
                     className="card"
                 >
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Identity details</h3>
+                        <h3 className="text-lg font-semibold text-foreground">Identity details</h3>
                         <button
                             type="button"
                             onClick={() => {
                                 setShowSmileWizard(false);
                                 setError(null);
                             }}
-                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                            className="p-2 hover:bg-muted rounded-lg"
                         >
-                            <X className="w-5 h-5 text-gray-500" />
+                            <X className="w-5 h-5 text-muted-foreground" />
                         </button>
                     </div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    <p className="text-sm text-muted-foreground mb-4">
                         Choose your country and ID type — values match what your verification provider expects for
                         that country.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            <label className="block text-sm font-medium text-foreground mb-1">
                                 First name
                             </label>
                             <input
                                 value={smileForm.first_name}
                                 onChange={(e) => setSmileForm((s) => ({ ...s, first_name: e.target.value }))}
-                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                className="w-full px-3 py-2 rounded-lg border border-border bg-card"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            <label className="block text-sm font-medium text-foreground mb-1">
                                 Last name
                             </label>
                             <input
                                 value={smileForm.last_name}
                                 onChange={(e) => setSmileForm((s) => ({ ...s, last_name: e.target.value }))}
-                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                className="w-full px-3 py-2 rounded-lg border border-border bg-card"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            <label className="block text-sm font-medium text-foreground mb-1">
                                 Country
                             </label>
                             <select
@@ -575,7 +575,7 @@ const KYC = () => {
                                 onChange={(e) =>
                                     setSmileForm((s) => ({ ...s, country: e.target.value.toUpperCase() }))
                                 }
-                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                className="w-full px-3 py-2 rounded-lg border border-border bg-card"
                             >
                                 {SMILE_ISO2_COUNTRIES.map((c) => (
                                     <option key={c.code} value={c.code}>
@@ -585,13 +585,13 @@ const KYC = () => {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            <label className="block text-sm font-medium text-foreground mb-1">
                                 ID type
                             </label>
                             <select
                                 value={smileForm.id_type}
                                 onChange={(e) => setSmileForm((s) => ({ ...s, id_type: e.target.value }))}
-                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                className="w-full px-3 py-2 rounded-lg border border-border bg-card"
                             >
                                 {smileIdTypeOptions.map((opt) => (
                                     <option key={opt.value} value={opt.value}>
@@ -601,24 +601,24 @@ const KYC = () => {
                             </select>
                         </div>
                         <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            <label className="block text-sm font-medium text-foreground mb-1">
                                 ID number
                             </label>
                             <input
                                 value={smileForm.id_number}
                                 onChange={(e) => setSmileForm((s) => ({ ...s, id_number: e.target.value }))}
-                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                className="w-full px-3 py-2 rounded-lg border border-border bg-card"
                             />
                         </div>
                         <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            <label className="block text-sm font-medium text-foreground mb-1">
                                 Date of birth (optional)
                             </label>
                             <input
                                 type="date"
                                 value={smileForm.dob}
                                 onChange={(e) => setSmileForm((s) => ({ ...s, dob: e.target.value }))}
-                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                className="w-full px-3 py-2 rounded-lg border border-border bg-card"
                             />
                         </div>
                     </div>
@@ -633,7 +633,7 @@ const KYC = () => {
                             !smileForm.id_number.trim()
                         }
                         onClick={() => setShowCameraModal(true)}
-                        className="mt-6 w-full md:w-auto px-6 py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg disabled:opacity-50"
+                        className="mt-6 w-full md:w-auto px-6 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg disabled:opacity-50"
                     >
                         Open camera — liveness &amp; ID
                     </button>
@@ -642,10 +642,10 @@ const KYC = () => {
 
             {showCameraModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-4 relative">
+                    <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-4 relative">
                         <button
                             type="button"
-                            className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-gray-100 dark:bg-gray-800"
+                            className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-muted"
                             onClick={() => {
                                 if (smileSubmittingRef.current) return;
                                 setShowCameraModal(false);
@@ -653,13 +653,13 @@ const KYC = () => {
                         >
                             <X className="w-5 h-5" />
                         </button>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 pr-10">
+                        <p className="text-sm text-muted-foreground mb-3 pr-10">
                             Allow camera access, then follow on-screen steps: liveness capture, selfie review, then ID
                             front (and back if prompted).
                         </p>
                         <div ref={smileCameraHostRef} className="min-h-[320px] w-full relative" />
                         {submitting && (
-                            <div className="mt-3 text-center text-sm font-medium text-accent-700 dark:text-accent-300">
+                            <div className="mt-3 text-center text-sm font-medium text-primary">
                                 Uploading images — please keep this page open…
                             </div>
                         )}
@@ -669,19 +669,19 @@ const KYC = () => {
 
             {showManualSelfieCamera && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl max-w-lg w-full p-4 relative">
+                    <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-lg w-full p-4 relative max-h-[90vh] overflow-y-auto">
                         <button
                             type="button"
-                            className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-gray-100 dark:bg-gray-800"
+                            className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-muted"
                             onClick={() => setShowManualSelfieCamera(false)}
                             aria-label="Close camera"
                         >
                             <X className="w-5 h-5" />
                         </button>
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white pr-10 mb-2">
+                        <h3 className="text-lg font-semibold text-foreground pr-10 mb-2">
                             Selfie with your ID
                         </h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                        <p className="text-sm text-muted-foreground mb-3">
                             Position your face and ID document in the frame, then capture. Use good lighting and avoid
                             glare on the ID.
                         </p>
@@ -696,14 +696,14 @@ const KYC = () => {
                             <button
                                 type="button"
                                 onClick={captureManualSelfie}
-                                className="flex-1 py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg"
+                                className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg"
                             >
                                 Capture photo
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setShowManualSelfieCamera(false)}
-                                className="flex-1 py-3 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium rounded-lg"
+                                className="flex-1 py-3 bg-muted text-foreground font-medium rounded-lg"
                             >
                                 Cancel
                             </button>
@@ -717,10 +717,10 @@ const KYC = () => {
                 <div className="card">
                     <div className="flex items-center justify-between">
                         <div>
-                            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
+                            <h3 className="font-semibold text-foreground mb-1">
                                 {smileConfigured ? 'Other option: manual upload' : `Upgrade to ${currentTier === 'tier_0' ? 'Basic' : 'Verified'}`}
                             </h3>
-                            <p className="text-sm text-gray-500">
+                            <p className="text-sm text-muted-foreground">
                                 {smileConfigured
                                     ? 'Upload documents for manual review if you cannot use the camera flow.'
                                     : currentTier === 'tier_0'
@@ -730,7 +730,7 @@ const KYC = () => {
                         </div>
                         <button
                             onClick={() => setShowUploadForm(true)}
-                            className="px-4 py-2 bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 text-white font-medium rounded-lg"
+                            className="px-4 py-2 bg-muted hover:bg-card text-white font-medium rounded-lg"
                         >
                             {smileConfigured ? 'Manual upload' : 'Start Verification'}
                         </button>
@@ -746,29 +746,29 @@ const KYC = () => {
                     className="card"
                 >
                     <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Submit Documents</h3>
+                        <h3 className="text-lg font-semibold text-foreground">Submit Documents</h3>
                         <button
                             onClick={() => {
                                 setShowUploadForm(false);
                                 resetForm();
                             }}
-                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                            className="p-2 hover:bg-muted rounded-lg"
                         >
-                            <X className="w-5 h-5 text-gray-500" />
+                            <X className="w-5 h-5 text-muted-foreground" />
                         </button>
                     </div>
 
                     <div className="space-y-6">
                         {currentTier === 'tier_1' && (
-                            <div className="rounded-lg border border-accent-200 dark:border-accent-800 bg-accent-50/50 dark:bg-accent-900/10 px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                                <strong className="text-gray-900 dark:text-white">Tier 2 (verified):</strong> submit
+                            <div className="rounded-lg border border-primary/20 bg-primary/10/50 px-4 py-3 text-sm text-foreground">
+                                <strong className="text-foreground">Tier 2 (verified):</strong> submit
                                 your NIN, BVN, and proof of address (utility bill or bank statement dated within 3
                                 months). You can upload each as a separate submission.
                             </div>
                         )}
                         {/* Document Type Selection */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                            <label className="block text-sm font-medium text-foreground mb-3">
                                 Document Type
                             </label>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -777,11 +777,11 @@ const KYC = () => {
                                         key={doc.id}
                                         onClick={() => setDocumentType(doc.id)}
                                         className={`p-4 rounded-xl border-2 text-center transition-colors ${documentType === doc.id
-                                            ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
-                                            : 'border-gray-200 dark:border-gray-700'
+                                            ? 'border-primary bg-primary/10'
+                                            : 'border-border'
                                             }`}
                                     >
-                                        <doc.icon className={`w-6 h-6 mx-auto mb-2 ${documentType === doc.id ? 'text-accent-600' : 'text-gray-400'
+                                        <doc.icon className={`w-6 h-6 mx-auto mb-2 ${documentType === doc.id ? 'text-primary' : 'text-muted-foreground'
                                             }`} />
                                         <p className="text-sm font-medium">{doc.name}</p>
                                     </button>
@@ -792,7 +792,7 @@ const KYC = () => {
                         {/* Document Number */}
                         <div>
                             <label
-                                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                                className="block text-sm font-medium text-foreground mb-2"
                                 htmlFor="kyc-manual-document-number"
                             >
                                 Document number{' '}
@@ -816,7 +816,7 @@ const KYC = () => {
                                         ? 'e.g. account or reference (optional)'
                                         : 'Enter document number'
                                 }
-                                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                                className="w-full px-4 py-3 bg-card border border-border rounded-lg"
                             />
                             {documentType && docNumberSuggestions.length > 0 && (
                                 <datalist id="kyc-manual-doc-number-suggestions">
@@ -826,7 +826,7 @@ const KYC = () => {
                                 </datalist>
                             )}
                             {documentType && docNumberSuggestions.length > 0 && (
-                                <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                <p className="mt-1.5 text-xs text-muted-foreground">
                                     Suggestions from your previous entries for this document type (browser
                                     autocomplete).
                                 </p>
@@ -837,23 +837,23 @@ const KYC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {/* Front of Document */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                <label className="block text-sm font-medium text-foreground mb-2">
                                     Front of Document *
                                 </label>
                                 <div
                                     onClick={() => frontInputRef.current?.click()}
-                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentFront ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20' : 'border-gray-300 hover:border-accent-500'
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentFront ? 'border-primary bg-primary/10' : 'border-border hover:border-primary'
                                         }`}
                                 >
                                     {documentFront ? (
-                                        <div className="text-accent-600">
+                                        <div className="text-primary">
                                             <Check className="w-8 h-8 mx-auto mb-2" />
                                             <p className="text-sm">{documentFront.name}</p>
                                         </div>
                                     ) : (
                                         <>
-                                            <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                                            <p className="text-sm text-gray-500">Click to upload</p>
+                                            <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                                            <p className="text-sm text-muted-foreground">Click to upload</p>
                                         </>
                                     )}
                                 </div>
@@ -868,23 +868,23 @@ const KYC = () => {
 
                             {/* Back of Document */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                <label className="block text-sm font-medium text-foreground mb-2">
                                     Back of Document
                                 </label>
                                 <div
                                     onClick={() => backInputRef.current?.click()}
-                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentBack ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 hover:border-primary-500'
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentBack ? 'border-primary-500 bg-primary-50' : 'border-border hover:border-primary-500'
                                         }`}
                                 >
                                     {documentBack ? (
-                                        <div className="text-primary-600">
+                                        <div className="text-primary">
                                             <Check className="w-8 h-8 mx-auto mb-2" />
                                             <p className="text-sm">{documentBack.name}</p>
                                         </div>
                                     ) : (
                                         <>
-                                            <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                                            <p className="text-sm text-gray-500">Click to upload</p>
+                                            <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                                            <p className="text-sm text-muted-foreground">Click to upload</p>
                                         </>
                                     )}
                                 </div>
@@ -899,10 +899,10 @@ const KYC = () => {
 
                             {/* Selfie with ID — camera or gallery */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <label className="block text-sm font-medium text-foreground mb-1">
                                     Selfie with document
                                 </label>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                                <p className="text-xs text-muted-foreground mb-2">
                                     Recommended: use the camera so your face and ID are visible together. Optional but
                                     speeds up review.
                                 </p>
@@ -913,7 +913,7 @@ const KYC = () => {
                                             setError(null);
                                             setShowManualSelfieCamera(true);
                                         }}
-                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent-600 hover:bg-accent-700 text-white text-sm font-medium"
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium"
                                     >
                                         <Camera className="w-4 h-4" />
                                         Use camera
@@ -921,30 +921,30 @@ const KYC = () => {
                                     <button
                                         type="button"
                                         onClick={() => selfieInputRef.current?.click()}
-                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted"
                                     >
                                         <Upload className="w-4 h-4" />
                                         Upload image
                                     </button>
                                 </div>
                                 <div
-                                    className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${selfie ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300'
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${selfie ? 'border-primary-500 bg-primary-50' : 'border-border'
                                         }`}
                                 >
                                     {selfie ? (
-                                        <div className="text-primary-600">
+                                        <div className="text-primary">
                                             <Check className="w-8 h-8 mx-auto mb-2" />
                                             <p className="text-sm font-medium">{selfie.name}</p>
                                             <button
                                                 type="button"
                                                 onClick={() => setSelfie(null)}
-                                                className="mt-2 text-xs text-red-600 dark:text-red-400 underline"
+                                                className="mt-2 text-xs text-danger underline"
                                             >
                                                 Remove
                                             </button>
                                         </div>
                                     ) : (
-                                        <p className="text-sm text-gray-500">No selfie added yet</p>
+                                        <p className="text-sm text-muted-foreground">No selfie added yet</p>
                                     )}
                                 </div>
                                 <input
@@ -959,11 +959,11 @@ const KYC = () => {
                         </div>
 
                         {/* Info */}
-                        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 flex gap-3">
-                            <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-                            <div className="text-sm text-blue-700 dark:text-blue-300">
+                        <div className="bg-primary/10 rounded-lg p-4 flex gap-3">
+                            <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                            <div className="text-sm text-blue-700">
                                 <p className="font-medium mb-1">Tips for quick approval:</p>
-                                <ul className="list-disc list-inside space-y-1 text-blue-600 dark:text-blue-400">
+                                <ul className="list-disc list-inside space-y-1 text-primary">
                                     <li>Ensure all document details are clearly visible</li>
                                     <li>Photos should be well-lit and in focus</li>
                                     <li>Document should not be expired</li>
@@ -982,7 +982,7 @@ const KYC = () => {
                                     documentType !== 'utility_bill' &&
                                     !documentNumber.trim())
                             }
-                            className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg disabled:opacity-50 shadow-lg shadow-accent-500/20"
+                            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg disabled:opacity-50 shadow-lg shadow-primary/20"
                         >
                             {submitting ? 'Submitting...' : 'Submit for Verification'}
                         </button>
@@ -993,14 +993,14 @@ const KYC = () => {
             {/* Previous Submissions */}
             {documents.length > 0 && (
                 <div className="card">
-                    <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Submitted Documents</h3>
+                    <h3 className="font-semibold text-foreground mb-4">Submitted Documents</h3>
                     <div className="space-y-3">
                         {documents.map((doc) => (
-                            <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                            <div key={doc.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                                 <div className="flex items-center gap-3">
-                                    <FileText className="w-5 h-5 text-gray-400" />
+                                    <FileText className="w-5 h-5 text-muted-foreground" />
                                     <div>
-                                        <p className="font-medium text-gray-900 dark:text-white">
+                                        <p className="font-medium text-foreground">
                                             {doc.document_type === 'smile_biometric_kyc'
                                                 ? 'Biometric (liveness)'
                                                 : doc.document_type === 'smile_basic_kyc'
@@ -1013,12 +1013,12 @@ const KYC = () => {
                                                         ? 'Proof of address'
                                                         : doc.document_type?.replace(/_/g, ' ').toUpperCase()}
                                         </p>
-                                        <p className="text-sm text-gray-500">{doc.document_number}</p>
+                                        <p className="text-sm text-muted-foreground">{doc.document_number}</p>
                                     </div>
                                 </div>
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${doc.status === 'approved' ? 'bg-accent-100 text-accent-700' :
-                                    doc.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                                        'bg-yellow-100 text-yellow-700'
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${doc.status === 'approved' ? 'bg-primary/10 text-primary' :
+                                    doc.status === 'rejected' ? 'bg-danger/10 text-danger' :
+                                        'bg-warning/10 text-yellow-700'
                                     }`}>
                                     {doc.status}
                                 </span>

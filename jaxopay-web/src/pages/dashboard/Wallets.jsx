@@ -249,7 +249,7 @@ const Wallets = () => {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-600"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
             </div>
         );
     }
@@ -259,12 +259,12 @@ const Wallets = () => {
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Wallets</h1>
-                    <p className="text-gray-600 dark:text-gray-400">Manage your multi-currency wallets</p>
+                    <h1 className="text-2xl font-bold text-foreground">Wallets</h1>
+                    <p className="text-muted-foreground">Manage your multi-currency wallets</p>
                 </div>
                 <button
                     onClick={() => setShowCreateModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg transition-colors"
                 >
                     <Plus className="w-5 h-5" />
                     Create Wallet
@@ -273,8 +273,8 @@ const Wallets = () => {
 
             {/* Error Alert */}
             {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                    <p className="text-red-700 dark:text-red-300">{error}</p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p className="text-red-700">{error}</p>
                     <button onClick={() => setError(null)} className="text-red-500 underline text-sm mt-1">
                         Dismiss
                     </button>
@@ -287,17 +287,17 @@ const Wallets = () => {
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className={`rounded-lg p-4 flex items-center gap-3 ${depositMessage.startsWith('✅')
-                        ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                        ? 'bg-green-50 border border-green-200'
                         : depositMessage.startsWith('⏳')
-                            ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
-                            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                            ? 'bg-blue-50 border border-blue-200'
+                            : 'bg-red-50 border border-red-200'
                         }`}
                 >
                     {depositVerifying && <RefreshCw className="w-5 h-5 animate-spin text-blue-600 shrink-0" />}
-                    <p className={`font-medium ${depositMessage.startsWith('✅') ? 'text-green-700 dark:text-green-300' : depositMessage.startsWith('⏳') ? 'text-blue-700 dark:text-blue-300' : 'text-red-700 dark:text-red-300'}`}>
+                    <p className={`font-medium ${depositMessage.startsWith('✅') ? 'text-green-700' : depositMessage.startsWith('⏳') ? 'text-blue-700' : 'text-red-700'}`}>
                         {depositMessage}
                     </p>
-                    <button onClick={() => setDepositMessage(null)} className="ml-auto text-gray-400 hover:text-gray-600">
+                    <button onClick={() => setDepositMessage(null)} className="ml-auto text-muted-foreground hover:text-foreground">
                         <X className="w-4 h-4" />
                     </button>
                 </motion.div>
@@ -305,7 +305,7 @@ const Wallets = () => {
 
 
             {/* Total Balance Card */}
-            <div className="card bg-gradient-to-br from-accent-600 to-accent-800 text-white shadow-xl shadow-accent-500/20 relative overflow-hidden group">
+            <div className="card bg-gradient-to-br from-primary to-accent text-white shadow-xl shadow-primary/20 relative overflow-hidden group">
                 <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700">
                     <Wallet className="w-32 h-32 rotate-12" />
                 </div>
@@ -313,7 +313,7 @@ const Wallets = () => {
                 <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div>
                         <div className="flex items-center gap-2 mb-2">
-                            <p className="text-accent-100 text-sm font-medium">Total Portfolio Value</p>
+                            <p className="text-white/80 text-sm font-medium">Total Portfolio Value</p>
                             <button
                                 onClick={() => setShowBalances(!showBalances)}
                                 className="p-1 hover:bg-white/10 rounded-md transition-colors"
@@ -336,23 +336,23 @@ const Wallets = () => {
                                             : '••••••••'
                                         }
                                     </h2>
-                                    {showBalances && <span className="text-accent-200 font-bold uppercase tracking-widest text-xs">{displayCurrency}</span>}
+                                    {showBalances && <span className="text-white/60 font-bold uppercase tracking-widest text-xs">{displayCurrency}</span>}
                                 </div>
                             )}
                         </div>
-                        <p className="text-accent-100 text-sm mt-3 flex items-center gap-2">
+                        <p className="text-white/80 text-sm mt-3 flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                             {wallets.length} active multi-currency wallets
                         </p>
                     </div>
 
                     <div className="flex flex-col gap-3">
-                        <p className="text-accent-200 text-xs font-bold uppercase tracking-widest">Select Display Currency</p>
+                        <p className="text-white/60 text-xs font-bold uppercase tracking-widest">Select Display Currency</p>
                         <div className="relative">
                             <select
                                 value={displayCurrency}
                                 onChange={(e) => setDisplayCurrency(e.target.value)}
-                                className="appearance-none bg-white text-gray-900 border-none rounded-2xl px-8 py-4 pr-14 font-black text-base shadow-2xl transition-all focus:outline-none focus:ring-4 focus:ring-white/20 cursor-pointer w-full md:w-auto min-w-[180px]"
+                                className="appearance-none bg-card text-foreground border-none rounded-2xl px-8 py-4 pr-14 font-black text-base shadow-2xl transition-all focus:outline-none focus:ring-4 focus:ring-white/20 cursor-pointer w-full md:w-auto min-w-[180px]"
                             >
                                 <option value="USD">USD (US Dollar)</option>
                                 <option value="NGN">NGN (Naira)</option>
@@ -370,7 +370,7 @@ const Wallets = () => {
                                 <option value="AUD">AUD (Australian $)</option>
                                 <option value="JPY">JPY (Yen)</option>
                             </select>
-                            <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 w-5 h-5 pointer-events-none text-gray-900" />
+                            <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 w-5 h-5 pointer-events-none text-foreground" />
                         </div>
                     </div>
                 </div>
@@ -380,60 +380,60 @@ const Wallets = () => {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <button
                     onClick={() => setShowFundModal(true)}
-                    className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-accent-500 transition-colors shadow-sm"
+                    className="flex flex-col items-center gap-2 p-4 bg-card rounded-xl border border-border hover:border-primary transition-colors shadow-sm"
                 >
-                    <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-full">
-                        <Plus className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                    <div className="p-3 bg-success/10 rounded-full">
+                        <Plus className="w-6 h-6 text-success" />
                     </div>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">Fund</span>
+                    <span className="text-sm font-medium text-foreground">Deposit</span>
                 </button>
                 <button
                     onClick={() => setShowTransferModal(true)}
-                    className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-accent-500 transition-colors shadow-sm"
+                    className="flex flex-col items-center gap-2 p-4 bg-card rounded-xl border border-border hover:border-primary transition-colors shadow-sm"
                 >
-                    <div className="p-3 bg-accent-100 dark:bg-accent-900/30 rounded-full">
-                        <ArrowUpRight className="w-6 h-6 text-accent-600 dark:text-accent-400" />
+                    <div className="p-3 bg-primary/10 rounded-full">
+                        <ArrowUpRight className="w-6 h-6 text-primary" />
                     </div>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">Send</span>
+                    <span className="text-sm font-medium text-foreground">Send</span>
                 </button>
                 <button
-                    onClick={() => setShowDepositModal(true)}
-                    className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-accent-500 transition-colors shadow-sm"
+                    onClick={() => setShowTransferModal(true)}
+                    className="flex flex-col items-center gap-2 p-4 bg-card rounded-xl border border-border hover:border-primary transition-colors shadow-sm"
                 >
-                    <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-full">
-                        <ArrowDownLeft className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                    <div className="p-3 bg-danger/10 rounded-full">
+                        <ArrowUpRight className="w-6 h-6 text-danger" />
                     </div>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">Deposit</span>
+                    <span className="text-sm font-medium text-foreground">Withdraw</span>
                 </button>
                 <button
-                    onClick={() => navigate('/dashboard/exchange')}
-                    className="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-accent-500 transition-colors shadow-sm"
+                    onClick={() => navigate('/dashboard/cross-border')}
+                    className="flex flex-col items-center gap-2 p-4 bg-card rounded-xl border border-border hover:border-primary transition-colors shadow-sm"
                 >
-                    <div className="p-3 bg-accent-100 dark:bg-accent-900/30 rounded-full">
-                        <ArrowLeftRight className="w-6 h-6 text-accent-600 dark:text-accent-400" />
+                    <div className="p-3 bg-primary/10 rounded-full">
+                        <ArrowLeftRight className="w-6 h-6 text-primary" />
                     </div>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">Exchange</span>
+                    <span className="text-sm font-medium text-foreground">Global Pay</span>
                 </button>
             </div>
 
             {/* Search and Filter */}
             <div className="flex flex-col sm:flex-row gap-4">
                 <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <input
                         type="text"
                         placeholder="Search wallets..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-accent-500 focus:border-transparent"
+                        className="w-full pl-10 pr-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     />
                 </div>
                 <div className="flex gap-2">
                     <button
                         onClick={() => setFilterType('all')}
                         className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterType === 'all'
-                            ? 'bg-accent-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                            ? 'bg-primary text-white'
+                            : 'bg-muted text-foreground'
                             }`}
                     >
                         All
@@ -441,8 +441,8 @@ const Wallets = () => {
                     <button
                         onClick={() => setFilterType('fiat')}
                         className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterType === 'fiat'
-                            ? 'bg-accent-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                            ? 'bg-primary text-white'
+                            : 'bg-muted text-foreground'
                             }`}
                     >
                         Fiat
@@ -450,17 +450,17 @@ const Wallets = () => {
                     <button
                         onClick={() => setFilterType('crypto')}
                         className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterType === 'crypto'
-                            ? 'bg-accent-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                            ? 'bg-primary text-white'
+                            : 'bg-muted text-foreground'
                             }`}
                     >
                         Crypto
                     </button>
                     <button
                         onClick={fetchWallets}
-                        className="p-2.5 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        className="p-2.5 bg-muted rounded-lg hover:bg-muted hover:bg-muted transition-colors"
                     >
-                        <RefreshCw className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                        <RefreshCw className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
             </div>
@@ -469,9 +469,9 @@ const Wallets = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredWallets.length === 0 ? (
                     <div className="col-span-full text-center py-12">
-                        <Wallet className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No wallets found</h3>
-                        <p className="text-gray-600 dark:text-gray-400 mb-4">
+                        <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-foreground mb-2">No wallets found</h3>
+                        <p className="text-muted-foreground mb-4">
                             {wallets.length === 0
                                 ? "You haven't created any wallets yet."
                                 : 'No wallets match your search criteria.'}
@@ -479,7 +479,7 @@ const Wallets = () => {
                         {wallets.length === 0 && (
                             <button
                                 onClick={() => setShowCreateModal(true)}
-                                className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors"
+                                className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg transition-colors"
                             >
                                 <Plus className="w-5 h-5" />
                                 Create Your First Wallet
@@ -492,7 +492,7 @@ const Wallets = () => {
                             key={wallet.id}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className={`card cursor-pointer hover:shadow-lg transition-all ${selectedWallet?.id === wallet.id ? 'ring-2 ring-accent-500' : ''
+                            className={`card cursor-pointer hover:shadow-lg transition-all ${selectedWallet?.id === wallet.id ? 'ring-2 ring-primary' : ''
                                 } ${!wallet.is_active ? 'opacity-75' : ''}`}
                             onClick={() => handleSelectWallet(wallet)}
                         >
@@ -500,8 +500,8 @@ const Wallets = () => {
                                 <div className="flex items-center gap-3">
                                     <div
                                         className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl ${wallet.wallet_type === 'crypto'
-                                            ? 'bg-emerald-100 dark:bg-emerald-900/30'
-                                            : 'bg-accent-100 dark:bg-accent-900/30'
+                                            ? 'bg-success/10'
+                                            : 'bg-primary/10'
                                             }`}
                                     >
                                         {CURRENCY_OPTIONS[wallet.wallet_type || 'fiat']?.find(
@@ -509,14 +509,14 @@ const Wallets = () => {
                                         )?.flag || '💰'}
                                     </div>
                                     <div>
-                                        <h3 className="font-semibold text-gray-900 dark:text-white">{wallet.currency}</h3>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">
+                                        <h3 className="font-semibold text-foreground">{wallet.currency}</h3>
+                                        <p className="text-sm text-muted-foreground capitalize">
                                             {wallet.wallet_type || 'Fiat'} Wallet
                                         </p>
                                     </div>
                                 </div>
                                 {!wallet.is_active && (
-                                    <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-medium rounded-full flex items-center gap-1 border border-gray-200 dark:border-gray-700">
+                                    <span className="px-2 py-1 bg-muted text-muted-foreground text-xs font-medium rounded-full flex items-center gap-1 border border-border">
                                         <Lock className="w-3 h-3" />
                                         Frozen
                                     </span>
@@ -524,8 +524,8 @@ const Wallets = () => {
                             </div>
 
                             <div className="mb-4">
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Balance</p>
-                                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                                <p className="text-sm text-muted-foreground">Balance</p>
+                                <p className="text-2xl font-bold text-foreground">
                                     {showBalances ? formatCurrency(wallet.balance || 0, wallet.currency) : '••••••'}
                                 </p>
                             </div>
@@ -537,7 +537,7 @@ const Wallets = () => {
                                         setShowTransferModal(true);
                                     }}
                                     disabled={!wallet.is_active}
-                                    className="flex-1 py-2 px-3 bg-accent-50 dark:bg-accent-900/20 text-accent-600 dark:text-accent-400 font-medium rounded-lg hover:bg-accent-100 dark:hover:bg-accent-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="flex-1 py-2 px-3 bg-primary/10 text-primary font-medium rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     Transfer
                                 </button>
@@ -549,8 +549,8 @@ const Wallets = () => {
                                             : handleFreezeWallet(wallet.id);
                                     }}
                                     className={`p-2 rounded-lg transition-colors ${!wallet.is_active
-                                        ? 'bg-accent-50 dark:bg-accent-900/20 text-accent-600 dark:text-accent-400 hover:bg-accent-100 dark:hover:bg-accent-900/40'
-                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                        ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                                        : 'bg-muted text-muted-foreground hover:bg-muted hover:bg-muted'
                                         }`}
                                 >
                                     {!wallet.is_active ? (
@@ -569,19 +569,19 @@ const Wallets = () => {
             {selectedWallet && (
                 <div className="card">
                     <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        <h3 className="text-lg font-semibold text-foreground">
                             {selectedWallet.currency} Wallet Transactions
                         </h3>
                         <button
                             onClick={() => setSelectedWallet(null)}
-                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            className="p-2 hover:bg-muted hover:bg-muted rounded-lg transition-colors"
                         >
-                            <X className="w-5 h-5 text-gray-500" />
+                            <X className="w-5 h-5 text-muted-foreground" />
                         </button>
                     </div>
 
                     {transactions.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        <div className="text-center py-8 text-muted-foreground">
                             <p>No transactions yet</p>
                         </div>
                     ) : (
@@ -589,28 +589,28 @@ const Wallets = () => {
                             {transactions.map((tx) => (
                                 <div
                                     key={tx.id}
-                                    className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                                    className="flex items-center justify-between p-3 rounded-lg hover:bg-muted hover:bg-muted/50 transition-colors"
                                 >
                                     <div className="flex items-center gap-3">
                                         <div
                                             className={`p-2 rounded-lg ${tx.transaction_type === 'credit'
-                                                ? 'bg-accent-100 dark:bg-accent-900/20'
-                                                : 'bg-red-100 dark:bg-red-900/30'
+                                                ? 'bg-primary/10'
+                                                : 'bg-red-100'
                                                 }`}
                                         >
                                             {tx.transaction_type === 'credit' ? (
                                                 <ArrowDownLeft
-                                                    className={`w-5 h-5 text-accent-600 dark:text-accent-400`}
+                                                    className={`w-5 h-5 text-primary`}
                                                 />
                                             ) : (
-                                                <ArrowUpRight className="w-5 h-5 text-red-600 dark:text-red-400" />
+                                                <ArrowUpRight className="w-5 h-5 text-red-600" />
                                             )}
                                         </div>
                                         <div>
-                                            <p className="font-medium text-gray-900 dark:text-white">
+                                            <p className="font-medium text-foreground">
                                                 {tx.description || tx.transaction_type}
                                             </p>
-                                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                                            <p className="text-sm text-muted-foreground">
                                                 {formatDateTime(tx.created_at)}
                                             </p>
                                         </div>
@@ -618,8 +618,8 @@ const Wallets = () => {
                                     <div className="text-right">
                                         <p
                                             className={`font-semibold ${tx.transaction_type === 'credit'
-                                                ? 'text-accent-600 dark:text-accent-400'
-                                                : 'text-red-600 dark:text-red-400'
+                                                ? 'text-primary'
+                                                : 'text-red-600'
                                                 }`}
                                         >
                                             {tx.transaction_type === 'credit' ? '+' : '-'}
@@ -627,8 +627,8 @@ const Wallets = () => {
                                         </p>
                                         <p
                                             className={`text-sm ${tx.status === 'completed'
-                                                ? 'text-accent-600 dark:text-accent-400'
-                                                : 'text-yellow-600 dark:text-yellow-400'
+                                                ? 'text-primary'
+                                                : 'text-yellow-600'
                                                 }`}
                                         >
                                             {tx.status}
@@ -688,36 +688,36 @@ const CreateWalletModal = ({ onClose, onCreate, loading, existingCurrencies }) =
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={onClose}
         >
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Create New Wallet</h2>
+                    <h2 className="text-xl font-bold text-foreground">Create New Wallet</h2>
                     <button
                         onClick={onClose}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        className="p-2 hover:bg-muted hover:bg-muted rounded-lg transition-colors"
                     >
-                        <X className="w-5 h-5 text-gray-500" />
+                        <X className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
 
                 {/* Wallet Type Toggle */}
-                <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-700 rounded-lg mb-6">
+                <div className="flex gap-2 p-1 bg-muted rounded-lg mb-6">
                     <button
                         onClick={() => {
                             setWalletType('fiat');
                             setSelectedCurrency('');
                         }}
                         className={`flex-1 py-2 font-medium rounded-md transition-colors ${walletType === 'fiat'
-                            ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
-                            : 'text-gray-600 dark:text-gray-400'
+                            ? 'bg-card text-foreground shadow'
+                            : 'text-muted-foreground'
                             }`}
                     >
                         Fiat Currency
@@ -728,8 +728,8 @@ const CreateWalletModal = ({ onClose, onCreate, loading, existingCurrencies }) =
                             setSelectedCurrency('');
                         }}
                         className={`flex-1 py-2 font-medium rounded-md transition-colors ${walletType === 'crypto'
-                            ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
-                            : 'text-gray-600 dark:text-gray-400'
+                            ? 'bg-card text-foreground shadow'
+                            : 'text-muted-foreground'
                             }`}
                     >
                         Cryptocurrency
@@ -739,7 +739,7 @@ const CreateWalletModal = ({ onClose, onCreate, loading, existingCurrencies }) =
                 {/* Currency Selection */}
                 <div className="space-y-3 mb-6 max-h-64 overflow-y-auto">
                     {availableCurrencies.length === 0 ? (
-                        <p className="text-center text-gray-500 dark:text-gray-400 py-4">
+                        <p className="text-center text-muted-foreground py-4">
                             You already have wallets for all available {walletType} currencies.
                         </p>
                     ) : (
@@ -748,14 +748,14 @@ const CreateWalletModal = ({ onClose, onCreate, loading, existingCurrencies }) =
                                 key={currency.code}
                                 onClick={() => setSelectedCurrency(currency.code)}
                                 className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-colors ${selectedCurrency === currency.code
-                                    ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
-                                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                    ? 'border-primary bg-primary/10'
+                                    : 'border-border hover:border-border'
                                     }`}
                             >
                                 <span className="text-2xl">{currency.flag}</span>
                                 <div className="text-left">
-                                    <p className="font-semibold text-gray-900 dark:text-white">{currency.code}</p>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400">{currency.name}</p>
+                                    <p className="font-semibold text-foreground">{currency.code}</p>
+                                    <p className="text-sm text-muted-foreground">{currency.name}</p>
                                 </div>
                             </button>
                         ))
@@ -766,14 +766,14 @@ const CreateWalletModal = ({ onClose, onCreate, loading, existingCurrencies }) =
                 <div className="flex gap-3">
                     <button
                         onClick={onClose}
-                        className="flex-1 py-3 px-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
+                        className="flex-1 py-3 px-4 bg-muted text-foreground font-semibold rounded-lg transition-colors hover:bg-muted hover:bg-muted"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={() => onCreate(selectedCurrency, walletType)}
                         disabled={!selectedCurrency || loading}
-                        className="flex-1 py-3 px-4 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 py-3 px-4 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? 'Creating...' : 'Create Wallet'}
                     </button>
@@ -899,28 +899,28 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
     return (
         <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={onClose}
         >
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-[2rem] shadow-2xl max-w-md w-full p-8 overflow-hidden relative"
+                className="bg-card border border-border rounded-[2rem] shadow-2xl max-w-md w-full p-8 max-h-[90vh] overflow-y-auto relative"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-8">
                     <div>
-                        <h2 className="text-2xl font-black text-gray-900 dark:text-white">
+                        <h2 className="text-2xl font-black text-foreground">
                             {isCrypto ? 'Withdraw Crypto' : 'Send Funds'}
                         </h2>
-                        <p className="text-gray-500 text-sm">Transfer assets safely and instantly.</p>
+                        <p className="text-muted-foreground text-sm">Transfer assets safely and instantly.</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all">
-                        <X className="w-6 h-6 text-gray-400" />
+                    <button onClick={onClose} className="p-2 hover:bg-muted hover:bg-muted rounded-xl transition-all">
+                        <X className="w-6 h-6 text-muted-foreground" />
                     </button>
                 </div>
 
                 {error && (
-                    <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm font-bold flex items-center gap-2">
+                    <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm font-bold flex items-center gap-2">
                         <AlertCircle className="w-4 h-4 shrink-0" />
                         {error}
                     </div>
@@ -929,7 +929,7 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
                 <div className="space-y-6">
                     {/* From Wallet */}
                     <div>
-                        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Source Wallet</label>
+                        <label className="block text-xs font-black text-muted-foreground uppercase tracking-widest mb-2 px-1">Source Wallet</label>
                         <select
                             value={fromWallet}
                             onChange={(e) => {
@@ -938,9 +938,9 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
                                 setAccountName('');
                                 setSelectedBank('');
                             }}
-                            className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-bold"
+                            className="w-full px-5 py-4 bg-muted border border-input rounded-2xl focus:ring-4 focus:ring-ring/10 focus:outline-none font-bold text-foreground"
                         >
-                            <option value="">Select source wallet...</option>
+                            <option value="" className="bg-card text-foreground">Select source wallet...</option>
                             {wallets.map((w) => (
                                 <option key={w.id} value={w.id}>
                                     {w.currency} - Available: {formatCurrency(w.balance || 0, w.currency)}
@@ -950,16 +950,16 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
                     </div>
 
                     {!isCrypto && fromWalletData && (
-                        <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-700 rounded-xl">
+                        <div className="flex gap-2 p-1 bg-muted rounded-xl">
                             <button
                                 onClick={() => setTransferType('external')}
-                                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all ${transferType === 'external' ? 'bg-white dark:bg-gray-600 text-accent-600 shadow-sm' : 'text-gray-500'}`}
+                                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all ${transferType === 'external' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}
                             >
                                 External Bank
                             </button>
                             <button
                                 onClick={() => setTransferType('internal')}
-                                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all ${transferType === 'internal' ? 'bg-white dark:bg-gray-600 text-accent-600 shadow-sm' : 'text-gray-500'}`}
+                                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all ${transferType === 'internal' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}
                             >
                                 Internal P2P
                             </button>
@@ -971,20 +971,20 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
                         <div className="space-y-4">
                             {!isCrypto && transferType === 'external' && (
                                 <div>
-                                    <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Select Bank</label>
+                                    <label className="block text-xs font-black text-muted-foreground uppercase tracking-widest mb-2 px-1">Select Bank</label>
                                     <select
                                         value={selectedBank}
                                         onChange={(e) => setSelectedBank(e.target.value)}
-                                        className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-bold"
+                                        className="w-full px-5 py-4 bg-muted border border-input rounded-2xl focus:ring-4 focus:ring-ring/10 focus:outline-none font-bold text-foreground"
                                     >
-                                        <option value="">Choose beneficiary bank...</option>
+                                        <option value="" className="bg-card text-foreground">Choose beneficiary bank...</option>
                                         {banks.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
                                     </select>
                                 </div>
                             )}
 
                             <div>
-                                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">
+                                <label className="block text-xs font-black text-muted-foreground uppercase tracking-widest mb-2 px-1">
                                     {isCrypto ? 'Wallet Address' : transferType === 'external' ? 'Account Number' : 'Recipient Email'}
                                 </label>
                                 <div className="relative">
@@ -993,29 +993,29 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
                                         value={recipient}
                                         onChange={(e) => setRecipient(e.target.value)}
                                         placeholder={isCrypto ? 'Paste address here' : transferType === 'external' ? '0123456789' : 'user@example.com'}
-                                        className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-bold"
+                                        className="w-full px-5 py-4 bg-muted border border-input rounded-2xl focus:ring-4 focus:ring-ring/10 focus:outline-none font-bold text-foreground placeholder:text-muted-foreground"
                                     />
                                     {resolvingAccount && (
-                                        <RefreshCw className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-accent-600" />
+                                        <RefreshCw className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary" />
                                     )}
                                 </div>
                                 {accountName && (
-                                    <div className="mt-2 px-4 py-2 bg-accent-50 dark:bg-accent-900/20 rounded-xl flex items-center gap-2">
-                                        <ShieldCheck className="w-4 h-4 text-accent-600" />
-                                        <span className="text-xs font-bold text-accent-700 dark:text-accent-300">{accountName}</span>
+                                    <div className="mt-2 px-4 py-2 bg-primary/10 rounded-xl flex items-center gap-2">
+                                        <ShieldCheck className="w-4 h-4 text-primary" />
+                                        <span className="text-xs font-bold text-primary">{accountName}</span>
                                     </div>
                                 )}
                             </div>
 
                             {isCrypto && (
                                 <div>
-                                    <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Network</label>
+                                    <label className="block text-xs font-black text-muted-foreground uppercase tracking-widest mb-2 px-1">Network</label>
                                     <select
                                         value={network}
                                         onChange={(e) => setNetwork(e.target.value)}
-                                        className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-bold"
+                                        className="w-full px-5 py-4 bg-muted border border-input rounded-2xl focus:ring-4 focus:ring-ring/10 focus:outline-none font-bold text-foreground"
                                     >
-                                        <option value="">Select network...</option>
+                                        <option value="" className="bg-card text-foreground">Select network...</option>
                                         {withdrawNetworks.map(n => (
                                             <option key={n.network} value={n.network}>
                                                 {n.name || n.network}
@@ -1030,26 +1030,26 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
                             )}
 
                             <div>
-                                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Amount to Send</label>
+                                <label className="block text-xs font-black text-muted-foreground uppercase tracking-widest mb-2 px-1">Amount to Send</label>
                                 <div className="relative">
                                     <input
                                         type="number"
                                         value={amount}
                                         onChange={(e) => setAmount(e.target.value)}
                                         placeholder="0.00"
-                                        className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white text-xl font-black"
+                                        className="w-full px-5 py-4 bg-muted border border-input rounded-2xl focus:ring-4 focus:ring-ring/10 focus:outline-none text-xl font-black"
                                     />
-                                    <div className="absolute right-5 top-1/2 -translate-y-1/2 font-black text-gray-400">{fromWalletData.currency}</div>
+                                    <div className="absolute right-5 top-1/2 -translate-y-1/2 font-black text-muted-foreground">{fromWalletData.currency}</div>
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Reference/Narration</label>
+                                <label className="block text-xs font-black text-muted-foreground uppercase tracking-widest mb-2 px-1">Reference/Narration</label>
                                 <textarea
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value)}
                                     placeholder="Optional note for this transaction..."
-                                    className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white text-sm"
+                                    className="w-full px-5 py-4 bg-muted border border-input rounded-2xl focus:ring-4 focus:ring-ring/10 focus:outline-none text-sm"
                                     rows="2"
                                 />
                             </div>
@@ -1060,7 +1060,7 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
                 <div className="flex gap-4 mt-8">
                     <button
                         onClick={onClose}
-                        className="flex-1 py-4 px-6 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold rounded-2xl transition-all hover:bg-gray-200 dark:hover:bg-gray-600"
+                        className="flex-1 py-4 px-6 bg-muted text-muted-foreground font-bold rounded-2xl transition-all hover:bg-muted hover:bg-muted"
                     >
                         Cancel
                     </button>
@@ -1072,7 +1072,7 @@ const TransferModal = ({ onClose, onTransfer, wallets, loading: actionLoading })
                             (isCrypto && !network) ||
                             (!isCrypto && transferType === 'external' && (!selectedBank || (fromWalletData.currency === 'NGN' && !accountName)))
                         }
-                        className="flex-3 py-4 px-8 bg-accent-600 hover:bg-accent-700 text-white font-black rounded-2xl shadow-xl shadow-accent-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="flex-3 py-4 px-8 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl shadow-xl shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                         {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : null}
                         {loading ? 'Processing...' : (isCrypto ? 'Withdraw Assets' : 'Confirm Transfer')}
@@ -1212,26 +1212,26 @@ const DepositModal = ({ onClose, wallets }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={onClose}
         >
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Deposit Funds</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                        <X className="w-5 h-5 text-gray-500" />
+                    <h2 className="text-xl font-bold text-foreground">Deposit Funds</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-muted hover:bg-muted rounded-lg transition-colors">
+                        <X className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
 
                 <div className="space-y-6">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Wallet</label>
+                        <label className="block text-sm font-medium text-foreground mb-2">Select Wallet</label>
                         <select
                             value={selectedWalletId}
                             onChange={(e) => {
@@ -1239,24 +1239,24 @@ const DepositModal = ({ onClose, wallets }) => {
                                 setNetwork('');
                                 setDetails(null);
                             }}
-                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
+                            className="w-full px-4 py-3 bg-card border border-border rounded-lg text-foreground focus:ring-2 focus:ring-ring"
                         >
-                            <option value="">Select wallet...</option>
+                            <option value="" className="bg-card text-foreground">Select wallet...</option>
                             {wallets.map(w => (
-                                <option key={w.id} value={w.id}>{w.currency} - {w.wallet_type?.toUpperCase()}</option>
+                                <option key={w.id} value={w.id} className="bg-card text-foreground">{w.currency} - {w.wallet_type?.toUpperCase()}</option>
                             ))}
                         </select>
                     </div>
 
                     {selectedWallet?.wallet_type === 'crypto' && (
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Network</label>
+                            <label className="block text-sm font-medium text-foreground mb-2">Network</label>
                             <select
                                 value={network}
                                 onChange={(e) => setNetwork(e.target.value)}
-                                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
+                                className="w-full px-4 py-3 bg-card border border-border rounded-lg text-foreground focus:ring-2 focus:ring-ring"
                             >
-                                <option value="">Select network...</option>
+                                <option value="" className="bg-card text-foreground">Select network...</option>
                                 {(cryptoConfigs?.find(c => c.coin?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networkList ||
                                     cryptoConfigs?.find(c => c.coin?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networks || [])
                                     .map(n => (
@@ -1268,41 +1268,41 @@ const DepositModal = ({ onClose, wallets }) => {
 
                     {loading && (
                         <div className="flex flex-col items-center justify-center py-8">
-                            <RefreshCw className="w-8 h-8 text-accent-500 animate-spin mb-3" />
-                            <p className="text-sm text-gray-500">Fetching details...</p>
+                            <RefreshCw className="w-8 h-8 text-primary animate-spin mb-3" />
+                            <p className="text-sm text-muted-foreground">Fetching details...</p>
                         </div>
                     )}
 
                     {error && !loading && (
-                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 text-center">
-                            <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+                        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                            <p className="text-sm text-red-700">{error}</p>
                         </div>
                     )}
 
                     {/* Fiat VBA Details */}
                     {selectedWallet && details && !loading && selectedWallet.wallet_type === 'fiat' && (
-                        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                        <div className="bg-muted/50 rounded-xl p-4 border border-border">
                             <div className="space-y-4 text-sm">
-                                <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
-                                    <span className="text-gray-500">Bank Name</span>
-                                    <span className="font-medium text-gray-900 dark:text-white">{details.bank_name}</span>
+                                <div className="flex justify-between py-2 border-b border-border">
+                                    <span className="text-muted-foreground">Bank Name</span>
+                                    <span className="font-medium text-foreground">{details.bank_name}</span>
                                 </div>
-                                <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-600">
-                                    <span className="text-gray-500">Account Name</span>
-                                    <span className="font-medium text-gray-900 dark:text-white">{details.account_name}</span>
+                                <div className="flex justify-between py-2 border-b border-border">
+                                    <span className="text-muted-foreground">Account Name</span>
+                                    <span className="font-medium text-foreground">{details.account_name}</span>
                                 </div>
                                 <div>
-                                    <span className="text-gray-500 block mb-1">Account Number</span>
+                                    <span className="text-muted-foreground block mb-1">Account Number</span>
                                     <div className="flex items-center gap-2">
-                                        <code className="bg-white dark:bg-gray-800 px-3 py-2 rounded border border-gray-200 dark:border-gray-600 text-lg font-mono flex-1 tracking-wider text-gray-900 dark:text-white">
+                                        <code className="bg-card px-3 py-2 rounded border border-border text-lg font-mono flex-1 tracking-wider text-foreground">
                                             {details.account_number}
                                         </code>
-                                        <button onClick={() => handleCopy(details.account_number)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
-                                            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
+                                        <button onClick={() => handleCopy(details.account_number)} className="p-2 hover:bg-muted hover:bg-muted rounded-lg">
+                                            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
                                         </button>
                                     </div>
                                 </div>
-                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                                <p className="text-xs text-blue-600 mt-2">
                                     <Info className="w-3 h-3 inline mr-1" />
                                     Fund your wallet by making a bank transfer to these details.
                                 </p>
@@ -1313,9 +1313,9 @@ const DepositModal = ({ onClose, wallets }) => {
                     {/* Address pending generation */}
                     {selectedWallet && addressPending && selectedWallet.wallet_type === 'crypto' && (
                         <div className="flex flex-col items-center gap-3 py-6 text-center">
-                            <RefreshCw className="w-8 h-8 text-accent-500 animate-spin" />
-                            <p className="text-sm font-bold text-gray-900 dark:text-white">Generating your {selectedWallet.currency} address…</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">This takes 10–30 seconds. Refreshing automatically every 5 seconds.</p>
+                            <RefreshCw className="w-8 h-8 text-primary animate-spin" />
+                            <p className="text-sm font-bold text-foreground">Generating your {selectedWallet.currency} address…</p>
+                            <p className="text-xs text-muted-foreground">This takes 10–30 seconds. Refreshing automatically every 5 seconds.</p>
                         </div>
                     )}
 
@@ -1324,25 +1324,25 @@ const DepositModal = ({ onClose, wallets }) => {
                         <div className="text-center space-y-4">
                             <div className="bg-white p-4 rounded-xl inline-block shadow-sm">
                                 <QRCodeSVG value={details.address || ''} size={128} />
-                                <p className="text-[8px] mt-1 text-gray-400">Scan to copy address</p>
+                                <p className="text-[8px] mt-1 text-muted-foreground">Scan to copy address</p>
                             </div>
-                            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                                <p className="text-xs text-gray-500 mb-1">Your {selectedWallet.currency} Address ({network})</p>
+                            <div className="bg-muted/50 rounded-xl p-4 border border-border">
+                                <p className="text-xs text-muted-foreground mb-1">Your {selectedWallet.currency} Address ({network})</p>
                                 <div className="flex items-center gap-2">
-                                    <code className="bg-white dark:bg-gray-800 px-3 py-2 rounded border border-gray-200 dark:border-gray-600 text-xs font-mono flex-1 break-all text-gray-900 dark:text-white">
+                                    <code className="bg-card px-3 py-2 rounded border border-border text-xs font-mono flex-1 break-all text-foreground">
                                         {details.address}
                                     </code>
-                                    <button onClick={() => handleCopy(details.address)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg shrink-0">
-                                        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
+                                    <button onClick={() => handleCopy(details.address)} className="p-2 hover:bg-muted hover:bg-muted rounded-lg shrink-0">
+                                        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
                                     </button>
                                 </div>
                                 {details.memo && (
                                     <div className="mt-4">
                                         <p className="text-xs text-red-500 font-bold mb-1">MEMO REQUIRED:</p>
                                         <div className="flex items-center gap-2">
-                                            <code className="bg-white dark:bg-gray-800 px-3 py-2 rounded border border-gray-200 dark:border-gray-600 text-sm font-mono flex-1 text-gray-900 dark:text-white">{details.memo}</code>
-                                            <button onClick={() => handleCopy(details.memo)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg shrink-0">
-                                                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-500" />}
+                                            <code className="bg-card px-3 py-2 rounded border border-border text-sm font-mono flex-1 text-foreground">{details.memo}</code>
+                                            <button onClick={() => handleCopy(details.memo)} className="p-2 hover:bg-muted hover:bg-muted rounded-lg shrink-0">
+                                                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
                                             </button>
                                         </div>
                                     </div>
@@ -1557,13 +1557,13 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
 
     if (stage === 'success') {
         return (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="bg-white dark:bg-gray-800 rounded-3xl p-10 max-w-sm w-full text-center shadow-2xl">
-                    <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="bg-card border border-border rounded-3xl p-10 max-w-sm w-full text-center shadow-2xl">
+                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                         <Check className="w-10 h-10 text-green-600" />
                     </div>
-                    <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">Success!</h2>
-                    <p className="text-gray-500 dark:text-gray-400 font-medium">Your wallet balance will be updated momentarily.</p>
+                    <h2 className="text-2xl font-black text-foreground mb-2">Success!</h2>
+                    <p className="text-muted-foreground font-medium">Your wallet balance will be updated momentarily.</p>
                 </motion.div>
             </motion.div>
         );
@@ -1572,14 +1572,14 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
     if (stage === 'awaiting') {
         // ... (Awaiting status remains similar but with updated styling)
         return (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl max-w-md w-full p-10 text-center">
-                    <div className="w-20 h-20 bg-accent-100 dark:bg-accent-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <RefreshCw className="w-10 h-10 text-accent-600 animate-spin" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-card border border-border rounded-3xl shadow-2xl max-w-md w-full p-10 text-center max-h-[90vh] overflow-y-auto">
+                    <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <RefreshCw className="w-10 h-10 text-primary animate-spin" />
                     </div>
-                    <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">Verifying Payment</h2>
-                    <p className="text-gray-600 dark:text-gray-400 mb-8 font-medium">Please wait while we confirm your transaction status...</p>
-                    <button onClick={onClose} className="w-full py-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-black rounded-2xl">Close Window</button>
+                    <h2 className="text-2xl font-black text-foreground mb-2">Verifying Payment</h2>
+                    <p className="text-muted-foreground mb-8 font-medium">Please wait while we confirm your transaction status...</p>
+                    <button onClick={onClose} className="w-full py-4 bg-muted text-foreground font-black rounded-2xl">Close Window</button>
                 </motion.div>
             </motion.div>
         );
@@ -1588,42 +1588,42 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
     return (
         <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={onClose}
         >
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-2xl max-w-md w-full p-8 overflow-hidden relative"
+                className="bg-card border border-border rounded-[2.5rem] shadow-2xl max-w-md w-full p-8 max-h-[90vh] overflow-y-auto relative"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-8">
                     <div>
-                        <h2 className="text-2xl font-black text-gray-900 dark:text-white">Fund Wallet</h2>
-                        <p className="text-gray-500 text-sm font-medium">Add money to your Jaxopay account.</p>
+                        <h2 className="text-2xl font-black text-foreground">Fund Wallet</h2>
+                        <p className="text-muted-foreground text-sm font-medium">Add money to your Jaxopay account.</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all">
-                        <X className="w-6 h-6 text-gray-400" />
+                    <button onClick={onClose} className="p-2 hover:bg-muted hover:bg-muted rounded-xl transition-all">
+                        <X className="w-6 h-6 text-muted-foreground" />
                     </button>
                 </div>
 
                 {/* Fund Type Toggle */}
-                <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-900 rounded-2xl mb-8 border border-gray-200 dark:border-gray-800">
+                <div className="flex gap-2 p-1 bg-muted rounded-2xl mb-8 border border-border">
                     <button
                         onClick={() => { setFundType('fiat'); setSelectedWalletId(''); }}
-                        className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${fundType === 'fiat' ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-xl' : 'text-gray-400'}`}
+                        className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${fundType === 'fiat' ? 'bg-card text-primary shadow-xl' : 'text-muted-foreground'}`}
                     >
                         BANK / CARD
                     </button>
                     <button
                         onClick={() => { setFundType('crypto'); setSelectedWalletId(''); }}
-                        className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${fundType === 'crypto' ? 'bg-white dark:bg-gray-700 text-accent-600 shadow-xl' : 'text-gray-400'}`}
+                        className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${fundType === 'crypto' ? 'bg-card text-primary shadow-xl' : 'text-muted-foreground'}`}
                     >
                         CRYPTO
                     </button>
                 </div>
 
                 {error && (
-                    <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-2xl text-red-600 dark:text-red-400 text-sm font-bold flex items-center gap-2">
+                    <div className="mb-6 p-4 bg-danger/10 border border-danger/20 rounded-2xl text-danger text-sm font-bold flex items-center gap-2">
                         <AlertCircle className="w-4 h-4 shrink-0" />
                         {error}
                     </div>
@@ -1632,20 +1632,20 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                 <div className="space-y-6">
                     {/* Wallet Selection */}
                     <div>
-                        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 px-1">Select {fundType === 'fiat' ? 'Fiat' : 'Crypto'} Wallet</label>
+                        <label className="block text-xs font-black text-muted-foreground uppercase tracking-widest mb-3 px-1">Select {fundType === 'fiat' ? 'Fiat' : 'Crypto'} Wallet</label>
                         <div className="grid grid-cols-2 gap-3">
                             {(fundType === 'fiat' ? fiatWallets : cryptoWallets).map(w => (
                                 <button
                                     key={w.id}
                                     onClick={() => { setSelectedWalletId(w.id); setCryptoNetwork(''); setCryptoDetails(null); }}
                                     className={`p-4 rounded-2xl border-2 text-left transition-all relative overflow-hidden group ${selectedWalletId === w.id
-                                        ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20 ring-4 ring-accent-500/10'
-                                        : 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'
+                                        ? 'border-primary bg-primary/10 ring-4 ring-primary/10'
+                                        : 'border-border hover:border-primary/30'
                                         }`}
                                 >
-                                    <p className="font-black text-gray-900 dark:text-white mb-1 uppercase tracking-tight">{w.currency}</p>
-                                    <p className="text-[10px] font-bold text-gray-400">Bal: {formatCurrency(w.balance, w.currency)}</p>
-                                    {selectedWalletId === w.id && <div className="absolute top-2 right-2 w-4 h-4 bg-accent-500 rounded-full flex items-center justify-center"><Check className="w-2.5 h-2.5 text-white stroke-[4px]" /></div>}
+                                    <p className="font-black text-foreground mb-1 uppercase tracking-tight">{w.currency}</p>
+                                    <p className="text-[10px] font-bold text-muted-foreground">Bal: {formatCurrency(w.balance, w.currency)}</p>
+                                    {selectedWalletId === w.id && <div className="absolute top-2 right-2 w-4 h-4 bg-primary rounded-full flex items-center justify-center"><Check className="w-2.5 h-2.5 text-white stroke-[4px]" /></div>}
                                 </button>
                             ))}
                         </div>
@@ -1654,23 +1654,23 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                     {fundType === 'fiat' ? (
                         <>
                             <div>
-                                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 px-1">Amount to Fund</label>
+                                <label className="block text-xs font-black text-muted-foreground uppercase tracking-widest mb-3 px-1">Amount to Fund</label>
                                 <div className="relative">
                                     <input
                                         type="number"
                                         value={amount}
                                         onChange={(e) => setAmount(e.target.value)}
                                         placeholder="0.00"
-                                        className="w-full pl-14 pr-4 py-5 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white text-2xl font-black"
+                                        className="w-full pl-14 pr-4 py-5 bg-muted border border-input rounded-2xl focus:ring-4 focus:ring-ring/10 focus:outline-none text-2xl font-black text-foreground placeholder:text-muted-foreground"
                                     />
-                                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 font-black">{selectedWallet?.currency || 'NGN'}</div>
+                                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-muted-foreground font-black">{selectedWallet?.currency || 'NGN'}</div>
                                 </div>
                             </div>
 
                             <button
                                 onClick={handleFund}
                                 disabled={loading || !selectedWalletId || !amount || parseFloat(amount) <= 0}
-                                className="w-full py-5 bg-accent-600 hover:bg-accent-700 text-white font-black rounded-[1.5rem] shadow-2xl shadow-accent-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 text-lg"
+                                className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-[1.5rem] shadow-2xl shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 text-lg"
                             >
                                 {loading ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'Confirm & Proceed'}
                             </button>
@@ -1679,13 +1679,13 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                         <div className="space-y-6">
                             {selectedWalletId && (
                                 <div>
-                                    <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 px-1">Choose Network</label>
+                                    <label className="block text-xs font-black text-muted-foreground uppercase tracking-widest mb-3 px-1">Choose Network</label>
                                     <select
                                         value={cryptoNetwork}
                                         onChange={(e) => { setCryptoNetwork(e.target.value); setCryptoDetails(null); }}
-                                        className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl focus:ring-4 focus:ring-accent-500/10 focus:outline-none dark:text-white font-black"
+                                        className="w-full px-5 py-4 bg-muted border border-input rounded-2xl focus:ring-4 focus:ring-ring/10 focus:outline-none font-black text-foreground"
                                     >
-                                        <option value="">Select deposit network...</option>
+                                        <option value="" className="bg-card text-foreground">Select deposit network...</option>
                                         {(cryptoConfigs?.find(c => (c.coin || c.symbol)?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networkList ||
                                           cryptoConfigs?.find(c => (c.coin || c.symbol)?.toUpperCase() === selectedWallet.currency?.toUpperCase())?.networks)?.map(n => (
                                             <option key={n.network} value={n.network}>{n.name || n.network}</option>
@@ -1694,7 +1694,7 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                                 </div>
                             )}
 
-                            {loading && !addressPending && <div className="flex justify-center p-10"><RefreshCw className="w-10 h-10 animate-spin text-accent-500" /></div>}
+                            {loading && !addressPending && <div className="flex justify-center p-10"><RefreshCw className="w-10 h-10 animate-spin text-primary" /></div>}
 
                             {/* Pending address generation */}
                             {addressPending && (
@@ -1704,15 +1704,15 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                                     className="flex flex-col items-center gap-3 py-8 text-center"
                                 >
                                     <div className="relative">
-                                        <div className="w-16 h-16 rounded-full bg-accent-50 dark:bg-accent-900/20 flex items-center justify-center">
-                                            <RefreshCw className="w-8 h-8 text-accent-500 animate-spin" />
+                                        <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                                            <RefreshCw className="w-8 h-8 text-primary animate-spin" />
                                         </div>
                                     </div>
-                                    <p className="text-sm font-bold text-gray-900 dark:text-white">Generating your wallet address…</p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs">
+                                    <p className="text-sm font-bold text-foreground">Generating your wallet address…</p>
+                                    <p className="text-xs text-muted-foreground max-w-xs">
                                         Your {selectedWallet?.currency} address is being created on the blockchain. This usually takes 10–30 seconds.
                                     </p>
-                                    <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                                    <p className="text-[10px] text-muted-foreground">
                                         Attempt {addressRetryRef.current}/12 — refreshing automatically
                                     </p>
                                 </motion.div>
@@ -1722,32 +1722,32 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
                                 {cryptoDetails && !addressPending && (
                                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                                         <div className="flex justify-center">
-                                            <div className="bg-white p-6 rounded-3xl shadow-xl border border-gray-100">
+                                            <div className="bg-card p-6 rounded-3xl shadow-xl border border-border">
                                                 <QRCodeSVG value={cryptoDetails.address || ''} size={128} />
                                             </div>
                                         </div>
-                                        <div className="bg-gray-50 dark:bg-gray-900 p-6 rounded-3xl border border-gray-100 dark:border-gray-800">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase mb-2 block tracking-widest">Your {selectedWallet.currency} Address ({cryptoNetwork})</label>
+                                        <div className="bg-muted p-6 rounded-3xl border border-input">
+                                            <label className="text-[10px] font-black text-muted-foreground uppercase mb-2 block tracking-widest">Your {selectedWallet.currency} Address ({cryptoNetwork})</label>
                                             <div className="flex items-center gap-3">
-                                                <code className="text-[11px] font-bold text-gray-900 dark:text-white break-all flex-1 font-mono">{cryptoDetails.address}</code>
-                                                <button onClick={() => handleCopy(cryptoDetails.address)} className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-md transition-all">
-                                                    {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-400" />}
+                                                <code className="text-[11px] font-bold text-foreground break-all flex-1 font-mono">{cryptoDetails.address}</code>
+                                                <button onClick={() => handleCopy(cryptoDetails.address)} className="p-3 bg-card rounded-xl shadow-sm hover:shadow-md transition-all">
+                                                    {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
                                                 </button>
                                             </div>
                                             {cryptoDetails.memo && (
-                                                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-800">
+                                                <div className="mt-6 pt-6 border-t border-border">
                                                      <label className="text-[10px] font-black text-red-500 uppercase mb-2 block tracking-widest">Memo/Tag Required</label>
                                                      <div className="flex items-center gap-3">
-                                                        <code className="text-xl font-black text-gray-900 dark:text-white flex-1 tracking-widest font-mono">{cryptoDetails.memo}</code>
-                                                        <button onClick={() => handleCopy(cryptoDetails.memo)} className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-md transition-all">
-                                                           <Copy className="w-4 h-4 text-gray-400" />
+                                                        <code className="text-xl font-black text-foreground flex-1 tracking-widest font-mono">{cryptoDetails.memo}</code>
+                                                        <button onClick={() => handleCopy(cryptoDetails.memo)} className="p-3 bg-card rounded-xl shadow-sm hover:shadow-md transition-all">
+                                                           <Copy className="w-4 h-4 text-muted-foreground" />
                                                         </button>
                                                      </div>
                                                 </div>
                                             )}
                                         </div>
-                                        <p className="text-[10px] text-gray-400 font-bold text-center leading-relaxed">
-                                            Only send <span className="text-gray-900 dark:text-white font-black">{selectedWallet.currency}</span> via the <span className="text-gray-900 dark:text-white font-black">{cryptoNetwork}</span> network. Funds sent via other networks will be lost.
+                                        <p className="text-[10px] text-muted-foreground font-bold text-center leading-relaxed">
+                                            Only send <span className="text-foreground font-black">{selectedWallet.currency}</span> via the <span className="text-foreground font-black">{cryptoNetwork}</span> network. Funds sent via other networks will be lost.
                                         </p>
                                     </motion.div>
                                 )}

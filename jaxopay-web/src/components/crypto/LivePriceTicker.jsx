@@ -37,7 +37,7 @@ const LivePriceTicker = () => {
             try {
                 const result = await cryptoService.get24hTickers();
                 if (result.success && result.data) {
-                    // Quidax returns { market_id: { ticker: { last, buy, sell, ... } } }
+                    // API returns { market_id: { ticker: { last, buy, sell, ... } } }
                     const tickerData = result.data.data || result.data;
 
                     const formattedTickers = tradingPairs.map(({ pair, market }) => {
@@ -76,15 +76,15 @@ const LivePriceTicker = () => {
     }, []);
 
     const getChangeColor = (change) => {
-        if (change > 0) return 'text-green-500';
-        if (change < 0) return 'text-red-500';
-        return 'text-gray-500';
+        if (change > 0) return 'text-success';
+        if (change < 0) return 'text-danger';
+        return 'text-muted-foreground';
     };
 
     const getChangeBg = (change) => {
-        if (change > 0) return 'bg-green-500/10';
-        if (change < 0) return 'bg-red-500/10';
-        return 'bg-gray-500/10';
+        if (change > 0) return 'bg-success/10';
+        if (change < 0) return 'bg-danger/10';
+        return 'bg-muted/10';
     };
 
     const formatPrice = (price, pair) => {
@@ -116,8 +116,8 @@ const LivePriceTicker = () => {
 
     if (loading && tickers.length === 0) {
         return (
-            <div className="bg-gray-900 border-y border-gray-800 py-2 overflow-hidden">
-                <div className="flex items-center justify-center gap-2 text-gray-500 text-xs">
+            <div className="bg-background border-y border-border py-2 overflow-hidden">
+                <div className="flex items-center justify-center gap-2 text-muted-foreground text-xs">
                     <Activity className="w-4 h-4 animate-spin" />
                     <span>Loading market data...</span>
                 </div>
@@ -127,7 +127,7 @@ const LivePriceTicker = () => {
 
     return (
         <div
-            className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-gray-700 overflow-hidden relative"
+            className="bg-gradient-to-r from-background via-card to-background border-b border-border overflow-hidden relative"
             onMouseEnter={() => setIsPaused(true)}
             onMouseLeave={() => setIsPaused(false)}
         >
@@ -137,7 +137,7 @@ const LivePriceTicker = () => {
                     <Zap className="w-3.5 h-3.5 fill-current" />
                     <span className="text-[10px] font-black uppercase tracking-wider">LIVE</span>
                 </div>
-                <div className="w-8 h-full bg-gradient-to-r from-gray-900 to-transparent" />
+                <div className="w-8 h-full bg-gradient-to-r from-background to-transparent" />
             </div>
 
             {/* Ticker Content */}
@@ -152,17 +152,17 @@ const LivePriceTicker = () => {
                 {displayTickers.map((ticker, index) => (
                     <div
                         key={`${ticker.pair}-${index}`}
-                        className="flex items-center gap-3 px-4 border-r border-gray-700/50 hover:bg-white/5 transition-colors cursor-pointer"
+                        className="flex items-center gap-3 px-4 border-r border-border/50 hover:bg-card/5 transition-colors cursor-pointer"
                     >
                         {/* Pair Name */}
                         <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">
+                            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
                                 {ticker.pair}
                             </span>
                         </div>
 
                         {/* Price */}
-                        <span className="text-sm font-bold text-white tabular-nums tracking-tight">
+                        <span className="text-sm font-bold text-foreground tabular-nums tracking-tight">
                             {formatPrice(ticker.price, ticker.pair)}
                         </span>
 
@@ -179,7 +179,7 @@ const LivePriceTicker = () => {
                         </div>
 
                         {/* Volume (hidden on mobile) */}
-                        <span className="hidden lg:block text-[10px] text-gray-500 tabular-nums">
+                        <span className="hidden lg:block text-[10px] text-muted-foreground tabular-nums">
                             Vol: {(ticker.volume / 1000).toFixed(1)}K
                         </span>
                     </div>
@@ -187,7 +187,7 @@ const LivePriceTicker = () => {
             </div>
 
             {/* Right Fade */}
-            <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-gray-900 to-transparent z-10" />
+            <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-background to-transparent z-10" />
 
             {/* Inline Styles for Animation */}
             <style>{`

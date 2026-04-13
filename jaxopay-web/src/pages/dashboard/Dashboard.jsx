@@ -61,7 +61,7 @@ const BalanceOneLine = ({ children, className = '' }) => {
     <div ref={containerRef} className={`min-w-0 w-full overflow-hidden ${className}`}>
       <h3
         ref={textRef}
-        className="font-black text-gray-900 dark:text-white tabular-nums leading-tight"
+        className="font-black text-foreground tabular-nums leading-tight"
         style={{ fontSize: `${MAX_PX}px`, whiteSpace: 'nowrap' }}
       >
         {children}
@@ -139,11 +139,11 @@ const Dashboard = () => {
   }, []);
 
   const quickActions = [
-    { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'bg-accent-600', enabled: true },
+    { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'bg-primary', enabled: true },
     { name: 'Deposit', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-emerald-600', enabled: true },
-    { name: 'Markets', icon: BarChart2, href: '/dashboard/markets', color: 'bg-blue-600', enabled: true },
+    { name: 'Markets', icon: BarChart2, href: '/dashboard/markets', color: 'bg-primary', enabled: true },
     { name: 'Spot Trade', icon: Activity, href: '/dashboard/trade', color: 'bg-violet-600', enabled: isFeatureEnabled('crypto') },
-    { name: 'Instant Swap', icon: Zap, href: '/dashboard/swap', color: 'bg-orange-500', enabled: isFeatureEnabled('crypto') },
+    { name: 'Instant Swap', icon: Zap, href: '/dashboard/swap', color: 'bg-warning/100', enabled: isFeatureEnabled('crypto') },
     { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', color: 'bg-emerald-800', enabled: isFeatureEnabled('bill_payments') },
   ].filter(action => action.enabled);
 
@@ -186,7 +186,7 @@ const Dashboard = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     );
   }
@@ -195,9 +195,9 @@ const Dashboard = () => {
     <div className="space-y-6">
       {/* Error Alert */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center justify-between">
-          <p className="text-red-700 dark:text-red-300">{error}</p>
-          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-600 font-medium text-sm">
+        <div className="bg-danger/10 border border-danger/20 rounded-lg p-4 flex items-center justify-between">
+          <p className="text-danger">{error}</p>
+          <button onClick={() => setError(null)} className="text-danger hover:text-danger font-medium text-sm">
             Dismiss
           </button>
         </div>
@@ -222,7 +222,7 @@ const Dashboard = () => {
             </Link>
             <Link
               to="/dashboard/trade"
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-lg text-sm font-bold text-white hover:bg-blue-500 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-primary rounded-lg text-sm font-bold text-white hover:bg-primary/100 transition-colors"
             >
               <Activity size={15} />
               Spot Trade
@@ -254,13 +254,13 @@ const Dashboard = () => {
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Total Balance Card with Dropdown */}
-        <div className="card lg:col-span-1 border-none bg-white dark:bg-gray-800 shadow-xl relative overflow-hidden group hover:shadow-2xl transition-all duration-300">
+        <div className="card lg:col-span-1 border-none bg-card shadow-xl relative overflow-hidden group hover:shadow-2xl transition-all duration-300">
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-accent-50 dark:bg-accent-900/30 rounded-2xl border border-accent-100 dark:border-accent-800">
-              <Wallet className="h-6 w-6 text-accent-600" />
+            <div className="p-3 bg-primary/10 rounded-2xl border border-primary/20">
+              <Wallet className="h-6 w-6 text-primary" />
             </div>
             <select
-              className="appearance-none bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-1.5 rounded-xl text-xs font-black text-gray-700 dark:text-gray-300 focus:outline-none cursor-pointer hover:border-accent-500 transition-colors pr-8 relative z-10"
+              className="appearance-none bg-muted border border-border px-4 py-1.5 rounded-xl text-xs font-black text-foreground focus:outline-none cursor-pointer hover:border-primary transition-colors pr-8 relative z-10"
               onChange={async (e) => {
                 const currency = e.target.value;
                 if (currency === 'USD') {
@@ -312,7 +312,7 @@ const Dashboard = () => {
           </div>
 
           <div className="min-w-0 w-full">
-            <p className="text-sm font-black text-gray-400 uppercase tracking-widest mb-1">Total Balance</p>
+            <p className="text-sm font-black text-muted-foreground uppercase tracking-widest mb-1">Total Balance</p>
             <div className="flex items-center gap-2 min-w-0 w-full">
               <BalanceOneLine className="flex-1">
                 {user?.preferences?.show_balances === false ? '****' : (
@@ -322,35 +322,35 @@ const Dashboard = () => {
                 )}
               </BalanceOneLine>
               {stats.total_display_loading && (
-                <RefreshCw className="w-4 h-4 text-accent-500 animate-spin shrink-0" />
+                <RefreshCw className="w-4 h-4 text-primary animate-spin shrink-0" />
               )}
             </div>
           </div>
           <div className="flex items-center gap-1 mt-4">
-            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-              <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-success/10">
+              <ArrowUpRight className="w-3.5 h-3.5 text-success" />
             </span>
-            <p className="text-xs font-bold text-emerald-600">+4.2% Growth</p>
+            <p className="text-xs font-bold text-success">+4.2% Growth</p>
           </div>
         </div>
 
         {statsDisplay.slice(1).map((stat) => {
           const Icon = stat.icon;
           return (
-            <div key={stat.name} className="card border-none bg-white dark:bg-gray-800 shadow-sm">
+            <div key={stat.name} className="card border-none bg-card shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{stat.name}</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                  <p className="text-sm text-muted-foreground">{stat.name}</p>
+                  <p className="text-2xl font-bold text-foreground mt-1">
                     {stat.value}
                   </p>
-                  <p className={`text-sm mt-1 ${stat.changeType === 'positive' ? 'text-accent-600' : 'text-gray-600'
+                  <p className={`text-sm mt-1 ${stat.changeType === 'positive' ? 'text-primary' : 'text-muted-foreground'
                     }`}>
                     {stat.change}
                   </p>
                 </div>
-                <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
-                  <Icon className="h-6 w-6 text-gray-600 dark:text-gray-400" />
+                <div className="p-3 bg-muted rounded-lg border border-border">
+                  <Icon className="h-6 w-6 text-muted-foreground" />
                 </div>
               </div>
             </div>
@@ -360,7 +360,7 @@ const Dashboard = () => {
 
       {/* Quick Actions */}
       <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <h3 className="text-lg font-semibold text-foreground mb-4">
           Quick Actions
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -370,12 +370,12 @@ const Dashboard = () => {
               <Link
                 key={action.name}
                 to={action.href}
-                className="flex flex-col items-center p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-accent-500 dark:hover:border-accent-500 transition-colors"
+                className="flex flex-col items-center p-4 rounded-lg border-2 border-border hover:border-primary transition-colors"
               >
                 <div className={`${action.color} p-3 rounded-full mb-2`}>
                   <Icon className="h-6 w-6 text-white" />
                 </div>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                <span className="text-sm font-medium text-foreground">
                   {action.name}
                 </span>
               </Link>
@@ -387,19 +387,19 @@ const Dashboard = () => {
       {/* Recent Transactions */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          <h3 className="text-lg font-semibold text-foreground">
             Recent Transactions
           </h3>
           <Link
             to="/dashboard/transactions"
-            className="text-sm text-accent-600 hover:text-accent-500 dark:text-accent-400 font-medium"
+            className="text-sm text-primary hover:text-primary font-medium"
           >
             View all
           </Link>
         </div>
 
         {transactions.length === 0 ? (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+          <div className="text-center py-8 text-muted-foreground">
             <p>No transactions yet</p>
             <p className="text-sm mt-1">Start by funding your wallet</p>
           </div>
@@ -408,26 +408,26 @@ const Dashboard = () => {
             {transactions.slice(0, 5).map((transaction) => (
               <div
                 key={transaction.id}
-                className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                    <ArrowUpRight className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                  <div className="p-2 bg-muted rounded-lg">
+                    <ArrowUpRight className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900 dark:text-white">
+                    <p className="font-medium text-foreground">
                       {transaction.description || transaction.transaction_type}
                     </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <p className="text-sm text-muted-foreground">
                       {formatDateTime(transaction.created_at)}
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold text-gray-900 dark:text-white">
+                  <p className="font-semibold text-foreground">
                     {formatCurrency(transaction.from_amount, transaction.from_currency)}
                   </p>
-                  <p className={`text-sm ${transaction.status === 'completed' ? 'text-accent-600' : 'text-yellow-600'
+                  <p className={`text-sm ${transaction.status === 'completed' ? 'text-primary' : 'text-warning'
                     }`}>
                     {transaction.status}
                   </p>

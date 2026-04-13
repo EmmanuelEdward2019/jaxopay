@@ -103,21 +103,21 @@ const OrderBookPage = ({ wallets = [] }) => {
 
   return (
     <div className="space-y-4">
-      {/* Market Header - Quidax Style */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 shadow-sm">
+      {/* Market Header */}
+      <div className="bg-card rounded-lg border border-border p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-6">
           {/* Market Selector */}
           <div className="relative">
             <button
               onClick={() => setShowMarketSelector(!showMarketSelector)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-all"
+              className="flex items-center gap-2 px-4 py-2 bg-muted rounded-lg hover:bg-muted transition-all"
             >
               <div className="flex -space-x-2">
-                <div className="w-8 h-8 rounded-full bg-accent-600 flex items-center justify-center text-white text-xs font-black">{baseAsset}</div>
-                <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-gray-600 dark:text-gray-300 text-[10px] font-black">{quoteAsset}</div>
+                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-black">{baseAsset}</div>
+                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-[10px] font-black">{quoteAsset}</div>
               </div>
-              <span className="font-bold text-gray-900 dark:text-white">{baseAsset}/{quoteAsset}</span>
-              <ChevronDown className="w-4 h-4 text-gray-400" />
+              <span className="font-bold text-foreground">{baseAsset}/{quoteAsset}</span>
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
             </button>
 
             {/* Market Selector Dropdown */}
@@ -132,17 +132,17 @@ const OrderBookPage = ({ wallets = [] }) => {
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden"
+                    className="absolute top-full left-0 mt-2 w-80 bg-card rounded-xl shadow-2xl border border-border z-50 overflow-hidden"
                   >
-                    <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+                    <div className="p-3 border-b border-border">
                       <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                         <input
                           type="text"
                           value={marketSearch}
                           onChange={(e) => setMarketSearch(e.target.value)}
                           placeholder="Search markets..."
-                          className="w-full pl-10 pr-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 dark:text-white"
+                          className="w-full pl-10 pr-3 py-2 bg-muted rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
                           autoFocus
                         />
                       </div>
@@ -158,16 +158,16 @@ const OrderBookPage = ({ wallets = [] }) => {
                               setShowMarketSelector(false);
                               setMarketSearch('');
                             }}
-                            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all ${
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-muted transition-all ${
                               market === m.id ? 'bg-accent-50 dark:bg-accent-900/20' : ''
                             }`}
                           >
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-gray-900 dark:text-white">{m.name}</span>
+                              <span className="font-bold text-sm text-foreground">{m.name}</span>
                             </div>
                             {m.change_24h && (
                               <span className={`text-xs font-bold ${
-                                parseFloat(m.change_24h) >= 0 ? 'text-green-500' : 'text-red-500'
+                                parseFloat(m.change_24h) >= 0 ? 'text-green-500' : 'text-danger'
                               }`}>
                                 {parseFloat(m.change_24h) >= 0 ? '+' : ''}{parseFloat(m.change_24h).toFixed(2)}%
                               </span>
@@ -175,7 +175,7 @@ const OrderBookPage = ({ wallets = [] }) => {
                           </button>
                         ))
                       ) : (
-                        <div className="py-8 text-center text-gray-400 text-sm">
+                        <div className="py-8 text-center text-muted-foreground text-sm">
                           No markets found
                         </div>
                       )}
@@ -189,20 +189,20 @@ const OrderBookPage = ({ wallets = [] }) => {
           {/* Price Info */}
           <div className="flex items-center gap-6">
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase">Last Price</p>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase">Last Price</p>
               <p className={`text-lg font-black ${
                 ticker?.change && parseFloat(ticker.change) >= 0 
                   ? 'text-green-500' 
-                  : 'text-red-500'
+                  : 'text-danger'
               }`}>
                 {parseFloat(ticker?.last || 0).toLocaleString()}
               </p>
             </div>
             
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase">24h Change</p>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase">24h Change</p>
               <p className={`text-sm font-bold flex items-center gap-1 ${
-                parseFloat(ticker?.change || 0) >= 0 ? 'text-green-500' : 'text-red-500'
+                parseFloat(ticker?.change || 0) >= 0 ? 'text-green-500' : 'text-danger'
               }`}>
                 {ticker?.change || '0.00'}% 
                 {parseFloat(ticker?.change || 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
@@ -210,22 +210,22 @@ const OrderBookPage = ({ wallets = [] }) => {
             </div>
 
             <div className="hidden md:block">
-              <p className="text-[10px] font-bold text-gray-400 uppercase">24h High</p>
-              <p className="text-sm font-bold text-gray-900 dark:text-white">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase">24h High</p>
+              <p className="text-sm font-bold text-foreground">
                 {parseFloat(ticker?.high || 0).toLocaleString()}
               </p>
             </div>
 
             <div className="hidden md:block">
-              <p className="text-[10px] font-bold text-gray-400 uppercase">24h Low</p>
-              <p className="text-sm font-bold text-gray-900 dark:text-white">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase">24h Low</p>
+              <p className="text-sm font-bold text-foreground">
                 {parseFloat(ticker?.low || 0).toLocaleString()}
               </p>
             </div>
 
             <div className="hidden lg:block">
-              <p className="text-[10px] font-bold text-gray-400 uppercase">24h Volume</p>
-              <p className="text-sm font-bold text-gray-900 dark:text-white">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase">24h Volume</p>
+              <p className="text-sm font-bold text-foreground">
                 {parseFloat(ticker?.vol || 0).toFixed(2)} {baseAsset}
               </p>
             </div>
@@ -234,7 +234,7 @@ const OrderBookPage = ({ wallets = [] }) => {
               <span className="flex items-center gap-1 text-[10px] text-green-500 font-bold">
                 <Zap className="w-3 h-3" /> Live
               </span>
-              <span className="text-[10px] text-gray-400 font-bold">Quidax Market</span>
+              <span className="text-[10px] text-muted-foreground font-bold">Live Market</span>
             </div>
           </div>
         </div>
@@ -268,12 +268,12 @@ const OrderBookPage = ({ wallets = [] }) => {
         )}
       </AnimatePresence>
 
-      {/* Main Grid Layout - Quidax Style */}
+      {/* Main Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* Left Column: Chart & Order Book (3 cols) */}
         <div className="lg:col-span-3 space-y-4">
           {/* Chart */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 shadow-sm">
+          <div className="bg-card rounded-lg border border-border p-4 shadow-sm">
             <TradingViewChart symbol={market.toUpperCase()} />
           </div>
 
@@ -303,7 +303,7 @@ const OrderBookPage = ({ wallets = [] }) => {
             <p className="text-xs text-white/70 mb-3 leading-relaxed">
               View and manage your pending limit orders
             </p>
-            <button className="w-full py-2 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-black transition-all">
+            <button className="w-full py-2 bg-card/20 hover:bg-card/30 rounded-lg text-xs font-black transition-all">
               Go to History
             </button>
           </div>

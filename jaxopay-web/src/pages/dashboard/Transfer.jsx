@@ -23,10 +23,10 @@ const saveBeneficiaries = (list) =>
 const statusStyle = (status) => {
     const s = status?.toLowerCase();
     if (['completed', 'successful', 'success'].includes(s))
-        return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+        return 'bg-success/10 text-success';
     if (s === 'failed')
-        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
-    return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+        return 'bg-danger/10 text-danger';
+    return 'bg-warning/10 text-yellow-700';
 };
 
 // ── BankSelect component ──────────────────────────────────────────────────────
@@ -48,8 +48,8 @@ const BankSelect = ({ banks, selectedBank, onSelect, loading }) => {
 
     return (
         <div className="relative" ref={ref}>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Bank Name <span className="text-gray-400 font-normal">({banks.length} banks available)</span>
+            <label className="block text-sm font-medium text-foreground mb-2">
+                Bank Name <span className="text-muted-foreground font-normal">({banks.length} banks available)</span>
             </label>
 
             {/* Trigger button */}
@@ -57,24 +57,24 @@ const BankSelect = ({ banks, selectedBank, onSelect, loading }) => {
                 type="button"
                 onClick={() => { setOpen(!open); setSearch(''); }}
                 disabled={loading || banks.length === 0}
-                className="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none transition-all disabled:opacity-50"
+                className="w-full flex items-center justify-between px-4 py-3 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring outline-none transition-all disabled:opacity-50"
             >
                 <div className="flex items-center gap-3">
-                    <Building2 className="w-4 h-4 text-gray-400 shrink-0" />
+                    <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
                     {selectedBank ? (
                         <div className="text-left">
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">{selectedBank.name}</p>
-                            <p className="text-xs text-gray-400">Code: {selectedBank.code}</p>
+                            <p className="text-sm font-medium text-foreground">{selectedBank.name}</p>
+                            <p className="text-xs text-muted-foreground">Code: {selectedBank.code}</p>
                         </div>
                     ) : (
-                        <span className="text-gray-400 text-sm">
+                        <span className="text-muted-foreground text-sm">
                             {loading ? 'Loading banks...' : banks.length === 0 ? 'Failed to load banks — retry' : 'Select your bank'}
                         </span>
                     )}
                 </div>
                 {loading
-                    ? <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />
-                    : <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+                    ? <RefreshCw className="w-4 h-4 text-muted-foreground animate-spin" />
+                    : <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
                 }
             </button>
 
@@ -86,49 +86,49 @@ const BankSelect = ({ banks, selectedBank, onSelect, loading }) => {
                         animate={{ opacity: 1, y: 0, scaleY: 1 }}
                         exit={{ opacity: 0, y: -8, scaleY: 0.9 }}
                         style={{ transformOrigin: 'top' }}
-                        className="absolute z-50 w-full mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl"
+                        className="absolute z-50 w-full mt-2 bg-card border border-border rounded-xl shadow-2xl"
                     >
                         {/* Search inside dropdown */}
-                        <div className="p-3 border-b border-gray-100 dark:border-gray-700">
+                        <div className="p-3 border-b border-border">
                             <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                                 <input
                                     autoFocus
                                     type="text"
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
                                     placeholder="Type to search banks..."
-                                    className="w-full pl-9 pr-4 py-2 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
+                                    className="w-full pl-9 pr-4 py-2 text-sm bg-muted border border-border rounded-lg focus:ring-2 focus:ring-ring outline-none"
                                 />
                                 {search && (
                                     <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
-                                        <X className="w-3.5 h-3.5 text-gray-400" />
+                                        <X className="w-3.5 h-3.5 text-muted-foreground" />
                                     </button>
                                 )}
                             </div>
-                            <p className="text-xs text-gray-400 mt-1.5">{filtered.length} of {banks.length} banks</p>
+                            <p className="text-xs text-muted-foreground mt-1.5">{filtered.length} of {banks.length} banks</p>
                         </div>
 
                         {/* Bank list */}
                         <div className="max-h-64 overflow-y-auto">
                             {filtered.length === 0 ? (
-                                <p className="text-center text-sm text-gray-400 py-6">No banks match "{search}"</p>
+                                <p className="text-center text-sm text-muted-foreground py-6">No banks match "{search}"</p>
                             ) : (
                                 filtered.map((bank) => (
                                     <button
                                         key={bank.code}
                                         onClick={() => { onSelect(bank); setOpen(false); setSearch(''); }}
-                                        className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent-50 dark:hover:bg-accent-900/20 text-left transition-colors ${selectedBank?.code === bank.code ? 'bg-accent-50 dark:bg-accent-900/20' : ''}`}
+                                        className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-primary/10 text-left transition-colors ${selectedBank?.code === bank.code ? 'bg-primary/10' : ''}`}
                                     >
-                                        <div className="w-8 h-8 bg-accent-100 dark:bg-accent-900/40 rounded-lg flex items-center justify-center shrink-0 text-accent-600 font-bold text-xs">
+                                        <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center shrink-0 text-primary font-bold text-xs">
                                             {bank.name?.slice(0, 2).toUpperCase()}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{bank.name}</p>
-                                            <p className="text-xs text-gray-400">Bank code: {bank.code}</p>
+                                            <p className="text-sm font-medium text-foreground truncate">{bank.name}</p>
+                                            <p className="text-xs text-muted-foreground">Bank code: {bank.code}</p>
                                         </div>
                                         {selectedBank?.code === bank.code && (
-                                            <Check className="w-4 h-4 text-accent-600 shrink-0" />
+                                            <Check className="w-4 h-4 text-primary shrink-0" />
                                         )}
                                     </button>
                                 ))
@@ -312,21 +312,21 @@ const Transfer = () => {
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bank Transfer</h1>
-                <p className="text-gray-600 dark:text-gray-400">Send money directly to any Nigerian bank account</p>
+                <h1 className="text-2xl font-bold text-foreground">Bank Transfer</h1>
+                <p className="text-muted-foreground">Send money directly to any Nigerian bank account</p>
             </div>
 
             <AnimatePresence>
                 {error && (
                     <motion.div
                         initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                        className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3"
+                        className="bg-danger/10 border border-danger/20 rounded-lg p-4 flex items-start gap-3"
                     >
-                        <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                        <AlertCircle className="w-5 h-5 text-danger shrink-0 mt-0.5" />
                         <div className="flex-1">
-                            <p className="text-red-700 dark:text-red-300 text-sm">{error}</p>
+                            <p className="text-danger text-sm">{error}</p>
                         </div>
-                        <button onClick={() => setError(null)}><X className="w-4 h-4 text-red-400" /></button>
+                        <button onClick={() => setError(null)}><X className="w-4 h-4 text-danger" /></button>
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -340,13 +340,13 @@ const Transfer = () => {
                         <div className="card">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2">
-                                    <Users className="w-4 h-4 text-accent-600" />
-                                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Quick Select</h3>
+                                    <Users className="w-4 h-4 text-primary" />
+                                    <h3 className="text-sm font-semibold text-foreground">Quick Select</h3>
                                 </div>
                                 <div className="flex gap-2 text-xs">
                                     <button
                                         onClick={() => setShowBeneficiaries(!showBeneficiaries)}
-                                        className={`px-3 py-1 rounded-full font-medium transition-colors ${showBeneficiaries ? 'bg-accent-100 text-accent-700 dark:bg-accent-900/40 dark:text-accent-300' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                                        className={`px-3 py-1 rounded-full font-medium transition-colors ${showBeneficiaries ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
                                     >
                                         <Star className="w-3 h-3 inline mr-1" />Saved ({beneficiaries.length})
                                     </button>
@@ -356,28 +356,28 @@ const Transfer = () => {
                             {/* Saved Beneficiaries */}
                             {showBeneficiaries && beneficiaries.length > 0 && (
                                 <div className="space-y-2 mb-3">
-                                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Saved Contacts</p>
+                                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Saved Contacts</p>
                                     {beneficiaries.map((b) => (
-                                        <div key={b.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl group">
-                                            <div className="w-9 h-9 bg-accent-100 dark:bg-accent-900/30 rounded-full flex items-center justify-center shrink-0">
-                                                <span className="text-accent-700 dark:text-accent-300 font-bold text-sm">
+                                        <div key={b.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl group">
+                                            <div className="w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
+                                                <span className="text-primary font-bold text-sm">
                                                     {b.label?.slice(0, 2).toUpperCase()}
                                                 </span>
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{b.label}</p>
-                                                <p className="text-xs text-gray-400 truncate">{b.account_number} · {b.bank_name}</p>
+                                                <p className="text-sm font-medium text-foreground truncate">{b.label}</p>
+                                                <p className="text-xs text-muted-foreground truncate">{b.account_number} · {b.bank_name}</p>
                                             </div>
                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button
                                                     onClick={() => handleUseBeneficiary(b)}
-                                                    className="px-2.5 py-1 bg-accent-600 text-white text-xs font-medium rounded-lg hover:bg-accent-700"
+                                                    className="px-2.5 py-1 bg-primary text-white text-xs font-medium rounded-lg hover:bg-primary/90"
                                                 >
                                                     Use
                                                 </button>
                                                 <button
                                                     onClick={() => handleDeleteBeneficiary(b.id)}
-                                                    className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                                                    className="p-1.5 text-danger hover:text-danger hover:bg-danger/10 rounded-lg"
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
                                                 </button>
@@ -390,7 +390,7 @@ const Transfer = () => {
                             {/* Recent Banks */}
                             {recentBanks.length > 0 && (
                                 <div>
-                                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-2">Recent</p>
+                                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Recent</p>
                                     <div className="flex gap-2 flex-wrap">
                                         {recentBanks.map((b) => (
                                             <button
@@ -399,14 +399,14 @@ const Transfer = () => {
                                                     const bank = banks.find(bk => bk.code === b.code);
                                                     if (bank) { setSelectedBank(bank); setAccountNumber(b.account_number || ''); setAccountName(b.account_name || ''); }
                                                 }}
-                                                className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:border-accent-400 hover:bg-accent-50 dark:hover:bg-accent-900/20 transition-all text-left"
+                                                className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-xl hover:border-primary hover:bg-primary/10 transition-all text-left"
                                             >
-                                                <div className="w-7 h-7 bg-gray-100 dark:bg-gray-600 rounded-lg flex items-center justify-center text-xs font-bold text-gray-600 dark:text-gray-300">
+                                                <div className="w-7 h-7 bg-muted rounded-lg flex items-center justify-center text-xs font-bold text-muted-foreground">
                                                     {b.name?.slice(0, 2).toUpperCase()}
                                                 </div>
                                                 <div>
-                                                    <p className="text-xs font-medium text-gray-800 dark:text-gray-200">{b.name?.replace(/ Bank| PLC/gi, '')}</p>
-                                                    {b.account_number && <p className="text-xs text-gray-400">{b.account_number}</p>}
+                                                    <p className="text-xs font-medium text-foreground">{b.name?.replace(/ Bank| PLC/gi, '')}</p>
+                                                    {b.account_number && <p className="text-xs text-muted-foreground">{b.account_number}</p>}
                                                 </div>
                                             </button>
                                         ))}
@@ -422,11 +422,11 @@ const Transfer = () => {
                         <div className="flex items-center gap-2 mb-6">
                             {['Details', 'Confirm', 'Done'].map((label, index) => (
                                 <div key={label} className="flex items-center">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${step > index + 1 ? 'bg-accent-500 text-white' : step === index + 1 ? 'bg-accent-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'}`}>
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${step > index + 1 ? 'bg-primary text-white' : step === index + 1 ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>
                                         {step > index + 1 ? <Check className="w-4 h-4" /> : index + 1}
                                     </div>
-                                    <span className={`hidden sm:block ml-1.5 text-xs font-medium mr-3 ${step === index + 1 ? 'text-accent-600' : 'text-gray-400'}`}>{label}</span>
-                                    {index < 2 && <div className={`w-8 h-0.5 ${step > index + 1 ? 'bg-accent-500' : 'bg-gray-200 dark:bg-gray-700'}`} />}
+                                    <span className={`hidden sm:block ml-1.5 text-xs font-medium mr-3 ${step === index + 1 ? 'text-primary' : 'text-muted-foreground'}`}>{label}</span>
+                                    {index < 2 && <div className={`w-8 h-0.5 ${step > index + 1 ? 'bg-primary' : 'bg-muted'}`} />}
                                 </div>
                             ))}
                         </div>
@@ -434,7 +434,7 @@ const Transfer = () => {
                         {/* ── Step 1: Enter Details ── */}
                         {step === 1 && (
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
-                                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recipient Details</h2>
+                                <h2 className="text-lg font-semibold text-foreground">Recipient Details</h2>
 
                                 {/* Bank Dropdown */}
                                 <BankSelect
@@ -446,7 +446,7 @@ const Transfer = () => {
 
                                 {/* Account Number */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    <label className="block text-sm font-medium text-foreground mb-2">
                                         Account Number
                                     </label>
                                     <input
@@ -456,12 +456,12 @@ const Transfer = () => {
                                         value={accountNumber}
                                         onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
                                         placeholder="10-digit NUBAN account number"
-                                        className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none font-mono tracking-widest"
+                                        className="w-full px-4 py-3 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring outline-none font-mono tracking-widest"
                                     />
-                                    <p className="text-xs text-gray-400 mt-1">
+                                    <p className="text-xs text-muted-foreground mt-1">
                                         {accountNumber.length}/10 digits
                                         {selectedBank && accountNumber.length === 10 && !accountName && !resolving && (
-                                            <button onClick={resolveAccount} className="ml-2 text-accent-600 underline">Verify manually</button>
+                                            <button onClick={resolveAccount} className="ml-2 text-primary underline">Verify manually</button>
                                         )}
                                     </p>
                                 </div>
@@ -472,37 +472,37 @@ const Transfer = () => {
                                         <motion.div key="resolving"
                                             initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
                                             exit={{ opacity: 0, height: 0 }}
-                                            className="flex items-center gap-2 text-sm text-gray-500 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3"
+                                            className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg p-3"
                                         >
-                                            <RefreshCw className="w-4 h-4 animate-spin text-accent-600" />
+                                            <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                                             Verifying account with bank...
                                         </motion.div>
                                     )}
                                     {accountName && !resolving && (
                                         <motion.div key="resolved"
                                             initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                                            className="bg-accent-50 dark:bg-accent-900/20 border border-accent-200 dark:border-accent-800 rounded-xl p-4"
+                                            className="bg-primary/10 border border-primary/20 rounded-xl p-4"
                                         >
                                             <div className="flex items-start justify-between">
                                                 <div className="flex items-center gap-3">
-                                                    <CheckCircle className="w-5 h-5 text-accent-600 shrink-0" />
+                                                    <CheckCircle className="w-5 h-5 text-primary shrink-0" />
                                                     <div>
-                                                        <p className="text-xs text-gray-500 dark:text-gray-400">Account Verified</p>
-                                                        <p className="font-bold text-gray-900 dark:text-white">{accountName}</p>
-                                                        <p className="text-xs text-accent-600">{selectedBank?.name}</p>
+                                                        <p className="text-xs text-muted-foreground">Account Verified</p>
+                                                        <p className="font-bold text-foreground">{accountName}</p>
+                                                        <p className="text-xs text-primary">{selectedBank?.name}</p>
                                                     </div>
                                                 </div>
                                                 {/* Add to beneficiaries button */}
                                                 {!alreadySaved && !addingBeneficiary && (
                                                     <button
                                                         onClick={() => setAddingBeneficiary(true)}
-                                                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition-colors"
+                                                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
                                                     >
                                                         <UserPlus className="w-3.5 h-3.5" /> Save
                                                     </button>
                                                 )}
                                                 {alreadySaved && (
-                                                    <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                                                    <span className="flex items-center gap-1 text-xs text-success font-medium">
                                                         <Bookmark className="w-3.5 h-3.5" /> Saved
                                                     </span>
                                                 )}
@@ -522,17 +522,17 @@ const Transfer = () => {
                                                             value={beneficiaryLabel}
                                                             onChange={(e) => setBeneficiaryLabel(e.target.value)}
                                                             placeholder={`Label (e.g. "${accountName.split(' ')[0]}")`}
-                                                            className="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-accent-300 dark:border-accent-700 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
+                                                            className="flex-1 px-3 py-2 text-sm bg-card border border-accent-300 rounded-lg focus:ring-2 focus:ring-ring outline-none"
                                                         />
                                                         <button
                                                             onClick={handleAddBeneficiary}
-                                                            className="px-3 py-2 bg-accent-600 text-white text-sm font-medium rounded-lg hover:bg-accent-700"
+                                                            className="px-3 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90"
                                                         >
                                                             <Check className="w-4 h-4" />
                                                         </button>
                                                         <button
                                                             onClick={() => { setAddingBeneficiary(false); setBeneficiaryLabel(''); }}
-                                                            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm rounded-lg"
+                                                            className="px-3 py-2 bg-muted text-muted-foreground text-sm rounded-lg"
                                                         >
                                                             <X className="w-4 h-4" />
                                                         </button>
@@ -545,31 +545,31 @@ const Transfer = () => {
 
                                 {/* Amount */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        Amount (₦) <span className="text-gray-400 font-normal">— minimum ₦100</span>
+                                    <label className="block text-sm font-medium text-foreground mb-2">
+                                        Amount (₦) <span className="text-muted-foreground font-normal">— minimum ₦100</span>
                                     </label>
                                     <div className="relative">
-                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-lg">₦</span>
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-medium text-lg">₦</span>
                                         <input
                                             type="number"
                                             value={amount}
                                             onChange={(e) => setAmount(e.target.value)}
                                             placeholder="0.00"
                                             min="100"
-                                            className="w-full pl-9 pr-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none text-xl font-bold"
+                                            className="w-full pl-9 pr-4 py-3 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring outline-none text-xl font-bold"
                                         />
                                     </div>
                                     {selectedWalletData && (
-                                        <p className="text-xs text-gray-400 mt-1">
-                                            Available: <strong className="text-gray-700 dark:text-gray-200">{formatCurrency(selectedWalletData.available_balance || selectedWalletData.balance || 0, 'NGN')}</strong>
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            Available: <strong className="text-foreground">{formatCurrency(selectedWalletData.available_balance || selectedWalletData.balance || 0, 'NGN')}</strong>
                                         </p>
                                     )}
                                 </div>
 
                                 {/* Narration */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        Narration <span className="text-gray-400 font-normal">(optional)</span>
+                                    <label className="block text-sm font-medium text-foreground mb-2">
+                                        Narration <span className="text-muted-foreground font-normal">(optional)</span>
                                     </label>
                                     <input
                                         type="text"
@@ -577,18 +577,18 @@ const Transfer = () => {
                                         onChange={(e) => setNarration(e.target.value)}
                                         maxLength={100}
                                         placeholder="What is this transfer for?"
-                                        className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
+                                        className="w-full px-4 py-3 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring outline-none"
                                     />
                                 </div>
 
                                 {/* Source wallet (show if multiple NGN wallets) */}
                                 {wallets.length > 1 && (
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Pay From</label>
+                                        <label className="block text-sm font-medium text-foreground mb-2">Pay From</label>
                                         <select
                                             value={selectedWallet}
                                             onChange={(e) => setSelectedWallet(e.target.value)}
-                                            className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                                            className="w-full px-4 py-3 bg-card border border-border rounded-lg"
                                         >
                                             {wallets.map((w) => (
                                                 <option key={w.id} value={w.id}>
@@ -602,7 +602,7 @@ const Transfer = () => {
                                 <button
                                     onClick={() => setStep(2)}
                                     disabled={!canProceed}
-                                    className="w-full py-3.5 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl disabled:opacity-50 transition-all flex items-center justify-center gap-2 text-base"
+                                    className="w-full py-3.5 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl disabled:opacity-50 transition-all flex items-center justify-center gap-2 text-base"
                                 >
                                     Review Transfer <ArrowRight className="w-5 h-5" />
                                 </button>
@@ -613,16 +613,16 @@ const Transfer = () => {
                         {step === 2 && (
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                                 <div className="flex items-center gap-2 mb-5">
-                                    <button onClick={() => setStep(1)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                                        <ChevronRight className="w-5 h-5 rotate-180 text-gray-500" />
+                                    <button onClick={() => setStep(1)} className="p-2 hover:bg-muted rounded-lg">
+                                        <ChevronRight className="w-5 h-5 rotate-180 text-muted-foreground" />
                                     </button>
-                                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Confirm Transfer</h2>
+                                    <h2 className="text-lg font-semibold text-foreground">Confirm Transfer</h2>
                                 </div>
 
-                                <div className="bg-gradient-to-br from-accent-50 to-accent-100/50 dark:from-accent-900/20 dark:to-gray-800 border border-accent-200 dark:border-accent-800 rounded-2xl p-6 mb-5">
+                                <div className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-2xl p-6 mb-5">
                                     <div className="text-center mb-6">
-                                        <p className="text-sm text-gray-500 mb-1">Transfer Amount</p>
-                                        <p className="text-4xl font-bold text-gray-900 dark:text-white">
+                                        <p className="text-sm text-muted-foreground mb-1">Transfer Amount</p>
+                                        <p className="text-4xl font-bold text-foreground">
                                             {formatCurrency(parseFloat(amount), 'NGN')}
                                         </p>
                                     </div>
@@ -635,26 +635,26 @@ const Transfer = () => {
                                             { label: 'Source Wallet', value: 'NGN Wallet' },
                                         ].map((row) => (
                                             <div key={row.label} className="flex justify-between gap-4">
-                                                <span className="text-gray-500">{row.label}</span>
-                                                <span className="font-medium text-gray-900 dark:text-white text-right">{row.value}</span>
+                                                <span className="text-muted-foreground">{row.label}</span>
+                                                <span className="font-medium text-foreground text-right">{row.value}</span>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
 
-                                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 flex items-start gap-2 mb-5 text-xs text-yellow-700 dark:text-yellow-300">
+                                <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 flex items-start gap-2 mb-5 text-xs text-yellow-700">
                                     <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
                                     <span>Please verify the recipient details before confirming. Bank transfers are processed instantly and cannot be reversed.</span>
                                 </div>
 
                                 <div className="flex gap-3">
-                                    <button onClick={() => setStep(1)} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl">
+                                    <button onClick={() => setStep(1)} className="flex-1 py-3 bg-muted text-foreground font-semibold rounded-xl">
                                         Back
                                     </button>
                                     <button
                                         onClick={handleSend}
                                         disabled={loading}
-                                        className="flex-1 py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
+                                        className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
                                     >
                                         {loading ? <><RefreshCw className="w-4 h-4 animate-spin" /> Sending...</> : <><Send className="w-4 h-4" /> Send Now</>}
                                     </button>
@@ -665,14 +665,14 @@ const Transfer = () => {
                         {/* ── Step 4: Success ── */}
                         {step === 4 && result && (
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8">
-                                <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <CheckCircle className="w-10 h-10 text-green-600" />
+                                <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <CheckCircle className="w-10 h-10 text-success" />
                                 </div>
-                                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Transfer Initiated!</h2>
-                                <p className="text-gray-600 dark:text-gray-400 mb-6">
+                                <h2 className="text-xl font-bold text-foreground mb-2">Transfer Initiated!</h2>
+                                <p className="text-muted-foreground mb-6">
                                     {formatCurrency(result.amount, 'NGN')} is being sent to <strong>{result.recipient?.account_name}</strong>
                                 </p>
-                                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 mb-6 space-y-2 text-sm text-left">
+                                <div className="bg-muted/50 rounded-xl p-4 mb-6 space-y-2 text-sm text-left">
                                     {[
                                         { label: 'Reference', value: result.reference, mono: true },
                                         { label: 'Recipient', value: result.recipient?.account_name },
@@ -681,16 +681,16 @@ const Transfer = () => {
                                         { label: 'Status', value: result.status, badge: true },
                                     ].map((row) => (
                                         <div key={row.label} className="flex justify-between items-center">
-                                            <span className="text-gray-500">{row.label}</span>
+                                            <span className="text-muted-foreground">{row.label}</span>
                                             {row.badge ? (
                                                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusStyle(row.value)}`}>{row.value}</span>
                                             ) : (
-                                                <span className={`font-medium text-gray-800 dark:text-gray-200 ${row.mono ? 'font-mono text-xs' : ''}`}>{row.value}</span>
+                                                <span className={`font-medium text-foreground ${row.mono ? 'font-mono text-xs' : ''}`}>{row.value}</span>
                                             )}
                                         </div>
                                     ))}
                                 </div>
-                                <button onClick={resetForm} className="px-6 py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl transition-colors">
+                                <button onClick={resetForm} className="px-6 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl transition-colors">
                                     Make Another Transfer
                                 </button>
                             </motion.div>
@@ -704,15 +704,15 @@ const Transfer = () => {
                     <div className="card">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
-                                <Star className="w-4 h-4 text-yellow-500" />
-                                <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Saved Contacts</h3>
+                                <Star className="w-4 h-4 text-warning" />
+                                <h3 className="font-semibold text-foreground text-sm">Saved Contacts</h3>
                             </div>
-                            <span className="text-xs text-gray-400">{beneficiaries.length}</span>
+                            <span className="text-xs text-muted-foreground">{beneficiaries.length}</span>
                         </div>
                         {beneficiaries.length === 0 ? (
                             <div className="text-center py-6">
-                                <StarOff className="w-6 h-6 text-gray-300 mx-auto mb-1" />
-                                <p className="text-xs text-gray-400">No saved contacts yet.<br />Verify an account and tap <strong>Save</strong>.</p>
+                                <StarOff className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
+                                <p className="text-xs text-muted-foreground">No saved contacts yet.<br />Verify an account and tap <strong>Save</strong>.</p>
                             </div>
                         ) : (
                             <div className="space-y-2">
@@ -720,16 +720,16 @@ const Transfer = () => {
                                     <button
                                         key={b.id}
                                         onClick={() => handleUseBeneficiary(b)}
-                                        className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-accent-50 dark:hover:bg-accent-900/20 transition-colors text-left group"
+                                        className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-primary/10 transition-colors text-left group"
                                     >
-                                        <div className="w-9 h-9 bg-accent-100 dark:bg-accent-900/30 rounded-full flex items-center justify-center shrink-0">
-                                            <span className="text-accent-700 dark:text-accent-300 font-bold text-xs">{b.label?.slice(0, 2).toUpperCase()}</span>
+                                        <div className="w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
+                                            <span className="text-primary font-bold text-xs">{b.label?.slice(0, 2).toUpperCase()}</span>
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{b.label}</p>
-                                            <p className="text-xs text-gray-400 truncate">{b.bank_name}</p>
+                                            <p className="text-sm font-medium text-foreground truncate">{b.label}</p>
+                                            <p className="text-xs text-muted-foreground truncate">{b.bank_name}</p>
                                         </div>
-                                        <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-accent-500 shrink-0" />
+                                        <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
                                     </button>
                                 ))}
                             </div>
@@ -740,33 +740,33 @@ const Transfer = () => {
                     <div className="card">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
-                                <Clock className="w-4 h-4 text-accent-600" />
-                                <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Recent Transfers</h3>
+                                <Clock className="w-4 h-4 text-primary" />
+                                <h3 className="font-semibold text-foreground text-sm">Recent Transfers</h3>
                             </div>
-                            <button onClick={fetchHistory} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                                <RefreshCw className="w-3.5 h-3.5 text-gray-400" />
+                            <button onClick={fetchHistory} className="p-1.5 hover:bg-muted rounded-lg">
+                                <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
                             </button>
                         </div>
                         {history.length === 0 ? (
                             <div className="text-center py-6">
-                                <Send className="w-6 h-6 text-gray-300 mx-auto mb-1" />
-                                <p className="text-xs text-gray-400">No transfers yet</p>
+                                <Send className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
+                                <p className="text-xs text-muted-foreground">No transfers yet</p>
                             </div>
                         ) : (
                             <div className="space-y-2.5">
                                 {history.map((txn) => {
                                     const meta = txn.metadata || {};
                                     return (
-                                        <div key={txn.id} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                                        <div key={txn.id} className="p-3 bg-muted/50 rounded-xl">
                                             <div className="flex items-start justify-between gap-2 mb-1">
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="font-medium text-gray-900 dark:text-white text-sm truncate">
+                                                    <p className="font-medium text-foreground text-sm truncate">
                                                         {meta.account_name || txn.description || '—'}
                                                     </p>
-                                                    <p className="text-xs text-gray-400 truncate">{meta.bank_name || ''}</p>
+                                                    <p className="text-xs text-muted-foreground truncate">{meta.bank_name || ''}</p>
                                                 </div>
                                                 <div className="text-right shrink-0">
-                                                    <p className="font-bold text-gray-900 dark:text-white text-sm">
+                                                    <p className="font-bold text-foreground text-sm">
                                                         {formatCurrency(txn.from_amount, txn.from_currency)}
                                                     </p>
                                                     <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${statusStyle(txn.status)}`}>
@@ -774,7 +774,7 @@ const Transfer = () => {
                                                     </span>
                                                 </div>
                                             </div>
-                                            <p className="text-xs text-gray-400">{formatDateTime(txn.created_at)}</p>
+                                            <p className="text-xs text-muted-foreground">{formatDateTime(txn.created_at)}</p>
                                         </div>
                                     );
                                 })}

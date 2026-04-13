@@ -9,7 +9,7 @@ import { useAppStore } from '../../store/appStore';
  *  - Stablecoin/Fiat  (e.g. USDTNGN, USDCGHS)    → FX_IDC:USD{fiat}  (USD as proxy)
  *  - Crypto/Fiat      (e.g. BTCNGN, ETHGHS)       → BINANCE:{base}USDT
  *
- * Quidax NGN/GHS/KES pairs don't exist on TradingView, so we always fall back
+ * NGN/GHS/KES pairs don't exist on TradingView, so we always fall back
  * to a liquid BINANCE pair so the chart never fails to load.
  */
 const FIAT_SUFFIXES = ['NGN', 'GHS', 'KES', 'ZAR', 'EUR', 'GBP', 'USD'];

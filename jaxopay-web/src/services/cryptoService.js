@@ -124,7 +124,7 @@ const cryptoService = {
     }
   },
 
-  // Step 3: Refresh an existing quotation (pass original params so Quidax can re-price)
+  // Step 3: Refresh an existing quotation (pass original params so the exchange can re-price)
   refreshSwapQuotation: async (quotation_id, body = {}) => {
     try {
       const res = await apiClient.post(`/crypto/swap/quotation/${quotation_id}/refresh`, body);
@@ -157,7 +157,7 @@ const cryptoService = {
     }
   },
 
-  // Get Order Book (Quidax)
+  // Get Order Book
   getOrderBook: async (market, limit = 50) => {
     try {
       const response = await apiClient.get('/crypto/order-book', {
@@ -225,7 +225,7 @@ const cryptoService = {
     }
   },
 
-  // Get Quidax crypto config (networks, fees)
+  // Get crypto config (networks, fees)
   getConfig: async () => {
     try {
       const response = await apiClient.get('/crypto/config');

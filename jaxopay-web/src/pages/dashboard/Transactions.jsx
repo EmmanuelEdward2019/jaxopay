@@ -104,9 +104,9 @@ const Transactions = () => {
 
     const getTransactionColor = (type, direction) => {
         if (direction === 'credit' || type === 'crypto_sell') {
-            return 'bg-accent-100 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400';
+            return 'bg-primary/10 text-primary';
         }
-        return 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400';
+        return 'bg-danger/10 text-danger';
     };
 
     const filteredTransactions = transactions.filter(tx => {
@@ -154,12 +154,12 @@ const Transactions = () => {
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Transactions</h1>
-                    <p className="text-gray-600 dark:text-gray-400">View and manage all your transactions</p>
+                    <h1 className="text-2xl font-bold text-foreground">Transactions</h1>
+                    <p className="text-muted-foreground">View and manage all your transactions</p>
                 </div>
                 <button
                     onClick={exportTransactions}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted text-foreground font-medium rounded-lg transition-colors"
                 >
                     <Download className="w-5 h-5" />
                     Export CSV
@@ -168,9 +168,9 @@ const Transactions = () => {
 
             {/* Error Alert */}
             {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                    <p className="text-red-700 dark:text-red-300">{error}</p>
-                    <button onClick={() => setError(null)} className="text-red-500 underline text-sm mt-1">
+                <div className="bg-danger/10 border border-danger/20 rounded-lg p-4">
+                    <p className="text-danger">{error}</p>
+                    <button onClick={() => setError(null)} className="text-danger underline text-sm mt-1">
                         Dismiss
                     </button>
                 </div>
@@ -180,22 +180,22 @@ const Transactions = () => {
             {stats && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="card">
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Volume</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                        <p className="text-sm text-muted-foreground mb-1">Total Volume</p>
+                        <p className="text-2xl font-bold text-foreground">
                             {formatCurrency(stats.total_volume || 0, 'USD')}
                         </p>
                     </div>
                     <div className="card">
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Transactions</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.total_count || 0}</p>
+                        <p className="text-sm text-muted-foreground mb-1">Transactions</p>
+                        <p className="text-2xl font-bold text-foreground">{stats.total_count || 0}</p>
                     </div>
                     <div className="card">
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Completed</p>
-                        <p className="text-2xl font-bold text-accent-600">{stats.completed_count || 0}</p>
+                        <p className="text-sm text-muted-foreground mb-1">Completed</p>
+                        <p className="text-2xl font-bold text-primary">{stats.completed_count || 0}</p>
                     </div>
                     <div className="card">
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Pending</p>
-                        <p className="text-2xl font-bold text-yellow-600">{stats.pending_count || 0}</p>
+                        <p className="text-sm text-muted-foreground mb-1">Pending</p>
+                        <p className="text-2xl font-bold text-warning">{stats.pending_count || 0}</p>
                     </div>
                 </div>
             )}
@@ -203,36 +203,36 @@ const Transactions = () => {
             {/* Search and Quick Filters */}
             <div className="flex flex-col sm:flex-row gap-4">
                 <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <input
                         type="text"
                         placeholder="Search transactions..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-accent-500"
+                        className="w-full pl-10 pr-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring"
                     />
                 </div>
                 <div className="flex gap-2">
                     <button
                         onClick={() => setShowFilters(!showFilters)}
                         className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors ${showFilters || typeFilter !== 'all' || statusFilter !== 'all'
-                            ? 'bg-accent-600 text-white shadow-lg shadow-accent-500/20'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                            ? 'bg-primary text-white shadow-lg shadow-accent-500/20'
+                            : 'bg-muted text-foreground'
                             }`}
                     >
                         <Filter className="w-5 h-5" />
                         Filters
                         {(typeFilter !== 'all' || statusFilter !== 'all') && (
-                            <span className="bg-white/20 text-xs px-1.5 py-0.5 rounded-full">
+                            <span className="bg-card/20 text-xs px-1.5 py-0.5 rounded-full">
                                 {[typeFilter !== 'all', statusFilter !== 'all'].filter(Boolean).length}
                             </span>
                         )}
                     </button>
                     <button
                         onClick={fetchTransactions}
-                        className="p-2.5 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        className="p-2.5 bg-muted rounded-lg hover:bg-muted transition-colors"
                     >
-                        <RefreshCw className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                        <RefreshCw className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
             </div>
@@ -248,13 +248,13 @@ const Transactions = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         {/* Type Filter */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <label className="block text-sm font-medium text-foreground mb-2">
                                 Transaction Type
                             </label>
                             <select
                                 value={typeFilter}
                                 onChange={(e) => setTypeFilter(e.target.value)}
-                                className="w-full px-3 py-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                                className="w-full px-3 py-2.5 bg-card border border-border rounded-lg"
                             >
                                 {TRANSACTION_TYPES.map(type => (
                                     <option key={type.value} value={type.value}>{type.label}</option>
@@ -264,13 +264,13 @@ const Transactions = () => {
 
                         {/* Status Filter */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <label className="block text-sm font-medium text-foreground mb-2">
                                 Status
                             </label>
                             <select
                                 value={statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value)}
-                                className="w-full px-3 py-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                                className="w-full px-3 py-2.5 bg-card border border-border rounded-lg"
                             >
                                 {STATUS_OPTIONS.map(status => (
                                     <option key={status.value} value={status.value}>{status.label}</option>
@@ -280,25 +280,25 @@ const Transactions = () => {
 
                         {/* Date Range */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <label className="block text-sm font-medium text-foreground mb-2">
                                 From Date
                             </label>
                             <input
                                 type="date"
                                 value={dateRange.start}
                                 onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                                className="w-full px-3 py-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                                className="w-full px-3 py-2.5 bg-card border border-border rounded-lg"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <label className="block text-sm font-medium text-foreground mb-2">
                                 To Date
                             </label>
                             <input
                                 type="date"
                                 value={dateRange.end}
                                 onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                                className="w-full px-3 py-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                                className="w-full px-3 py-2.5 bg-card border border-border rounded-lg"
                             />
                         </div>
                     </div>
@@ -306,7 +306,7 @@ const Transactions = () => {
                     <div className="flex justify-end mt-4">
                         <button
                             onClick={clearFilters}
-                            className="text-sm text-accent-600 hover:text-accent-700 font-medium"
+                            className="text-sm text-primary hover:text-accent-700 font-medium"
                         >
                             Clear all filters
                         </button>
@@ -318,13 +318,13 @@ const Transactions = () => {
             <div className="card">
                 {loading ? (
                     <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent-600"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                     </div>
                 ) : filteredTransactions.length === 0 ? (
                     <div className="text-center py-12">
-                        <ArrowLeftRight className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No transactions found</h3>
-                        <p className="text-gray-600 dark:text-gray-400">
+                        <ArrowLeftRight className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-foreground mb-2">No transactions found</h3>
+                        <p className="text-muted-foreground">
                             {transactions.length === 0
                                 ? "You haven't made any transactions yet."
                                 : 'No transactions match your filters.'}
@@ -339,7 +339,7 @@ const Transactions = () => {
                                     key={tx.id}
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
-                                    className="flex items-center justify-between p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+                                    className="flex items-center justify-between p-4 rounded-xl hover:bg-muted/50 transition-colors cursor-pointer"
                                     onClick={() => setSelectedTransaction(tx)}
                                 >
                                     <div className="flex items-center gap-4">
@@ -347,16 +347,16 @@ const Transactions = () => {
                                             <Icon className="w-5 h-5" />
                                         </div>
                                         <div>
-                                            <p className="font-medium text-gray-900 dark:text-white">
+                                            <p className="font-medium text-foreground">
                                                 {tx.description || formatTransactionType(tx.transaction_type)}
                                             </p>
-                                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                                            <p className="text-sm text-muted-foreground">
                                                 {formatDateTime(tx.created_at)}
                                             </p>
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className={`font-semibold ${tx.direction === 'credit' ? 'text-accent-600' : 'text-gray-900 dark:text-white'
+                                        <p className={`font-semibold ${tx.direction === 'credit' ? 'text-primary' : 'text-foreground'
                                             }`}>
                                             {tx.direction === 'credit' ? '+' : '-'}
                                             {formatCurrency(tx.amount, tx.currency)}
@@ -373,22 +373,22 @@ const Transactions = () => {
 
                 {/* Pagination */}
                 {pagination.total > pagination.limit && (
-                    <div className="flex items-center justify-between pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="flex items-center justify-between pt-4 mt-4 border-t border-border">
+                        <p className="text-sm text-muted-foreground">
                             Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
                         </p>
                         <div className="flex gap-2">
                             <button
                                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
                                 disabled={pagination.page === 1}
-                                className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-3 py-1.5 bg-muted rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Previous
                             </button>
                             <button
                                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
                                 disabled={pagination.page * pagination.limit >= pagination.total}
-                                className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-3 py-1.5 bg-muted rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Next
                             </button>
@@ -415,29 +415,29 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={onClose}
         >
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Transaction Details</h2>
+                    <h2 className="text-xl font-bold text-foreground">Transaction Details</h2>
                     <button
                         onClick={onClose}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        className="p-2 hover:bg-muted rounded-lg transition-colors"
                     >
-                        <X className="w-5 h-5 text-gray-500" />
+                        <X className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
 
                 <div className="space-y-4">
-                    <div className="text-center pb-4 border-b border-gray-200 dark:border-gray-700">
-                        <p className={`text-3xl font-bold ${transaction.direction === 'credit' ? 'text-accent-600' : 'text-gray-900 dark:text-white'
+                    <div className="text-center pb-4 border-b border-border">
+                        <p className={`text-3xl font-bold ${transaction.direction === 'credit' ? 'text-primary' : 'text-foreground'
                             }`}>
                             {transaction.direction === 'credit' ? '+' : '-'}
                             {formatCurrency(transaction.amount, transaction.currency)}
@@ -449,35 +449,35 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">Type</p>
-                            <p className="font-medium text-gray-900 dark:text-white">
+                            <p className="text-sm text-muted-foreground">Type</p>
+                            <p className="font-medium text-foreground">
                                 {formatTransactionType(transaction.transaction_type)}
                             </p>
                         </div>
                         <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">Date</p>
-                            <p className="font-medium text-gray-900 dark:text-white">
+                            <p className="text-sm text-muted-foreground">Date</p>
+                            <p className="font-medium text-foreground">
                                 {formatDateTime(transaction.created_at)}
                             </p>
                         </div>
                         {transaction.reference && (
                             <div className="col-span-2">
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Reference</p>
-                                <p className="font-mono text-sm text-gray-900 dark:text-white break-all">
+                                <p className="text-sm text-muted-foreground">Reference</p>
+                                <p className="font-mono text-sm text-foreground break-all">
                                     {transaction.reference}
                                 </p>
                             </div>
                         )}
                         {transaction.description && (
                             <div className="col-span-2">
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Description</p>
-                                <p className="text-gray-900 dark:text-white">{transaction.description}</p>
+                                <p className="text-sm text-muted-foreground">Description</p>
+                                <p className="text-foreground">{transaction.description}</p>
                             </div>
                         )}
                         {transaction.fee && (
                             <div>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Fee</p>
-                                <p className="font-medium text-gray-900 dark:text-white">
+                                <p className="text-sm text-muted-foreground">Fee</p>
+                                <p className="font-medium text-foreground">
                                     {formatCurrency(transaction.fee, transaction.currency)}
                                 </p>
                             </div>
@@ -487,7 +487,7 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
 
                 <button
                     onClick={onClose}
-                    className="w-full mt-6 py-3 px-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    className="w-full mt-6 py-3 px-4 bg-muted text-foreground font-semibold rounded-lg hover:bg-muted transition-colors"
                 >
                     Close
                 </button>

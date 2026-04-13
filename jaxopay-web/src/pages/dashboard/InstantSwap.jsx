@@ -536,7 +536,7 @@ const InstantSwap = () => {
               {/* Info footer */}
               <div className="flex items-center justify-center gap-2 py-2">
                 <Clock className="w-3 h-3 text-[#848e9c]" />
-                <span className="text-[10px] text-[#848e9c]">Swaps are executed instantly via Quidax liquidity</span>
+                <span className="text-[10px] text-[#848e9c]">Swaps are executed instantly with best available liquidity</span>
               </div>
             </div>
           )}

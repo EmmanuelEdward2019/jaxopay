@@ -179,7 +179,7 @@ const Cards = () => {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-600"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
             </div>
         );
     }
@@ -189,12 +189,12 @@ const Cards = () => {
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Virtual Cards</h1>
-                    <p className="text-gray-600 dark:text-gray-400">Manage your USD virtual cards for online payments</p>
+                    <h1 className="text-2xl font-bold text-foreground">Virtual Cards</h1>
+                    <p className="text-muted-foreground">Manage your USD virtual cards for online payments</p>
                 </div>
                 <button
                     onClick={() => setShowCreateModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors shadow-lg shadow-accent-500/20"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg transition-colors shadow-lg shadow-accent-500/20"
                 >
                     <Plus className="w-5 h-5" />
                     Create Card
@@ -203,20 +203,20 @@ const Cards = () => {
 
             {/* Error Alert */}
             {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                    <p className="text-red-700 dark:text-red-300">{error}</p>
-                    <button onClick={() => setError(null)} className="text-red-500 underline text-sm mt-1">
+                <div className="bg-danger/10 border border-danger/20 rounded-lg p-4">
+                    <p className="text-danger">{error}</p>
+                    <button onClick={() => setError(null)} className="text-danger underline text-sm mt-1">
                         Dismiss
                     </button>
                 </div>
             )}
 
             {/* KYC Notice */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+            <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                 <div>
-                    <p className="text-blue-800 dark:text-blue-200 font-medium">USD Virtual Cards</p>
-                    <p className="text-blue-700 dark:text-blue-300 text-sm">
+                    <p className="text-primary font-medium">USD Virtual Cards</p>
+                    <p className="text-blue-700 text-sm">
                         Create reloadable or single-use USD virtual cards accepted worldwide. Cards are linked to your USD wallet.
                     </p>
                 </div>
@@ -226,14 +226,14 @@ const Cards = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {cards.length === 0 ? (
                     <div className="col-span-full text-center py-12">
-                        <CreditCard className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No virtual cards yet</h3>
-                        <p className="text-gray-600 dark:text-gray-400 mb-4">
+                        <CreditCard className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-foreground mb-2">No virtual cards yet</h3>
+                        <p className="text-muted-foreground mb-4">
                             Create your first USD virtual card for secure online payments
                         </p>
                         <button
                             onClick={() => setShowCreateModal(true)}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors"
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg transition-colors"
                         >
                             <Plus className="w-5 h-5" />
                             Create Your First Card
@@ -263,7 +263,7 @@ const Cards = () => {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         {card.card_status === 'frozen' && (
-                                            <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-medium rounded-full flex items-center gap-1 border border-gray-200 dark:border-gray-700">
+                                            <span className="px-2 py-1 bg-muted text-muted-foreground text-xs font-medium rounded-full flex items-center gap-1 border border-border">
                                                 <Lock className="w-3 h-3" />
                                                 Frozen
                                             </span>
@@ -273,7 +273,7 @@ const Cards = () => {
                                                 e.stopPropagation();
                                                 toggleShowDetails(card.id);
                                             }}
-                                            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                                            className="p-2 hover:bg-card/10 rounded-lg transition-colors"
                                             title={showDetails[card.id] ? 'Hide card details' : 'Reveal card details'}
                                         >
                                             {secureLoading[card.id]
@@ -311,7 +311,7 @@ const Cards = () => {
                                                     e.stopPropagation();
                                                     copyToClipboard(secureData[card.id].card_number, `number-${card.id}`);
                                                 }}
-                                                className="p-1 hover:bg-white/10 rounded transition-colors"
+                                                className="p-1 hover:bg-card/10 rounded transition-colors"
                                             >
                                                 {copiedField === `number-${card.id}` ? (
                                                     <Check className="w-4 h-4 text-green-400" />
@@ -349,7 +349,7 @@ const Cards = () => {
                                                         e.stopPropagation();
                                                         copyToClipboard(secureData[card.id]?.cvv || card.cvv, `cvv-${card.id}`);
                                                     }}
-                                                    className="p-1 hover:bg-white/10 rounded transition-colors"
+                                                    className="p-1 hover:bg-card/10 rounded transition-colors"
                                                 >
                                                     {copiedField === `cvv-${card.id}` ? (
                                                         <Check className="w-3 h-3 text-green-400" />
@@ -383,7 +383,7 @@ const Cards = () => {
                             </div>
 
                             {/* Card Actions */}
-                            <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
+                            <div className="p-4 bg-card border-t border-border">
                                 <div className="flex gap-2">
                                     <button
                                         onClick={(e) => {
@@ -392,7 +392,7 @@ const Cards = () => {
                                             setShowFundModal(true);
                                         }}
                                         disabled={card.card_status === 'frozen' || card.card_type === 'single_use'}
-                                        className="flex-1 py-2 px-3 bg-accent-50 dark:bg-accent-900/20 text-accent-600 dark:text-accent-400 font-medium rounded-lg hover:bg-accent-100 dark:hover:bg-accent-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        className="flex-1 py-2 px-3 bg-primary/10 text-primary font-medium rounded-lg hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                     >
                                         <DollarSign className="w-4 h-4" />
                                         Fund
@@ -403,8 +403,8 @@ const Cards = () => {
                                             card.card_status === 'frozen' ? handleUnfreezeCard(card.id) : handleFreezeCard(card.id);
                                         }}
                                         className={`px-3 py-2 rounded-lg transition-colors ${card.card_status === 'frozen'
-                                            ? 'bg-accent-50 dark:bg-accent-900/20 text-accent-600 dark:text-accent-400 hover:bg-accent-100 dark:hover:bg-accent-900/40'
-                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                            ? 'bg-primary/10 text-primary hover:bg-primary/10'
+                                            : 'bg-muted text-muted-foreground hover:bg-muted'
                                             }`}
                                     >
                                         {card.card_status === 'frozen' ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
@@ -414,7 +414,7 @@ const Cards = () => {
                                             e.stopPropagation();
                                             handleTerminateCard(card.id);
                                         }}
-                                        className="px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+                                        className="px-3 py-2 bg-danger/10 text-danger rounded-lg hover:bg-danger/10 transition-colors"
                                     >
                                         <Trash2 className="w-5 h-5" />
                                     </button>
@@ -429,7 +429,7 @@ const Cards = () => {
             {selectedCard && (
                 <div className="card">
                     <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        <h3 className="text-lg font-semibold text-foreground">
                             Card Transactions (*{selectedCard.last_four})
                         </h3>
                         <button
@@ -437,14 +437,14 @@ const Cards = () => {
                                 setSelectedCard(null);
                                 setTransactions([]);
                             }}
-                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            className="p-2 hover:bg-muted rounded-lg transition-colors"
                         >
-                            <X className="w-5 h-5 text-gray-500" />
+                            <X className="w-5 h-5 text-muted-foreground" />
                         </button>
                     </div>
 
                     {transactions.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        <div className="text-center py-8 text-muted-foreground">
                             <p>No transactions yet</p>
                         </div>
                     ) : (
@@ -452,21 +452,21 @@ const Cards = () => {
                             {transactions.map((tx) => (
                                 <div
                                     key={tx.id}
-                                    className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                                    className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors"
                                 >
                                     <div>
-                                        <p className="font-medium text-gray-900 dark:text-white">
+                                        <p className="font-medium text-foreground">
                                             {tx.merchant || tx.description || 'Card Transaction'}
                                         </p>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                                        <p className="text-sm text-muted-foreground">
                                             {formatDateTime(tx.created_at)}
                                         </p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="font-semibold text-gray-900 dark:text-white">
+                                        <p className="font-semibold text-foreground">
                                             -{formatCurrency(tx.amount, 'USD')}
                                         </p>
-                                        <p className={`text-sm ${tx.status === 'completed' ? 'text-accent-600' : 'text-yellow-600'
+                                        <p className={`text-sm ${tx.status === 'completed' ? 'text-primary' : 'text-warning'
                                             }`}>
                                             {tx.status}
                                         </p>
@@ -549,80 +549,80 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={onClose}
         >
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
+                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Create Virtual Card</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                        <X className="w-5 h-5 text-gray-500" />
+                    <h2 className="text-xl font-bold text-foreground">Create Virtual Card</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-muted rounded-lg transition-colors">
+                        <X className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
 
                 {error && (
-                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                        <p className="text-red-700 dark:text-red-300 text-sm">{error}</p>
+                    <div className="mb-4 p-3 bg-danger/10 border border-danger/20 rounded-lg">
+                        <p className="text-danger text-sm">{error}</p>
                     </div>
                 )}
 
                 {/* Card Type Selection */}
                 <div className="mb-5">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Card Type</label>
+                    <label className="block text-sm font-medium text-foreground mb-3">Card Type</label>
                     <div className="grid grid-cols-2 gap-3">
                         <button
                             onClick={() => setCardType('multi_use')}
                             className={`p-4 rounded-xl border-2 text-left transition-colors ${cardType === 'multi_use'
-                                ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
-                                : 'border-gray-200 dark:border-gray-700'
+                                ? 'border-primary bg-primary/10'
+                                : 'border-border'
                                 }`}
                         >
-                            <CreditCard className={`w-8 h-8 mb-2 ${cardType === 'multi_use' ? 'text-accent-600' : 'text-gray-400'}`} />
-                            <p className="font-semibold text-gray-900 dark:text-white">Multi-Use</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Reloadable card</p>
+                            <CreditCard className={`w-8 h-8 mb-2 ${cardType === 'multi_use' ? 'text-primary' : 'text-muted-foreground'}`} />
+                            <p className="font-semibold text-foreground">Multi-Use</p>
+                            <p className="text-xs text-muted-foreground">Reloadable card</p>
                         </button>
                         <button
                             onClick={() => setCardType('single_use')}
                             className={`p-4 rounded-xl border-2 text-left transition-colors ${cardType === 'single_use'
-                                ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
-                                : 'border-gray-200 dark:border-gray-700'
+                                ? 'border-primary bg-primary/10'
+                                : 'border-border'
                                 }`}
                         >
-                            <CreditCard className={`w-8 h-8 mb-2 ${cardType === 'single_use' ? 'text-accent-600' : 'text-gray-400'}`} />
-                            <p className="font-semibold text-gray-900 dark:text-white">Single-Use</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">One-time card</p>
+                            <CreditCard className={`w-8 h-8 mb-2 ${cardType === 'single_use' ? 'text-primary' : 'text-muted-foreground'}`} />
+                            <p className="font-semibold text-foreground">Single-Use</p>
+                            <p className="text-xs text-muted-foreground">One-time card</p>
                         </button>
                     </div>
                 </div>
 
                 {/* Spending Limit */}
                 <div className="mb-5">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-foreground mb-2">
                         Spending Limit (USD)
                     </label>
                     <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">$</span>
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">$</span>
                         <input
                             type="number"
                             value={spendingLimit}
                             onChange={e => setSpendingLimit(e.target.value)}
                             min="1"
                             max="10000"
-                            className="w-full pl-8 pr-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
+                            className="w-full pl-8 pr-4 py-3 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring"
                         />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Maximum spending limit for this card</p>
+                    <p className="text-xs text-muted-foreground mt-1">Maximum spending limit for this card</p>
                 </div>
 
                 {/* Billing Address */}
                 <div className="mb-5">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Billing Address</label>
+                    <label className="block text-sm font-medium text-foreground mb-3">Billing Address</label>
                     <div className="space-y-3">
                         <input
                             type="text"
@@ -630,7 +630,7 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
                             value={billingAddress.line1}
                             onChange={e => setBillingAddress(p => ({ ...p, line1: e.target.value }))}
                             maxLength={50}
-                            className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white text-sm"
+                            className="w-full px-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring focus:outline-none text-sm"
                         />
                         <div className="grid grid-cols-2 gap-3">
                             <input
@@ -638,7 +638,7 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
                                 placeholder="City"
                                 value={billingAddress.city}
                                 onChange={e => setBillingAddress(p => ({ ...p, city: e.target.value }))}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white text-sm"
+                                className="w-full px-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring focus:outline-none text-sm"
                             />
                             <input
                                 type="text"
@@ -646,7 +646,7 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
                                 value={billingAddress.state}
                                 onChange={e => setBillingAddress(p => ({ ...p, state: e.target.value }))}
                                 maxLength={2}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white text-sm"
+                                className="w-full px-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring focus:outline-none text-sm"
                             />
                         </div>
                         <div className="grid grid-cols-2 gap-3">
@@ -655,12 +655,12 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
                                 placeholder="Postal Code"
                                 value={billingAddress.postal_code}
                                 onChange={e => setBillingAddress(p => ({ ...p, postal_code: e.target.value }))}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white text-sm"
+                                className="w-full px-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring focus:outline-none text-sm"
                             />
                             <select
                                 value={billingAddress.country}
                                 onChange={e => setBillingAddress(p => ({ ...p, country: e.target.value }))}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500 focus:outline-none dark:text-white text-sm"
+                                className="w-full px-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring focus:outline-none text-sm"
                             >
                                 <option value="NG">🇳🇬 Nigeria</option>
                                 <option value="GH">🇬🇭 Ghana</option>
@@ -673,8 +673,8 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
                 </div>
 
                 {/* Info */}
-                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-5">
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                <div className="bg-muted/50 rounded-lg p-4 mb-5">
+                    <p className="text-sm text-muted-foreground">
                         <strong>USD Virtual Card</strong>. Accepted worldwide for online payments.
                         {cardType === 'single_use' && ' This card terminates after one transaction.'}
                     </p>
@@ -684,14 +684,14 @@ const CreateCardModal = ({ onClose, onCreate, loading }) => {
                 <div className="flex gap-3">
                     <button
                         onClick={onClose}
-                        className="flex-1 py-3 px-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-lg"
+                        className="flex-1 py-3 px-4 bg-muted text-foreground font-semibold rounded-lg"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={handleSubmit}
                         disabled={loading}
-                        className="flex-1 py-3 px-4 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 py-3 px-4 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? 'Creating...' : 'Create Card'}
                     </button>
@@ -713,36 +713,36 @@ const FundCardModal = ({ card, wallets, onClose, onFund, loading }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={onClose}
         >
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
+                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Fund Card</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                        <X className="w-5 h-5 text-gray-500" />
+                    <h2 className="text-xl font-bold text-foreground">Fund Card</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-muted rounded-lg transition-colors">
+                        <X className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </div>
 
                 {wallets.length === 0 && (
-                    <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 rounded-lg">
-                        <p className="text-amber-700 dark:text-amber-300 text-sm">No USD wallet found. Please create a USD wallet first.</p>
+                    <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-amber-700 text-sm">No USD wallet found. Please create a USD wallet first.</p>
                     </div>
                 )}
 
                 {/* Card Info */}
-                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-6">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Card ending in</p>
-                    <p className="text-lg font-mono font-bold text-gray-900 dark:text-white">
+                <div className="bg-muted/50 rounded-lg p-4 mb-6">
+                    <p className="text-sm text-muted-foreground">Card ending in</p>
+                    <p className="text-lg font-mono font-bold text-foreground">
                         •••• {card.last_four || card.card_last_four || '****'}
                     </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                         Current balance: {formatCurrency(card.balance || 0, 'USD')}
                     </p>
                 </div>
@@ -751,11 +751,11 @@ const FundCardModal = ({ card, wallets, onClose, onFund, loading }) => {
                     {/* Wallet Selection */}
                     {wallets.length > 0 && (
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">From Wallet</label>
+                            <label className="block text-sm font-medium text-foreground mb-2">From Wallet</label>
                             <select
                                 value={selectedWallet}
                                 onChange={(e) => setSelectedWallet(e.target.value)}
-                                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
+                                className="w-full px-4 py-3 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring"
                             >
                                 {wallets.map((w) => (
                                     <option key={w.id} value={w.id}>
@@ -764,23 +764,23 @@ const FundCardModal = ({ card, wallets, onClose, onFund, loading }) => {
                                 ))}
                             </select>
                             {wallet && (
-                                <p className="text-sm text-gray-500 mt-1">Available: {formatCurrency(wallet.balance || 0, 'USD')}</p>
+                                <p className="text-sm text-muted-foreground mt-1">Available: {formatCurrency(wallet.balance || 0, 'USD')}</p>
                             )}
                         </div>
                     )}
 
                     {/* Amount */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Amount (USD)</label>
+                        <label className="block text-sm font-medium text-foreground mb-2">Amount (USD)</label>
                         <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">$</span>
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">$</span>
                             <input
                                 type="number"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
                                 placeholder="0.00"
                                 min="0.01"
-                                className="w-full pl-8 pr-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-accent-500"
+                                className="w-full pl-8 pr-4 py-3 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring"
                             />
                         </div>
                     </div>
@@ -788,13 +788,13 @@ const FundCardModal = ({ card, wallets, onClose, onFund, loading }) => {
 
                 {/* Actions */}
                 <div className="flex gap-3 mt-6">
-                    <button onClick={onClose} className="flex-1 py-3 px-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-lg">
+                    <button onClick={onClose} className="flex-1 py-3 px-4 bg-muted text-foreground font-semibold rounded-lg">
                         Cancel
                     </button>
                     <button
                         onClick={() => onFund(card.id, parseFloat(amount))}
                         disabled={!amount || parseFloat(amount) <= 0 || loading || wallets.length === 0}
-                        className="flex-1 py-3 px-4 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg disabled:opacity-50"
+                        className="flex-1 py-3 px-4 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg disabled:opacity-50"
                     >
                         {loading ? 'Funding...' : 'Fund Card'}
                     </button>

@@ -8,61 +8,52 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb', // Vibrant Blue
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
-          950: '#172554',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
         },
-        accent: {
-          50: '#f0fdf4',
-          100: '#dcfce7',
-          200: '#bbf7d0',
-          300: '#86efac',
-          400: '#4ade80',
-          500: '#22c55e', // Vibrant Logo Green
-          600: '#16a34a',
-          700: '#15803d',
-          800: '#166534',
-          900: '#14532d',
-          950: '#052e16',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
         },
         secondary: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
         },
-        // Trading UI colors
-        trade: {
-          bg:    '#0b0e11',   // deepest background (Binance style)
-          card:  '#161a1f',   // card / panel background
-          panel: '#1e2329',   // slightly lighter panel
-          border:'#2b3139',   // border color
-          hover: '#2b3139',   // hover state
-          muted: '#848e9c',   // muted text
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
         },
-        bull:  '#0ecb81',     // green — price up / buy
-        bear:  '#f6465d',     // red  — price down / sell
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        success: 'hsl(var(--success))',
+        danger: 'hsl(var(--danger))',
+        warning: 'hsl(var(--warning))',
+        sidebar: {
+          background: 'hsl(var(--sidebar-background))',
+          border: 'hsl(var(--sidebar-border))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          muted: 'hsl(var(--sidebar-muted))',
+        },
+        // Trading colors (keep as-is for charts/trading UI)
+        bull: '#0ecb81',
+        bear: '#f6465d',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+        heading: ['Space Grotesk', 'sans-serif'],
+      },
+      borderRadius: {
+        DEFAULT: 'var(--radius)',
       },
     },
   },
   plugins: [],
 }
-

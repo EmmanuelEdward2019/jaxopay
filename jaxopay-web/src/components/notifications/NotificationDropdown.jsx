@@ -104,9 +104,9 @@ const NotificationDropdown = () => {
         switch (type) {
             case 'success': return <CheckCircle2 className="w-5 h-5 text-green-500" />;
             case 'warning': return <AlertTriangle className="w-5 h-5 text-amber-500" />;
-            case 'error': return <X className="w-5 h-5 text-red-500" />;
+            case 'error': return <X className="w-5 h-5 text-danger" />;
             case 'announcement': return <Bell className="w-5 h-5 text-purple-500" />;
-            default: return <Info className="w-5 h-5 text-blue-500" />;
+            default: return <Info className="w-5 h-5 text-primary" />;
         }
     };
 
@@ -114,7 +114,7 @@ const NotificationDropdown = () => {
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 relative transition-colors"
+                className="p-2 rounded-lg text-muted-foreground hover:bg-muted relative transition-colors"
             >
                 <Bell className="h-5 w-5" />
                 {unreadCount > 0 && (
@@ -130,11 +130,11 @@ const NotificationDropdown = () => {
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 z-50 overflow-hidden"
+                        className="absolute right-0 mt-2 w-80 sm:w-96 bg-card rounded-2xl shadow-2xl border border-border z-50 overflow-hidden"
                     >
                         {/* Header */}
-                        <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                            <h3 className="font-bold text-gray-900 dark:text-white">Notifications</h3>
+                        <div className="p-4 border-b border-border flex items-center justify-between">
+                            <h3 className="font-bold text-foreground">Notifications</h3>
                             {unreadCount > 0 && (
                                 <button
                                     onClick={handleMarkAllAsRead}
@@ -153,18 +153,18 @@ const NotificationDropdown = () => {
                                 </div>
                             ) : notifications.length === 0 ? (
                                 <div className="p-12 text-center">
-                                    <div className="w-16 h-16 bg-gray-50 dark:bg-gray-700/50 rounded-full flex items-center justify-center mx-auto mb-4">
-                                        <Bell className="w-8 h-8 text-gray-400" />
+                                    <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <Bell className="w-8 h-8 text-muted-foreground" />
                                     </div>
-                                    <p className="text-gray-500 dark:text-gray-400 font-medium">No notifications yet</p>
+                                    <p className="text-muted-foreground font-medium">No notifications yet</p>
                                 </div>
                             ) : (
-                                <div className="divide-y divide-gray-50 dark:divide-gray-700/50">
+                                <div className="divide-y divide-border">
                                     {notifications.map((notification) => (
                                         <div
                                             key={notification.id}
                                             onClick={() => handleNotificationClick(notification)}
-                                            className={`p-4 flex gap-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors group relative ${!notification.is_read ? 'bg-primary-50/30 dark:bg-primary-900/10' : ''
+                                            className={`p-4 flex gap-4 cursor-pointer hover:bg-muted/30 transition-colors group relative ${!notification.is_read ? 'bg-primary-50/30 dark:bg-primary-900/10' : ''
                                                 }`}
                                         >
                                             <div className="shrink-0 mt-0.5">
@@ -172,15 +172,15 @@ const NotificationDropdown = () => {
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between mb-0.5">
-                                                    <p className={`text-sm font-bold truncate ${notification.is_read ? 'text-gray-700 dark:text-gray-200' : 'text-gray-900 dark:text-white'
+                                                    <p className={`text-sm font-bold truncate ${notification.is_read ? 'text-foreground' : 'text-foreground'
                                                         }`}>
                                                         {notification.title}
                                                     </p>
-                                                    <p className="text-[10px] text-gray-400 shrink-0">
+                                                    <p className="text-[10px] text-muted-foreground shrink-0">
                                                         {formatDateTime(notification.created_at)}
                                                     </p>
                                                 </div>
-                                                <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                                                <p className="text-xs text-muted-foreground line-clamp-2">
                                                     {notification.message}
                                                 </p>
                                             </div>
@@ -189,7 +189,7 @@ const NotificationDropdown = () => {
                                             )}
                                             <button
                                                 onClick={(e) => handleDelete(e, notification.id)}
-                                                className="absolute right-4 bottom-4 p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                className="absolute right-4 bottom-4 p-1 text-muted-foreground hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" />
                                             </button>
@@ -200,8 +200,8 @@ const NotificationDropdown = () => {
                         </div>
 
                         {/* Footer */}
-                        <div className="p-3 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 text-center">
-                            <button className="text-xs font-bold text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                        <div className="p-3 bg-muted/50 border-t border-border text-center">
+                            <button className="text-xs font-bold text-muted-foreground hover:text-foreground">
                                 View all notifications
                             </button>
                         </div>
@@ -217,7 +217,7 @@ const NotificationDropdown = () => {
                             initial={{ scale: 0.9, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700"
+                            className="bg-card rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-border"
                             onClick={e => e.stopPropagation()}
                         >
                             <div className={`h-2 bg-gradient-to-r ${selectedNotification.type === 'error' ? 'from-red-500 to-red-600' :
@@ -237,32 +237,32 @@ const NotificationDropdown = () => {
                                             {getIcon(selectedNotification.type)}
                                         </div>
                                         <div>
-                                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">{selectedNotification.title}</h3>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400">{formatDateTime(selectedNotification.created_at)}</p>
+                                            <h3 className="text-xl font-bold text-foreground">{selectedNotification.title}</h3>
+                                            <p className="text-xs text-muted-foreground">{formatDateTime(selectedNotification.created_at)}</p>
                                         </div>
                                     </div>
                                     <button
                                         onClick={() => setSelectedNotification(null)}
-                                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                                        className="p-2 hover:bg-muted rounded-full transition-colors"
                                     >
-                                        <X className="w-6 h-6 text-gray-400" />
+                                        <X className="w-6 h-6 text-muted-foreground" />
                                     </button>
                                 </div>
 
                                 <div className="prose dark:prose-invert max-w-none">
-                                    <p className="text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                                    <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
                                         {selectedNotification.message}
                                     </p>
                                 </div>
 
                                 {selectedNotification.metadata && Object.keys(selectedNotification.metadata).length > 0 && (
-                                    <div className="mt-8 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-700">
-                                        <p className="text-xs font-bold text-gray-400 uppercase mb-2">Additional Information</p>
+                                    <div className="mt-8 p-4 bg-muted/30 rounded-2xl border border-border">
+                                        <p className="text-xs font-bold text-muted-foreground uppercase mb-2">Additional Information</p>
                                         <div className="grid grid-cols-2 gap-4">
                                             {Object.entries(selectedNotification.metadata).map(([key, value]) => (
                                                 <div key={key}>
-                                                    <p className="text-[10px] text-gray-500 dark:text-gray-400 capitalize">{key.replace(/_/g, ' ')}</p>
-                                                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{String(value)}</p>
+                                                    <p className="text-[10px] text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</p>
+                                                    <p className="text-sm font-semibold text-foreground">{String(value)}</p>
                                                 </div>
                                             ))}
                                         </div>
@@ -272,7 +272,7 @@ const NotificationDropdown = () => {
                                 <div className="mt-8">
                                     <button
                                         onClick={() => setSelectedNotification(null)}
-                                        className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-2xl hover:opacity-90 transition-all shadow-lg"
+                                        className="w-full py-4 bg-background dark:bg-card text-white font-bold rounded-2xl hover:opacity-90 transition-all shadow-lg"
                                     >
                                         Dismiss
                                     </button>

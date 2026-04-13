@@ -47,6 +47,7 @@ import Exchange from './pages/dashboard/Exchange';
 import Markets from './pages/dashboard/Markets';
 import Trade from './pages/dashboard/Trade';
 import InstantSwap from './pages/dashboard/InstantSwap';
+import DashboardHome from './pages/dashboard/DashboardHome';
 import DashboardGiftCards from './pages/dashboard/GiftCards';
 import KYC from './pages/dashboard/KYC';
 import CrossBorder from './pages/dashboard/CrossBorder';
@@ -248,7 +249,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="markets" replace />} />
+            <Route index element={<DashboardHome />} />
             <Route path="portfolio" element={<Dashboard />} />
 
             {/* Dashboard Features */}

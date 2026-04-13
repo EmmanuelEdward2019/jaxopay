@@ -139,7 +139,7 @@ const Markets = () => {
 
   const SortArrow = ({ col }) => {
     if (sortBy !== col) return <span className="ml-1 opacity-30 text-[10px]">⇅</span>;
-    return <span className="ml-1 text-primary-500 text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span>;
+    return <span className="ml-1 text-primary text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span>;
   };
 
   const formatPrice = (price, quote) => {
@@ -162,82 +162,82 @@ const Markets = () => {
 
   // Skeleton row
   const SkeletonRow = () => (
-    <tr className="border-b border-gray-100 dark:border-[#2b3139] animate-pulse">
-      <td className="px-4 py-3.5"><div className="w-4 h-4 bg-gray-200 dark:bg-[#2b3139] rounded" /></td>
+    <tr className="border-b border-border animate-pulse">
+      <td className="px-4 py-3.5"><div className="w-4 h-4 bg-muted rounded" /></td>
       <td className="px-3 py-3.5">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-gray-200 dark:bg-[#2b3139]" />
+          <div className="w-9 h-9 rounded-full bg-muted" />
           <div className="space-y-1.5">
-            <div className="h-3.5 w-20 bg-gray-200 dark:bg-[#2b3139] rounded" />
-            <div className="h-2.5 w-14 bg-gray-100 dark:bg-[#1e2329] rounded" />
+            <div className="h-3.5 w-20 bg-muted rounded" />
+            <div className="h-2.5 w-14 bg-muted rounded" />
           </div>
         </div>
       </td>
-      <td className="px-4 py-3.5"><div className="h-3.5 w-24 bg-gray-200 dark:bg-[#2b3139] rounded ml-auto" /></td>
-      <td className="px-4 py-3.5"><div className="h-5 w-16 bg-gray-100 dark:bg-[#1e2329] rounded-full ml-auto" /></td>
-      <td className="px-4 py-3.5 hidden md:table-cell"><div className="h-3.5 w-18 bg-gray-100 dark:bg-[#1e2329] rounded ml-auto" /></td>
-      <td className="px-4 py-3.5 hidden md:table-cell"><div className="h-3.5 w-18 bg-gray-100 dark:bg-[#1e2329] rounded ml-auto" /></td>
-      <td className="px-4 py-3.5 hidden lg:table-cell"><div className="h-3.5 w-16 bg-gray-100 dark:bg-[#1e2329] rounded ml-auto" /></td>
-      <td className="px-4 py-3.5"><div className="h-7 w-16 bg-gray-200 dark:bg-[#2b3139] rounded-lg ml-auto" /></td>
+      <td className="px-4 py-3.5"><div className="h-3.5 w-24 bg-muted rounded ml-auto" /></td>
+      <td className="px-4 py-3.5"><div className="h-5 w-16 bg-muted rounded-full ml-auto" /></td>
+      <td className="px-4 py-3.5 hidden md:table-cell"><div className="h-3.5 w-18 bg-muted rounded ml-auto" /></td>
+      <td className="px-4 py-3.5 hidden md:table-cell"><div className="h-3.5 w-18 bg-muted rounded ml-auto" /></td>
+      <td className="px-4 py-3.5 hidden lg:table-cell"><div className="h-3.5 w-16 bg-muted rounded ml-auto" /></td>
+      <td className="px-4 py-3.5"><div className="h-7 w-16 bg-muted rounded-lg ml-auto" /></td>
     </tr>
   );
 
   return (
-    <div className="min-h-screen bg-white dark:bg-[#0b0e11]">
+    <div className="min-h-screen bg-card">
       {/* Page header */}
-      <div className="px-5 pt-5 pb-4 border-b border-gray-100 dark:border-[#2b3139] flex items-center justify-between gap-4 flex-wrap bg-white dark:bg-[#161a1f]">
+      <div className="px-5 pt-5 pb-4 border-b border-border flex items-center justify-between gap-4 flex-wrap bg-card">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary-50 dark:bg-primary-900/20 rounded-lg border border-primary-100 dark:border-primary-800/30">
-            <BarChart2 className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+          <div className="p-2 bg-primary/10 rounded-lg border border-primary/20">
+            <BarChart2 className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">Markets</h1>
-            <p className="text-xs text-gray-500 dark:text-[#848e9c]">{sorted.length} trading pairs · live data</p>
+            <h1 className="text-lg font-bold text-foreground leading-tight">Markets</h1>
+            <p className="text-xs text-muted-foreground">{sorted.length} trading pairs · live data</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => fetchData(true)}
             title="Refresh"
-            className={`p-2 rounded-lg border border-gray-200 dark:border-[#2b3139] bg-white dark:bg-[#1e2329] text-gray-500 dark:text-[#848e9c] hover:text-primary-600 dark:hover:text-white transition-colors ${refreshing ? 'animate-spin' : ''}`}
+            className={`p-2 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary transition-colors ${refreshing ? 'animate-spin' : ''}`}
           >
             <RefreshCw size={15} />
           </button>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-[#848e9c]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search pair…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="bg-gray-50 dark:bg-[#1e2329] border border-gray-200 dark:border-[#2b3139] rounded-lg pl-9 pr-4 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-[#848e9c] focus:outline-none focus:border-primary-500 w-52 transition-colors"
+              className="bg-muted border border-border rounded-lg pl-9 pr-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary-500 w-52 transition-colors"
             />
           </div>
         </div>
       </div>
 
       {/* Filter tabs */}
-      <div className="px-5 py-3 flex items-center gap-2 border-b border-gray-100 dark:border-[#2b3139] overflow-x-auto no-scrollbar bg-white dark:bg-[#161a1f]">
+      <div className="px-5 py-3 flex items-center gap-2 border-b border-border overflow-x-auto no-scrollbar bg-card">
         <button
           onClick={() => setShowFavoritesOnly(f => !f)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all shrink-0 ${
             showFavoritesOnly
-              ? 'bg-yellow-50 dark:bg-yellow-500/20 border-yellow-300 dark:border-yellow-500/40 text-yellow-700 dark:text-yellow-400'
-              : 'bg-gray-50 dark:bg-[#1e2329] border-gray-200 dark:border-[#2b3139] text-gray-500 dark:text-[#848e9c] hover:text-gray-800 dark:hover:text-white'
+              ? 'bg-warning/10 border-yellow-300/40 text-yellow-700'
+              : 'bg-muted border-border text-muted-foreground hover:text-foreground'
           }`}
         >
-          <Star size={12} className={showFavoritesOnly ? 'fill-yellow-500 dark:fill-yellow-400' : ''} />
+          <Star size={12} className={showFavoritesOnly ? 'fill-yellow-500' : ''} />
           Favorites
         </button>
-        <div className="h-4 w-px bg-gray-200 dark:bg-[#2b3139] shrink-0" />
+        <div className="h-4 w-px bg-muted shrink-0" />
         {QUOTE_TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setQuoteFilter(tab.id)}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all shrink-0 ${
               quoteFilter === tab.id
-                ? 'bg-primary-50 dark:bg-primary-600/20 border-primary-300 dark:border-primary-600/40 text-primary-700 dark:text-primary-400'
-                : 'bg-gray-50 dark:bg-[#1e2329] border-gray-200 dark:border-[#2b3139] text-gray-500 dark:text-[#848e9c] hover:text-gray-800 dark:hover:text-white'
+                ? 'bg-primary/10 border-primary/30 text-primary'
+                : 'bg-muted border-border text-muted-foreground hover:text-foreground'
             }`}
           >
             {tab.label}
@@ -249,39 +249,39 @@ const Markets = () => {
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px]">
           <thead>
-            <tr className="border-b border-gray-100 dark:border-[#2b3139] bg-gray-50/60 dark:bg-[#161a1f]">
+            <tr className="border-b border-border bg-muted/60">
               <th className="text-left px-4 py-3 w-10" />
               <th
-                className="text-left px-3 py-3 text-[11px] text-gray-500 dark:text-[#848e9c] font-bold uppercase tracking-wider cursor-pointer hover:text-gray-800 dark:hover:text-white transition-colors"
+                className="text-left px-3 py-3 text-[11px] text-muted-foreground font-bold uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors"
                 onClick={() => handleSort('name')}
               >
                 Pair <SortArrow col="name" />
               </th>
               <th
-                className="text-right px-4 py-3 text-[11px] text-gray-500 dark:text-[#848e9c] font-bold uppercase tracking-wider cursor-pointer hover:text-gray-800 dark:hover:text-white transition-colors"
+                className="text-right px-4 py-3 text-[11px] text-muted-foreground font-bold uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors"
                 onClick={() => handleSort('price')}
               >
                 Price <SortArrow col="price" />
               </th>
               <th
-                className="text-right px-4 py-3 text-[11px] text-gray-500 dark:text-[#848e9c] font-bold uppercase tracking-wider cursor-pointer hover:text-gray-800 dark:hover:text-white transition-colors"
+                className="text-right px-4 py-3 text-[11px] text-muted-foreground font-bold uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors"
                 onClick={() => handleSort('change')}
               >
                 24h Change <SortArrow col="change" />
               </th>
-              <th className="text-right px-4 py-3 text-[11px] text-gray-500 dark:text-[#848e9c] font-bold uppercase tracking-wider hidden md:table-cell">
+              <th className="text-right px-4 py-3 text-[11px] text-muted-foreground font-bold uppercase tracking-wider hidden md:table-cell">
                 24h High
               </th>
-              <th className="text-right px-4 py-3 text-[11px] text-gray-500 dark:text-[#848e9c] font-bold uppercase tracking-wider hidden md:table-cell">
+              <th className="text-right px-4 py-3 text-[11px] text-muted-foreground font-bold uppercase tracking-wider hidden md:table-cell">
                 24h Low
               </th>
               <th
-                className="text-right px-4 py-3 text-[11px] text-gray-500 dark:text-[#848e9c] font-bold uppercase tracking-wider hidden lg:table-cell cursor-pointer hover:text-gray-800 dark:hover:text-white transition-colors"
+                className="text-right px-4 py-3 text-[11px] text-muted-foreground font-bold uppercase tracking-wider hidden lg:table-cell cursor-pointer hover:text-foreground transition-colors"
                 onClick={() => handleSort('volume')}
               >
                 Volume <SortArrow col="volume" />
               </th>
-              <th className="text-right px-4 py-3 text-[11px] text-gray-500 dark:text-[#848e9c] font-bold uppercase tracking-wider w-28">
+              <th className="text-right px-4 py-3 text-[11px] text-muted-foreground font-bold uppercase tracking-wider w-28">
                 Action
               </th>
             </tr>
@@ -293,22 +293,22 @@ const Markets = () => {
               ? (
                 <tr>
                   <td colSpan={8} className="py-20 text-center">
-                    <Activity className="w-8 h-8 mx-auto mb-3 text-gray-300 dark:text-[#2b3139]" />
-                    <p className="text-sm text-gray-400 dark:text-[#848e9c]">No markets found</p>
+                    <Activity className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">No markets found</p>
                   </td>
                 </tr>
               )
               : sorted.map(row => (
                 <tr
                   key={row.id}
-                  className="border-b border-gray-50 dark:border-[#2b3139] hover:bg-gray-50 dark:hover:bg-[#161a1f] cursor-pointer transition-colors"
+                  className="border-b border-border hover:bg-muted cursor-pointer transition-colors"
                   onClick={() => navigate(`/dashboard/trade/${row.id}`)}
                 >
                   {/* Favorite star */}
                   <td className="px-4 py-3.5">
                     <button
                       onClick={e => toggleFavorite(e, row.id)}
-                      className="text-gray-300 dark:text-[#848e9c] hover:text-yellow-500 dark:hover:text-yellow-400 transition-colors"
+                      className="text-muted-foreground hover:text-warning transition-colors"
                     >
                       <Star
                         size={14}
@@ -322,16 +322,16 @@ const Markets = () => {
                     <div className="flex items-center gap-3">
                       <CoinBadge symbol={row.base} />
                       <div>
-                        <span className="text-sm font-bold text-gray-900 dark:text-white">{row.base}</span>
-                        <span className="text-sm text-gray-400 dark:text-[#848e9c]">/{row.quote}</span>
-                        <p className="text-[10px] text-gray-400 dark:text-[#848e9c] uppercase tracking-wide mt-0.5">{row.id}</p>
+                        <span className="text-sm font-bold text-foreground">{row.base}</span>
+                        <span className="text-sm text-muted-foreground">/{row.quote}</span>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">{row.id}</p>
                       </div>
                     </div>
                   </td>
 
                   {/* Price */}
                   <td className="px-4 py-3.5 text-right">
-                    <span className="text-sm font-semibold tabular-nums text-gray-900 dark:text-white">
+                    <span className="text-sm font-semibold tabular-nums text-foreground">
                       {formatPrice(row.last, row.quote)}
                     </span>
                   </td>
@@ -340,8 +340,8 @@ const Markets = () => {
                   <td className="px-4 py-3.5 text-right">
                     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
                       row.change >= 0
-                        ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-[#0ecb81]'
-                        : 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-[#f6465d]'
+                        ? 'bg-success/10 text-success'
+                        : 'bg-danger/10 text-danger'
                     }`}>
                       {row.change >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
                       {row.change >= 0 ? '+' : ''}{row.change.toFixed(2)}%
@@ -349,17 +349,17 @@ const Markets = () => {
                   </td>
 
                   {/* 24h High */}
-                  <td className="px-4 py-3.5 text-right hidden md:table-cell text-sm tabular-nums text-gray-500 dark:text-[#848e9c]">
+                  <td className="px-4 py-3.5 text-right hidden md:table-cell text-sm tabular-nums text-muted-foreground">
                     {formatPrice(row.high, row.quote)}
                   </td>
 
                   {/* 24h Low */}
-                  <td className="px-4 py-3.5 text-right hidden md:table-cell text-sm tabular-nums text-gray-500 dark:text-[#848e9c]">
+                  <td className="px-4 py-3.5 text-right hidden md:table-cell text-sm tabular-nums text-muted-foreground">
                     {formatPrice(row.low, row.quote)}
                   </td>
 
                   {/* Volume */}
-                  <td className="px-4 py-3.5 text-right hidden lg:table-cell text-sm tabular-nums text-gray-500 dark:text-[#848e9c]">
+                  <td className="px-4 py-3.5 text-right hidden lg:table-cell text-sm tabular-nums text-muted-foreground">
                     {formatVol(row.vol)}
                   </td>
 
@@ -367,7 +367,7 @@ const Markets = () => {
                   <td className="px-4 py-3.5 text-right">
                     <button
                       onClick={e => { e.stopPropagation(); navigate(`/dashboard/trade/${row.id}`); }}
-                      className="px-3.5 py-1.5 text-xs font-bold rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors shadow-sm"
+                      className="px-3.5 py-1.5 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
                     >
                       Trade
                     </button>
