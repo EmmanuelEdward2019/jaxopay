@@ -114,7 +114,7 @@ const Profile = () => {
         const badges = {
             tier_0: { label: 'Unverified', color: 'bg-muted text-foreground' },
             tier_1: { label: 'Basic', color: 'bg-primary/10 text-blue-700' },
-            tier_2: { label: 'Verified', color: 'bg-primary-100 text-primary-700' },
+            tier_2: { label: 'Verified', color: 'bg-primary/10 text-primary' },
         };
         return badges[tier] || badges.tier_0;
     };
@@ -122,7 +122,7 @@ const Profile = () => {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
             </div>
         );
     }
@@ -154,7 +154,7 @@ const Profile = () => {
                         {/* Avatar Section */}
                         <div className="flex items-center gap-6 pb-6 border-b border-border">
                             <div className="relative">
-                                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-3xl font-bold overflow-hidden">
+                                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-3xl font-bold overflow-hidden">
                                     {profile?.avatar_url ? (
                                         <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
                                     ) : (
@@ -363,7 +363,7 @@ const Profile = () => {
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-primary-100 rounded-lg">
+                                        <div className="p-2 bg-primary/10 rounded-lg">
                                             <TrendingUp className="w-5 h-5 text-primary" />
                                         </div>
                                         <span className="text-muted-foreground">Transactions</span>

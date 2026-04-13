@@ -9,7 +9,6 @@ import TradingViewChart from './TradingViewChart';
 import OrderBook from './OrderBook';
 import TradeHistory from './TradeHistory';
 import TradingForm from './TradingForm';
-import CryptoDepositWithdraw from './CryptoDepositWithdraw';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const QUOTE_TABS = ['Favorites', 'NGN', 'USDT', 'GHS', 'CNGN'];
@@ -62,8 +61,6 @@ const TradeDashboard = ({ wallets = [], initialMarket = 'usdtngn' }) => {
 
   // Bottom tabs
   const [bottomTab, setBottomTab] = useState('open_orders');
-  // Right panel tabs
-  const [rightTab, setRightTab] = useState('trade'); // trade | deposit_withdraw
 
   const { base: baseAsset, quote: quoteAsset } = splitPair(market);
 
@@ -373,30 +370,15 @@ const TradeDashboard = ({ wallets = [], initialMarket = 'usdtngn' }) => {
 
           {/* ── Right: Spot Trade / Deposit & Withdraw ──── */}
           <div className="w-full lg:w-72 xl:w-80 shrink-0 border-l border-[#2b3139] bg-[#161a1f] overflow-y-auto flex flex-col">
-            {/* Right panel tabs */}
-            <div className="flex border-b border-[#2b3139] shrink-0">
-              <button onClick={() => setRightTab('trade')}
-                className={`flex-1 py-2 text-[10px] font-black uppercase transition-colors border-b-2 ${
-                  rightTab === 'trade' ? 'text-[#f0b90b] border-[#f0b90b]' : 'text-[#848e9c] border-transparent hover:text-white'
-                }`}>Spot Trade</button>
-              <button onClick={() => setRightTab('deposit_withdraw')}
-                className={`flex-1 py-2 text-[10px] font-black uppercase transition-colors border-b-2 ${
-                  rightTab === 'deposit_withdraw' ? 'text-[#f0b90b] border-[#f0b90b]' : 'text-[#848e9c] border-transparent hover:text-white'
-                }`}>Deposit / Withdraw</button>
-            </div>
             <div className="flex-1 overflow-hidden">
-              {rightTab === 'trade' ? (
-                <TradingForm
-                  market={market}
-                  base={baseAsset}
-                  quote={quoteAsset}
-                  balances={balances}
-                  loading={tradeLoading}
-                  onSubmit={handleOrderSubmit}
-                />
-              ) : (
-                <CryptoDepositWithdraw coin={baseAsset} balances={balances} />
-              )}
+              <TradingForm
+                market={market}
+                base={baseAsset}
+                quote={quoteAsset}
+                balances={balances}
+                loading={tradeLoading}
+                onSubmit={handleOrderSubmit}
+              />
             </div>
           </div>
         </div>

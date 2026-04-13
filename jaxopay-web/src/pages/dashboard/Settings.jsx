@@ -579,7 +579,7 @@ const ChangePasswordModal = ({ onClose }) => {
                         <button type="button" onClick={onClose} className="flex-1 py-3 bg-muted text-foreground font-bold rounded-xl">
                             Cancel
                         </button>
-                        <button type="submit" disabled={loading} className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl disabled:opacity-50 shadow-lg shadow-accent-200">
+                        <button type="submit" disabled={loading} className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl disabled:opacity-50 shadow-lg shadow-primary/20">
                             {loading ? 'Saving...' : 'Update Password'}
                         </button>
                     </div>
@@ -690,7 +690,7 @@ const TwoFactorModal = ({ onClose, user, setUser }) => {
                         <button
                             onClick={handleStartSetup}
                             disabled={loading}
-                            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-accent-200"
+                            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20"
                         >
                             {loading ? 'Starting...' : 'Setup Authenticator'}
                         </button>
@@ -718,7 +718,7 @@ const TwoFactorModal = ({ onClose, user, setUser }) => {
                         <button
                             onClick={handleVerify}
                             disabled={code.length !== 6 || loading}
-                            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-accent-200 disabled:opacity-50"
+                            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 disabled:opacity-50"
                         >
                             {loading ? 'Verifying...' : 'Verify & Enable'}
                         </button>

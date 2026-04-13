@@ -90,7 +90,7 @@ export default function VideoPlayer({ videoId, title = "Video" }) {
         {!isPlaying && (
           <button
             onClick={togglePlay}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-primary-600 hover:bg-primary-700 rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-2xl"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-primary hover:bg-primary/90 rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-2xl"
           >
             <Play className="w-10 h-10 text-white ml-1" />
           </button>

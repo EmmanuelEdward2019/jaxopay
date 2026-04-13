@@ -194,7 +194,7 @@ const Cards = () => {
                 </div>
                 <button
                     onClick={() => setShowCreateModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg transition-colors shadow-lg shadow-accent-500/20"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg transition-colors shadow-lg shadow-primary/20"
                 >
                     <Plus className="w-5 h-5" />
                     Create Card
@@ -245,14 +245,14 @@ const Cards = () => {
                             key={card.id}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className={`relative overflow-hidden rounded-2xl cursor-pointer transition-all ${selectedCard?.id === card.id ? 'ring-2 ring-accent-500' : ''
+                            className={`relative overflow-hidden rounded-2xl cursor-pointer transition-all ${selectedCard?.id === card.id ? 'ring-2 ring-primary' : ''
                                 }`}
                             onClick={() => handleSelectCard(card)}
                         >
                             {/* Card Visual */}
                             <div className={`p-6 bg-gradient-to-br ${card.card_type === 'single_use'
                                 ? 'from-slate-700 to-slate-900'
-                                : 'from-accent-600 to-accent-800 shadow-lg shadow-accent-500/20'
+                                : 'from-primary to-accent shadow-lg shadow-primary/20'
                                 } text-white`}>
                                 <div className="flex items-start justify-between mb-6">
                                     <div>

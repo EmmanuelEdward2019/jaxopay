@@ -861,7 +861,7 @@ const Exchange = () => {
                                         (swapPhase === 'idle' && loadingRates) ||
                                         isRefreshing || loading
                                     }
-                                    className="w-full mt-8 py-6 bg-primary hover:bg-primary/90 text-white font-black text-xl rounded-3xl shadow-2xl shadow-accent-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-4"
+                                    className="w-full mt-8 py-6 bg-primary hover:bg-primary/90 text-white font-black text-xl rounded-3xl shadow-2xl shadow-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-4"
                                 >
                                     {(swapPhase === 'quoting' || loading) ? (
                                         <RefreshCw className="w-8 h-8 animate-spin" />
@@ -1122,7 +1122,7 @@ const Exchange = () => {
                 {/* Sidebar - Portfolio & Activity (Hidden in Order Book Tab) */}
                 {activeTab !== 'spot-trade' && (
                     <div className="space-y-8">
-                        <div className="bg-primary p-10 rounded-[3rem] text-white shadow-2xl shadow-accent-500/30 relative overflow-hidden group">
+                        <div className="bg-primary p-10 rounded-[3rem] text-white shadow-2xl shadow-primary/30 relative overflow-hidden group">
                             <div className="absolute -right-8 -top-8 w-40 h-40 bg-card/10 rounded-full group-hover:scale-125 transition-transform duration-500" />
                             <h3 className="text-xl font-black mb-8 flex items-center gap-3">
                                 <Wallet className="w-6 h-6" /> Portfolio
@@ -1266,7 +1266,7 @@ const Exchange = () => {
             <motion.button
                 whileHover={{ scale: 1.1, rotate: 5 }}
                 whileTap={{ scale: 0.9 }}
-                className="fixed bottom-10 right-10 w-16 h-16 bg-primary text-white rounded-full shadow-2xl shadow-accent-500/40 flex items-center justify-center z-[100] group"
+                className="fixed bottom-10 right-10 w-16 h-16 bg-primary text-white rounded-full shadow-2xl shadow-primary/40 flex items-center justify-center z-[100] group"
                 onClick={() => alert("Chat Support Coming Soon!")}
             >
                 <MessageCircle className="w-8 h-8 group-hover:animate-bounce" />

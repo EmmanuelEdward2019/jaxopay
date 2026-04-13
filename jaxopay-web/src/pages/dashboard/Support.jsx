@@ -144,7 +144,7 @@ const Support = () => {
                 {!isAdmin && (
                     <button
                         onClick={() => setShowCreateModal(true)}
-                        className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-2xl transition-all shadow-lg shadow-accent-500/20"
+                        className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-2xl transition-all shadow-lg shadow-primary/20"
                     >
                         <Plus className="w-5 h-5" />
                         New Ticket
@@ -199,7 +199,7 @@ const Support = () => {
                                     key={ticket.id}
                                     onClick={() => setSelectedTicket(ticket)}
                                     className={`w-full p-4 rounded-2xl text-left transition-all border ${selectedTicket?.id === ticket.id
-                                        ? 'bg-primary/10 border-primary/20 shadow-md ring-1 ring-accent-500'
+                                        ? 'bg-primary/10 border-primary/20 shadow-md ring-1 ring-primary'
                                         : 'bg-card border-border hover:border-border shadow-sm'
                                         }`}
                                 >
@@ -344,7 +344,7 @@ const Support = () => {
                             </p>
                             <button
                                 onClick={() => setShowCreateModal(true)}
-                                className="mt-8 px-8 py-3 bg-primary text-white font-bold rounded-2xl hover:bg-primary/90 transition-all shadow-lg shadow-accent-500/20"
+                                className="mt-8 px-8 py-3 bg-primary text-white font-bold rounded-2xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
                             >
                                 Create New Ticket
                             </button>
@@ -381,7 +381,7 @@ const Support = () => {
                                             value={subject}
                                             onChange={(e) => setSubject(e.target.value)}
                                             placeholder="What can we help you with?"
-                                            className="w-full px-4 py-3 bg-muted/50 border-none rounded-2xl focus:ring-2 focus:ring-primary-500 outline-none"
+                                            className="w-full px-4 py-3 bg-muted/50 border-none rounded-2xl focus:ring-2 focus:ring-primary outline-none"
                                         />
                                     </div>
 
@@ -422,7 +422,7 @@ const Support = () => {
                                             value={message}
                                             onChange={(e) => setMessage(e.target.value)}
                                             placeholder="Please provide details about your issue..."
-                                            className="w-full px-4 py-3 bg-muted/50 border-none rounded-2xl focus:ring-2 focus:ring-primary-500 outline-none h-32 resize-none"
+                                            className="w-full px-4 py-3 bg-muted/50 border-none rounded-2xl focus:ring-2 focus:ring-primary outline-none h-32 resize-none"
                                         />
                                     </div>
 
@@ -444,7 +444,7 @@ const Support = () => {
                                         <button
                                             type="submit"
                                             disabled={isSubmitting}
-                                            className="flex-1 py-4 bg-primary text-white font-bold rounded-2xl hover:bg-primary/90 transition-all shadow-lg shadow-accent-500/20 disabled:opacity-50"
+                                            className="flex-1 py-4 bg-primary text-white font-bold rounded-2xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
                                         >
                                             {isSubmitting ? 'Submitting...' : 'Submit Ticket'}
                                         </button>

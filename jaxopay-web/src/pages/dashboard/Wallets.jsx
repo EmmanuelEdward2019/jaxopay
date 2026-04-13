@@ -1559,8 +1559,8 @@ const FundModal = ({ onClose, wallets, onRefresh }) => {
         return (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
                 <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="bg-card border border-border rounded-3xl p-10 max-w-sm w-full text-center shadow-2xl">
-                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <Check className="w-10 h-10 text-green-600" />
+                    <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <Check className="w-10 h-10 text-success" />
                     </div>
                     <h2 className="text-2xl font-black text-foreground mb-2">Success!</h2>
                     <p className="text-muted-foreground font-medium">Your wallet balance will be updated momentarily.</p>

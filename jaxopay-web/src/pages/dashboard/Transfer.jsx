@@ -522,7 +522,7 @@ const Transfer = () => {
                                                             value={beneficiaryLabel}
                                                             onChange={(e) => setBeneficiaryLabel(e.target.value)}
                                                             placeholder={`Label (e.g. "${accountName.split(' ')[0]}")`}
-                                                            className="flex-1 px-3 py-2 text-sm bg-card border border-accent-300 rounded-lg focus:ring-2 focus:ring-ring outline-none"
+                                                            className="flex-1 px-3 py-2 text-sm bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring outline-none"
                                                         />
                                                         <button
                                                             onClick={handleAddBeneficiary}

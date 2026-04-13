@@ -216,7 +216,7 @@ const Transactions = () => {
                     <button
                         onClick={() => setShowFilters(!showFilters)}
                         className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors ${showFilters || typeFilter !== 'all' || statusFilter !== 'all'
-                            ? 'bg-primary text-white shadow-lg shadow-accent-500/20'
+                            ? 'bg-primary text-white shadow-lg shadow-primary/20'
                             : 'bg-muted text-foreground'
                             }`}
                     >
@@ -306,7 +306,7 @@ const Transactions = () => {
                     <div className="flex justify-end mt-4">
                         <button
                             onClick={clearFilters}
-                            className="text-sm text-primary hover:text-accent-700 font-medium"
+                            className="text-sm text-primary hover:text-primary font-medium"
                         >
                             Clear all filters
                         </button>

@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { RefreshCw, Info } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { RefreshCw, Info, AlertCircle, Wallet } from 'lucide-react';
 
 const TradingForm = ({ market = 'USDTNGN', base = 'USDT', quote = 'NGN', onSubmit, loading, balances = {} }) => {
+  const navigate = useNavigate();
   const [side, setSide] = useState('buy');
   const [type, setType] = useState('limit');
   const [price, setPrice] = useState('');
   const [amount, setAmount] = useState('');
   const [total, setTotal] = useState('');
+  const [insufficientBalance, setInsufficientBalance] = useState(false);
 
   const currentBalance = side === 'buy' ? (balances[quote] || 0) : (balances[base] || 0);
 
@@ -41,6 +44,12 @@ const TradingForm = ({ market = 'USDTNGN', base = 'USDT', quote = 'NGN', onSubmi
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const needed = side === 'buy' ? parseFloat(total || 0) : parseFloat(amount || 0);
+    if (needed > currentBalance) {
+      setInsufficientBalance(true);
+      return;
+    }
+    setInsufficientBalance(false);
     onSubmit({ market, side, type, price, volume: amount, total: type === 'market' ? total : undefined });
   };
 
@@ -131,6 +140,23 @@ const TradingForm = ({ market = 'USDTNGN', base = 'USDT', quote = 'NGN', onSubmi
                 </span>
               </div>
             </div>
+
+            {insufficientBalance && (
+              <div className="p-2.5 bg-[#f6465d]/10 border border-[#f6465d]/30 rounded-lg space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle className="w-3 h-3 text-[#f6465d]" />
+                  <span className="text-[9px] font-bold text-[#f6465d] uppercase">Insufficient {side === 'buy' ? quote : base} balance</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/dashboard/wallets')}
+                  className="w-full py-1.5 bg-[#f0b90b] hover:bg-[#f0b90b]/90 text-[#0b0e11] rounded-lg text-[9px] font-black uppercase flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Wallet className="w-3 h-3" />
+                  Fund Wallet
+                </button>
+              </div>
+            )}
 
             <button type="submit"
               disabled={loading || (type === 'limit' ? (!amount || !price) : (!amount && !total))}

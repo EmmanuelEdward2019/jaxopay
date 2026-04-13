@@ -182,13 +182,13 @@ const CrossBorder = () => {
     return (
         <div className="max-w-6xl mx-auto space-y-8">
             {/* Header Area */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-br from-accent-600 to-accent-800 rounded-3xl p-8 text-white shadow-xl overflow-hidden relative">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-br from-primary to-accent rounded-3xl p-8 text-white shadow-xl overflow-hidden relative">
                 <div className="relative z-10">
                     <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-                        <Globe className="w-8 h-8 animate-pulse text-accent-200" />
+                        <Globe className="w-8 h-8 animate-pulse text-white/60" />
                         Global Finance Hub
                     </h1>
-                    <p className="text-accent-100 max-w-md">
+                    <p className="text-white/80 max-w-md">
                         Swap currencies instantly and make international payments to over 50 countries with the best real-time rates.
                     </p>
                 </div>
@@ -212,7 +212,7 @@ const CrossBorder = () => {
 
                 {/* Decorative Elements */}
                 <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-card/10 rounded-full blur-3xl"></div>
-                <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-64 h-64 bg-accent-400/20 rounded-full blur-3xl"></div>
+                <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-64 h-64 bg-primary/20 rounded-full blur-3xl"></div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -329,7 +329,7 @@ const CrossBorder = () => {
                                         <button
                                             onClick={() => setStep(2)}
                                             disabled={!swapData.amount || swapData.amount <= 0 || swapData.fromCurrency === swapData.toCurrency}
-                                            className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-accent-200 transition-all disabled:opacity-50"
+                                            className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50"
                                         >
                                             Review Swap
                                         </button>
@@ -431,7 +431,7 @@ const CrossBorder = () => {
                                         <button
                                             onClick={() => setStep(2)}
                                             disabled={!transferData.amount || !transferData.recipientName || !transferData.accountNumber}
-                                            className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-accent-200 transition-all disabled:opacity-50"
+                                            className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50"
                                         >
                                             Next Step
                                         </button>
@@ -497,7 +497,7 @@ const CrossBorder = () => {
                                 <button
                                     onClick={activeTab === 'swap' ? handleSwap : handleTransfer}
                                     disabled={loading}
-                                    className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-accent-200 transition-all flex items-center justify-center gap-3"
+                                    className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-3"
                                 >
                                     {loading ? (
                                         <>

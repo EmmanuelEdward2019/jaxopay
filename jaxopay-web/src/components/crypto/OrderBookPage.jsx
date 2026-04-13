@@ -142,7 +142,7 @@ const OrderBookPage = ({ wallets = [] }) => {
                           value={marketSearch}
                           onChange={(e) => setMarketSearch(e.target.value)}
                           placeholder="Search markets..."
-                          className="w-full pl-10 pr-3 py-2 bg-muted rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+                          className="w-full pl-10 pr-3 py-2 bg-muted rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                           autoFocus
                         />
                       </div>
@@ -159,7 +159,7 @@ const OrderBookPage = ({ wallets = [] }) => {
                               setMarketSearch('');
                             }}
                             className={`w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-muted transition-all ${
-                              market === m.id ? 'bg-accent-50 dark:bg-accent-900/20' : ''
+                              market === m.id ? 'bg-primary/5 dark:bg-primary/10' : ''
                             }`}
                           >
                             <div className="flex items-center gap-2">
@@ -296,7 +296,7 @@ const OrderBookPage = ({ wallets = [] }) => {
           />
 
           {/* Active Orders Card */}
-          <div className="mt-4 p-4 bg-gradient-to-br from-accent-600 to-indigo-700 rounded-lg text-white shadow-lg relative overflow-hidden">
+          <div className="mt-4 p-4 bg-gradient-to-br from-primary to-accent rounded-lg text-white shadow-lg relative overflow-hidden">
             <h4 className="text-sm font-black mb-2 flex items-center gap-2">
               <Clock className="w-4 h-4" /> Active Orders
             </h4>

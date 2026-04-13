@@ -873,7 +873,7 @@ const KYC = () => {
                                 </label>
                                 <div
                                     onClick={() => backInputRef.current?.click()}
-                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentBack ? 'border-primary-500 bg-primary-50' : 'border-border hover:border-primary-500'
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${documentBack ? 'border-primary bg-primary/5' : 'border-border hover:border-primary'
                                         }`}
                                 >
                                     {documentBack ? (
@@ -928,7 +928,7 @@ const KYC = () => {
                                     </button>
                                 </div>
                                 <div
-                                    className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${selfie ? 'border-primary-500 bg-primary-50' : 'border-border'
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${selfie ? 'border-primary bg-primary/5' : 'border-border'
                                         }`}
                                 >
                                     {selfie ? (

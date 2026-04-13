@@ -210,7 +210,7 @@ const Markets = () => {
               placeholder="Search pair…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="bg-muted border border-border rounded-lg pl-9 pr-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary-500 w-52 transition-colors"
+              className="bg-muted border border-border rounded-lg pl-9 pr-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary w-52 transition-colors"
             />
           </div>
         </div>

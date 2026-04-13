@@ -155,7 +155,7 @@ const GiftCards = () => {
                 </div>
                 <button
                     onClick={() => setShowSellModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg"
                 >
                     <ArrowUpRight className="w-5 h-5" />
                     Sell Gift Card
@@ -170,9 +170,9 @@ const GiftCards = () => {
                 </div>
             )}
             {success && (
-                <div className="bg-primary-50 border border-primary-200 rounded-lg p-4">
-                    <p className="text-primary-700">{success}</p>
-                    <button onClick={() => setSuccess(null)} className="text-primary-500 underline text-sm mt-1">Dismiss</button>
+                <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                    <p className="text-primary">{success}</p>
+                    <button onClick={() => setSuccess(null)} className="text-primary underline text-sm mt-1">Dismiss</button>
                 </div>
             )}
 
@@ -239,7 +239,7 @@ const GiftCards = () => {
                                 key={cat.id}
                                 onClick={() => setSelectedCategory(cat.id)}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium whitespace-nowrap transition-all ${selectedCategory === cat.id
-                                    ? 'bg-primary-600 text-white shadow-md scale-105'
+                                    ? 'bg-primary text-white shadow-md scale-105'
                                     : 'bg-muted text-foreground hover:bg-muted'
                                     }`}
                             >
@@ -252,7 +252,7 @@ const GiftCards = () => {
                     {/* Gift Cards Grid */}
                     {loading ? (
                         <div className="flex justify-center py-12">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                         </div>
                     ) : giftCards.length === 0 ? (
                         <div className="text-center py-12">
@@ -287,19 +287,19 @@ const GiftCards = () => {
                                             setShowBuyModal(true);
                                         }}
                                     >
-                                        <div className="aspect-[3/2] bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
+                                        <div className="aspect-[3/2] bg-gradient-to-br from-primary to-accent rounded-lg mb-4 flex items-center justify-center overflow-hidden">
                                             {card.image_url ? (
                                                 <img src={card.image_url} alt={card.productName} className="w-full h-full object-contain bg-card" />
                                             ) : (
                                                 <Gift className="w-12 h-12 text-white/50" />
                                             )}
                                         </div>
-                                        <h3 className="font-semibold text-foreground mb-1 group-hover:text-primary-600 transition-colors line-clamp-1 text-sm">
+                                        <h3 className="font-semibold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-1 text-sm">
                                             {card.productName}
                                         </h3>
                                         <p className="text-xs text-muted-foreground mb-2">{card.countryCode} • {card.currency}</p>
                                         <div className="flex items-center justify-between">
-                                            <span className="text-xs font-medium text-primary-600">
+                                            <span className="text-xs font-medium text-primary">
                                                 {card.denominationType === 'FIXED'
                                                     ? `From ${formatCurrency(card.fixedDenominations[0] || card.minAmount, card.currency)}`
                                                     : `Up to ${formatCurrency(card.maxAmount, card.currency)}`
@@ -323,7 +323,7 @@ const GiftCards = () => {
                             <p className="text-muted-foreground mb-4">Purchase a gift card to get started</p>
                             <button
                                 onClick={() => setTab('buy')}
-                                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
+                                className="px-4 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg"
                             >
                                 Browse Gift Cards
                             </button>
@@ -335,12 +335,12 @@ const GiftCards = () => {
                                 return (
                                     <div key={card.id} className="card">
                                         <div className="flex gap-4">
-                                            <div className="w-24 h-16 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center shrink-0">
+                                            <div className="w-24 h-16 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center shrink-0">
                                                 <Gift className="w-8 h-8 text-white/50" />
                                             </div>
                                             <div className="flex-1">
                                                 <h3 className="font-semibold text-foreground">{card.product_name || card.brand_name}</h3>
-                                                <p className="text-xl font-bold text-primary-600 mt-1">
+                                                <p className="text-xl font-bold text-primary mt-1">
                                                     {formatCurrency(card.amount, card.currency)}
                                                 </p>
 
@@ -376,7 +376,7 @@ const GiftCards = () => {
                                                     ) : (
                                                         <button
                                                             onClick={() => handleRevealCode(card.transaction_ref)}
-                                                            className="text-sm flex items-center gap-1 text-primary-600 hover:text-primary-700 font-medium"
+                                                            className="text-sm flex items-center gap-1 text-primary hover:text-primary font-medium"
                                                         >
                                                             <Eye className="w-4 h-4" /> Reveal Code
                                                         </button>
@@ -386,9 +386,9 @@ const GiftCards = () => {
                                         </div>
                                         <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-sm">
                                             <span className="text-muted-foreground">Purchased {formatDateTime(card.created_at)}</span>
-                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${card.status === 'completed' ? 'bg-primary-100 text-primary-700' :
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${card.status === 'completed' ? 'bg-primary/10 text-primary' :
                                                 card.status === 'failed' ? 'bg-danger/10 text-danger' :
-                                                    'bg-warning/10 text-yellow-700'
+                                                    'bg-warning/10 text-warning'
                                                 }`}>
                                                 {card.status}
                                             </span>
@@ -496,7 +496,7 @@ const BuyGiftCardModal = ({ card, wallets, selectedWallet, setSelectedWallet, on
                                     key={denom}
                                     onClick={() => setAmount(denom)}
                                     className={`py-3 rounded-lg font-semibold transition-colors ${amount === denom
-                                        ? 'bg-primary-600 text-white'
+                                        ? 'bg-primary text-white'
                                         : 'bg-muted text-foreground'
                                         }`}
                                 >
@@ -551,7 +551,7 @@ const BuyGiftCardModal = ({ card, wallets, selectedWallet, setSelectedWallet, on
                             !amount ||
                             (wallet.currency !== card.currency ? false : (wallet.balance || 0) < amount)
                         }
-                        className="flex-1 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg disabled:opacity-50"
+                        className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg disabled:opacity-50"
                     >
                         {loading ? 'Processing...' : `Buy for ${formatCurrency(amount, card.currency)}`}
                     </button>
@@ -647,7 +647,7 @@ const SellGiftCardModal = ({ onClose, onSuccess }) => {
                     <button
                         onClick={handleSubmit}
                         disabled={!brand || !value || !code || loading}
-                        className="flex-1 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg disabled:opacity-50"
+                        className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg disabled:opacity-50"
                     >
                         {loading ? 'Submitting...' : 'Submit for Review'}
                     </button>

@@ -239,10 +239,10 @@ const Dashboard = () => {
       </div>
 
       {/* Welcome Section */}
-      <div className="card bg-gradient-to-br from-accent-600 to-accent-800 text-white border-none shadow-xl transform hover:scale-[1.01] transition-all shadow-accent-500/20 overflow-hidden relative group">
+      <div className="card bg-gradient-to-br from-primary to-accent text-white border-none shadow-xl transform hover:scale-[1.01] transition-all shadow-primary/20 overflow-hidden relative group">
         <div className="relative z-10">
           <h2 className="text-3xl md:text-4xl font-black mb-2 tracking-tight">Welcome back, {user?.first_name || user?.username || user?.full_name?.split(' ')[0] || 'User'}!</h2>
-          <p className="text-accent-100 text-lg max-w-xl">
+          <p className="text-white/80 text-lg max-w-xl">
             Your financial hub is up and running. You have {wallets.length} active wallets across {new Set(wallets.map(w => w.currency)).size} currencies.
           </p>
         </div>
