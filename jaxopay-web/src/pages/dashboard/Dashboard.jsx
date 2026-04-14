@@ -71,21 +71,22 @@ const BalanceOneLine = ({ children, className = '' }) => {
 };
 
 const FALLBACK_RATES = {
-  'USD': 1,
-  'NGN': 1650, // 1 USD = 1650 NGN
-  'GBP': 0.78,
-  'EUR': 0.92,
-  'BTC': 0.000015,
-  'ETH': 0.00028,
-  'USDT': 1,
-  'USDC': 1,
-  'ZAR': 18.8,
-  'CAD': 1.35,
-  'GHS': 12.5,
-  'KES': 130,
-  'CNY': 7.2,
-  'AUD': 1.5,
-  'JPY': 150
+  // Fiat
+  'USD': 1, 'NGN': 1650, 'GBP': 0.78, 'EUR': 0.92,
+  'ZAR': 18.8, 'CAD': 1.35, 'GHS': 12.5, 'KES': 130,
+  'CNY': 7.2, 'AUD': 1.5, 'JPY': 150,
+  // Crypto
+  'BTC': 0.000015, 'ETH': 0.00028, 'USDT': 1, 'USDC': 1,
+  'SOL': 0.006, 'BNB': 0.0015, 'XRP': 0.45, 'TRX': 4.5,
+  'DOGE': 6, 'LTC': 0.011, 'ADA': 1.1, 'POL': 1.8,
+  'DOT': 0.12, 'LINK': 0.055, 'CAKE': 0.25, 'XLM': 3.3,
+  'SHIB': 55000, 'AAVE': 0.003, 'DASH': 0.028, 'BCH': 0.0022,
+  'SLP': 130, 'FLOKI': 5500, 'PEPE': 85000, 'BONK': 40000,
+  'ALGO': 3.5, 'WIF': 0.35, 'NOS': 0.3, 'NEAR': 0.16,
+  'TON': 0.14, 'RNDR': 0.1, 'STRK': 1.5, 'SUI': 0.22,
+  'XYO': 70, 'HYPE': 0.04, 'FARTCOIN': 0.7, 'ZK': 4,
+  'LSK': 0.6, 'CFX': 4, 'S': 1.5, 'AXCNH': 1,
+  'QDX': 30, 'CNGN': 1650,
 };
 
 const Dashboard = () => {

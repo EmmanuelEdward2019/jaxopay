@@ -17,21 +17,54 @@ const POPULAR_PAIRS = [
 ];
 
 const COIN_META = {
+  // Major cryptocurrencies
   BTC: { name: 'Bitcoin', color: '#f7931a' },
   ETH: { name: 'Ethereum', color: '#627eea' },
   USDT: { name: 'Tether', color: '#26a17b' },
   USDC: { name: 'USD Coin', color: '#2775ca' },
-  BNB: { name: 'BNB', color: '#f3ba2f' },
+  BNB: { name: 'Binance Coin', color: '#f3ba2f' },
   SOL: { name: 'Solana', color: '#9945ff' },
   XRP: { name: 'Ripple', color: '#00aae4' },
-  NGN: { name: 'Nigerian Naira', color: '#008751' },
-  GHS: { name: 'Ghanaian Cedi', color: '#ce1126' },
   TRX: { name: 'TRON', color: '#ff0013' },
   DOGE: { name: 'Dogecoin', color: '#c2a633' },
   LTC: { name: 'Litecoin', color: '#bfbbbb' },
   ADA: { name: 'Cardano', color: '#0033ad' },
-  MATIC: { name: 'Polygon', color: '#8247e5' },
   DOT: { name: 'Polkadot', color: '#e6007a' },
+  LINK: { name: 'Chainlink', color: '#2a5ada' },
+  BCH: { name: 'Bitcoin Cash', color: '#4caf50' },
+  DASH: { name: 'Dash', color: '#008ce7' },
+  XLM: { name: 'Stellar', color: '#14b6e7' },
+  POL: { name: 'Polygon', color: '#8247e5' },
+  // DeFi & Tokens
+  AAVE: { name: 'Aave', color: '#b6509e' },
+  CAKE: { name: 'PancakeSwap', color: '#d1884f' },
+  SHIB: { name: 'Shiba Inu', color: '#e55125' },
+  FLOKI: { name: 'Floki Inu', color: '#f6921a' },
+  PEPE: { name: 'Pepecoin', color: '#3d8c40' },
+  BONK: { name: 'Bonk', color: '#f5a623' },
+  QDX: { name: 'Quidax Token', color: '#1a73e8' },
+  SLP: { name: 'Smooth Love Potion', color: '#e84393' },
+  ALGO: { name: 'Algorand', color: '#000000' },
+  WIF: { name: 'Dogwifhat', color: '#b47edb' },
+  NOS: { name: 'Nosana', color: '#1abc9c' },
+  // Layer 1 & Layer 2
+  NEAR: { name: 'NEAR Protocol', color: '#00c08b' },
+  TON: { name: 'Toncoin', color: '#0098ea' },
+  SUI: { name: 'Sui', color: '#4da2ff' },
+  RNDR: { name: 'Render', color: '#1a1a2e' },
+  STRK: { name: 'Starknet', color: '#29296e' },
+  ZK: { name: 'ZKsync', color: '#4e529a' },
+  LSK: { name: 'Lisk', color: '#0a477e' },
+  CFX: { name: 'Conflux', color: '#1d1d3b' },
+  S: { name: 'Sonic', color: '#5c6bc0' },
+  // Meme & Others
+  FARTCOIN: { name: 'Fartcoin', color: '#8bc34a' },
+  HYPE: { name: 'Hyperliquid', color: '#ff6f00' },
+  XYO: { name: 'XYO', color: '#7c4dff' },
+  AXCNH: { name: 'AxCNH', color: '#e91e63' },
+  // Fiat
+  NGN: { name: 'Nigerian Naira', color: '#008751' },
+  GHS: { name: 'Ghanaian Cedi', color: '#ce1126' },
   CNGN: { name: 'cNGN', color: '#008751' },
 };
 

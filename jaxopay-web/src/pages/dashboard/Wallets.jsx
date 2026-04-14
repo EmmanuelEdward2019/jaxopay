@@ -30,23 +30,46 @@ const FIAT_CURRENCIES = [
 ];
 
 const FALLBACK_RATES = {
+    // Fiat
     'USD': 1, 'NGN': 1650, 'GBP': 0.78, 'EUR': 0.92,
-    'BTC': 0.000015, 'ETH': 0.00028, 'USDT': 1, 'USDC': 1,
     'ZAR': 18.8, 'CAD': 1.35, 'GHS': 12.5, 'KES': 130,
-    'CNY': 7.2, 'AUD': 1.5, 'JPY': 150, 'SOL': 0.006,
-    'BNB': 0.0015, 'XRP': 0.45, 'TRX': 4.5, 'DOGE': 6,
-    'LTC': 0.011, 'ADA': 1.1, 'MATIC': 1.8, 'DOT': 0.12,
+    'CNY': 7.2, 'AUD': 1.5, 'JPY': 150,
+    // Crypto (approximate USD rates as fallback)
+    'BTC': 0.000015, 'ETH': 0.00028, 'USDT': 1, 'USDC': 1,
+    'SOL': 0.006, 'BNB': 0.0015, 'XRP': 0.45, 'TRX': 4.5,
+    'DOGE': 6, 'LTC': 0.011, 'ADA': 1.1, 'POL': 1.8,
+    'DOT': 0.12, 'LINK': 0.055, 'CAKE': 0.25, 'XLM': 3.3,
+    'SHIB': 55000, 'AAVE': 0.003, 'DASH': 0.028, 'BCH': 0.0022,
+    'SLP': 130, 'FLOKI': 5500, 'PEPE': 85000, 'BONK': 40000,
+    'ALGO': 3.5, 'WIF': 0.35, 'NOS': 0.3, 'NEAR': 0.16,
+    'TON': 0.14, 'RNDR': 0.1, 'STRK': 1.5, 'SUI': 0.22,
+    'XYO': 70, 'HYPE': 0.04, 'FARTCOIN': 0.7, 'ZK': 4,
+    'LSK': 0.6, 'CFX': 4, 'S': 1.5, 'AXCNH': 1,
+    'QDX': 30, 'RNDR': 0.1, 'CNGN': 1650,
 };
 
 // Fiat currency codes for filtering (used to exclude fiat from crypto lists)
 const FIAT_CODES = new Set(FIAT_CURRENCIES.map(f => f.code));
 
-// Coin icon colors
+// Coin icon colors (all Quidax-supported cryptos + fiat)
 const COIN_COLORS = {
+    // Major cryptos
     BTC: '#f7931a', ETH: '#627eea', USDT: '#26a17b', USDC: '#2775ca',
-    BNB: '#f3ba2f', SOL: '#9945ff', XRP: '#00aae4', NGN: '#008751',
-    GHS: '#ce1126', TRX: '#ff0013', DOGE: '#c2a633', LTC: '#bfbbbb',
-    ADA: '#0033ad', MATIC: '#8247e5', DOT: '#e6007a', CNGN: '#008751',
+    BNB: '#f3ba2f', SOL: '#9945ff', XRP: '#00aae4', TRX: '#ff0013',
+    DOGE: '#c2a633', LTC: '#bfbbbb', ADA: '#0033ad', DOT: '#e6007a',
+    LINK: '#2a5ada', BCH: '#4caf50', DASH: '#008ce7', XLM: '#14b6e7',
+    // DeFi & tokens
+    AAVE: '#b6509e', CAKE: '#d1884f', SHIB: '#e55125', POL: '#8247e5',
+    PEPE: '#3d8c40', FLOKI: '#f6921a', BONK: '#f5a623', QDX: '#1a73e8',
+    SLP: '#e84393', ALGO: '#000000', WIF: '#b47edb', NOS: '#1abc9c',
+    // Layer 1 & Layer 2
+    NEAR: '#00c08b', TON: '#0098ea', SUI: '#4da2ff', SOL: '#9945ff',
+    RNDR: '#1a1a2e', STRK: '#29296e', ZK: '#4e529a', LSK: '#0a477e',
+    CFX: '#1d1d3b', S: '#5c6bc0',
+    // Meme & others
+    FARTCOIN: '#8bc34a', HYPE: '#ff6f00', XYO: '#7c4dff', AXCNH: '#e91e63',
+    // Fiat
+    NGN: '#008751', GHS: '#ce1126', CNGN: '#008751',
 };
 
 const CoinIcon = ({ code, size = 36, isFiat = false }) => {
@@ -63,26 +86,64 @@ const CoinIcon = ({ code, size = 36, isFiat = false }) => {
     );
 };
 
-// Static fallback networks
+// Static fallback networks (complete Quidax-supported list)
 const _net = (id, name, extra = {}) => ({
     network: id, name, deposits_enabled: true, withdraws_enabled: true, ...extra,
 });
 const STATIC_CRYPTO_NETWORKS = {
-    BTC: [_net('btc', 'Bitcoin Network')],
-    ETH: [_net('erc20', 'Ethereum (ERC20)')],
+    // Major cryptocurrencies
+    BTC: [_net('btc', 'Bitcoin Network'), _net('bep20', 'BNB Smart Chain (BEP20)')],
+    ETH: [_net('erc20', 'Ethereum (ERC20)'), _net('base', 'Base'), _net('bep20', 'BNB Smart Chain (BEP20)'), _net('arbitrum', 'Arbitrum'), _net('lisk', 'Lisk')],
     USDT: [
-        _net('trc20', 'Tron (TRC20)'), _net('erc20', 'Ethereum (ERC20)'),
-        _net('bep20', 'BNB Smart Chain (BEP20)'), _net('solana', 'Solana'),
+        _net('bep20', 'BNB Smart Chain (BEP20)'), _net('polygon', 'Polygon'), _net('trc20', 'Tron (TRC20)'),
+        _net('erc20', 'Ethereum (ERC20)'), _net('solana', 'Solana'), _net('ton', 'TON Network'),
+        _net('celo', 'Celo'), _net('optimism', 'Optimism'), _net('arbitrum', 'Arbitrum'), _net('lisk', 'Lisk'),
     ],
-    USDC: [_net('erc20', 'Ethereum (ERC20)'), _net('trc20', 'Tron (TRC20)'), _net('solana', 'Solana')],
-    SOL: [_net('solana', 'Solana')],
+    USDC: [
+        _net('erc20', 'Ethereum (ERC20)'), _net('solana', 'Solana'), _net('polygon', 'Polygon'),
+        _net('bep20', 'BNB Smart Chain (BEP20)'), _net('trc20', 'Tron (TRC20)'), _net('base', 'Base'),
+        _net('arbitrum', 'Arbitrum'), _net('lisk', 'Lisk'),
+    ],
     BNB: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    SOL: [_net('solana', 'Solana'), _net('bep20', 'BNB Smart Chain (BEP20)')],
+    XRP: [_net('xrp', 'XRP Network')],
     TRX: [_net('trc20', 'Tron (TRC20)')],
-    XRP: [_net('xrp', 'XRP Ledger')],
+    DOGE: [_net('doge', 'Doge Network')],
+    LTC: [_net('ltc', 'Litecoin Network')],
     ADA: [_net('ada', 'Cardano')],
-    DOGE: [_net('doge', 'Dogecoin')],
-    LTC: [_net('ltc', 'Litecoin')],
-    MATIC: [_net('matic', 'Polygon (MATIC)')],
+    DOT: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    LINK: [_net('erc20', 'Ethereum (ERC20)'), _net('bep20', 'BNB Smart Chain (BEP20)')],
+    BCH: [_net('bch', 'Bitcoin Cash')],
+    DASH: [_net('dash', 'Dash Network')],
+    XLM: [_net('xlm', 'Stellar Network')],
+    POL: [_net('polygon', 'Polygon'), _net('bep20', 'BNB Smart Chain (BEP20)')],
+    // DeFi & tokens
+    CAKE: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    SHIB: [_net('erc20', 'Ethereum (ERC20)'), _net('bep20', 'BNB Smart Chain (BEP20)')],
+    AAVE: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    FLOKI: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    PEPE: [_net('erc20', 'Ethereum (ERC20)')],
+    BONK: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    ALGO: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    WIF: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    NOS: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    QDX: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    SLP: [_net('erc20', 'Ethereum (ERC20)')],
+    // Layer 1 & Layer 2
+    NEAR: [_net('near', 'NEAR Protocol')],
+    TON: [_net('ton', 'TON Network')],
+    SUI: [_net('bep20', 'BNB Smart Chain (BEP20)')],
+    RNDR: [_net('solana', 'Solana')],
+    STRK: [_net('starknet', 'Starknet')],
+    ZK: [_net('zksync', 'ZKsync')],
+    LSK: [_net('lisk', 'Lisk')],
+    CFX: [_net('espace', 'Conflux eSpace')],
+    S: [_net('sonic', 'Sonic')],
+    // Meme & others
+    FARTCOIN: [_net('solana', 'Solana')],
+    HYPE: [_net('erc20', 'Ethereum (ERC20)')],
+    XYO: [_net('erc20', 'Ethereum (ERC20)')],
+    AXCNH: [_net('espace', 'Conflux eSpace')],
 };
 
 // ── Main Component ───────────────────────────────────────────────────────
