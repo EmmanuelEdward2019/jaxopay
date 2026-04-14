@@ -35,11 +35,9 @@ const NAV_GROUPS = (isFeatureEnabled) => [
   {
     label: 'Main',
     items: [
-      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, enabled: true, exact: true },
-      { name: 'Trade', href: '/dashboard/trade', icon: Activity, enabled: isFeatureEnabled('crypto') },
+      { name: 'Wallets', href: '/dashboard/wallets', icon: Wallet, enabled: true },
       { name: 'Swap', href: '/dashboard/instant-swap?from=USDT&to=NGN', icon: ArrowLeftRight, enabled: isFeatureEnabled('crypto') },
       { name: 'Markets', href: '/dashboard/markets', icon: BarChart2, enabled: true },
-      { name: 'Wallets', href: '/dashboard/wallets', icon: Wallet, enabled: true },
     ],
   },
   {
@@ -81,7 +79,6 @@ const DashboardLayout = () => {
   const isActive = (item) => {
     const path = item.href.split('?')[0];
     if (item.exact) return location.pathname === path;
-    if (path === '/dashboard') return location.pathname === '/dashboard';
     return location.pathname.startsWith(path);
   };
 

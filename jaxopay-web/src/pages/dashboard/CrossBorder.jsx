@@ -180,33 +180,33 @@ const CrossBorder = () => {
     };
 
     return (
-        <div className="max-w-6xl mx-auto space-y-8">
+        <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8">
             {/* Header Area */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-br from-primary to-accent rounded-3xl p-8 text-white shadow-xl overflow-hidden relative">
+            <div className="flex flex-col gap-4 bg-gradient-to-br from-primary to-accent rounded-2xl sm:rounded-3xl p-4 sm:p-8 text-white shadow-xl overflow-hidden relative">
                 <div className="relative z-10">
-                    <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-                        <Globe className="w-8 h-8 animate-pulse text-white/60" />
+                    <h1 className="text-xl sm:text-3xl font-bold mb-2 flex items-center gap-3">
+                        <Globe className="w-6 h-6 sm:w-8 sm:h-8 animate-pulse text-white/60 shrink-0" />
                         Global Finance Hub
                     </h1>
-                    <p className="text-white/80 max-w-md">
+                    <p className="text-white/80 max-w-md text-sm sm:text-base">
                         Swap currencies instantly and make international payments to over 50 countries with the best real-time rates.
                     </p>
                 </div>
 
-                <div className="flex gap-2 p-1 bg-card/10 backdrop-blur-md rounded-2xl relative z-10 self-start">
+                <div className="flex gap-2 p-1 bg-card/10 backdrop-blur-md rounded-xl sm:rounded-2xl relative z-10 self-start w-full sm:w-auto">
                     <button
                         onClick={() => { setActiveTab('swap'); setStep(1); }}
-                        className={`px-6 py-2.5 rounded-xl font-semibold transition-all flex items-center gap-2 ${activeTab === 'swap' ? 'bg-card text-primary shadow-lg' : 'text-white hover:bg-card/10'}`}
+                        className={`flex-1 sm:flex-none px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm ${activeTab === 'swap' ? 'bg-card text-primary shadow-lg' : 'text-white hover:bg-card/10'}`}
                     >
-                        <ArrowLeftRight className="w-4 h-4" />
-                        Currency Swap
+                        <ArrowLeftRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                        <span className="truncate">Currency Swap</span>
                     </button>
                     <button
                         onClick={() => { setActiveTab('transfer'); setStep(1); }}
-                        className={`px-6 py-2.5 rounded-xl font-semibold transition-all flex items-center gap-2 ${activeTab === 'transfer' ? 'bg-card text-primary shadow-lg' : 'text-white hover:bg-card/10'}`}
+                        className={`flex-1 sm:flex-none px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm ${activeTab === 'transfer' ? 'bg-card text-primary shadow-lg' : 'text-white hover:bg-card/10'}`}
                     >
-                        <Send className="w-4 h-4" />
-                        International Transfer
+                        <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                        <span className="truncate">Intl Transfer</span>
                     </button>
                 </div>
 

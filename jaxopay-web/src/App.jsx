@@ -249,12 +249,13 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<DashboardHome />} />
+            <Route index element={<Navigate to="wallets" replace />} />
+            <Route path="home" element={<DashboardHome />} />
             <Route path="portfolio" element={<Dashboard />} />
 
             {/* Dashboard Features */}
             <Route path="wallets" element={<Wallets />} />
-            {/* Crypto trading routes */}
+            {/* Crypto trading routes (hidden from nav but routes preserved) */}
             <Route path="markets" element={<Markets />} />
             <Route path="trade" element={
               <FeatureGuard feature="crypto">

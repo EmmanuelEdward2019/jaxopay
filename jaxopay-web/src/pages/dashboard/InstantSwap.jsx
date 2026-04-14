@@ -298,11 +298,20 @@ const InstantSwap = () => {
     setReceiveAmount('');
   };
 
-  const filteredAssets = assets.filter(a => {
-    const code = (a.code || a.coin || '').toUpperCase();
-    const q = pickerSearch.toLowerCase();
-    return code.toLowerCase().includes(q) || (a.name || '').toLowerCase().includes(q);
-  });
+  const filteredAssets = assets
+    .filter(a => {
+      const code = (a.code || a.coin || '').toUpperCase();
+      const q = pickerSearch.toLowerCase();
+      return code.toLowerCase().includes(q) || (a.name || '').toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      // Show assets with balance first
+      const balA = getBalance((a.code || a.coin || '').toUpperCase());
+      const balB = getBalance((b.code || b.coin || '').toUpperCase());
+      if (balA > 0 && balB <= 0) return -1;
+      if (balB > 0 && balA <= 0) return 1;
+      return balB - balA;
+    });
 
   const fmtBal = (v, code) => isFiat(code) ? v.toFixed(2) : (v < 0.001 ? v.toFixed(8) : v.toFixed(4));
 
@@ -311,9 +320,9 @@ const InstantSwap = () => {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#0b0e11] flex flex-col">
+    <div className="min-h-screen bg-[#0b0e11] flex flex-col overflow-x-hidden">
       {/* Header */}
-      <div className="bg-[#161a1f] border-b border-[#2b3139] px-4 py-4 sm:px-6">
+      <div className="bg-[#161a1f] border-b border-[#2b3139] px-3 py-4 sm:px-6">
         <div className="max-w-lg mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#f0b90b]/10 flex items-center justify-center">
@@ -332,7 +341,7 @@ const InstantSwap = () => {
       </div>
 
       {/* Popular pairs */}
-      <div className="px-4 sm:px-6 pt-4">
+      <div className="px-3 sm:px-6 pt-5 mt-1">
         <div className="max-w-lg mx-auto flex gap-2 overflow-x-auto no-scrollbar pb-2">
           {POPULAR_PAIRS.map(p => (
             <button key={`${p.from}-${p.to}`}
@@ -349,7 +358,7 @@ const InstantSwap = () => {
       </div>
 
       {/* Main card */}
-      <div className="flex-1 flex items-start justify-center px-4 sm:px-6 pt-4 pb-8">
+      <div className="flex-1 flex items-start justify-center px-3 sm:px-6 pt-4 pb-8">
         <div className="w-full max-w-lg">
 
           {/* Completion screen */}
@@ -375,24 +384,24 @@ const InstantSwap = () => {
           {swapPhase !== 'completed' && (
             <div className="space-y-3">
               {/* From */}
-              <div className="bg-[#161a1f] rounded-2xl border border-[#2b3139] p-4 space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="bg-[#161a1f] rounded-2xl border border-[#2b3139] p-3 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-1">
                   <span className="text-[11px] font-bold text-[#848e9c] uppercase">You Pay</span>
-                  <span className="text-[11px] text-[#848e9c]">
-                    Balance: <span className="text-white font-medium">{fmtBal(getBalance(fromCode), fromCode)} {fromCode}</span>
+                  <span className="text-[11px] text-[#848e9c] truncate">
+                    Bal: <span className="text-white font-medium">{fmtBal(getBalance(fromCode), fromCode)} {fromCode}</span>
                   </span>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <input
                     type="number"
                     placeholder="0.00"
                     value={payAmount}
                     onChange={e => setPayAmount(e.target.value)}
                     disabled={isQuoteActive || isWorking}
-                    className="flex-1 bg-transparent text-2xl font-bold text-white placeholder-[#5e6673] focus:outline-none disabled:opacity-60"
+                    className="flex-1 min-w-0 bg-transparent text-xl sm:text-2xl font-bold text-white placeholder-[#5e6673] focus:outline-none disabled:opacity-60"
                   />
                   <button onClick={() => openPicker('from')}
-                    className="flex items-center gap-2 bg-[#2b3139] hover:bg-[#363d47] rounded-xl px-3 py-2 transition-colors">
+                    className="flex items-center gap-1.5 sm:gap-2 bg-[#2b3139] hover:bg-[#363d47] rounded-xl px-2.5 sm:px-3 py-2 transition-colors shrink-0">
                     <CoinIcon code={fromCode} size={24} />
                     <span className="text-sm font-bold text-white">{fromCode}</span>
                     <ChevronDown className="w-4 h-4 text-[#848e9c]" />
@@ -420,15 +429,15 @@ const InstantSwap = () => {
               </div>
 
               {/* To */}
-              <div className="bg-[#161a1f] rounded-2xl border border-[#2b3139] p-4 space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="bg-[#161a1f] rounded-2xl border border-[#2b3139] p-3 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-1">
                   <span className="text-[11px] font-bold text-[#848e9c] uppercase">You Receive</span>
-                  <span className="text-[11px] text-[#848e9c]">
-                    Balance: <span className="text-white font-medium">{fmtBal(getBalance(toCode), toCode)} {toCode}</span>
+                  <span className="text-[11px] text-[#848e9c] truncate">
+                    Bal: <span className="text-white font-medium">{fmtBal(getBalance(toCode), toCode)} {toCode}</span>
                   </span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 text-2xl font-bold text-white tabular-nums">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="flex-1 min-w-0 text-xl sm:text-2xl font-bold text-white tabular-nums truncate">
                     {loadingRate && !receiveAmount ? (
                       <span className="text-[#848e9c] animate-pulse">Calculating...</span>
                     ) : receiveAmount ? (
@@ -438,7 +447,7 @@ const InstantSwap = () => {
                     )}
                   </div>
                   <button onClick={() => openPicker('to')}
-                    className="flex items-center gap-2 bg-[#2b3139] hover:bg-[#363d47] rounded-xl px-3 py-2 transition-colors">
+                    className="flex items-center gap-1.5 sm:gap-2 bg-[#2b3139] hover:bg-[#363d47] rounded-xl px-2.5 sm:px-3 py-2 transition-colors shrink-0">
                     <CoinIcon code={toCode} size={24} />
                     <span className="text-sm font-bold text-white">{toCode}</span>
                     <ChevronDown className="w-4 h-4 text-[#848e9c]" />
