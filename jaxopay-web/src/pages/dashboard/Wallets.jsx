@@ -5,7 +5,7 @@ import {
     Wallet, ArrowUpRight, ArrowDownLeft, ArrowLeftRight,
     Eye, EyeOff, Search, X, ChevronDown, RefreshCw,
     Copy, Check, Info, AlertCircle, ShieldCheck,
-    Star, TrendingUp, Plus, Building2
+    Star, TrendingUp, Plus, Building2, Users, Send
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import QRCodeSVG from 'react-qr-code';
@@ -38,8 +38,8 @@ const FALLBACK_RATES = {
     'LTC': 0.011, 'ADA': 1.1, 'MATIC': 1.8, 'DOT': 0.12,
 };
 
-// Popular crypto shown at top of lists
-const POPULAR_CRYPTO = ['BTC', 'ETH', 'USDT', 'USDC', 'BNB', 'SOL', 'XRP'];
+// Fiat currency codes for filtering (used to exclude fiat from crypto lists)
+const FIAT_CODES = new Set(FIAT_CURRENCIES.map(f => f.code));
 
 // Coin icon colors
 const COIN_COLORS = {
@@ -121,11 +121,11 @@ const Wallets = () => {
     const buildAssetList = useCallback(() => {
         const assets = [];
 
-        // Add crypto assets
+        // Add crypto assets (strictly from Quidax API, exclude any fiat codes)
         const cryptoCodes = new Set();
         allCryptos.forEach(c => {
             const code = (c.code || c.coin || c.currency || '').toUpperCase();
-            if (!code || cryptoCodes.has(code)) return;
+            if (!code || cryptoCodes.has(code) || FIAT_CODES.has(code)) return;
             cryptoCodes.add(code);
             assets.push({
                 code,
@@ -135,19 +135,6 @@ const Wallets = () => {
                 wallet_id: balanceMap[code]?.wallet_id || null,
                 is_active: balanceMap[code]?.is_active ?? true,
             });
-        });
-
-        // Ensure popular cryptos are always present even if API didn't return them
-        POPULAR_CRYPTO.forEach(code => {
-            if (!cryptoCodes.has(code)) {
-                cryptoCodes.add(code);
-                assets.push({
-                    code, name: code, type: 'crypto',
-                    balance: balanceMap[code]?.balance || 0,
-                    wallet_id: balanceMap[code]?.wallet_id || null,
-                    is_active: balanceMap[code]?.is_active ?? true,
-                });
-            }
         });
 
         // Add fiat currencies
@@ -466,11 +453,14 @@ const Wallets = () => {
 // ── Unified Action Modal ─────────────────────────────────────────────────
 // Handles Deposit, Withdraw, Transfer flows with Crypto/Fiat selector
 const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefresh }) => {
-    const [step, setStep] = useState(1); // 1: Choose type, 2: Choose currency, 3: Form
+    // Steps: 1=Choose type, 1.5=Transfer mode (internal/external), 2=Choose currency, 3=Form
+    const [step, setStep] = useState(1);
     const [assetType, setAssetType] = useState(''); // 'crypto' | 'fiat'
+    const [transferMode, setTransferMode] = useState(''); // 'internal' | 'external'
     const [selectedCode, setSelectedCode] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
 
+    const isTransfer = action === 'transfer';
     const actionLabels = { deposit: 'Deposit', withdraw: 'Withdraw', transfer: 'Transfer' };
     const actionLabel = actionLabels[action] || 'Action';
 
@@ -481,16 +471,9 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
             const seen = new Set();
             allCryptos.forEach(c => {
                 const code = (c.code || c.coin || c.currency || '').toUpperCase();
-                if (!code || seen.has(code)) return;
+                if (!code || seen.has(code) || FIAT_CODES.has(code)) return;
                 seen.add(code);
                 list.push({ code, name: c.name || code, balance: balanceMap[code]?.balance || 0 });
-            });
-            // Ensure popular are always present
-            POPULAR_CRYPTO.forEach(code => {
-                if (!seen.has(code)) {
-                    seen.add(code);
-                    list.push({ code, name: code, balance: balanceMap[code]?.balance || 0 });
-                }
             });
         } else {
             FIAT_CURRENCIES.forEach(f => {
@@ -521,6 +504,17 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
         setAssetType(type);
         setSelectedCode('');
         setSearchQuery('');
+        setTransferMode('');
+        if (isTransfer) {
+            setStep(1.5); // Go to internal/external choice
+        } else {
+            setStep(2);
+        }
+    };
+
+    const handleSelectTransferMode = (mode) => {
+        setTransferMode(mode);
+        setSearchQuery('');
         setStep(2);
     };
 
@@ -531,7 +525,9 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
 
     const handleBack = () => {
         if (step === 3) { setStep(2); setSelectedCode(''); }
+        else if (step === 2 && isTransfer) { setStep(1.5); setTransferMode(''); }
         else if (step === 2) { setStep(1); setAssetType(''); }
+        else if (step === 1.5) { setStep(1); setAssetType(''); }
         else onClose();
     };
 
@@ -554,7 +550,7 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                         <h2 className="text-lg font-bold text-foreground">{actionLabel}</h2>
                         {step > 1 && (
                             <span className="px-2 py-0.5 bg-muted rounded-md text-xs font-bold text-muted-foreground uppercase">
-                                {assetType}{selectedCode ? ` · ${selectedCode}` : ''}
+                                {assetType}{transferMode ? ` · ${transferMode}` : ''}{selectedCode ? ` · ${selectedCode}` : ''}
                             </span>
                         )}
                     </div>
@@ -583,6 +579,31 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                                 </div>
                                 <p className="font-bold text-foreground">Fiat</p>
                                 <p className="text-xs text-muted-foreground mt-1">NGN, USD, EUR...</p>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 1.5: Transfer Mode (Internal/External) */}
+                {step === 1.5 && isTransfer && (
+                    <div className="p-6 space-y-4">
+                        <p className="text-sm text-muted-foreground">How would you like to transfer {assetType === 'crypto' ? 'crypto' : 'fiat'}?</p>
+                        <div className="grid grid-cols-2 gap-4">
+                            <button onClick={() => handleSelectTransferMode('internal')}
+                                className="p-6 rounded-xl border-2 border-border hover:border-primary bg-muted/30 hover:bg-primary/5 transition-all text-center group">
+                                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                                    <Users className="w-7 h-7 text-primary" />
+                                </div>
+                                <p className="font-bold text-foreground">Internal</p>
+                                <p className="text-xs text-muted-foreground mt-1">Send to Jaxopay user</p>
+                            </button>
+                            <button onClick={() => handleSelectTransferMode('external')}
+                                className="p-6 rounded-xl border-2 border-border hover:border-primary bg-muted/30 hover:bg-primary/5 transition-all text-center group">
+                                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                                    <Send className="w-7 h-7 text-primary" />
+                                </div>
+                                <p className="font-bold text-foreground">External</p>
+                                <p className="text-xs text-muted-foreground mt-1">{assetType === 'fiat' ? 'Bank transfer' : 'Blockchain withdrawal'}</p>
                             </button>
                         </div>
                     </div>
@@ -656,8 +677,18 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                                 onRefresh={onRefresh}
                             />
                         )}
-                        {action === 'transfer' && (
+                        {action === 'transfer' && transferMode === 'internal' && (
                             <TransferForm
+                                code={selectedCode}
+                                type={assetType}
+                                wallets={wallets}
+                                balanceMap={balanceMap}
+                                onClose={onClose}
+                                onRefresh={onRefresh}
+                            />
+                        )}
+                        {action === 'transfer' && transferMode === 'external' && (
+                            <ExternalTransferForm
                                 code={selectedCode}
                                 type={assetType}
                                 wallets={wallets}
@@ -1154,6 +1185,185 @@ const TransferForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =
                 disabled={loading || !recipient || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > balance}
                 className="w-full py-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                 {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : `Send ${code}`}
+            </button>
+        </div>
+    );
+};
+
+// ── External Transfer Form (Fiat → Bank, Crypto → Blockchain) ────────────
+const ExternalTransferForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) => {
+    const [amount, setAmount] = useState('');
+    const [recipient, setRecipient] = useState('');
+    const [network, setNetwork] = useState('');
+    const [networks, setNetworks] = useState([]);
+    const [description, setDescription] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    // Bank transfer states (fiat)
+    const [banks, setBanks] = useState([]);
+    const [selectedBank, setSelectedBank] = useState('');
+    const [accountName, setAccountName] = useState('');
+    const [resolvingAccount, setResolvingAccount] = useState(false);
+
+    const isCrypto = type === 'crypto';
+    const balance = balanceMap[code]?.balance || 0;
+    const walletId = balanceMap[code]?.wallet_id;
+
+    // Fetch networks for crypto
+    useEffect(() => {
+        if (!isCrypto) return;
+        cryptoService.getNetworks(code).then(res => {
+            const raw = res.success && res.data?.networks?.length > 0 ? res.data.networks : (STATIC_CRYPTO_NETWORKS[code.toUpperCase()] || []);
+            setNetworks(raw.filter(n => n.withdraws_enabled !== false));
+        }).catch(() => setNetworks(STATIC_CRYPTO_NETWORKS[code.toUpperCase()] || []));
+    }, [code, isCrypto]);
+
+    // Fetch banks for fiat
+    useEffect(() => {
+        if (isCrypto) return;
+        transferService.getBanks(code).then(res => {
+            if (res.success) setBanks(res.data || []);
+        });
+    }, [code, isCrypto]);
+
+    // Resolve account name
+    useEffect(() => {
+        if (isCrypto || !selectedBank || recipient.length < 10 || code !== 'NGN') return;
+        const resolve = async () => {
+            setResolvingAccount(true); setAccountName('');
+            const res = await transferService.resolveAccount(selectedBank, recipient, 'NGN');
+            if (res.success) setAccountName(res.data.account_name);
+            setResolvingAccount(false);
+        };
+        resolve();
+    }, [recipient, selectedBank, code, isCrypto]);
+
+    const handleExternalTransfer = async () => {
+        setLoading(true); setError(null);
+        try {
+            if (isCrypto) {
+                const res = await cryptoService.withdraw({
+                    coin: code, address: recipient, amount: parseFloat(amount), network, memo: description,
+                });
+                if (res.success) { onRefresh(); onClose(); }
+                else setError(res.error || 'Withdrawal failed');
+            } else {
+                const res = await transferService.sendTransfer({
+                    wallet_id: walletId, bank_code: selectedBank, account_number: recipient,
+                    account_name: accountName, amount: parseFloat(amount), narration: description, currency: code,
+                });
+                if (res.success) { onRefresh(); onClose(); }
+                else setError(res.error || 'Transfer failed');
+            }
+        } catch (e) {
+            setError(e.message || 'Something went wrong');
+        }
+        setLoading(false);
+    };
+
+    if (balance <= 0) {
+        return (
+            <div className="p-8 text-center">
+                <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-foreground mb-2">No {code} Balance</h3>
+                <p className="text-sm text-muted-foreground">Deposit {code} first to make external transfers.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="p-6 space-y-5">
+            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl">
+                {isCrypto ? <CoinIcon code={code} size={40} /> : <span className="text-3xl">{FIAT_CURRENCIES.find(f => f.code === code)?.flag || '💰'}</span>}
+                <div>
+                    <p className="font-bold text-foreground">{code}</p>
+                    <p className="text-xs text-muted-foreground">Available: {balance.toFixed(isCrypto ? 6 : 2)}</p>
+                </div>
+                <span className="ml-auto px-2 py-1 bg-muted rounded-lg text-[10px] font-bold text-muted-foreground uppercase">
+                    {isCrypto ? 'Blockchain' : 'Bank Transfer'}
+                </span>
+            </div>
+
+            {error && (
+                <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
+                    <p className="text-sm text-danger">{error}</p>
+                </div>
+            )}
+
+            <div className="space-y-4">
+                {!isCrypto && (
+                    <div>
+                        <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Select Bank</label>
+                        <select value={selectedBank} onChange={(e) => setSelectedBank(e.target.value)}
+                            className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground font-medium focus:ring-2 focus:ring-ring focus:outline-none">
+                            <option value="" className="bg-card text-foreground">Choose bank...</option>
+                            {banks.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+                        </select>
+                    </div>
+                )}
+
+                <div>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+                        {isCrypto ? 'Wallet Address' : 'Account Number'}
+                    </label>
+                    <div className="relative">
+                        <input type="text" value={recipient} onChange={(e) => setRecipient(e.target.value)}
+                            placeholder={isCrypto ? 'Paste wallet address' : '0123456789'}
+                            className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground font-medium focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
+                        {resolvingAccount && <RefreshCw className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary" />}
+                    </div>
+                    {accountName && (
+                        <div className="mt-2 px-3 py-2 bg-primary/10 rounded-lg flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4 text-primary" />
+                            <span className="text-xs font-bold text-primary">{accountName}</span>
+                        </div>
+                    )}
+                </div>
+
+                {isCrypto && (
+                    <div>
+                        <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Network</label>
+                        <select value={network} onChange={(e) => setNetwork(e.target.value)}
+                            className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground font-medium focus:ring-2 focus:ring-ring focus:outline-none">
+                            <option value="" className="bg-card text-foreground">Select network...</option>
+                            {networks.map(n => <option key={n.network} value={n.network}>{n.name || n.network}</option>)}
+                        </select>
+                    </div>
+                )}
+
+                <div>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Amount</label>
+                    <div className="relative">
+                        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00"
+                            className="w-full px-4 py-3 pr-16 bg-muted border border-border rounded-xl text-foreground font-bold focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">{code}</div>
+                    </div>
+                    <div className="flex gap-1.5 mt-2">
+                        {[25, 50, 75, 100].map(pct => (
+                            <button key={pct} type="button" onClick={() => setAmount((balance * pct / 100).toFixed(isCrypto ? 6 : 2))}
+                                className="flex-1 py-1 rounded-lg text-[10px] font-bold text-muted-foreground bg-muted border border-border hover:text-primary hover:border-primary/40 transition-colors">
+                                {pct}%
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+                        {isCrypto ? 'Memo (optional)' : 'Narration (optional)'}
+                    </label>
+                    <input type="text" value={description} onChange={(e) => setDescription(e.target.value)}
+                        placeholder={isCrypto ? 'Memo / tag (if required)' : 'Payment reference'}
+                        className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground text-sm focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
+                </div>
+            </div>
+
+            <button onClick={handleExternalTransfer}
+                disabled={loading || !recipient || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > balance || (isCrypto && !network) || (!isCrypto && !selectedBank)}
+                className="w-full py-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : `Transfer ${code}`}
             </button>
         </div>
     );
