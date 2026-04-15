@@ -38,6 +38,14 @@ export const errorHandler = (err, req, res, next) => {
     err.status = `${err.statusCode}`.startsWith('4') ? 'fail' : 'error';
   }
 
+  // Normalize circuit-breaker errors (plain Error objects with no .response)
+  if (!err.isOperational && !err.response && /circuit breaker/i.test(err.message)) {
+    err.statusCode = 503;
+    err.message = 'This service is temporarily unavailable. Please try again in a few seconds.';
+    err.isOperational = true;
+    err.status = 'error';
+  }
+
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
 

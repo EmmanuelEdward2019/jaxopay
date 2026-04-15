@@ -51,6 +51,10 @@ const FALLBACK_RATES = {
 // Fiat currency codes for filtering (used to exclude fiat from crypto lists)
 const FIAT_CODES = new Set(FIAT_CURRENCIES.map(f => f.code));
 
+// Popular cryptos shown at the top of all lists
+const POPULAR_CRYPTO_ORDER = ['BTC', 'USDT', 'USDC', 'ETH', 'BNB', 'SOL', 'XRP', 'TRX', 'DOGE', 'ADA'];
+const POPULAR_RANK = Object.fromEntries(POPULAR_CRYPTO_ORDER.map((c, i) => [c, i + 1]));
+
 // Complete Quidax-supported cryptocurrencies (static fallback — always shown even if API is down)
 const QUIDAX_SUPPORTED_CRYPTOS = [
     { code: 'BTC', name: 'Bitcoin' },
@@ -300,6 +304,10 @@ const Wallets = () => {
             // Non-zero balance first
             if (a.balance > 0 && b.balance <= 0) return -1;
             if (b.balance > 0 && a.balance <= 0) return 1;
+            // Popular cryptos before others (within same balance tier)
+            const aPopular = POPULAR_RANK[a.code] || 999;
+            const bPopular = POPULAR_RANK[b.code] || 999;
+            if (aPopular !== bPopular) return aPopular - bPopular;
             // Then by USD value
             const aUSD = a.balance / (FALLBACK_RATES[a.code] || 1);
             const bUSD = b.balance / (FALLBACK_RATES[b.code] || 1);
@@ -629,10 +637,13 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
             list = list.filter(c => c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
         }
 
-        // Sort: balance first, then alphabetical
+        // Sort: balance first, then popular cryptos, then alphabetical
         list.sort((a, b) => {
             if (a.balance > 0 && b.balance <= 0) return -1;
             if (b.balance > 0 && a.balance <= 0) return 1;
+            const aPopular = POPULAR_RANK[a.code] || 999;
+            const bPopular = POPULAR_RANK[b.code] || 999;
+            if (aPopular !== bPopular) return aPopular - bPopular;
             const aUSD = a.balance / (FALLBACK_RATES[a.code] || 1);
             const bUSD = b.balance / (FALLBACK_RATES[b.code] || 1);
             if (aUSD !== bUSD) return bUSD - aUSD;

@@ -27,6 +27,7 @@ const n = (id, name, opts = {}) => ({
 });
 
 const STATIC_NETWORKS = {
+  // Major coins
   BTC:  [n('btc',    'Bitcoin Network',          { withdrawFee: '0.0005', withdrawMin: '0.001', depositMin: '0.0001', isDefault: true, confirmations: 3 })],
   ETH:  [n('erc20',  'Ethereum (ERC20)',          { withdrawFee: '0.005',  withdrawMin: '0.01',  depositMin: '0.001',  isDefault: true, confirmations: 12 })],
   USDT: [
@@ -53,11 +54,48 @@ const STATIC_NETWORKS = {
   DOGE: [n('doge',   'Dogecoin',                  { withdrawFee: '5',    withdrawMin: '10',  depositMin: '5',    isDefault: true, confirmations: 40 })],
   LTC:  [n('ltc',    'Litecoin',                  { withdrawFee: '0.01', withdrawMin: '0.02', depositMin: '0.001', isDefault: true, confirmations: 6 })],
   DOT:  [n('dot',    'Polkadot',                  { withdrawFee: '0.1',  withdrawMin: '1',   depositMin: '0.1',  isDefault: true, confirmations: 10 })],
-  MATIC:[n('matic',  'Polygon (MATIC)',            { withdrawFee: '0.1',  withdrawMin: '1',   depositMin: '0.1',  isDefault: true, confirmations: 100 })],
+  POL:  [n('matic',  'Polygon',                   { withdrawFee: '0.1',  withdrawMin: '1',   depositMin: '0.1',  isDefault: true, confirmations: 100 })],
   LINK: [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0.5',  withdrawMin: '1',   depositMin: '0.5',  isDefault: true, confirmations: 12 })],
+  BCH:  [n('bch',    'Bitcoin Cash',               { withdrawFee: '0.001', withdrawMin: '0.01', depositMin: '0.001', isDefault: true, confirmations: 6 })],
   DASH: [n('dash',   'Dash',                       { withdrawFee: '0.01', withdrawMin: '0.1', depositMin: '0.01', isDefault: true, confirmations: 6  })],
   XLM:  [n('xlm',    'Stellar',                   { withdrawFee: '0.01', withdrawMin: '1',   depositMin: '1',    isDefault: true, confirmations: 1  })],
-  SHIB: [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0', withdrawMin: '0', depositMin: '0', isDefault: true })],
+
+  // DeFi & Layer-2 tokens
+  AAVE: [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0.1',  withdrawMin: '0.5', depositMin: '0.1',  isDefault: true, confirmations: 12 })],
+  CAKE: [n('bep20',  'BNB Smart Chain (BEP20)',    { withdrawFee: '0.1',  withdrawMin: '1',   depositMin: '0.5',  isDefault: true, confirmations: 15 })],
+  SHIB: [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 12 })],
+  FLOKI:[n('bep20',  'BNB Smart Chain (BEP20)',    { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 15 })],
+  PEPE: [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 12 })],
+  BONK: [n('solana', 'Solana',                     { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 32 })],
+
+  // Quidax native & gaming
+  QDX:  [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 12 })],
+  SLP:  [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 12 })],
+
+  // Algorand
+  ALGO: [n('algo',   'Algorand',                   { withdrawFee: '0.01', withdrawMin: '1',   depositMin: '0.1',  isDefault: true, confirmations: 4 })],
+
+  // Solana meme coins
+  WIF:  [n('solana', 'Solana',                     { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 32 })],
+  NOS:  [n('solana', 'Solana',                     { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 32 })],
+  FARTCOIN: [n('solana', 'Solana',                 { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 32 })],
+
+  // Layer-1 & new chains
+  NEAR: [n('near',   'NEAR Protocol',              { withdrawFee: '0.01', withdrawMin: '1',   depositMin: '0.1',  isDefault: true, confirmations: 3 })],
+  TON:  [n('ton',    'TON (The Open Network)',      { withdrawFee: '0.01', withdrawMin: '0.5', depositMin: '0.1',  isDefault: true, confirmations: 3 })],
+  SUI:  [n('sui',    'Sui Network',                 { withdrawFee: '0.01', withdrawMin: '1',   depositMin: '0.1',  isDefault: true, confirmations: 3 })],
+  RNDR: [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0.5',  withdrawMin: '1',   depositMin: '0.5',  isDefault: true, confirmations: 12 })],
+  STRK: [n('strk',   'Starknet',                   { withdrawFee: '0.1',  withdrawMin: '1',   depositMin: '0.1',  isDefault: true, confirmations: 10 })],
+  ZK:   [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 12 })],
+  LSK:  [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0.1',  withdrawMin: '1',   depositMin: '0.5',  isDefault: true, confirmations: 12 })],
+  CFX:  [n('cfx',    'Conflux Network',             { withdrawFee: '0.1',  withdrawMin: '1',   depositMin: '0.1',  isDefault: true, confirmations: 10 })],
+  S:    [n('sonic',  'Sonic',                       { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 10 })],
+  HYPE: [n('hype',   'Hyperliquid',                 { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 10 })],
+  XYO:  [n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 12 })],
+  AXCNH:[n('erc20',  'Ethereum (ERC20)',           { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 12 })],
+
+  // Stablecoin - African
+  CNGN: [n('bep20',  'BNB Smart Chain (BEP20)',    { withdrawFee: '0',    withdrawMin: '0',   depositMin: '0',    isDefault: true, confirmations: 15 })],
 };
 
 /**

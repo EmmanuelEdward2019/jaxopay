@@ -41,7 +41,7 @@ router.get(
 // Get wallet by currency
 router.get(
   '/currency/:currency',
-  param('currency').isString().isLength({ min: 3, max: 6 }),
+  param('currency').isString().isLength({ min: 1, max: 10 }),
   validate,
   getWalletByCurrency
 );
@@ -86,7 +86,7 @@ router.post(
   '/transfer',
   body('recipient_email').isEmail(),
   body('amount').isFloat({ min: 0.01 }),
-  body('currency').isString().isLength({ min: 3, max: 6 }),
+  body('currency').isString().isLength({ min: 1, max: 10 }),
   body('description').optional().isString(),
   validate,
   useIdempotency,
@@ -98,7 +98,7 @@ router.post(
   '/deposit/initialize',
   body('wallet_id').isUUID(),
   body('amount').isFloat({ min: 1 }),
-  body('currency').optional().isString().isLength({ min: 3, max: 6 }),
+  body('currency').optional().isString().isLength({ min: 1, max: 10 }),
   validate,
   initializeDeposit
 );

@@ -7,6 +7,10 @@ import {
 import cryptoService from '../../services/cryptoService';
 import walletService from '../../services/walletService';
 
+// Popular cryptos shown at the top of picker lists
+const POPULAR_CRYPTO_ORDER = ['BTC', 'USDT', 'USDC', 'ETH', 'BNB', 'SOL', 'XRP', 'TRX', 'DOGE', 'ADA'];
+const POPULAR_RANK = Object.fromEntries(POPULAR_CRYPTO_ORDER.map((c, i) => [c, i + 1]));
+
 // Complete Quidax-supported cryptocurrencies (static fallback)
 const QUIDAX_SUPPORTED_CRYPTOS = [
   { code: 'BTC', name: 'Bitcoin' },
@@ -411,6 +415,12 @@ const InstantSwap = () => {
       const balB = getBalance((b.code || b.coin || '').toUpperCase());
       if (balA > 0 && balB <= 0) return -1;
       if (balB > 0 && balA <= 0) return 1;
+      // Popular cryptos before others
+      const codeA = (a.code || a.coin || '').toUpperCase();
+      const codeB = (b.code || b.coin || '').toUpperCase();
+      const rankA = POPULAR_RANK[codeA] || 999;
+      const rankB = POPULAR_RANK[codeB] || 999;
+      if (rankA !== rankB) return rankA - rankB;
       return balB - balA;
     });
 
