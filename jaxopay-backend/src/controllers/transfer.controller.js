@@ -127,6 +127,15 @@ export const sendTransfer = catchAsync(async (req, res) => {
         throw new AppError('wallet_id, bank_code, account_number, account_name, and amount are required', 400);
     }
 
+    // Korapay disbursements only support certain currencies
+    const DISBURSE_SUPPORTED = new Set(['NGN', 'KES', 'GHS', 'ZAR']);
+    if (!DISBURSE_SUPPORTED.has(currency.toUpperCase())) {
+        throw new AppError(
+            `Bank transfers in ${currency.toUpperCase()} are not currently available. Supported: NGN, KES, GHS, ZAR. Convert your balance using Swap first.`,
+            400
+        );
+    }
+
     // 1. Verify wallet belongs to user and has sufficient balance
     const walletResult = await query(
         'SELECT id, currency, balance, COALESCE(available_balance, balance) as available_balance FROM wallets WHERE id = $1 AND user_id = $2 AND is_active = true',
@@ -240,10 +249,20 @@ export const sendTransfer = catchAsync(async (req, res) => {
             );
         });
 
-        throw new AppError(
-            koraErr.response?.data?.message || 'Transfer failed. Your funds have been returned. Please try again.',
-            502
-        );
+        // Provide user-friendly error messages for common Korapay errors
+        const koraMsg = koraErr.response?.data?.message || koraErr.message || '';
+        let userMessage = 'Transfer failed. Your funds have been returned. Please try again.';
+
+        if (/whitelist.*ip|ip.*whitelist/i.test(koraMsg)) {
+            userMessage = 'Bank transfers are temporarily unavailable while the server is being configured. Please try again later or contact support.';
+            logger.error('[Transfer] CONFIGURATION REQUIRED: Server IP must be whitelisted in Korapay merchant dashboard for disbursements.');
+        } else if (/channel.*not.*enabled|not.*enabled.*channel/i.test(koraMsg)) {
+            userMessage = `Bank transfers in ${currency} are not currently available. Only NGN transfers are supported at this time.`;
+        } else if (koraMsg) {
+            userMessage = `Transfer failed: ${koraMsg}. Your funds have been returned.`;
+        }
+
+        throw new AppError(userMessage, 502);
     }
 });
 

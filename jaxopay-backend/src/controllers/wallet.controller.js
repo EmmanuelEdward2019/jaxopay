@@ -151,6 +151,17 @@ export const initializeDeposit = catchAsync(async (req, res) => {
     });
   }
 
+  // Korapay checkout supports a limited set of currencies.
+  // Reject unsupported currencies early with a clear message.
+  const KORAPAY_SUPPORTED_CURRENCIES = new Set(['NGN', 'KES', 'GHS', 'ZAR', 'USD']);
+  if (!KORAPAY_SUPPORTED_CURRENCIES.has(depositCurrency)) {
+    await query('DELETE FROM transactions WHERE reference = $1 AND status = $2', [reference, 'pending']);
+    throw new AppError(
+      `Online deposits in ${depositCurrency} are not currently available. Supported currencies: NGN, KES, GHS, ZAR, USD. You can deposit in NGN and convert using Swap.`,
+      400
+    );
+  }
+
   try {
     const profileResult = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
     const profile = profileResult.rows[0] || {};
@@ -188,7 +199,18 @@ export const initializeDeposit = catchAsync(async (req, res) => {
     await query('DELETE FROM transactions WHERE reference = $1 AND status = $2', [reference, 'pending']);
     const extErr = err.response?.data?.message || err.message;
     logger.error('[Wallet] Korapay init error:', err.response?.data || err.message);
-    throw new AppError(`Payment initialization failed: ${extErr}`, 502);
+
+    // Provide user-friendly messages for common Korapay errors
+    let userMessage = `Payment initialization failed: ${extErr}`;
+    if (/channel.*not.*enabled|checkout.*payment/i.test(extErr)) {
+      userMessage = `Online deposits in ${depositCurrency} are not enabled on this account. Please contact support or deposit in NGN and convert using Swap.`;
+    } else if (/collection.*wallet.*not.*found/i.test(extErr)) {
+      userMessage = `The ${depositCurrency} collection account is not set up yet. Please deposit in NGN and convert using Swap.`;
+    } else if (/internal server error/i.test(extErr)) {
+      userMessage = `The payment provider encountered an error for ${depositCurrency} deposits. Please try depositing in NGN instead.`;
+    }
+
+    throw new AppError(userMessage, 502);
   }
 });
 

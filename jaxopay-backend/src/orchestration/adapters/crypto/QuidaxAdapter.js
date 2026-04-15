@@ -174,9 +174,51 @@ class QuidaxAdapter {
     }
 
     /**
+     * Ensure a wallet exists on the Quidax side for a given currency.
+     * For newer coins added after the account was created, Quidax may not
+     * have a sub-wallet yet. This method tries GET first; on 404 it creates
+     * one via POST, then retries GET.  Failures are silently swallowed so the
+     * caller can continue (the subsequent getDepositAddress flow will degrade
+     * gracefully to "pending" if the wallet still isn't ready).
+     */
+    async ensureWalletExists(currency) {
+        const userId = await this._getAuthUserId();
+        const cur = currency.toLowerCase();
+        try {
+            const response = await this.client.get(`/users/${userId}/wallets/${cur}`);
+            return response.data;
+        } catch (getErr) {
+            const status = getErr.response?.status || getErr.statusCode;
+            if (status === 404 || status === 400) {
+                // Wallet doesn't exist — try to create it
+                try {
+                    logger.info(`[Quidax] Creating wallet for ${cur} (user ${userId})`);
+                    const createRes = await this.client.post(`/users/${userId}/wallets`, { currency: cur });
+                    logger.info(`[Quidax] Wallet created for ${cur}`);
+                    return createRes.data;
+                } catch (createErr) {
+                    // 409 / 422 = already exists (race condition) — try GET again
+                    const createStatus = createErr.response?.status || createErr.statusCode;
+                    if (createStatus === 409 || createStatus === 422) {
+                        try {
+                            const retryRes = await this.client.get(`/users/${userId}/wallets/${cur}`);
+                            return retryRes.data;
+                        } catch { /* fall through */ }
+                    }
+                    logger.warn(`[Quidax] Could not create wallet for ${cur}: ${createErr.message}`);
+                    return null;
+                }
+            }
+            logger.warn(`[Quidax] Wallet check failed for ${cur}: ${getErr.message}`);
+            return null;
+        }
+    }
+
+    /**
      * Get deposit address for a currency and network.
      *
      * Quidax multi-network flow:
+     *   0. Ensure the Quidax sub-wallet exists for this currency
      *   1. GET  /addresses — check if an address for this network already exists
      *   2. If not found: POST /addresses?network={network} — trigger background generation
      *   3. Poll GET /addresses until the address for the requested network is non-null (up to ~15 s)
@@ -187,6 +229,10 @@ class QuidaxAdapter {
      */
     async getDepositAddress(currency, network = null) {
         const userId = await this._getAuthUserId();
+
+        // Step 0: Ensure Quidax wallet exists (non-blocking — swallowed on failure)
+        await this.ensureWalletExists(currency);
+
         return this._executeWithCircuitBreaker(async () => {
             const cur = currency.toLowerCase();
             const net = network ? network.toLowerCase() : null;
