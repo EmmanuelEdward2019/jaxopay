@@ -570,13 +570,19 @@ export const getExchangeHistory = catchAsync(async (req, res) => {
  *
  * Returns 0 when no rate is available so callers can surface a proper error.
  */
-// Known crypto currencies — never use FX service (a forex API) for these
+// Known crypto currencies — never use FX service (a forex API) for these.
+// Includes all Quidax-supported coins + common industry symbols.
 const CRYPTO_SYMBOLS = new Set([
+  // Quidax-supported cryptocurrencies
   'BTC','ETH','USDT','USDC','BNB','SOL','XRP','ADA','DOGE','TRX',
-  'LTC','DOT','MATIC','BCH','LINK','UNI','AVAX','ATOM','FIL','EOS',
-  'ETC','XLM','ALGO','VET','THETA','HBAR','NEAR','FTM','ONE','SAND',
-  'MANA','AXS','SHIB','LRC','ENJ','GRT','AAVE','COMP','MKR','SNX',
-  'CRV','SUSHI','YFI','BAL','REN','KNC','ZRX','BAT','OMG','DASH',
+  'LTC','DOT','POL','BCH','LINK','XLM','DASH','AAVE','CAKE','SHIB',
+  'FLOKI','PEPE','BONK','QDX','SLP','ALGO','WIF','NOS','NEAR','TON',
+  'SUI','RNDR','STRK','ZK','LSK','CFX','S','FARTCOIN','HYPE','XYO',
+  'AXCNH','CNGN',
+  // Additional common crypto symbols (for rate guard safety)
+  'MATIC','UNI','AVAX','ATOM','FIL','EOS','ETC','VET','THETA','HBAR',
+  'FTM','ONE','SAND','MANA','AXS','LRC','ENJ','GRT','COMP','MKR',
+  'SNX','CRV','SUSHI','YFI','BAL','REN','KNC','ZRX','BAT','OMG',
   'ZEC','XMR','IOTA','XTZ','WAVES','QTUM','NEO','ONT','ZIL','ICX',
 ]);
 

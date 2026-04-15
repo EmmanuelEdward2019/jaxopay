@@ -112,8 +112,11 @@ export const transferValidation = [
     .isFloat({ min: 0.01 })
     .withMessage('Amount must be greater than 0'),
   body('currency')
-    .isIn(['NGN', 'GHS', 'KES', 'ZAR', 'USD', 'GBP', 'CAD', 'CNY'])
-    .withMessage('Invalid currency'),
+    .trim()
+    .notEmpty().withMessage('Currency is required')
+    .isAlphanumeric().withMessage('Currency must be alphanumeric')
+    .isLength({ min: 2, max: 10 }).withMessage('Currency must be 2-10 characters')
+    .customSanitizer(v => v.toUpperCase()),
   body('description')
     .optional()
     .isLength({ max: 500 })
@@ -124,8 +127,11 @@ export const transferValidation = [
 // Wallet validation
 export const createWalletValidation = [
   body('currency')
-    .isIn(['NGN', 'GHS', 'KES', 'ZAR', 'USD', 'GBP', 'CAD', 'CNY', 'USDT', 'BTC', 'ETH', 'USDC', 'SOL'])
-    .withMessage('Invalid currency'),
+    .trim()
+    .notEmpty().withMessage('Currency is required')
+    .isAlphanumeric().withMessage('Currency must be alphanumeric')
+    .isLength({ min: 2, max: 10 }).withMessage('Currency must be 2-10 characters')
+    .customSanitizer(v => v.toUpperCase()),
   body('wallet_type')
     .isIn(['fiat', 'crypto'])
     .withMessage('Wallet type must be either fiat or crypto'),
