@@ -160,9 +160,6 @@ export const initializeDeposit = catchAsync(async (req, res) => {
       notification_url: `${process.env.API_BASE_URL || 'http://localhost:3001'}/api/v1/webhooks/korapay`,
       redirect_url: `${frontendUrl}/dashboard/wallets?deposit=pending&ref=${reference}&wallet=${wallet_id}`,
       ...(depositCurrency === 'NGN' ? { merchant_bears_cost: true } : {}),
-      channels: depositCurrency === 'NGN' 
-        ? ['bank_transfer', 'card', 'pay_with_bank'] 
-        : ['bank_transfer', 'card', 'mobile_money'],
       customer: {
         name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || req.user.email,
         email: req.user.email,
@@ -192,34 +189,13 @@ export const initializeDeposit = catchAsync(async (req, res) => {
     const extErr = err.response?.data?.message || err.message;
     logger.error('[Wallet] Korapay init error:', err.response?.data || err.message);
 
-    // If the User's Korapay account lacks proper configuration for foreign currencies (which throws these errors), 
-    // bypass and simulate a successful instant deposit so the user's flow can still work successfully.
-    if (/channel.*not.*enabled|checkout.*payment|collection.*wallet.*not.*found/i.test(extErr)) {
-        logger.info('[Wallet] Bypassing Korapay API restriction for foreign deposit — simulating instant success.');
-        
-        // Re-create transaction and instantly complete it
-        await transaction(async (client) => {
-            await client.query(
-                `INSERT INTO transactions (user_id, to_wallet_id, transaction_type, from_amount, to_amount, from_currency, to_currency, net_amount, fee_amount, status, description, reference)
-                 VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $3, 0, 'completed', 'Wallet deposit', $5)`,
-                [req.user.id, wallet_id, amountForDB, depositCurrency, reference]
-            );
-            await client.query(
-                `UPDATE wallets SET balance = balance + $1, available_balance = available_balance + $1, updated_at = NOW() WHERE id = $2`,
-                [amountForDB, wallet_id]
-            );
-        });
-
-        return res.status(200).json({
-            success: true,
-            message: 'Deposit completed instantly (Bypass)',
-            data: { checkout_url: null, reference, mode: 'simulation', wallet_id, amount, currency: depositCurrency }
-        });
-    }
-
     // Provide user-friendly messages for common Korapay errors
     let userMessage = `Payment initialization failed: ${extErr}`;
-    if (/internal server error|something went wrong|issue with your input/i.test(extErr)) {
+    if (/channel.*not.*enabled|checkout.*payment/i.test(extErr)) {
+        userMessage = `Online deposits in ${depositCurrency} are not enabled on this account. Please contact support or deposit in NGN and convert using Swap.`;
+    } else if (/collection.*wallet.*not.*found/i.test(extErr)) {
+        userMessage = `The ${depositCurrency} collection account is not set up yet. Please deposit in NGN and convert using Swap.`;
+    } else if (/internal server error|something went wrong|issue with your input/i.test(extErr)) {
         userMessage = `The payment provider encountered an error for ${depositCurrency} deposits. Please try depositing in NGN instead.`;
     }
 

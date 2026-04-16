@@ -192,130 +192,78 @@ class QuidaxAdapter {
             const cur = currency.toLowerCase();
             const net = network ? network.toLowerCase() : null;
 
-            // Helper: find matching address from a list
-            const findAddress = (list) => {
-                if (!Array.isArray(list)) return null;
-                const valid = list.filter(a => a.address);
-                if (valid.length === 0) return null;
-                if (net) {
-                    const exact = valid.find(a => a.network?.toLowerCase() === net);
-                    if (exact) return exact;
-                    // For single-network coins or where Quidax ignores the network param
-                    if (valid.length === 1 && (net === cur || !valid[0].network)) return valid[0];
-                }
-                return valid[0];
-            };
-
-            // Strategy A: Try fetching the default address (singular endpoint)
-            // Docs: GET /users/{user_id}/wallets/{currency}/address
-            try {
-                const res = await this.client.get(`/users/${userId}/wallets/${cur}/address`);
-                const addrData = res.data?.data || res.data;
-                if (addrData?.address) {
-                    // If network was requested but this is a different one, fall through to plural
-                    // UNLESS it's a single-network coin (net === cur) or Quidax omitted the network.
-                    if (!net || addrData.network?.toLowerCase() === net || net === cur || !addrData.network) {
-                        return {
-                            deposit_address: addrData.address,
-                            address: addrData.address,
-                            network: addrData.network || net || cur,
-                            destination_tag: addrData.destination_tag || null,
-                        };
-                    }
-                }
-            } catch (err) {
-                logger.debug(`[Quidax] Default address endpoint failed for ${cur}: ${err.message}`);
-            }
-
-            // Strategy B: Fetch all addresses for this currency (plural endpoint)
-            // Docs: GET /users/{user_id}/wallets/{currency}/addresses
-            let addresses = [];
-            try {
-                const res = await this.client.get(`/users/${userId}/wallets/${cur}/addresses`);
-                addresses = res.data?.data || res.data || [];
-                if (!Array.isArray(addresses)) addresses = [];
-            } catch {
-                addresses = [];
-            }
-
-            const existing = findAddress(addresses);
-            if (existing) {
-                return {
-                    deposit_address: existing.address,
-                    address: existing.address,
-                    network: existing.network,
-                    destination_tag: existing.destination_tag || null,
-                };
-            }
-
-            // Strategy C: Trigger address generation via POST
-            // Docs: POST /users/{user_id}/wallets/{currency}/addresses?network={net}
-            try {
-                // Only pass network param if it differs from the currency, as Quidax may reject it for single-network coins
-                const params = (net && net !== cur) ? { network: net } : {};
-                await this.client.post(`/users/${userId}/wallets/${cur}/addresses`, null, { params });
-                logger.info(`[Quidax] Address generation triggered for ${cur}/${net || 'default'}`);
-            } catch (createErr) {
-                const status = createErr.response?.status || createErr.statusCode;
-                if (status !== 422 && status !== 409) {
-                    logger.warn(`[Quidax] Address create for ${cur}/${net}: ${createErr.message}`);
-                }
-            }
-
-            // Poll until the address appears (max ~10 s)
-            const delays = [1000, 2000, 3000, 4000];
-            for (const delay of delays) {
-                await new Promise(resolve => setTimeout(resolve, delay));
-
-                // Try singular endpoint first (faster)
-                try {
-                    const res = await this.client.get(`/users/${userId}/wallets/${cur}/address`);
-                    const addrData = res.data?.data || res.data;
-                    if (addrData?.address && (!net || addrData.network?.toLowerCase() === net || net === cur || !addrData.network)) {
-                        return {
-                            deposit_address: addrData.address,
-                            address: addrData.address,
-                            network: addrData.network || net || cur,
-                            destination_tag: addrData.destination_tag || null,
-                        };
-                    }
-                } catch { /* fall through to plural */ }
-
-                // Try plural endpoint
-                try {
-                    const res = await this.client.get(`/users/${userId}/wallets/${cur}/addresses`);
-                    const list = res.data?.data || res.data || [];
-                    const found = findAddress(Array.isArray(list) ? list : []);
-                    if (found) {
-                        return {
-                            deposit_address: found.address,
-                            address: found.address,
-                            network: found.network,
-                            destination_tag: found.destination_tag || null,
-                        };
-                    }
-                } catch { /* continue polling */ }
-            }
-
-            // Strategy D: Last resort — check the wallet object itself for deposit_address
+            // Strategy 1: The fastest and most reliable way: Get the wallet object directly.
+            // Quidax places the primary working deposit address inside the wallet object itself.
             try {
                 const walletRes = await this.client.get(`/users/${userId}/wallets/${cur}`);
                 const wallet = walletRes.data?.data || walletRes.data;
                 if (wallet?.deposit_address) {
+                    // For massive multi-network coins (USDT, USDC), if the user strictly requests a DIFFERENT network
+                    // than the default, we should check addresses array. Otherwise, this is perfect.
+                    if (!net || wallet.default_network?.toLowerCase() === net || !['usdt','usdc'].includes(cur)) {
+                        return {
+                            deposit_address: wallet.deposit_address,
+                            address: wallet.deposit_address,
+                            network: wallet.default_network || net || cur,
+                            destination_tag: wallet.destination_tag || null,
+                        };
+                    }
+                }
+            } catch (err) {
+                logger.debug(`[Quidax] Wallet fetch failed for ${cur}: ${err.message}`);
+            }
+
+            // Helper: Find exact or fallback address
+            const findAddress = (list) => {
+                if (!Array.isArray(list)) return null;
+                const valid = list.filter(a => a.address);
+                if (valid.length === 0) return null;
+                
+                if (net) {
+                    // Try exact match first
+                    const exact = valid.find(a => a.network?.toLowerCase() === net);
+                    if (exact) return exact;
+                    
+                    // Lenient match: If the coin only has 1 generated network, or the requested network essentially IS the coin
+                    if (valid.length === 1 || net === cur) return valid[0];
+                }
+                return valid[0]; // Fallback to first available
+            };
+
+            // Strategy 2: Check plural endpoint for multiple networks (e.g. TRC20 vs ERC20)
+            let addresses = [];
+            try {
+                const res = await this.client.get(`/users/${userId}/wallets/${cur}/addresses`);
+                addresses = res.data?.data || res.data || [];
+                const found = findAddress(addresses);
+                if (found) {
                     return {
-                        deposit_address: wallet.deposit_address,
-                        address: wallet.deposit_address,
-                        network: wallet.default_network || net || cur,
-                        destination_tag: wallet.destination_tag || null,
+                        deposit_address: found.address,
+                        address: found.address,
+                        network: found.network || net || cur,
+                        destination_tag: found.destination_tag || null,
                     };
                 }
-            } catch { /* fall through */ }
+            } catch { /* proceed to generation */ }
 
-            // Return pending — frontend will retry at 5-second intervals
+            // Strategy 3: Trigger address generation via POST ONLY if no address exists at all
+            try {
+                // Do not pass network parameter for single-network coins to prevent 422 errors
+                const params = (net && net !== cur) ? { network: net } : {};
+                await this.client.post(`/users/${userId}/wallets/${cur}/addresses`, null, { params });
+                logger.info(`[Quidax] Address generation POST triggered for ${cur}`);
+            } catch (createErr) {
+                const status = createErr.response?.status || createErr.statusCode;
+                if (status !== 422 && status !== 409) {
+                    logger.warn(`[Quidax] Address create error for ${cur}: ${createErr.message}`);
+                }
+            }
+
+            // Return pending so frontend knows to poll softly while Quidax initializes the blockchain wallet
             return {
                 deposit_address: null,
                 address: null,
-                network: net,
+                network: net || cur,
                 destination_tag: null,
                 pending: true,
             };
