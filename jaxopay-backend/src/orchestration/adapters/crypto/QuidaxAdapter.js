@@ -195,10 +195,15 @@ class QuidaxAdapter {
             // Helper: find matching address from a list
             const findAddress = (list) => {
                 if (!Array.isArray(list)) return null;
+                const valid = list.filter(a => a.address);
+                if (valid.length === 0) return null;
                 if (net) {
-                    return list.find(a => a.network?.toLowerCase() === net && a.address) || null;
+                    const exact = valid.find(a => a.network?.toLowerCase() === net);
+                    if (exact) return exact;
+                    // For single-network coins or where Quidax ignores the network param
+                    if (valid.length === 1 && (net === cur || !valid[0].network)) return valid[0];
                 }
-                return list.find(a => a.address) || null;
+                return valid[0];
             };
 
             // Strategy A: Try fetching the default address (singular endpoint)
@@ -208,7 +213,8 @@ class QuidaxAdapter {
                 const addrData = res.data?.data || res.data;
                 if (addrData?.address) {
                     // If network was requested but this is a different one, fall through to plural
-                    if (!net || addrData.network?.toLowerCase() === net) {
+                    // UNLESS it's a single-network coin (net === cur) or Quidax omitted the network.
+                    if (!net || addrData.network?.toLowerCase() === net || net === cur || !addrData.network) {
                         return {
                             deposit_address: addrData.address,
                             address: addrData.address,
@@ -245,7 +251,8 @@ class QuidaxAdapter {
             // Strategy C: Trigger address generation via POST
             // Docs: POST /users/{user_id}/wallets/{currency}/addresses?network={net}
             try {
-                const params = net ? { network: net } : {};
+                // Only pass network param if it differs from the currency, as Quidax may reject it for single-network coins
+                const params = (net && net !== cur) ? { network: net } : {};
                 await this.client.post(`/users/${userId}/wallets/${cur}/addresses`, null, { params });
                 logger.info(`[Quidax] Address generation triggered for ${cur}/${net || 'default'}`);
             } catch (createErr) {
@@ -264,7 +271,7 @@ class QuidaxAdapter {
                 try {
                     const res = await this.client.get(`/users/${userId}/wallets/${cur}/address`);
                     const addrData = res.data?.data || res.data;
-                    if (addrData?.address && (!net || addrData.network?.toLowerCase() === net)) {
+                    if (addrData?.address && (!net || addrData.network?.toLowerCase() === net || net === cur || !addrData.network)) {
                         return {
                             deposit_address: addrData.address,
                             address: addrData.address,
