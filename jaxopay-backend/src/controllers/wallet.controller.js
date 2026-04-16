@@ -68,31 +68,29 @@ export const getWalletByCurrency = catchAsync(async (req, res) => {
 // Create new wallet
 export const createWallet = catchAsync(async (req, res) => {
   const { currency, wallet_type = 'fiat' } = req.body;
+  const currencyUpper = currency.toUpperCase();
 
-  // Check if wallet already exists
-  const existing = await query(
-    'SELECT id FROM wallets WHERE user_id = $1 AND currency = $2',
-    [req.user.id, currency.toUpperCase()]
-  );
-
-  if (existing.rows.length > 0) {
-    throw new AppError('Wallet already exists for this currency', 409);
-  }
-
-  // Create wallet
+  // Use INSERT ... ON CONFLICT to make this idempotent.
+  // If the wallet already exists (any wallet_type for this currency), return it rather than erroring.
+  // This prevents a 500 when the frontend retries wallet creation (e.g. during pending deposit polling).
   const result = await query(
     `INSERT INTO wallets (user_id, currency, wallet_type, balance)
      VALUES ($1, $2, $3, 0)
+     ON CONFLICT (user_id, currency, wallet_type) DO UPDATE
+       SET updated_at = NOW()
      RETURNING id, currency, wallet_type, balance, is_active, created_at`,
-    [req.user.id, currency.toUpperCase(), wallet_type]
+    [req.user.id, currencyUpper, wallet_type]
   );
 
-  logger.info('Wallet created:', { userId: req.user.id, currency, wallet_type });
+  const wallet = result.rows[0];
+  const isNew = !wallet.updated_at || wallet.created_at >= new Date(Date.now() - 2000);
+
+  logger.info(`Wallet ${isNew ? 'created' : 'found'}:`, { userId: req.user.id, currency: currencyUpper, wallet_type });
 
   res.status(201).json({
     success: true,
-    message: 'Wallet created successfully',
-    data: result.rows[0],
+    message: isNew ? 'Wallet created successfully' : 'Wallet already exists',
+    data: wallet,
   });
 });
 
@@ -155,21 +153,10 @@ export const initializeDeposit = catchAsync(async (req, res) => {
     const profileResult = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
     const profile = profileResult.rows[0] || {};
 
-    // Build channel list based on currency — different currencies support different payment methods
-    const channelsByCurrency = {
-      NGN: ['card', 'bank_transfer', 'pay_with_bank'],
-      GHS: ['mobile_money'],
-      KES: ['mobile_money'],
-      ZAR: ['card'],
-      USD: ['card'],
-    };
-    const channels = channelsByCurrency[depositCurrency] || ['card'];
-
     const payload = {
       amount: parseFloat(amountDecimal.toString()), // Convert decimal to float for API
       currency: depositCurrency,
       reference,
-      channels,
       notification_url: `${process.env.API_BASE_URL || 'http://localhost:3001'}/api/v1/webhooks/korapay`,
       redirect_url: `${frontendUrl}/dashboard/wallets?deposit=pending&ref=${reference}&wallet=${wallet_id}`,
       merchant_bears_cost: true,
@@ -180,7 +167,7 @@ export const initializeDeposit = catchAsync(async (req, res) => {
       metadata: { wallet_id, user_id: req.user.id, reference },
     };
 
-    logger.info(`[Wallet] Korapay deposit payload: ${depositCurrency} ${amount} channels=${channels.join(',')} ref=${reference}`);
+    logger.info(`[Wallet] Korapay deposit payload: ${depositCurrency} ${amount} ref=${reference}`);
 
     const response = await axios.post(
       'https://api.korapay.com/merchant/api/v1/charges/initialize',

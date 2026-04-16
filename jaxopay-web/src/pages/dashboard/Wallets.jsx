@@ -884,15 +884,20 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Auto-create wallet if needed for deposit
+    // Auto-create wallet if needed for deposit.
+    // Uses idempotent backend: createWallet returns existing wallet if it already exists.
+    // This is safe to call on every retry — no more 409/500 errors on duplicate calls.
     const ensureWallet = async () => {
         if (existingWallet) return existingWallet;
         const res = await walletService.createWallet(code, isCrypto ? 'crypto' : 'fiat');
         if (res.success) {
-            await onRefresh();
+            if (!existingWallet) await onRefresh();
             return res.data;
         }
-        throw new Error(res.error || 'Failed to create wallet');
+        // createWallet failed — don't block the deposit, just log and continue
+        // (wallet may already exist in DB even if not in current wallets list)
+        console.warn(`[ensureWallet] createWallet failed for ${code}:`, res.error);
+        return null;
     };
 
     // Fetch networks for crypto
