@@ -174,91 +174,65 @@ class QuidaxAdapter {
     }
 
     /**
-     * Ensure a wallet exists on the Quidax side for a given currency.
-     * For newer coins added after the account was created, Quidax may not
-     * have a sub-wallet yet. This method tries GET first; on 404 it creates
-     * one via POST, then retries GET.  Failures are silently swallowed so the
-     * caller can continue (the subsequent getDepositAddress flow will degrade
-     * gracefully to "pending" if the wallet still isn't ready).
-     */
-    async ensureWalletExists(currency) {
-        const userId = await this._getAuthUserId();
-        const cur = currency.toLowerCase();
-        try {
-            const response = await this.client.get(`/users/${userId}/wallets/${cur}`);
-            return response.data;
-        } catch (getErr) {
-            const status = getErr.response?.status || getErr.statusCode;
-            if (status === 404 || status === 400) {
-                // Wallet doesn't exist — try to create it
-                try {
-                    logger.info(`[Quidax] Creating wallet for ${cur} (user ${userId})`);
-                    const createRes = await this.client.post(`/users/${userId}/wallets`, { currency: cur });
-                    logger.info(`[Quidax] Wallet created for ${cur}`);
-                    return createRes.data;
-                } catch (createErr) {
-                    // 409 / 422 = already exists (race condition) — try GET again
-                    const createStatus = createErr.response?.status || createErr.statusCode;
-                    if (createStatus === 409 || createStatus === 422) {
-                        try {
-                            const retryRes = await this.client.get(`/users/${userId}/wallets/${cur}`);
-                            return retryRes.data;
-                        } catch { /* fall through */ }
-                    }
-                    logger.warn(`[Quidax] Could not create wallet for ${cur}: ${createErr.message}`);
-                    return null;
-                }
-            }
-            logger.warn(`[Quidax] Wallet check failed for ${cur}: ${getErr.message}`);
-            return null;
-        }
-    }
-
-    /**
      * Get deposit address for a currency and network.
      *
-     * Quidax multi-network flow:
-     *   0. Ensure the Quidax sub-wallet exists for this currency
-     *   1. GET  /addresses — check if an address for this network already exists
-     *   2. If not found: POST /addresses?network={network} — trigger background generation
-     *   3. Poll GET /addresses until the address for the requested network is non-null (up to ~15 s)
+     * Quidax API flow (per docs):
+     *   Strategy A: GET /wallets/{currency}/address — returns the default deposit address
+     *   Strategy B: GET /wallets/{currency}/addresses — returns all addresses for all networks
+     *   Strategy C: POST /wallets/{currency}/addresses?network={net} — trigger address generation
+     *   Strategy D: Use deposit_address from the wallet object itself
      *
      * @param {string} currency - lowercase currency ticker (e.g. "usdt")
      * @param {string} [network] - network id from wallet.networks (e.g. "trc20"). If omitted, uses default.
-     * @param {string} [userId]
      */
     async getDepositAddress(currency, network = null) {
         const userId = await this._getAuthUserId();
-
-        // Step 0: Ensure Quidax wallet exists (non-blocking — swallowed on failure)
-        await this.ensureWalletExists(currency);
 
         return this._executeWithCircuitBreaker(async () => {
             const cur = currency.toLowerCase();
             const net = network ? network.toLowerCase() : null;
 
-            // Helper: fetch all existing addresses for this currency
-            const fetchAddresses = async () => {
-                try {
-                    const res = await this.client.get(`/users/${userId}/wallets/${cur}/addresses`);
-                    return res.data?.data || res.data || [];
-                } catch {
-                    return [];
-                }
-            };
-
-            // Helper: find the address matching the requested network
+            // Helper: find matching address from a list
             const findAddress = (list) => {
                 if (!Array.isArray(list)) return null;
                 if (net) {
                     return list.find(a => a.network?.toLowerCase() === net && a.address) || null;
                 }
-                // No network specified — return the first populated address
                 return list.find(a => a.address) || null;
             };
 
-            // Step 1: Check if address for this network already exists
-            const existing = findAddress(await fetchAddresses());
+            // Strategy A: Try fetching the default address (singular endpoint)
+            // Docs: GET /users/{user_id}/wallets/{currency}/address
+            try {
+                const res = await this.client.get(`/users/${userId}/wallets/${cur}/address`);
+                const addrData = res.data?.data || res.data;
+                if (addrData?.address) {
+                    // If network was requested but this is a different one, fall through to plural
+                    if (!net || addrData.network?.toLowerCase() === net) {
+                        return {
+                            deposit_address: addrData.address,
+                            address: addrData.address,
+                            network: addrData.network || net || cur,
+                            destination_tag: addrData.destination_tag || null,
+                        };
+                    }
+                }
+            } catch (err) {
+                logger.debug(`[Quidax] Default address endpoint failed for ${cur}: ${err.message}`);
+            }
+
+            // Strategy B: Fetch all addresses for this currency (plural endpoint)
+            // Docs: GET /users/{user_id}/wallets/{currency}/addresses
+            let addresses = [];
+            try {
+                const res = await this.client.get(`/users/${userId}/wallets/${cur}/addresses`);
+                addresses = res.data?.data || res.data || [];
+                if (!Array.isArray(addresses)) addresses = [];
+            } catch {
+                addresses = [];
+            }
+
+            const existing = findAddress(addresses);
             if (existing) {
                 return {
                     deposit_address: existing.address,
@@ -268,39 +242,69 @@ class QuidaxAdapter {
                 };
             }
 
-            // Step 2: Trigger address generation for the requested network.
-            // Docs: POST .../addresses/?network={net}  (trailing slash before query param is required)
+            // Strategy C: Trigger address generation via POST
+            // Docs: POST /users/{user_id}/wallets/{currency}/addresses?network={net}
             try {
-                const url = net
-                    ? `/users/${userId}/wallets/${cur}/addresses/?network=${net}`
-                    : `/users/${userId}/wallets/${cur}/addresses/`;
-                await this.client.post(url);
+                const params = net ? { network: net } : {};
+                await this.client.post(`/users/${userId}/wallets/${cur}/addresses`, null, { params });
                 logger.info(`[Quidax] Address generation triggered for ${cur}/${net || 'default'}`);
             } catch (createErr) {
-                // 422 / 409 = address already exists — safe to continue polling
                 const status = createErr.response?.status || createErr.statusCode;
                 if (status !== 422 && status !== 409) {
                     logger.warn(`[Quidax] Address create for ${cur}/${net}: ${createErr.message}`);
                 }
             }
 
-            // Step 3: Poll until the address appears (max ~10 s then return pending).
-            // The frontend will retry automatically at 5-second intervals.
-            const delays = [1000, 2000, 3000, 4000]; // cumulative ~10 s
+            // Poll until the address appears (max ~10 s)
+            const delays = [1000, 2000, 3000, 4000];
             for (const delay of delays) {
                 await new Promise(resolve => setTimeout(resolve, delay));
-                const found = findAddress(await fetchAddresses());
-                if (found) {
-                    return {
-                        deposit_address: found.address,
-                        address: found.address,
-                        network: found.network,
-                        destination_tag: found.destination_tag || null,
-                    };
-                }
+
+                // Try singular endpoint first (faster)
+                try {
+                    const res = await this.client.get(`/users/${userId}/wallets/${cur}/address`);
+                    const addrData = res.data?.data || res.data;
+                    if (addrData?.address && (!net || addrData.network?.toLowerCase() === net)) {
+                        return {
+                            deposit_address: addrData.address,
+                            address: addrData.address,
+                            network: addrData.network || net || cur,
+                            destination_tag: addrData.destination_tag || null,
+                        };
+                    }
+                } catch { /* fall through to plural */ }
+
+                // Try plural endpoint
+                try {
+                    const res = await this.client.get(`/users/${userId}/wallets/${cur}/addresses`);
+                    const list = res.data?.data || res.data || [];
+                    const found = findAddress(Array.isArray(list) ? list : []);
+                    if (found) {
+                        return {
+                            deposit_address: found.address,
+                            address: found.address,
+                            network: found.network,
+                            destination_tag: found.destination_tag || null,
+                        };
+                    }
+                } catch { /* continue polling */ }
             }
 
-            // Return null address — caller must inform the user to wait
+            // Strategy D: Last resort — check the wallet object itself for deposit_address
+            try {
+                const walletRes = await this.client.get(`/users/${userId}/wallets/${cur}`);
+                const wallet = walletRes.data?.data || walletRes.data;
+                if (wallet?.deposit_address) {
+                    return {
+                        deposit_address: wallet.deposit_address,
+                        address: wallet.deposit_address,
+                        network: wallet.default_network || net || cur,
+                        destination_tag: wallet.destination_tag || null,
+                    };
+                }
+            } catch { /* fall through */ }
+
+            // Return pending — frontend will retry at 5-second intervals
             return {
                 deposit_address: null,
                 address: null,

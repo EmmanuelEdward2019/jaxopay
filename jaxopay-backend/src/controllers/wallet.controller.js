@@ -151,25 +151,25 @@ export const initializeDeposit = catchAsync(async (req, res) => {
     });
   }
 
-  // Korapay checkout supports a limited set of currencies.
-  // Reject unsupported currencies early with a clear message.
-  const KORAPAY_SUPPORTED_CURRENCIES = new Set(['NGN', 'KES', 'GHS', 'ZAR', 'USD']);
-  if (!KORAPAY_SUPPORTED_CURRENCIES.has(depositCurrency)) {
-    await query('DELETE FROM transactions WHERE reference = $1 AND status = $2', [reference, 'pending']);
-    throw new AppError(
-      `Online deposits in ${depositCurrency} are not currently available. Supported currencies: NGN, KES, GHS, ZAR, USD. You can deposit in NGN and convert using Swap.`,
-      400
-    );
-  }
-
   try {
     const profileResult = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
     const profile = profileResult.rows[0] || {};
+
+    // Build channel list based on currency — different currencies support different payment methods
+    const channelsByCurrency = {
+      NGN: ['card', 'bank_transfer', 'pay_with_bank'],
+      GHS: ['mobile_money'],
+      KES: ['mobile_money'],
+      ZAR: ['card'],
+      USD: ['card'],
+    };
+    const channels = channelsByCurrency[depositCurrency] || ['card'];
 
     const payload = {
       amount: parseFloat(amountDecimal.toString()), // Convert decimal to float for API
       currency: depositCurrency,
       reference,
+      channels,
       notification_url: `${process.env.API_BASE_URL || 'http://localhost:3001'}/api/v1/webhooks/korapay`,
       redirect_url: `${frontendUrl}/dashboard/wallets?deposit=pending&ref=${reference}&wallet=${wallet_id}`,
       merchant_bears_cost: true,
@@ -179,6 +179,8 @@ export const initializeDeposit = catchAsync(async (req, res) => {
       },
       metadata: { wallet_id, user_id: req.user.id, reference },
     };
+
+    logger.info(`[Wallet] Korapay deposit payload: ${depositCurrency} ${amount} channels=${channels.join(',')} ref=${reference}`);
 
     const response = await axios.post(
       'https://api.korapay.com/merchant/api/v1/charges/initialize',

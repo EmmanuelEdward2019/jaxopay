@@ -626,12 +626,7 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                 list.push({ code, name: c.name || code, balance: balanceMap[code]?.balance || 0 });
             });
         } else {
-            // For deposits, only show currencies supported by Korapay checkout
-            const DEPOSIT_SUPPORTED_FIAT = new Set(['NGN', 'KES', 'GHS', 'ZAR', 'USD']);
-            const fiatSource = action === 'deposit'
-                ? FIAT_CURRENCIES.filter(f => DEPOSIT_SUPPORTED_FIAT.has(f.code))
-                : FIAT_CURRENCIES;
-            fiatSource.forEach(f => {
+            FIAT_CURRENCIES.forEach(f => {
                 list.push({ code: f.code, name: f.name, flag: f.flag, balance: balanceMap[f.code]?.balance || 0 });
             });
         }

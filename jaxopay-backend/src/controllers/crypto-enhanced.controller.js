@@ -119,10 +119,8 @@ export const getCryptoNetworks = catchAsync(async (req, res) => {
   }
 
   try {
-    // Ensure the wallet exists on Quidax (creates it if needed for newer coins)
-    await quidax.ensureWalletExists(coin);
-
     // Fetch the user's wallet for this currency — networks live in the wallet object
+    // Quidax auto-creates wallets for all supported currencies
     const walletRes = await quidax.getWallet(coin);
     const wallet = walletRes?.data || walletRes;
 
