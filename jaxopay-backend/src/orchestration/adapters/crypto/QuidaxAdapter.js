@@ -250,12 +250,24 @@ class QuidaxAdapter {
             try {
                 // Do not pass network parameter for single-network coins to prevent 422 errors
                 const params = (net && net !== cur) ? { network: net } : {};
-                await this.client.post(`/users/${userId}/wallets/${cur}/addresses`, null, { params });
-                logger.info(`[Quidax] Address generation POST triggered for ${cur}`);
+                try {
+                    await this.client.post(`/users/${userId}/wallets/${cur}/addresses`, null, { params });
+                    logger.info(`[Quidax] Address generation POST triggered for ${cur} with ${JSON.stringify(params)}`);
+                } catch (firstErr) {
+                    const firstStatus = firstErr.response?.status;
+                    if (firstStatus === 400 || firstStatus === 422) {
+                        // Quidax has a documented quirk where passing explicitly defined single networks (like Cardano or Doge) 
+                        // throws a 400 "Blockchain deposits are not available for X". Dropping the parameter generates it successfully.
+                        logger.info(`[Quidax] Network parameter rejected for ${cur}. Retrying parameterless generation.`);
+                        await this.client.post(`/users/${userId}/wallets/${cur}/addresses`);
+                    } else {
+                        throw firstErr;
+                    }
+                }
             } catch (createErr) {
                 const status = createErr.response?.status || createErr.statusCode;
                 if (status !== 422 && status !== 409) {
-                    logger.warn(`[Quidax] Address create error for ${cur}: ${createErr.message}`);
+                    logger.warn(`[Quidax] Address create error for ${cur}: ${createErr.response?.data?.message || createErr.message}`);
                 }
             }
 
