@@ -716,6 +716,7 @@ async function ensureQuidaxSubUser(jaxopayUserId, userEmail, firstName, lastName
   } catch (err) {
     // Log the full error so we can diagnose auth/permission issues
     logger.error(`[Quidax] ensureQuidaxSubUser FAILED for user ${jaxopayUserId} (${userEmail}): ${err.message}`);
+    logger.error(`[Quidax] ensureQuidaxSubUser stack: ${err.stack}`);
     throw err; // propagate — caller will return 202 pending
   }
 

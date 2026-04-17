@@ -148,18 +148,29 @@ class QuidaxAdapter {
             });
             const data = res.data?.data || res.data;
             logger.info(`[Quidax] Sub-user created: id=${data.id} sn=${data.sn} (${email})`);
+            logger.debug(`[Quidax] createSubUser full response: ${JSON.stringify(data)}`);
             return data;
         } catch (err) {
             const status = err.response?.status;
-            const msg = err.response?.data?.message || err.response?.data?.error || err.message || '';
-            logger.warn(`[Quidax] createSubUser error (${status}): ${msg} — email: ${email}`);
+            const body = err.response?.data;
+            const msg = body?.message || body?.error || (typeof body === 'string' ? body : '') || err.message || '';
+            logger.warn(`[Quidax] createSubUser error (HTTP ${status}) for ${email}: ${msg}`);
+            logger.warn(`[Quidax] createSubUser response body: ${JSON.stringify(body)}`);
 
-            // Email already registered as a sub-user — recover existing record
-            if (/taken|already|exist|duplicate/i.test(msg) || status === 409 || status === 422) {
-                logger.info(`[Quidax] Recovering existing sub-user for ${email}`);
-                return await this.getSubUserByEmail(email);
+            // Recover existing sub-user on any 4xx error — the most common cause is
+            // the email already being registered. We deliberately cast a wide net
+            // (any 4xx) rather than matching only specific messages, because Quidax's
+            // error messages vary across API versions.
+            if (status >= 400 && status < 500) {
+                logger.info(`[Quidax] Attempting sub-user recovery by email lookup for ${email}`);
+                try {
+                    return await this.getSubUserByEmail(email);
+                } catch (lookupErr) {
+                    logger.warn(`[Quidax] getSubUserByEmail failed for ${email}: ${lookupErr.message}`);
+                    // Fall through to throw original error
+                }
             }
-            throw new Error(`Quidax sub-user creation failed (${status}): ${msg}`);
+            throw new Error(`Quidax sub-user creation failed (HTTP ${status}): ${msg}`);
         }
     }
 
@@ -169,21 +180,27 @@ class QuidaxAdapter {
      */
     async getSubUserByEmail(email) {
         // Quidax paginates — loop until we find the user or exhaust pages
+        const normalised = email.trim().toLowerCase();
         let page = 1;
         while (true) {
             const res = await this.accountClient.get('/users', { params: { page, per_page: 100 } });
-            const list = Array.isArray(res.data?.data) ? res.data.data :
-                         Array.isArray(res.data) ? res.data : [];
-            const found = list.find(u => u.email?.toLowerCase() === email.toLowerCase());
+            const raw = res.data?.data ?? res.data;
+            const list = Array.isArray(raw) ? raw : (raw?.users ? raw.users : []);
+            logger.debug(`[Quidax] getSubUserByEmail page=${page} got ${list.length} users`);
+            if (list.length > 0) {
+                logger.debug(`[Quidax] Sample sub-user fields: ${JSON.stringify(Object.keys(list[0]))}`);
+            }
+            // Case-insensitive match, trim whitespace on both sides
+            const found = list.find(u => (u.email || '').trim().toLowerCase() === normalised);
             if (found) {
-                logger.info(`[Quidax] Found existing sub-user: id=${found.id} (${email})`);
+                logger.info(`[Quidax] Found existing sub-user: id=${found.id} sn=${found.sn} (${email})`);
                 return found;
             }
-            // If we got fewer than 100 results there are no more pages
+            // If we got fewer than per_page results there are no more pages
             if (list.length < 100) break;
             page++;
         }
-        throw new Error(`[Quidax] Sub-user not found for email: ${email}`);
+        throw new Error(`[Quidax] Sub-user not found for email: ${email} (searched ${page} page(s))`);
     }
 
     /**
@@ -208,18 +225,59 @@ class QuidaxAdapter {
             const net = network ? network.toLowerCase() : null;
 
             // Pick best address from a list, preferring the requested network
+            // Network-to-address-format validators — ensure we never return a wrong-network address.
+            // e.g. BTC must be a bech32/P2PKH address (starts with 1, 3 or bc1), not 0x.
+            const networkValidators = {
+                // Network name aliases AND coin ticker aliases (Quidax may return either)
+                btc:      (addr) => /^(1|3|bc1)[a-zA-Z0-9]{10,}$/.test(addr),
+                bitcoin:  (addr) => /^(1|3|bc1)[a-zA-Z0-9]{10,}$/.test(addr),
+                eth:      (addr) => /^0x[a-fA-F0-9]{40}$/.test(addr),
+                erc20:    (addr) => /^0x[a-fA-F0-9]{40}$/.test(addr),
+                bnb:      (addr) => /^0x[a-fA-F0-9]{40}$/.test(addr),
+                bep20:    (addr) => /^0x[a-fA-F0-9]{40}$/.test(addr),
+                polygon:  (addr) => /^0x[a-fA-F0-9]{40}$/.test(addr),
+                matic:    (addr) => /^0x[a-fA-F0-9]{40}$/.test(addr),
+                trx:      (addr) => /^T[a-zA-Z0-9]{32,34}$/.test(addr),
+                trc20:    (addr) => /^T[a-zA-Z0-9]{32,34}$/.test(addr),
+                tron:     (addr) => /^T[a-zA-Z0-9]{32,34}$/.test(addr),
+                sol:      (addr) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr),
+                solana:   (addr) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr),
+                xrp:      (addr) => /^r[a-zA-Z0-9]{24,34}$/.test(addr),
+                ripple:   (addr) => /^r[a-zA-Z0-9]{24,34}$/.test(addr),
+                ada:      (addr) => /^addr1/.test(addr),
+                cardano:  (addr) => /^addr1/.test(addr),
+                doge:     (addr) => /^D[a-zA-Z0-9]{33}$/.test(addr),
+                dogecoin: (addr) => /^D[a-zA-Z0-9]{33}$/.test(addr),
+                ltc:      (addr) => /^[LM3][a-zA-Z0-9]{26,34}$/.test(addr),
+                litecoin: (addr) => /^[LM3][a-zA-Z0-9]{26,34}$/.test(addr),
+            };
+
+            const isValidForNetwork = (addr, netId) => {
+                if (!addr || !netId) return true; // no validator = accept
+                const key = netId.toLowerCase().replace(/\s+network$/i,'').replace(/\s/g,'');
+                const validator = networkValidators[key];
+                return validator ? validator(addr) : true;
+            };
+
             const pickBest = (list, preferNet) => {
                 if (!Array.isArray(list) || list.length === 0) return null;
                 const valid = list.filter(a => a.address && a.address.length > 10);
                 if (valid.length === 0) return null;
+
                 if (preferNet) {
-                    const exact = valid.find(a => a.network?.toLowerCase() === preferNet);
-                    if (exact) return exact;
-                    // Loose match: trc20 ~ trc20 even if Quidax returns "TRC20"
-                    const loose = valid.find(a => a.network?.toLowerCase().replace(/\s/g,'') === preferNet.replace(/\s/g,''));
-                    if (loose) return loose;
+                    // 1. Exact network name match (case-insensitive, strip spaces)
+                    const norm = (s) => (s || '').toLowerCase().replace(/\s+network$/i,'').replace(/\s/g,'');
+                    const exact = valid.find(a => norm(a.network) === norm(preferNet));
+                    if (exact && isValidForNetwork(exact.address, preferNet)) return exact;
+
+                    // 2. Address format match (e.g. requested trc20 → T... address)
+                    const byFormat = valid.find(a => isValidForNetwork(a.address, preferNet));
+                    if (byFormat) return byFormat;
                 }
-                return valid[0];
+
+                // No network preference — return first address that passes format check for the currency
+                const byCurrency = valid.find(a => isValidForNetwork(a.address, cur));
+                return byCurrency || valid[0];
             };
 
             const buildResult = (item, fallbackNet) => ({
@@ -229,7 +287,35 @@ class QuidaxAdapter {
                 destination_tag: item.destination_tag || item.tag || null,
             });
 
-            // ── Step 1: Check if address already exists ──────────────────────────
+            // ── Step 0: Check wallet object for deposit_address ─────────────────
+            // Most coins (SOL, XRP, BNB, TRX, ADA, DOGE etc.) surface their
+            // deposit address directly on GET /wallets/{cur} — no separate /addresses
+            // call needed. This mirrors the master-user getDepositAddress Strategy 1.
+            // For multi-network coins (USDT/USDC), skip only if the user explicitly
+            // requests a different network than the wallet's default.
+            try {
+                const walletRes = await this.client.get(`/users/${quidaxUserId}/wallets/${cur}`);
+                const wallet = walletRes.data?.data || walletRes.data;
+                const walletAddr = wallet?.deposit_address || wallet?.address;
+                if (walletAddr && walletAddr.length > 10) {
+                    const walletNet = (wallet.default_network || wallet.network || '').toLowerCase();
+                    // Only skip this shortcut if: a specific network was requested AND the wallet's
+                    // default network is a different network for a multi-network coin.
+                    const isMultiNetwork = ['usdt', 'usdc'].includes(cur);
+                    const networkMismatch = net && isMultiNetwork && walletNet && walletNet !== net;
+                    if (!networkMismatch && isValidForNetwork(walletAddr, net || cur)) {
+                        logger.info(`[Quidax] ✅ wallet.deposit_address ${quidaxUserId}/${cur}: ${walletAddr}`);
+                        return buildResult(
+                            { address: walletAddr, network: walletNet || net || cur, destination_tag: wallet.destination_tag || wallet.tag || null },
+                            net
+                        );
+                    }
+                }
+            } catch (err) {
+                logger.warn(`[Quidax] GET /wallets/${cur} for sub-user ${quidaxUserId}: ${err.response?.status} — ${err.response?.data?.message || err.message}`);
+            }
+
+            // ── Step 1: Check /addresses array (multi-network coins, existing addresses) ─
             try {
                 const res = await this.client.get(`/users/${quidaxUserId}/wallets/${cur}/addresses`);
                 const list = Array.isArray(res.data?.data) ? res.data.data :
@@ -240,12 +326,10 @@ class QuidaxAdapter {
                     return buildResult(found, net);
                 }
             } catch (err) {
-                logger.debug(`[Quidax] GET /addresses ${quidaxUserId}/${cur}: ${err.response?.status} ${err.message}`);
+                logger.warn(`[Quidax] GET /addresses ${quidaxUserId}/${cur}: ${err.response?.status} — ${err.response?.data?.message || err.message}`);
             }
 
             // ── Step 2: Generate address via POST /addresses ─────────────────────
-            // Tested live: POST always returns the address synchronously in response.data.data
-            // Network param supported for multi-network coins (trc20/erc20/bep20 etc.)
             logger.info(`[Quidax] Generating address: sub-user ${quidaxUserId}/${cur} network=${net || 'default'}`);
 
             const attemptPost = async (withNetwork) => {
@@ -269,14 +353,16 @@ class QuidaxAdapter {
                 if (result) return result;
             } catch (firstErr) {
                 const st = firstErr.response?.status;
+                const errMsg = firstErr.response?.data?.message || firstErr.response?.data?.error || firstErr.message;
                 if (st === 400 || st === 422) {
-                    // Network param rejected for this coin — retry without it
-                    logger.info(`[Quidax] Network param rejected for ${cur}, retrying without network param`);
+                    // Network param rejected or single-network coin — retry without network param
+                    logger.info(`[Quidax] Network param rejected for ${cur} (${st}: ${errMsg}), retrying without`);
                     try {
                         const result = await attemptPost(null);
                         if (result) return result;
                     } catch (retryErr) {
-                        logger.warn(`[Quidax] POST /addresses retry failed ${quidaxUserId}/${cur}: ${retryErr.response?.data?.message || retryErr.message}`);
+                        const retryMsg = retryErr.response?.data?.message || retryErr.response?.data?.error || retryErr.message;
+                        logger.warn(`[Quidax] POST /addresses retry failed ${quidaxUserId}/${cur} (${retryErr.response?.status}): ${retryMsg}`);
                     }
                 } else if (st === 409) {
                     // Address already exists — fetch it (race condition)
@@ -287,11 +373,27 @@ class QuidaxAdapter {
                         if (found) return buildResult(found, net);
                     } catch { /* fall through to pending */ }
                 } else {
-                    logger.warn(`[Quidax] POST /addresses failed ${quidaxUserId}/${cur} (${st}): ${firstErr.response?.data?.message || firstErr.message}`);
+                    logger.warn(`[Quidax] POST /addresses failed ${quidaxUserId}/${cur} (${st}): ${errMsg}`);
+                    logger.debug(`[Quidax] POST /addresses full response:`, JSON.stringify(firstErr.response?.data));
                 }
             }
 
-            // Address generation is async — webhook wallet.address.generated will arrive
+            // ── Step 3: Last-resort re-check wallet object after POST ─────────────
+            // POST may have created the address asynchronously and it may now be on the wallet
+            try {
+                const walletRes = await this.client.get(`/users/${quidaxUserId}/wallets/${cur}`);
+                const wallet = walletRes.data?.data || walletRes.data;
+                const walletAddr = wallet?.deposit_address || wallet?.address;
+                if (walletAddr && walletAddr.length > 10 && isValidForNetwork(walletAddr, net || cur)) {
+                    logger.info(`[Quidax] ✅ post-POST wallet.deposit_address ${quidaxUserId}/${cur}: ${walletAddr}`);
+                    return buildResult(
+                        { address: walletAddr, network: wallet.default_network || wallet.network || net || cur, destination_tag: wallet.destination_tag || null },
+                        net
+                    );
+                }
+            } catch { /* ignore */ }
+
+            // Address generation is truly async — webhook wallet.address.generated will arrive
             logger.info(`[Quidax] Address pending (async) for ${quidaxUserId}/${cur}`);
             return { deposit_address: null, address: null, network: net || cur, destination_tag: null, pending: true };
 
