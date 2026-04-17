@@ -22,11 +22,17 @@ class QuidaxAdapter {
         // Strip trailing slash so axios combineURLs works correctly with all path formats
         this.baseURL   = (process.env.QUIDAX_BASE_URL || 'https://app.quidax.io/api/v1').trim().replace(/\/+$/, '');
 
-        logger.info(`[Quidax] Initialising adapter → ${this.baseURL}`);
+        // The account-management API lives on app.quidax.io (NOT the openapi endpoint).
+        // This is used for: sub-user creation, sub-user wallet addresses, and anything
+        // where the user ID in the URL must be scoped to a specific sub-account.
+        // The openapi endpoint (QUIDAX_BASE_URL) ignores sub-user IDs and always returns
+        // master-account data — which is why we need a separate client here.
+        this.accountBaseURL = 'https://app.quidax.io/api/v1';
 
-        // Authenticated client — used for user-scoped operations (swap, wallets, orders, etc.)
-        // Quidax OpenAPI requires: Authorization: Bearer {API_KEY}
-        // (NOT the secret key — confirmed by Quidax support)
+        logger.info(`[Quidax] Initialising adapter → exchange: ${this.baseURL} | accounts: ${this.accountBaseURL}`);
+
+        // Authenticated client — exchange / market data (openapi.quidax.io)
+        // Used for: market tickers, order books, master-account wallets, swaps, trading.
         this.client = createApiClient({
             baseURL: this.baseURL,
             headers: {
@@ -35,6 +41,22 @@ class QuidaxAdapter {
             },
             timeout: 20000,
             label: 'Quidax'
+        });
+
+        // Account client — user management (app.quidax.io/api/v1)
+        // Used for: POST /users (sub-user creation), GET /users/{id}/wallets/{cur}/address,
+        //           POST /users/{id}/wallets/{cur}/addresses (trigger address generation).
+        // IMPORTANT: app.quidax.io uses the API key (same as openapi endpoint).
+        // Quidax support confirmed QUIDAX_API_KEY is the correct bearer token.
+        const accountAuthKey = this.apiKey || this.secretKey;
+        this.accountClient = createApiClient({
+            baseURL: this.accountBaseURL,
+            headers: {
+                'Authorization': `Bearer ${accountAuthKey}`,
+                'Content-Type': 'application/json',
+            },
+            timeout: 25000,
+            label: 'QuidaxAccount'
         });
 
         // Public client — market data endpoints that don't require auth.
@@ -126,52 +148,75 @@ class QuidaxAdapter {
 
     /**
      * Create a Quidax sub-account for a Jaxopay user.
-     * Idempotent: if the email is already registered as a sub-user, Quidax
-     * returns an error with a message containing "taken" — in that case we
-     * fetch the existing sub-user list and match by email.
+     *
+     * Uses accountClient (app.quidax.io) — sub-user management is NOT available
+     * on the openapi endpoint. Idempotent: if the email is already registered,
+     * we recover the existing record by listing sub-users.
      *
      * @param {string} email       - Jaxopay user's email
      * @param {string} firstName   - User's first name
      * @param {string} lastName    - User's last name
-     * @returns {{ id: string, sn: string, email: string }}
+     * @returns {{ id: string|number, sn: string, email: string }}
      */
     async createSubUser(email, firstName, lastName) {
         try {
-            const res = await this.client.post('/users', {
+            const res = await this.accountClient.post('/users', {
                 email,
                 first_name: firstName || 'User',
                 last_name: lastName || email.split('@')[0],
             });
             const data = res.data?.data || res.data;
-            logger.info(`[Quidax] Sub-user created: ${data.id} (${email})`);
+            logger.info(`[Quidax] Sub-user created: id=${data.id} sn=${data.sn} (${email})`);
             return data;
         } catch (err) {
-            const msg = err.response?.data?.message || err.message || '';
-            // Email already belongs to an existing sub-user — fetch it
-            if (/taken|already|exist/i.test(msg)) {
-                logger.info(`[Quidax] Sub-user already exists for ${email}, fetching…`);
+            const status = err.response?.status;
+            const msg = err.response?.data?.message || err.response?.data?.error || err.message || '';
+            logger.warn(`[Quidax] createSubUser error (${status}): ${msg} — email: ${email}`);
+
+            // Email already registered as a sub-user — recover existing record
+            if (/taken|already|exist|duplicate/i.test(msg) || status === 409 || status === 422) {
+                logger.info(`[Quidax] Recovering existing sub-user for ${email}`);
                 return await this.getSubUserByEmail(email);
             }
-            throw err;
+            throw new Error(`Quidax sub-user creation failed (${status}): ${msg}`);
         }
     }
 
     /**
      * Fetch all sub-users and find the one matching the given email.
+     * Uses accountClient (app.quidax.io).
      */
     async getSubUserByEmail(email) {
-        const res = await this.client.get('/users');
-        const list = res.data?.data || res.data || [];
-        const found = list.find(u => u.email?.toLowerCase() === email.toLowerCase());
-        if (!found) throw new Error(`[Quidax] Sub-user not found for email: ${email}`);
-        return found;
+        // Quidax paginates — loop until we find the user or exhaust pages
+        let page = 1;
+        while (true) {
+            const res = await this.accountClient.get('/users', { params: { page, per_page: 100 } });
+            const list = Array.isArray(res.data?.data) ? res.data.data :
+                         Array.isArray(res.data) ? res.data : [];
+            const found = list.find(u => u.email?.toLowerCase() === email.toLowerCase());
+            if (found) {
+                logger.info(`[Quidax] Found existing sub-user: id=${found.id} (${email})`);
+                return found;
+            }
+            // If we got fewer than 100 results there are no more pages
+            if (list.length < 100) break;
+            page++;
+        }
+        throw new Error(`[Quidax] Sub-user not found for email: ${email}`);
     }
 
     /**
      * Get deposit address for a specific sub-user's wallet.
-     * This is the self-custody version — each user has their OWN Quidax wallet
-     * with a unique deposit address. Webhooks fire with data.user.id which
-     * maps back to the Jaxopay user via the quidax_user_id column.
+     *
+     * IMPORTANT: Uses accountClient (app.quidax.io/api/v1), NOT the openapi client.
+     * The openapi endpoint ignores the sub-user ID in the URL path and always returns
+     * the master account's wallet data — causing all users to get the same address.
+     *
+     * Strategy order (per Quidax docs):
+     *   1. GET /users/{id}/wallets/{currency}/address  — primary, fastest
+     *   2. GET /users/{id}/wallets/{currency}/addresses — all networks (USDT/USDC)
+     *   3. GET /users/{id}/wallets/{currency}            — wallet object fallback
+     *   4. POST /users/{id}/wallets/{currency}/addresses — trigger generation if none found
      *
      * @param {string} quidaxUserId  - The sub-user's Quidax ID (stored in users.quidax_user_id)
      * @param {string} currency      - lowercase ticker (e.g. "usdt")
@@ -182,28 +227,11 @@ class QuidaxAdapter {
             const cur = currency.toLowerCase();
             const net = network ? network.toLowerCase() : null;
 
-            // Strategy 1: wallet object — fastest, always has primary address
-            try {
-                const walletRes = await this.client.get(`/users/${quidaxUserId}/wallets/${cur}`);
-                const wallet = walletRes.data?.data || walletRes.data;
-                if (wallet?.deposit_address) {
-                    if (!net || wallet.default_network?.toLowerCase() === net || !['usdt', 'usdc'].includes(cur)) {
-                        return {
-                            deposit_address: wallet.deposit_address,
-                            address: wallet.deposit_address,
-                            network: wallet.default_network || net || cur,
-                            destination_tag: wallet.destination_tag || null,
-                        };
-                    }
-                }
-            } catch (err) {
-                logger.debug(`[Quidax] Wallet fetch for sub-user ${quidaxUserId}/${cur}: ${err.message}`);
-            }
-
             const findAddress = (list) => {
                 if (!Array.isArray(list)) return null;
-                const valid = list.filter(a => a.address);
+                const valid = list.filter(a => a.address || a.deposit_address);
                 if (valid.length === 0) return null;
+                const addr = (a) => a.address || a.deposit_address;
                 if (net) {
                     const exact = valid.find(a => a.network?.toLowerCase() === net);
                     if (exact) return exact;
@@ -212,43 +240,110 @@ class QuidaxAdapter {
                 return valid[0];
             };
 
-            // Strategy 2: addresses array (multi-network coins)
-            let addresses = [];
+            // ── Strategy 1: singular /address endpoint ──────────────────────────
+            // Most reliable — returns the primary deposit address for this currency.
             try {
-                const res = await this.client.get(`/users/${quidaxUserId}/wallets/${cur}/addresses`);
-                addresses = res.data?.data || res.data || [];
-                const found = findAddress(addresses);
-                if (found) {
+                const res = await this.accountClient.get(`/users/${quidaxUserId}/wallets/${cur}/address`);
+                const addrData = res.data?.data || res.data;
+                const addr = addrData?.address || addrData?.deposit_address;
+                if (addr) {
+                    logger.info(`[Quidax] ✅ Sub-user ${quidaxUserId}/${cur} address via /address: ${addr}`);
                     return {
-                        deposit_address: found.address,
-                        address: found.address,
-                        network: found.network || net || cur,
-                        destination_tag: found.destination_tag || null,
+                        deposit_address: addr,
+                        address: addr,
+                        network: addrData.network || net || cur,
+                        destination_tag: addrData.destination_tag || addrData.tag || null,
                     };
                 }
-            } catch { /* proceed to generation */ }
+            } catch (err) {
+                logger.debug(`[Quidax] /address failed for ${quidaxUserId}/${cur}: ${err.response?.status} ${err.response?.data?.message || err.message}`);
+            }
 
-            // Strategy 3: trigger address generation
+            // ── Strategy 2: plural /addresses for multi-network coins ────────────
+            try {
+                const res = await this.accountClient.get(`/users/${quidaxUserId}/wallets/${cur}/addresses`);
+                const list = res.data?.data || res.data || [];
+                const found = findAddress(Array.isArray(list) ? list : [list]);
+                if (found) {
+                    const addr = found.address || found.deposit_address;
+                    logger.info(`[Quidax] ✅ Sub-user ${quidaxUserId}/${cur} address via /addresses: ${addr}`);
+                    return {
+                        deposit_address: addr,
+                        address: addr,
+                        network: found.network || net || cur,
+                        destination_tag: found.destination_tag || found.tag || null,
+                    };
+                }
+            } catch (err) {
+                logger.debug(`[Quidax] /addresses failed for ${quidaxUserId}/${cur}: ${err.response?.status}`);
+            }
+
+            // ── Strategy 3: wallet object deposit_address field ──────────────────
+            try {
+                const walletRes = await this.accountClient.get(`/users/${quidaxUserId}/wallets/${cur}`);
+                const wallet = walletRes.data?.data || walletRes.data;
+                const addr = wallet?.deposit_address;
+                if (addr) {
+                    // Only trust this if it looks like a real address (not a UUID or internal ID)
+                    // Real addresses are long hex/base58/bech32 strings, not short UUIDs
+                    if (addr.length > 20) {
+                        logger.info(`[Quidax] ✅ Sub-user ${quidaxUserId}/${cur} address via wallet object: ${addr}`);
+                        return {
+                            deposit_address: addr,
+                            address: addr,
+                            network: wallet.default_network || net || cur,
+                            destination_tag: wallet.destination_tag || null,
+                        };
+                    }
+                }
+            } catch (err) {
+                logger.debug(`[Quidax] wallet object failed for ${quidaxUserId}/${cur}: ${err.response?.status}`);
+            }
+
+            // ── Strategy 4: trigger address generation then poll ─────────────────
+            logger.info(`[Quidax] No address found for sub-user ${quidaxUserId}/${cur} — triggering generation`);
             try {
                 const params = (net && net !== cur) ? { network: net } : {};
                 try {
-                    await this.client.post(`/users/${quidaxUserId}/wallets/${cur}/addresses`, null, { params });
-                    logger.info(`[Quidax] Address generation triggered for sub-user ${quidaxUserId}/${cur}`);
+                    await this.accountClient.post(`/users/${quidaxUserId}/wallets/${cur}/addresses`, null, { params });
+                    logger.info(`[Quidax] Address generation triggered for ${quidaxUserId}/${cur}`);
                 } catch (firstErr) {
-                    const status = firstErr.response?.status;
-                    if (status === 400 || status === 422) {
-                        await this.client.post(`/users/${quidaxUserId}/wallets/${cur}/addresses`);
-                    } else {
+                    const st = firstErr.response?.status;
+                    if (st === 400 || st === 422) {
+                        // Network param rejected — retry without it
+                        logger.info(`[Quidax] Network param rejected for ${cur}, retrying without`);
+                        await this.accountClient.post(`/users/${quidaxUserId}/wallets/${cur}/addresses`);
+                    } else if (st !== 409) {
                         throw firstErr;
                     }
                 }
-            } catch (createErr) {
-                const status = createErr.response?.status || createErr.statusCode;
-                if (status !== 422 && status !== 409) {
-                    logger.warn(`[Quidax] Address create for sub-user ${quidaxUserId}/${cur}: ${createErr.response?.data?.message || createErr.message}`);
+
+                // Give Quidax a moment to provision, then try /address again
+                await new Promise(r => setTimeout(r, 2000));
+                try {
+                    const res = await this.accountClient.get(`/users/${quidaxUserId}/wallets/${cur}/address`);
+                    const addrData = res.data?.data || res.data;
+                    const addr = addrData?.address || addrData?.deposit_address;
+                    if (addr) {
+                        logger.info(`[Quidax] ✅ Sub-user ${quidaxUserId}/${cur} address after generation: ${addr}`);
+                        return {
+                            deposit_address: addr,
+                            address: addr,
+                            network: addrData.network || net || cur,
+                            destination_tag: addrData.destination_tag || addrData.tag || null,
+                        };
+                    }
+                } catch { /* still pending */ }
+
+            } catch (genErr) {
+                const st = genErr.response?.status || genErr.statusCode;
+                if (st !== 409 && st !== 422) {
+                    logger.warn(`[Quidax] Address generation failed for ${quidaxUserId}/${cur}: ${genErr.response?.data?.message || genErr.message}`);
                 }
             }
 
+            // Address not ready yet — frontend will poll
+            logger.info(`[Quidax] Address pending for sub-user ${quidaxUserId}/${cur}`);
             return { deposit_address: null, address: null, network: net || cur, destination_tag: null, pending: true };
         }, `getDepositAddressForUser:${quidaxUserId}:${currency}`);
     }

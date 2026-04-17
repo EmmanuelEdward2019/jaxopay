@@ -696,7 +696,7 @@ async function getMockExchangeRate(from, to) {
  * Returns the Quidax user ID (string).
  */
 async function ensureQuidaxSubUser(jaxopayUserId, userEmail, firstName, lastName) {
-  // 1. Check if we already have a sub-user ID stored
+  // 1. Return cached sub-user ID if already stored
   const existing = await query(
     'SELECT quidax_user_id FROM users WHERE id = $1',
     [jaxopayUserId]
@@ -705,17 +705,32 @@ async function ensureQuidaxSubUser(jaxopayUserId, userEmail, firstName, lastName
     return existing.rows[0].quidax_user_id;
   }
 
-  // 2. Create (or recover) the sub-user on Quidax
-  const subUser = await quidax.createSubUser(userEmail, firstName || 'User', lastName || userEmail.split('@')[0]);
-  const quidaxId = subUser.id || subUser.uid;
-  if (!quidaxId) throw new Error('[Quidax] createSubUser returned no id');
+  // 2. Create (or recover) the sub-user on Quidax — use app.quidax.io via accountClient
+  let subUser;
+  try {
+    subUser = await quidax.createSubUser(
+      userEmail,
+      firstName || 'User',
+      lastName || userEmail.split('@')[0]
+    );
+  } catch (err) {
+    // Log the full error so we can diagnose auth/permission issues
+    logger.error(`[Quidax] ensureQuidaxSubUser FAILED for user ${jaxopayUserId} (${userEmail}): ${err.message}`);
+    throw err; // propagate — caller will return 202 pending
+  }
 
-  // 3. Persist for future calls
+  const quidaxId = subUser.id || subUser.uid || subUser.sn;
+  if (!quidaxId) {
+    logger.error(`[Quidax] createSubUser returned no id for ${userEmail}: ${JSON.stringify(subUser)}`);
+    throw new Error('[Quidax] Sub-user creation returned no id field');
+  }
+
+  // 3. Persist so we never call createSubUser twice for the same user
   await query(
     'UPDATE users SET quidax_user_id = $1, quidax_user_sn = $2, updated_at = NOW() WHERE id = $3',
-    [String(quidaxId), subUser.sn || null, jaxopayUserId]
+    [String(quidaxId), subUser.sn || String(quidaxId), jaxopayUserId]
   );
-  logger.info(`[Quidax] Sub-user stored: jaxopay=${jaxopayUserId} → quidax=${quidaxId}`);
+  logger.info(`[Quidax] Sub-user linked: jaxopay=${jaxopayUserId} → quidax_id=${quidaxId} sn=${subUser.sn}`);
   return String(quidaxId);
 }
 
