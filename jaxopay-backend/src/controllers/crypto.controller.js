@@ -686,6 +686,39 @@ async function getMockExchangeRate(from, to) {
   return await getLiveExchangeRate(from, to);
 }
 
+/**
+ * Ensure a Quidax sub-account exists for this Jaxopay user.
+ *
+ * Self-custody model: every Jaxopay user maps 1-to-1 with a Quidax sub-user.
+ * Each sub-user has their own isolated wallets → unique deposit addresses.
+ * Webhooks carry data.user.id so we can route deposits to the correct user.
+ *
+ * Returns the Quidax user ID (string).
+ */
+async function ensureQuidaxSubUser(jaxopayUserId, userEmail, firstName, lastName) {
+  // 1. Check if we already have a sub-user ID stored
+  const existing = await query(
+    'SELECT quidax_user_id FROM users WHERE id = $1',
+    [jaxopayUserId]
+  );
+  if (existing.rows[0]?.quidax_user_id) {
+    return existing.rows[0].quidax_user_id;
+  }
+
+  // 2. Create (or recover) the sub-user on Quidax
+  const subUser = await quidax.createSubUser(userEmail, firstName || 'User', lastName || userEmail.split('@')[0]);
+  const quidaxId = subUser.id || subUser.uid;
+  if (!quidaxId) throw new Error('[Quidax] createSubUser returned no id');
+
+  // 3. Persist for future calls
+  await query(
+    'UPDATE users SET quidax_user_id = $1, quidax_user_sn = $2, updated_at = NOW() WHERE id = $3',
+    [String(quidaxId), subUser.sn || null, jaxopayUserId]
+  );
+  logger.info(`[Quidax] Sub-user stored: jaxopay=${jaxopayUserId} → quidax=${quidaxId}`);
+  return String(quidaxId);
+}
+
 // Get deposit address for crypto
 export const getCryptoDepositAddress = catchAsync(async (req, res) => {
   const { coin, network } = req.query;
@@ -695,17 +728,36 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
   }
 
   try {
-    // Pass network so the adapter generates/fetches the address for the correct network
-    const dataResponse = await quidax.getDepositAddress(coin.toLowerCase(), network || null);
-    // Quidax wallet objects use deposit_address / destination_tag field names
+    // ── Self-custody: fetch/create the Quidax sub-account for this user ──────
+    // Each user has their own Quidax sub-user with unique wallet addresses.
+    // This is the key fix: previously all users shared the master account,
+    // so funds deposited went to Quidax but couldn't be attributed to a user.
+    const userRow = await query(
+      `SELECT u.quidax_user_id, p.first_name, p.last_name
+       FROM users u
+       LEFT JOIN user_profiles p ON p.user_id = u.id
+       WHERE u.id = $1`,
+      [req.user.id]
+    );
+    const userProfile = userRow.rows[0] || {};
+    const quidaxUserId = await ensureQuidaxSubUser(
+      req.user.id,
+      req.user.email,
+      userProfile.first_name,
+      userProfile.last_name
+    );
+
+    // ── Fetch deposit address from sub-user's wallet ──────────────────────────
+    const dataResponse = await quidax.getDepositAddressForUser(quidaxUserId, coin.toLowerCase(), network || null);
     const addressData = dataResponse?.data || dataResponse;
     const address = addressData.deposit_address || addressData.address;
     const tag = addressData.destination_tag || addressData.tag || addressData.memo || '';
 
     if (address) {
-      // Persist to DB for webhook matching
+      // Persist to DB so webhook handler can also fall back to address-matching
       await query(
-        'UPDATE wallets SET crypto_address = $1, crypto_tag = $2, updated_at = NOW() WHERE user_id = $3 AND currency = $4 AND wallet_type = \'crypto\'',
+        `UPDATE wallets SET crypto_address = $1, crypto_tag = $2, updated_at = NOW()
+         WHERE user_id = $3 AND currency = $4 AND wallet_type = 'crypto'`,
         [address, tag, req.user.id, coin.toUpperCase()]
       );
     }
@@ -732,7 +784,6 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
   } catch (err) {
     logger.warn(`[CryptoDeposit] Quidax failed for ${coin}/${network}:`, err.message);
 
-    // Detect "not permitted" (E0609) — currency not enabled for address generation
     const isNotPermitted = /E0609|not permitted|not enabled/i.test(err.message);
     if (isNotPermitted) {
       return res.status(503).json({
@@ -741,9 +792,6 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
       });
     }
 
-    // For all other errors return a pending signal so the frontend retries.
-    // IMPORTANT: Never return placeholder/mock addresses — funds sent to wrong
-    // addresses are permanently unrecoverable.
     return res.status(202).json({
       success: false,
       pending: true,

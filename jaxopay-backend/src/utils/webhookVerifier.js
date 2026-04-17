@@ -238,32 +238,52 @@ class WebhookVerifier {
 
     /**
      * Quidax (HMAC-SHA256)
-     * Header: quidax-signature (t=timestamp,v1=signature) or raw hex
+     * Header: quidax-signature
+     *   Format A (Quidax docs): t=<timestamp>,s=<signature>
+     *   Format B (older):       t=<timestamp>,v1=<signature>
+     *   Format C (raw):         <hex-signature>
+     *
+     * Signing key priority: QUIDAX_WEBHOOK_SECRET → QUIDAX_API_KEY → QUIDAX_SECRET_KEY
+     * Quidax support confirmed the API key is used as the webhook HMAC secret.
      */
     _verifyQuidax(headers, payload) {
-        const secret = process.env.QUIDAX_WEBHOOK_SECRET || process.env.QUIDAX_SECRET_KEY;
+        const secret =
+            process.env.QUIDAX_WEBHOOK_SECRET ||
+            process.env.QUIDAX_API_KEY ||
+            process.env.QUIDAX_SECRET_KEY;
         const signatureHeader = headers['quidax-signature'] || headers['x-quidax-signature'];
+
         if (!secret) return process.env.NODE_ENV === 'development';
-        if (!signatureHeader) return false;
+
+        // No signature header at all — accept in dev, reject in prod
+        if (!signatureHeader) {
+            if (process.env.NODE_ENV !== 'production') {
+                logger.warn('[WEBHOOK] Quidax: no signature header — accepting (non-prod)');
+                return true;
+            }
+            return false;
+        }
 
         let signature = signatureHeader;
         let timestamp = null;
 
-        // Parse t=...,v1=... format if present
-        if (signatureHeader.includes('v1=')) {
+        // Format A: t=<timestamp>,s=<sig>
+        // Format B: t=<timestamp>,v1=<sig>
+        if (signatureHeader.includes(',')) {
             const parts = signatureHeader.split(',');
             const tPart = parts.find(p => p.startsWith('t='));
+            const sPart = parts.find(p => p.startsWith('s='));
             const vPart = parts.find(p => p.startsWith('v1='));
-            if (tPart) timestamp = tPart.split('=')[1];
-            if (vPart) signature = vPart.split('=')[1];
+            if (tPart) timestamp = tPart.slice(2);
+            if (sPart) signature = sPart.slice(2);
+            else if (vPart) signature = vPart.slice(3);
         }
 
-        // If timestamp is present, it's often prepended to the payload with a dot
-        // signed_payload = timestamp + "." + payload
+        // signed_payload = timestamp + "." + rawBody  (per Quidax docs)
         const toSign = timestamp ? `${timestamp}.${payload}` : payload;
         const hash = crypto.createHmac('sha256', secret).update(toSign).digest('hex');
 
-        return hash === signature;
+        return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature));
     }
 }
 
