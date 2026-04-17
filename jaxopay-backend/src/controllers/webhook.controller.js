@@ -411,6 +411,12 @@ async function processQuidax(payload) {
     logger.info(`[WEBHOOK] Quidax event: ${event}`, { id: data?.id });
 
     switch (event) {
+        case 'wallet.address.generated': {
+            // Quidax fires this when a sub-user's wallet address is generated asynchronously.
+            // data.user.id = Quidax sub-user ID, data.address = the new address, data.currency
+            await persistQuidaxWalletAddress(data);
+            break;
+        }
         case 'deposit.successful':
         case 'deposit.success': {
             await creditUserWalletByQuidax(data);
@@ -595,6 +601,48 @@ async function updateQuidaxSwap(data, status) {
     } catch (err) {
         logger.error('[WEBHOOK] updateQuidaxSwap error:', err);
         throw err;
+    }
+}
+
+/**
+ * wallet.address.generated webhook — fired when a sub-user's wallet address is
+ * created asynchronously. Persists the address into wallets.crypto_address so
+ * deposit webhooks can match by address as a fallback.
+ */
+async function persistQuidaxWalletAddress(data) {
+    const quidaxSubUserId = data.user?.id ? String(data.user.id) : null;
+    const address = data.address;
+    const currency = data.currency?.toUpperCase();
+    const tag = data.destination_tag || null;
+
+    if (!quidaxSubUserId || !address || !currency) {
+        logger.warn('[WEBHOOK] wallet.address.generated: missing user.id, address or currency', { data });
+        return;
+    }
+
+    try {
+        // Find the Jaxopay user by their Quidax sub-user ID
+        const userRes = await query(
+            'SELECT id FROM users WHERE quidax_user_id = $1',
+            [quidaxSubUserId]
+        );
+        if (userRes.rows.length === 0) {
+            logger.warn(`[WEBHOOK] wallet.address.generated: no user found for quidax_user_id=${quidaxSubUserId}`);
+            return;
+        }
+        const userId = userRes.rows[0].id;
+
+        // Update wallet record with the generated address
+        await query(
+            `UPDATE wallets
+             SET crypto_address = $1, crypto_tag = $2, updated_at = NOW()
+             WHERE user_id = $3 AND currency = $4 AND wallet_type = 'crypto'`,
+            [address, tag, userId, currency]
+        );
+
+        logger.info(`[WEBHOOK] ✅ wallet.address.generated: ${currency} address ${address} saved for user ${userId}`);
+    } catch (err) {
+        logger.error('[WEBHOOK] persistQuidaxWalletAddress error:', err.message);
     }
 }
 
