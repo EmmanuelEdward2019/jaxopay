@@ -44,7 +44,6 @@ import Profile from './pages/dashboard/Profile';
 import Settings from './pages/dashboard/Settings';
 import Bills from './pages/dashboard/Bills';
 import Exchange from './pages/dashboard/Exchange';
-import Markets from './pages/dashboard/Markets';
 import Trade from './pages/dashboard/Trade';
 import InstantSwap from './pages/dashboard/InstantSwap';
 import DashboardHome from './pages/dashboard/DashboardHome';
@@ -256,7 +255,6 @@ function App() {
             {/* Dashboard Features */}
             <Route path="wallets" element={<Wallets />} />
             {/* Crypto trading routes (hidden from nav but routes preserved) */}
-            <Route path="markets" element={<Markets />} />
             <Route path="trade" element={
               <FeatureGuard feature="crypto">
                 <Trade />

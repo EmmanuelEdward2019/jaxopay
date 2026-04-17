@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import {
-  BarChart2,
   TrendingUp,
   Zap,
   Wallet,
@@ -37,7 +36,6 @@ const NAV_GROUPS = (isFeatureEnabled) => [
     items: [
       { name: 'Wallets', href: '/dashboard/wallets', icon: Wallet, enabled: true },
       { name: 'Swap', href: '/dashboard/instant-swap?from=USDT&to=NGN', icon: ArrowLeftRight, enabled: isFeatureEnabled('crypto') },
-      { name: 'Markets', href: '/dashboard/markets', icon: BarChart2, enabled: true },
     ],
   },
   {
@@ -86,7 +84,6 @@ const DashboardLayout = () => {
   const isAdminUser = ['admin', 'super_admin', 'compliance_officer'].includes(user?.role);
 
   const isTrading = location.pathname.startsWith('/dashboard/trade') ||
-    location.pathname.startsWith('/dashboard/markets') ||
     location.pathname.startsWith('/dashboard/instant-swap');
 
   const sidebarW = collapsed ? 'w-16' : 'w-60';
