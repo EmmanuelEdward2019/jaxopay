@@ -41,7 +41,37 @@ import {
 
 const router = express.Router();
 
-// All crypto routes require authentication
+// ── Public endpoints (no auth required) ─────────────────────────────────────
+// These are read-only market data endpoints. Placing them before verifyToken
+// prevents the LivePriceTicker (and similar components) from causing 401 storms
+// on page load before the auth token is hydrated from localStorage.
+
+// Get 24hr ticker statistics (used by LivePriceTicker — polls every 15s)
+router.get('/ticker/24h', get24hTickers);
+
+// Get all markets (public price list)
+router.get('/markets', getMarkets);
+
+// Get market ticker for a single pair
+router.get('/market/ticker', getMarketTicker);
+
+// Get market trades
+router.get('/market/trades', getMarketTrades);
+
+// Get market depth (aggregated asks/bids)
+router.get('/market/depth', getMarketDepth);
+
+// Get kline/candlestick data (used by charts on public pages)
+router.get(
+  '/klines',
+  query('market').isString().notEmpty(),
+  query('period').optional().isString(),
+  query('limit').optional().isInt({ min: 1, max: 1000 }),
+  validate,
+  getKlines
+);
+
+// ── Authenticated endpoints ──────────────────────────────────────────────────
 router.use(verifyToken);
 router.use(requireFeature('crypto'));
 
@@ -177,31 +207,6 @@ router.post('/swap/quotation/:id/confirm', requireKYCTier(2), confirmSwapQuotati
 router.get('/swap/transactions/:id', verifyToken, getSwapTransaction);
 // List all swap transactions
 router.get('/swap/transactions', verifyToken, getSwapTransactions);
-
-// Get market depth (aggregated asks/bids)
-router.get('/market/depth', getMarketDepth);
-
-// Get market trades
-router.get('/market/trades', getMarketTrades);
-
-// Get market ticker
-router.get('/market/ticker', getMarketTicker);
-
-// Get all markets
-router.get('/markets', getMarkets);
-
-// Get 24hr ticker statistics
-router.get('/ticker/24h', get24hTickers);
-
-// Get kline/candlestick data for charts
-router.get(
-  '/klines',
-  query('market').isString().notEmpty(),
-  query('period').optional().isString(),
-  query('limit').optional().isInt({ min: 1, max: 1000 }),
-  validate,
-  getKlines
-);
 
 // Get user's orders
 router.get(

@@ -157,6 +157,16 @@ apiClient.interceptors.response.use(
       }
     }
 
+    // Background polling endpoints (ticker, notifications) should fail silently on 401
+    // rather than triggering the refresh flow, which can force-logout the user when the
+    // server is briefly unavailable or the token is still hydrating from localStorage.
+    const isBackgroundPoll = originalRequest.url?.includes('/crypto/ticker/') ||
+      originalRequest.url?.includes('/notifications/unread-count');
+
+    if (status === 401 && isBackgroundPoll) {
+      return Promise.reject({ message: null, status: 401, silent: true });
+    }
+
     if (status === 401 && !originalRequest._retry && !isAuthRoute) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {

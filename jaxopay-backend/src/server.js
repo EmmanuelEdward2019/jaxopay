@@ -198,9 +198,13 @@ process.on('uncaughtException', (error) => {
   gracefulShutdown('uncaughtException');
 });
 
+// Log unhandled promise rejections but do NOT shut down the server.
+// Rejected promises from background polling (e.g. ticker refresh, circuit breakers)
+// are non-fatal — killing the process would drop all in-flight requests including
+// CORS preflight OPTIONS responses, which the browser then mis-reports as CORS errors.
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  gracefulShutdown('unhandledRejection');
+  // Intentionally not calling gracefulShutdown here.
 });
 
 // Start the server
