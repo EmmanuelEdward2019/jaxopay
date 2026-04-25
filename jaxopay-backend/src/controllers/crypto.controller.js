@@ -720,19 +720,17 @@ async function ensureQuidaxSubUser(jaxopayUserId, userEmail, firstName, lastName
     throw err; // propagate — caller will return 202 pending
   }
 
-  const quidaxId = subUser.id || subUser.uid || subUser.sn;
-  if (!quidaxId) {
-    logger.error(`[Quidax] createSubUser returned no id for ${userEmail}: ${JSON.stringify(subUser)}`);
-    throw new Error('[Quidax] Sub-user creation returned no id field');
-  }
+  // Extract the numeric Quidax user ID — MUST be the numeric id (not sn) so
+  // that webhook deposit.successful data.user.id lookups work correctly.
+  const quidaxId = quidax._extractSubUserId(subUser);
 
   // 3. Persist so we never call createSubUser twice for the same user
   await query(
     'UPDATE users SET quidax_user_id = $1, quidax_user_sn = $2, updated_at = NOW() WHERE id = $3',
-    [String(quidaxId), subUser.sn || String(quidaxId), jaxopayUserId]
+    [quidaxId, subUser.sn || quidaxId, jaxopayUserId]
   );
   logger.info(`[Quidax] Sub-user linked: jaxopay=${jaxopayUserId} → quidax_id=${quidaxId} sn=${subUser.sn}`);
-  return String(quidaxId);
+  return quidaxId;
 }
 
 // Get deposit address for crypto

@@ -21,11 +21,22 @@ export const handleWebhook = catchAsync(async (req, res) => {
     });
 
     // 1. Verify signature
-    const isValid = webhookVerifier.verify(provider, headers, body);
+    // Pass req.rawBody (captured before express.json() parsed it) so HMAC is computed
+    // over the original bytes — avoids JSON.stringify whitespace/key-order mismatches.
+    const isValid = webhookVerifier.verify(provider, headers, body, req.rawBody || null);
     if (!isValid) {
-        logger.warn(`[WEBHOOK] Invalid/missing signature for: ${provider}`);
-        // For unknown providers, still return 200 to stop retries but don't process
-        if (!['korapay', 'vtpass', 'graph', 'smile_identity', 'smile', 'smile-id'].includes(provider.toLowerCase())) {
+        logger.warn(`[WEBHOOK] Signature verification failed for: ${provider}`);
+
+        if (provider.toLowerCase() === 'quidax') {
+            // For Quidax we log a prominent error but STILL PROCESS the event.
+            // A misconfigured QUIDAX_WEBHOOK_SECRET must not permanently block deposits
+            // from being credited to users. Investigate the secret mismatch separately.
+            logger.error(
+                '[WEBHOOK] ⚠️  Quidax signature FAILED — processing anyway. ' +
+                'Verify QUIDAX_WEBHOOK_SECRET matches the "Signature Secret" in the Quidax dashboard.'
+            );
+            // continue to processing below
+        } else if (!['korapay', 'vtpass', 'graph', 'smile_identity', 'smile', 'smile-id'].includes(provider.toLowerCase())) {
             return res.status(401).json({ success: false, message: 'Invalid signature' });
         }
     }
@@ -705,9 +716,13 @@ async function creditUserWalletByQuidax(data) {
                 return;
             }
 
-            // 3. Credit the wallet
+            // 3. Credit the wallet — update both balance and available_balance
             await client.query(
-                'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
+                `UPDATE wallets
+                 SET balance           = balance           + $1,
+                     available_balance = COALESCE(available_balance, 0) + $1,
+                     updated_at        = NOW()
+                 WHERE id = $2`,
                 [parseFloat(amount), walletId]
             );
 

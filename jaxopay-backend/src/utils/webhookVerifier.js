@@ -49,14 +49,21 @@ class WebhookVerifier {
     }
 
     /**
-     * Verifies the signature for various providers
-     * @param {string} provider - The provider name (e.g., 'flutterwave', 'paystack')
-     * @param {object} headers - Incoming request headers
-     * @param {string|object} body - Raw request body (as string for signature verification)
+     * Verifies the signature for various providers.
+     *
+     * @param {string} provider  - Provider name (e.g. 'quidax', 'korapay')
+     * @param {object} headers   - Incoming request headers
+     * @param {string|object} body - Parsed request body (JS object after express.json())
+     * @param {string} [rawBody] - Original raw HTTP body string (set by server.js verify callback).
+     *                             MUST be used for HMAC verification — re-serialising the parsed
+     *                             object with JSON.stringify() can produce a different byte sequence
+     *                             (whitespace, key ordering) and invalidate the signature.
      * @returns {boolean}
      */
-    verify(provider, headers, body) {
-        const payload = typeof body === 'string' ? body : JSON.stringify(body);
+    verify(provider, headers, body, rawBody = null) {
+        // For HMAC-based providers: use rawBody when available so the signature
+        // is computed over exactly the same bytes Quidax/Korapay signed.
+        const payload = rawBody || (typeof body === 'string' ? body : JSON.stringify(body));
 
         switch (provider.toLowerCase()) {
             case 'flutterwave':
@@ -81,7 +88,8 @@ class WebhookVerifier {
             case 'smile-id':
                 return this._verifySmileIdentity(body);
             case 'quidax':
-                return this._verifyQuidax(headers, payload);
+                // Always pass raw body for Quidax — their HMAC is over raw HTTP bytes
+                return this._verifyQuidax(headers, rawBody || payload);
             default:
                 logger.warn(`[WEBHOOK] No verification for: ${provider}`);
                 return process.env.NODE_ENV === 'development';
@@ -241,10 +249,13 @@ class WebhookVerifier {
      * Header: quidax-signature
      *   Format A (Quidax docs): t=<timestamp>,s=<signature>
      *   Format B (older):       t=<timestamp>,v1=<signature>
-     *   Format C (raw):         <hex-signature>
+     *   Format C (raw hex):     <hex-signature>
      *
-     * Signing key priority: QUIDAX_WEBHOOK_SECRET → QUIDAX_API_KEY → QUIDAX_SECRET_KEY
-     * Quidax support confirmed the API key is used as the webhook HMAC secret.
+     * Signed payload: timestamp + "." + rawBody  (Quidax docs)
+     * Secret priority: QUIDAX_WEBHOOK_SECRET → QUIDAX_API_KEY → QUIDAX_SECRET_KEY
+     *
+     * NOTE: `payload` MUST be the raw HTTP body string, not JSON.stringify(req.body).
+     * Even a single whitespace difference produces a completely different HMAC.
      */
     _verifyQuidax(headers, payload) {
         const secret =
@@ -253,14 +264,18 @@ class WebhookVerifier {
             process.env.QUIDAX_SECRET_KEY;
         const signatureHeader = headers['quidax-signature'] || headers['x-quidax-signature'];
 
-        if (!secret) return process.env.NODE_ENV === 'development';
+        if (!secret) {
+            logger.warn('[WEBHOOK] Quidax: no webhook secret configured');
+            return process.env.NODE_ENV !== 'production';
+        }
 
-        // No signature header at all — accept in dev, reject in prod
+        // No signature header — accept in non-prod only (Quidax may not sign test events)
         if (!signatureHeader) {
             if (process.env.NODE_ENV !== 'production') {
                 logger.warn('[WEBHOOK] Quidax: no signature header — accepting (non-prod)');
                 return true;
             }
+            logger.warn('[WEBHOOK] Quidax: missing signature header in production');
             return false;
         }
 
@@ -281,9 +296,22 @@ class WebhookVerifier {
 
         // signed_payload = timestamp + "." + rawBody  (per Quidax docs)
         const toSign = timestamp ? `${timestamp}.${payload}` : payload;
-        const hash = crypto.createHmac('sha256', secret).update(toSign).digest('hex');
 
-        return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature));
+        try {
+            const hash = crypto.createHmac('sha256', secret).update(toSign).digest('hex');
+            const hashBuf = Buffer.from(hash, 'hex');
+            const sigBuf  = Buffer.from(signature, 'hex');
+
+            // timingSafeEqual throws if buffers are different lengths — check first
+            if (hashBuf.length === 0 || hashBuf.length !== sigBuf.length) {
+                logger.warn(`[WEBHOOK] Quidax: signature length mismatch (expected ${hashBuf.length}, got ${sigBuf.length})`);
+                return false;
+            }
+            return crypto.timingSafeEqual(hashBuf, sigBuf);
+        } catch (err) {
+            logger.warn(`[WEBHOOK] Quidax: signature verification error — ${err.message}`);
+            return false;
+        }
     }
 }
 

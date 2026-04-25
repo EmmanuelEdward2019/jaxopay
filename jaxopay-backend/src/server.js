@@ -88,7 +88,20 @@ app.use(cookieParser());
 
 // Body parsing middleware
 // Large limit for Smile ID biometric payloads (selfie + liveness + ID images as base64)
-app.use(express.json({ limit: '50mb' }));
+//
+// IMPORTANT: The `verify` callback captures the raw HTTP body bytes for webhook routes
+// BEFORE Express converts them to a JS object. Webhook HMAC signatures (Quidax, Korapay,
+// etc.) are computed over the original raw bytes. If we sign JSON.stringify(req.body)
+// instead, any whitespace or key-order difference causes an HMAC mismatch → rejected webhooks
+// → deposits/payouts never credited. rawBody is attached to req for the webhook verifier.
+app.use(express.json({
+  limit: '50mb',
+  verify: (req, _res, buf) => {
+    if (req.path && req.path.includes('/webhooks/')) {
+      req.rawBody = buf.toString('utf8');
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Request logging (after parsing)

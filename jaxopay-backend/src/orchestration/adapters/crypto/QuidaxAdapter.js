@@ -144,30 +144,28 @@ class QuidaxAdapter {
             const res = await this.accountClient.post('/users', {
                 email,
                 first_name: firstName || 'User',
-                last_name: lastName || email.split('@')[0],
+                last_name:  lastName  || email.split('@')[0],
             });
             const data = res.data?.data || res.data;
             logger.info(`[Quidax] Sub-user created: id=${data.id} sn=${data.sn} (${email})`);
-            logger.debug(`[Quidax] createSubUser full response: ${JSON.stringify(data)}`);
+            logger.debug(`[Quidax] createSubUser response: ${JSON.stringify(data)}`);
             return data;
         } catch (err) {
             const status = err.response?.status;
-            const body = err.response?.data;
-            const msg = body?.message || body?.error || (typeof body === 'string' ? body : '') || err.message || '';
+            const body   = err.response?.data;
+            const msg    = body?.message || body?.error || (typeof body === 'string' ? body : '') || err.message || '';
             logger.warn(`[Quidax] createSubUser error (HTTP ${status}) for ${email}: ${msg}`);
             logger.warn(`[Quidax] createSubUser response body: ${JSON.stringify(body)}`);
 
-            // Recover existing sub-user on any 4xx error — the most common cause is
-            // the email already being registered. We deliberately cast a wide net
-            // (any 4xx) rather than matching only specific messages, because Quidax's
-            // error messages vary across API versions.
+            // On ANY 4xx: try to recover the existing sub-user.
+            // The most common cause is the email already being registered — Quidax's
+            // exact error message varies across API versions so we catch all 4xx.
             if (status >= 400 && status < 500) {
-                logger.info(`[Quidax] Attempting sub-user recovery by email lookup for ${email}`);
+                logger.info(`[Quidax] Attempting sub-user recovery by email for ${email}`);
                 try {
                     return await this.getSubUserByEmail(email);
                 } catch (lookupErr) {
                     logger.warn(`[Quidax] getSubUserByEmail failed for ${email}: ${lookupErr.message}`);
-                    // Fall through to throw original error
                 }
             }
             throw new Error(`Quidax sub-user creation failed (HTTP ${status}): ${msg}`);
@@ -175,32 +173,67 @@ class QuidaxAdapter {
     }
 
     /**
-     * Fetch all sub-users and find the one matching the given email.
-     * Uses accountClient (app.quidax.io).
+     * Find an existing Quidax sub-user by email address.
+     *
+     * Paginates through GET /users until the matching record is found.
+     * Normalises both sides to lowercase + trimmed whitespace before comparing
+     * so encoding quirks don't cause a false miss.
      */
     async getSubUserByEmail(email) {
-        // Quidax paginates — loop until we find the user or exhaust pages
         const normalised = email.trim().toLowerCase();
         let page = 1;
+
         while (true) {
             const res = await this.accountClient.get('/users', { params: { page, per_page: 100 } });
-            const raw = res.data?.data ?? res.data;
+            const raw  = res.data?.data ?? res.data;
             const list = Array.isArray(raw) ? raw : (raw?.users ? raw.users : []);
-            logger.debug(`[Quidax] getSubUserByEmail page=${page} got ${list.length} users`);
+
+            logger.debug(`[Quidax] getSubUserByEmail page=${page} returned ${list.length} entries`);
             if (list.length > 0) {
-                logger.debug(`[Quidax] Sample sub-user fields: ${JSON.stringify(Object.keys(list[0]))}`);
+                logger.debug(`[Quidax] Sub-user fields sample: ${JSON.stringify(Object.keys(list[0]))}`);
             }
-            // Case-insensitive match, trim whitespace on both sides
+
             const found = list.find(u => (u.email || '').trim().toLowerCase() === normalised);
             if (found) {
-                logger.info(`[Quidax] Found existing sub-user: id=${found.id} sn=${found.sn} (${email})`);
+                logger.info(`[Quidax] Found sub-user: id=${found.id} sn=${found.sn} (${email})`);
                 return found;
             }
-            // If we got fewer than per_page results there are no more pages
-            if (list.length < 100) break;
+
+            if (list.length < 100) break; // No more pages
             page++;
         }
+
         throw new Error(`[Quidax] Sub-user not found for email: ${email} (searched ${page} page(s))`);
+    }
+
+    /**
+     * Extract the numeric Quidax user ID from a sub-user object.
+     *
+     * Quidax returns `id` (number) and `sn` (string, e.g. "USR-123456").
+     * The webhook carries `data.user.id` which is the numeric ID, so we MUST
+     * store and return the numeric `id` — NOT the sn — to make webhook lookup work.
+     *
+     * @param {object} subUser - Object returned from createSubUser / getSubUserByEmail
+     * @returns {string}       - String representation of the numeric Quidax user ID
+     */
+    _extractSubUserId(subUser) {
+        // id may be a number (12345) or a numeric string ("12345").
+        // uid is an alternative field name used by some Quidax API versions.
+        // sn ("USR-12345") is only a last resort but WILL break webhook matching.
+        const numericId = subUser.id ?? subUser.uid ?? subUser.user_id;
+        if (numericId !== null && numericId !== undefined && String(numericId) !== '') {
+            return String(numericId);
+        }
+        // sn fallback — log a prominent warning because webhook deposits won't match
+        if (subUser.sn) {
+            logger.error(
+                `[Quidax] ⚠️  Sub-user object has no numeric id — falling back to sn="${subUser.sn}". ` +
+                'Webhook deposit.successful will not be routable to this user. Full object: ' +
+                JSON.stringify(subUser)
+            );
+            return String(subUser.sn);
+        }
+        throw new Error('[Quidax] Sub-user object has no id, uid, user_id, or sn field: ' + JSON.stringify(subUser));
     }
 
     /**
