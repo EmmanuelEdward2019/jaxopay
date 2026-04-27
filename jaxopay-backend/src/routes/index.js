@@ -34,29 +34,7 @@ router.get('/', (req, res) => {
     success: true,
     message: 'JAXOPAY API v1',
     version: '1.0.0',
-    timestamp: new Date().toISOString(),
-    endpoints: {
-      auth: '/auth',
-      users: '/users',
-      wallets: '/wallets',
-      transactions: '/transactions',
-      kyc: '/kyc',
-      cards: '/cards',
-      crypto: '/crypto',
-      payments: '/payments',
-      bills: '/bills',
-      fx: '/fx',
-
-      giftCards: '/gift-cards',
-      admin: '/admin',
-      dashboard: '/dashboard',
-
-      notifications: '/notifications',
-      announcements: '/announcements',
-      tickets: '/tickets',
-      transfers: '/transfers',
-      webhooks: '/webhooks',
-    },
+    timestamp: new Date().toISOString()
   });
 });
 
