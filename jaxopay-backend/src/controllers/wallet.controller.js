@@ -19,12 +19,23 @@ const buildApiV1Url = (path) => {
   return url.toString();
 };
 
-const formatProviderValidationErrors = (errors = {}) => Object.entries(errors)
-  .map(([field, detail]) => {
-    const message = typeof detail === 'object' && detail !== null ? detail.message : detail;
-    return message ? `${field}: ${message}` : field;
-  })
-  .join('; ');
+const KORAPAY_CHECKOUT_CURRENCIES = new Set(
+  (process.env.KORAPAY_CHECKOUT_CURRENCIES || 'NGN')
+    .split(',')
+    .map((currency) => currency.trim().toUpperCase())
+    .filter(Boolean)
+);
+
+const formatProviderValidationErrors = (errors) => {
+  if (!errors || typeof errors !== 'object') return '';
+
+  return Object.entries(errors)
+    .map(([field, detail]) => {
+      const message = typeof detail === 'object' && detail !== null ? detail.message : detail;
+      return message ? `${field}: ${message}` : field;
+    })
+    .join('; ');
+};
 
 // Get all user wallets
 export const getWallets = catchAsync(async (req, res) => {
@@ -133,6 +144,13 @@ export const initializeDeposit = catchAsync(async (req, res) => {
   const reference = `DEP-${req.user.id.slice(0, 8)}-${Date.now()}`;
   const korapaySecret = process.env.KORAPAY_SECRET_KEY;
   const frontendUrl = process.env.FRONTEND_URL || 'https://jaxopay.com';
+
+  if (!KORAPAY_CHECKOUT_CURRENCIES.has(depositCurrency)) {
+    throw new AppError(
+      `Online deposits are currently only available in NGN. Deposit NGN, then convert to ${depositCurrency} using Swap.`,
+      400
+    );
+  }
 
   // Validate and format amount using decimal.js
   const amountDecimal = validateAmount(amount, 1, 10000000); // Min 1, Max 10M
