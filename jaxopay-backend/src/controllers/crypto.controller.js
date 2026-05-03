@@ -1231,7 +1231,7 @@ export const getWithdrawFee = catchAsync(async (req, res) => {
 
 // ── Quotation-based Swap Flow ─────────────────────────────────────────────────
 // Fiat currencies that use 'fiat' wallet_type in our DB
-const FIAT_CURRENCIES = new Set(['NGN', 'USD', 'EUR', 'GBP', 'GHS', 'KES', 'ZAR', 'CAD', 'AUD']);
+const FIAT_CURRENCIES = new Set(['NGN', 'USD', 'EUR', 'GBP', 'GHS', 'KES', 'ZAR', 'CAD', 'CNY', 'AUD', 'JPY']);
 const getWalletType = (currency) => FIAT_CURRENCIES.has(currency.toUpperCase()) ? 'fiat' : 'crypto';
 
 // Step 2 — Create a real swap quotation (15-second window)

@@ -115,7 +115,7 @@ export const transferValidation = [
     .trim()
     .notEmpty().withMessage('Currency is required')
     .isAlphanumeric().withMessage('Currency must be alphanumeric')
-    .isLength({ min: 2, max: 10 }).withMessage('Currency must be 2-10 characters')
+    .isLength({ min: 1, max: 10 }).withMessage('Currency must be 1-10 characters')
     .customSanitizer(v => v.toUpperCase()),
   body('description')
     .optional()
@@ -130,7 +130,7 @@ export const createWalletValidation = [
     .trim()
     .notEmpty().withMessage('Currency is required')
     .isAlphanumeric().withMessage('Currency must be alphanumeric')
-    .isLength({ min: 2, max: 10 }).withMessage('Currency must be 2-10 characters')
+    .isLength({ min: 1, max: 10 }).withMessage('Currency must be 1-10 characters')
     .customSanitizer(v => v.toUpperCase()),
   body('wallet_type')
     .isIn(['fiat', 'crypto'])
@@ -173,4 +173,3 @@ export default {
   uuidParamValidation,
   paginationValidation,
 };
-
