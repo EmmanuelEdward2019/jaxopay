@@ -14,8 +14,12 @@ CREATE TYPE kyc_tier AS ENUM ('tier_0', 'tier_1', 'tier_2');
 CREATE TYPE kyc_status AS ENUM ('pending', 'approved', 'rejected', 'under_review');
 CREATE TYPE wallet_type AS ENUM ('fiat', 'crypto');
 CREATE TYPE currency_code AS ENUM (
-  'NGN', 'GHS', 'KES', 'ZAR', 'USD', 'GBP', 'CAD', 'CNY',
-  'USDT', 'BTC', 'ETH', 'USDC'
+  'NGN', 'USD', 'EUR', 'GBP', 'GHS', 'KES', 'ZAR', 'CAD', 'CNY', 'AUD', 'JPY',
+  'BTC', 'USDT', 'USDC', 'ETH', 'BNB', 'SOL', 'XRP', 'TRX', 'DOGE', 'ADA',
+  'LTC', 'DOT', 'LINK', 'BCH', 'DASH', 'XLM', 'POL', 'MATIC', 'AAVE', 'CAKE',
+  'SHIB', 'FLOKI', 'PEPE', 'BONK', 'QDX', 'SLP', 'ALGO', 'WIF', 'NOS', 'NEAR',
+  'TON', 'SUI', 'RNDR', 'STRK', 'ZK', 'LSK', 'CFX', 'S', 'FARTCOIN', 'HYPE',
+  'XYO', 'AXCNH', 'CNGN'
 );
 CREATE TYPE transaction_type AS ENUM (
   'deposit', 'withdrawal', 'transfer', 'exchange', 'payment', 
@@ -682,5 +686,4 @@ COMMENT ON TABLE kyc_documents IS 'KYC document storage and verification trackin
 COMMENT ON TABLE aml_risk_scores IS 'AML risk scoring and monitoring';
 COMMENT ON TABLE gift_card_sales IS 'Peer-to-peer gift card marketplace';
 COMMENT ON TABLE audit_logs IS 'Complete audit trail for compliance and security';
-
 

@@ -101,7 +101,7 @@ router.get(
 router.post(
   '/sell',
   requireKYCTier(2),
-  body('crypto_currency').isString().isLength({ min: 2, max: 10 }),
+  body('crypto_currency').isString().isLength({ min: 1, max: 10 }),
   body('fiat_currency').isString().isLength({ min: 3, max: 6 }),
   body('crypto_amount').isFloat({ min: 0.00000001 }),
   validate,
@@ -113,7 +113,7 @@ router.post(
   '/buy',
   requireKYCTier(2),
   body('fiat_currency').isString().isLength({ min: 3, max: 6 }),
-  body('crypto_currency').isString().isLength({ min: 2, max: 10 }),
+  body('crypto_currency').isString().isLength({ min: 1, max: 10 }),
   body('fiat_amount').isFloat({ min: 1 }),
   validate,
   exchangeFiatToCrypto
@@ -123,8 +123,8 @@ router.post(
 router.post(
   '/swap',
   requireKYCTier(2),
-  body('from_coin').isString().isLength({ min: 2, max: 10 }),
-  body('to_coin').isString().isLength({ min: 2, max: 10 }),
+  body('from_coin').isString().isLength({ min: 1, max: 10 }),
+  body('to_coin').isString().isLength({ min: 1, max: 10 }),
   body('amount').isFloat({ min: 0.00000001 }),
   validate,
   exchangeCryptoToCrypto
@@ -234,4 +234,3 @@ router.get(
 );
 
 export default router;
-

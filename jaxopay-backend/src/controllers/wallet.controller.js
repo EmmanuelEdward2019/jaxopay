@@ -6,6 +6,36 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance } from '../utils/financial.js';
 
+const buildApiV1Url = (path) => {
+  const rawBaseUrl = (process.env.API_BASE_URL || 'http://localhost:3001').trim();
+  const baseUrl = /^https?:\/\//i.test(rawBaseUrl) ? rawBaseUrl : `https://${rawBaseUrl}`;
+  const url = new URL(baseUrl);
+  const basePath = url.pathname.replace(/\/+$/, '').replace(/\/api\/v\d+$/i, '');
+
+  url.pathname = `${basePath}/api/v1/${String(path).replace(/^\/+/, '')}`.replace(/\/{2,}/g, '/');
+  url.search = '';
+  url.hash = '';
+
+  return url.toString();
+};
+
+const KORAPAY_CHECKOUT_CURRENCIES = new Set(
+  (process.env.KORAPAY_CHECKOUT_CURRENCIES || 'NGN')
+    .split(',')
+    .map((currency) => currency.trim().toUpperCase())
+    .filter(Boolean)
+);
+
+const formatProviderValidationErrors = (errors) => {
+  if (!errors || typeof errors !== 'object') return '';
+
+  return Object.entries(errors)
+    .map(([field, detail]) => {
+      const message = typeof detail === 'object' && detail !== null ? detail.message : detail;
+      return message ? `${field}: ${message}` : field;
+    })
+    .join('; ');
+};
 
 // Get all user wallets
 export const getWallets = catchAsync(async (req, res) => {
@@ -115,6 +145,13 @@ export const initializeDeposit = catchAsync(async (req, res) => {
   const korapaySecret = process.env.KORAPAY_SECRET_KEY;
   const frontendUrl = process.env.FRONTEND_URL || 'https://jaxopay.com';
 
+  if (!KORAPAY_CHECKOUT_CURRENCIES.has(depositCurrency)) {
+    throw new AppError(
+      `Online deposits are currently only available in NGN. Deposit NGN, then convert to ${depositCurrency} using Swap.`,
+      400
+    );
+  }
+
   // Validate and format amount using decimal.js
   const amountDecimal = validateAmount(amount, 1, 10000000); // Min 1, Max 10M
   const amountForDB = formatForDB(amountDecimal);
@@ -157,14 +194,14 @@ export const initializeDeposit = catchAsync(async (req, res) => {
       amount: parseFloat(amountDecimal.toString()), // Convert decimal to float for API
       currency: depositCurrency,
       reference,
-      notification_url: `${process.env.API_BASE_URL || 'http://localhost:3001'}/api/v1/webhooks/korapay`,
+      notification_url: buildApiV1Url('/webhooks/korapay'),
       redirect_url: `${frontendUrl}/dashboard/wallets?deposit=pending&ref=${reference}&wallet=${wallet_id}`,
       ...(depositCurrency === 'NGN' ? { merchant_bears_cost: true } : {}),
       customer: {
         name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || req.user.email,
         email: req.user.email,
       },
-      metadata: { wallet_id, user_id: req.user.id, reference },
+      metadata: { walletId: wallet_id, userId: req.user.id, reference },
     };
 
     logger.info(`[Wallet] Korapay deposit payload: ${depositCurrency} ${amount} ref=${reference}`);
@@ -186,17 +223,25 @@ export const initializeDeposit = catchAsync(async (req, res) => {
   } catch (err) {
     // Roll back the pending transaction if Korapay init fails
     await query('DELETE FROM transactions WHERE reference = $1 AND status = $2', [reference, 'pending']);
-    const extErr = err.response?.data?.message || err.message;
+    const providerError = err.response?.data;
+    const extErr = providerError?.message || err.message;
+    const validationDetails = formatProviderValidationErrors(providerError?.data);
     logger.error('[Wallet] Korapay init error:', err.response?.data || err.message);
 
     // Provide user-friendly messages for common Korapay errors
     let userMessage = `Payment initialization failed: ${extErr}`;
-    if (/channel.*not.*enabled|checkout.*payment/i.test(extErr)) {
-        userMessage = `Online deposits in ${depositCurrency} are not enabled on this account. Please contact support or deposit in NGN and convert using Swap.`;
+    if (providerError?.data?.notification_url) {
+      userMessage = 'Payment callback URL is misconfigured. Please contact support.';
+    } else if (/channel.*not.*enabled|checkout.*payment/i.test(extErr)) {
+      userMessage = `Online deposits in ${depositCurrency} are not enabled on this account. Please contact support or deposit in NGN and convert using Swap.`;
     } else if (/collection.*wallet.*not.*found/i.test(extErr)) {
-        userMessage = `The ${depositCurrency} collection account is not set up yet. Please deposit in NGN and convert using Swap.`;
+      userMessage = `The ${depositCurrency} collection account is not set up yet. Please deposit in NGN and convert using Swap.`;
+    } else if (/issue with your input/i.test(extErr) && validationDetails) {
+      userMessage = `Payment initialization failed: ${validationDetails}`;
     } else if (/internal server error|something went wrong|issue with your input/i.test(extErr)) {
-        userMessage = `The payment provider encountered an error for ${depositCurrency} deposits. Please try depositing in NGN instead.`;
+      userMessage = depositCurrency === 'NGN'
+        ? 'The payment provider encountered an error for NGN deposits. Please try again.'
+        : `The payment provider encountered an error for ${depositCurrency} deposits. Please try depositing in NGN instead.`;
     }
 
     throw new AppError(userMessage, 502);
