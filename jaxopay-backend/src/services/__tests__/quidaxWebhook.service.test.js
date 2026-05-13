@@ -83,4 +83,46 @@ describe('Quidax webhook service', () => {
       expect.stringContaining('wallet.address.generated: TRX address THaZjLxjAbxhcForYJPE7LmdWHu1Cn8Pry saved for wallet wallet-trx')
     );
   });
+
+  test('uses documented nested payment_address fields when crediting a deposit', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [{ id: 'user-123' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'wallet-trx', user_id: 'user-123' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] });
+
+    await service.creditUserWalletByQuidax({
+      id: 'trx-deposit-2',
+      amount: '3.0',
+      currency: 'trx',
+      payment_address: {
+        address: 'TKipGdUmft8UsHQsmLi8eaAX63RxxQt3cN',
+        destination_tag: 'memo-123',
+        user: { id: 'u2d7imxe', sn: 'QDXTEJ7YRMF' },
+      },
+    });
+
+    expect(mockClient.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('quidax_user_sn = ANY'),
+      [['u2d7imxe', 'QDXTEJ7YRMF'], 'u2d7imxe']
+    );
+    expect(mockClient.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('INSERT INTO wallets'),
+      ['user-123', 'TRX', 'TKipGdUmft8UsHQsmLi8eaAX63RxxQt3cN', 'memo-123']
+    );
+    expect(mockClient.query).toHaveBeenNthCalledWith(
+      5,
+      expect.stringContaining('INSERT INTO wallet_transactions'),
+      [
+        'wallet-trx',
+        3,
+        'TRX',
+        'Crypto deposit via Quidax (trx-deposit-2)',
+        expect.stringContaining('"address":"TKipGdUmft8UsHQsmLi8eaAX63RxxQt3cN"'),
+      ]
+    );
+  });
 });

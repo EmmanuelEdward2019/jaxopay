@@ -3,17 +3,48 @@ import defaultLogger from '../utils/logger.js';
 
 export function getQuidaxUserRefs(data) {
   const user = data?.user || {};
+  const paymentAddressUser = data?.payment_address?.user || {};
   return [
     user.id,
     user.uid,
     user.user_id,
     user.sn,
+    paymentAddressUser.id,
+    paymentAddressUser.uid,
+    paymentAddressUser.user_id,
+    paymentAddressUser.sn,
     data?.user_id,
     data?.quidax_user_id,
     data?.quidax_user_sn,
   ]
     .filter((value) => value !== null && value !== undefined && String(value).trim() !== '')
     .map((value) => String(value).trim());
+}
+
+function firstPresent(...values) {
+  const value = values.find((item) => item !== null && item !== undefined && String(item).trim() !== '');
+  return value === undefined ? null : String(value).trim();
+}
+
+export function getQuidaxDepositAddress(data) {
+  return firstPresent(
+    data?.address,
+    data?.payment_address?.address,
+    data?.wallet?.deposit_address,
+    data?.address_info?.address
+  );
+}
+
+export function getQuidaxDepositTag(data) {
+  return firstPresent(
+    data?.destination_tag,
+    data?.address_info?.tag,
+    data?.address_info?.destination_tag,
+    data?.tag,
+    data?.payment_address?.destination_tag,
+    data?.payment_address?.tag,
+    data?.wallet?.destination_tag
+  ) || '';
 }
 
 export async function findQuidaxUserId(client, quidaxUserRefs) {
@@ -61,9 +92,9 @@ export function createQuidaxWebhookService({
   async function persistQuidaxWalletAddress(data) {
     const quidaxUserRefs = getQuidaxUserRefs(data);
     const quidaxSubUserId = quidaxUserRefs[0] || null;
-    const address = data.address;
+    const address = getQuidaxDepositAddress(data);
     const currency = data.currency?.toUpperCase();
-    const tag = data.destination_tag || null;
+    const tag = getQuidaxDepositTag(data) || null;
 
     if (!quidaxSubUserId || !address || !currency) {
       logger.warn('[WEBHOOK] wallet.address.generated: missing user.id, address or currency', { data });
@@ -87,8 +118,9 @@ export function createQuidaxWebhookService({
   }
 
   async function creditUserWalletByQuidax(data) {
-    const { amount, currency, address, id: quidaxTxId } = data;
-    const tag = data.address_info?.tag || data.tag || '';
+    const { amount, currency, id: quidaxTxId } = data;
+    const address = getQuidaxDepositAddress(data);
+    const tag = getQuidaxDepositTag(data);
     const currencyUpper = currency?.toUpperCase();
 
     // Quidax webhook carries data.user.id when using sub-accounts, but older
