@@ -68,11 +68,10 @@ export async function upsertCryptoWallet(client, userId, currency, address = nul
     `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, crypto_address, crypto_tag, is_active)
      VALUES ($1, $2, 'crypto', 0, 0, $3, $4, true)
      ON CONFLICT (user_id, currency, wallet_type) DO UPDATE
-       SET crypto_address = COALESCE(EXCLUDED.crypto_address, wallets.crypto_address),
-           crypto_tag = COALESCE(EXCLUDED.crypto_tag, wallets.crypto_tag),
-           is_active = true,
-           deleted_at = NULL,
-           updated_at = NOW()
+           SET crypto_address = COALESCE(EXCLUDED.crypto_address, wallets.crypto_address),
+               crypto_tag = COALESCE(EXCLUDED.crypto_tag, wallets.crypto_tag),
+               is_active = true,
+               updated_at = NOW()
      RETURNING id, user_id`,
     [userId, currency, address, tag || null]
   );

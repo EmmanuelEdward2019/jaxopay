@@ -214,7 +214,7 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
     // Get crypto wallet with lock
     const cryptoWallet = await client.query(
       `SELECT id, balance FROM wallets
-       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND deleted_at IS NULL
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND is_active = true
        FOR UPDATE`,
       [req.user.id, crypto_currency.toUpperCase()]
     );
@@ -256,7 +256,7 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
     // Get or create fiat wallet
     let fiatWallet = await client.query(
       `SELECT id FROM wallets
-       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'fiat' AND deleted_at IS NULL`,
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'fiat' AND is_active = true`,
       [req.user.id, to_fiat.toUpperCase()]
     );
 
@@ -377,7 +377,7 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
     // Get fiat wallet with lock
     const fiatWallet = await client.query(
       `SELECT id, balance FROM wallets
-       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'fiat' AND deleted_at IS NULL
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'fiat' AND is_active = true
        FOR UPDATE`,
       [req.user.id, fiat_currency.toUpperCase()]
     );
@@ -423,7 +423,7 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
     // Get or create crypto wallet
     let cryptoWallet = await client.query(
       `SELECT id FROM wallets
-       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND deleted_at IS NULL`,
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND is_active = true`,
       [req.user.id, crypto_currency.toUpperCase()]
     );
 
@@ -802,7 +802,6 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
            SET crypto_address = EXCLUDED.crypto_address,
                crypto_tag = EXCLUDED.crypto_tag,
                is_active = true,
-               deleted_at = NULL,
                updated_at = NOW()`,
         [req.user.id, coin.toUpperCase(), address, tag]
       );
@@ -862,8 +861,8 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
   const result = await transaction(async (client) => {
     // 1. Get wallet and lock
     const wallet = await client.query(
-      `SELECT id, balance FROM wallets 
-       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND deleted_at IS NULL
+      `SELECT id, balance FROM wallets
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND is_active = true
        FOR UPDATE`,
       [req.user.id, coin.toUpperCase()]
     );
@@ -971,7 +970,7 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
     // Check from_wallet balance
     const fromWallet = await client.query(
       `SELECT id, balance FROM wallets
-       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND deleted_at IS NULL
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND is_active = true
        FOR UPDATE`,
       [req.user.id, fromUpper]
     );
@@ -983,7 +982,7 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
     // Get or create to_wallet
     let toWallet = await client.query(
       `SELECT id FROM wallets
-       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND deleted_at IS NULL`,
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND is_active = true`,
       [req.user.id, toUpper]
     );
 
@@ -1335,7 +1334,7 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
     const fromType = getWalletType(fromCurrency);
     const localWallet = await query(
       `SELECT balance FROM wallets
-       WHERE user_id = $1 AND currency = $2 AND wallet_type = $3 AND deleted_at IS NULL`,
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = $3 AND is_active = true`,
       [req.user.id, fromCurrency, fromType]
     );
 
@@ -1363,7 +1362,7 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
       await transaction(async (client) => {
         const fromWallet = await client.query(
           `SELECT id, balance FROM wallets
-           WHERE user_id = $1 AND currency = $2 AND wallet_type = $3 AND deleted_at IS NULL
+           WHERE user_id = $1 AND currency = $2 AND wallet_type = $3 AND is_active = true
            FOR UPDATE`,
           [req.user.id, fromCurrency, fromType]
         );
@@ -1374,7 +1373,7 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
 
         let toWallet = await client.query(
           `SELECT id FROM wallets
-           WHERE user_id = $1 AND currency = $2 AND wallet_type = $3 AND deleted_at IS NULL`,
+           WHERE user_id = $1 AND currency = $2 AND wallet_type = $3 AND is_active = true`,
           [req.user.id, toCurrency, toType]
         );
 

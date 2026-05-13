@@ -582,7 +582,7 @@ async function updateQuidaxSwap(data, status) {
                 // Ensure the to_currency wallet exists and credit it
                 let toWallet = await client.query(
                     `SELECT id FROM wallets
-                     WHERE user_id = $1 AND currency = $2 AND deleted_at IS NULL`,
+                     WHERE user_id = $1 AND currency = $2 AND is_active = true`,
                     [tx.user_id, toCurrency]
                 );
                 if (toWallet.rows.length === 0) {
@@ -604,7 +604,7 @@ async function updateQuidaxSwap(data, status) {
                 await client.query(
                     `UPDATE wallets
                      SET balance = balance + $1, updated_at = NOW()
-                     WHERE user_id = $2 AND currency = $3 AND deleted_at IS NULL`,
+                     WHERE user_id = $2 AND currency = $3 AND is_active = true`,
                     [fromAmount, tx.user_id, fromCurrency]
                 );
                 logger.info(`[WEBHOOK] ✅ Swap ${status}: refunded ${fromAmount} ${fromCurrency} to user ${tx.user_id}`);
