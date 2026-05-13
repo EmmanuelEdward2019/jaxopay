@@ -621,8 +621,8 @@ class QuidaxAdapter {
      * SWAP: Temporary quotation — preview rate WITHOUT creating a real swap.
      * Endpoint: POST /users/{id}/temporary_swap_quotation
      */
-    async getTemporarySwapQuote({ from, to, from_amount, to_amount }) {
-        const userId = await this._getAuthUserId();
+    async getTemporarySwapQuote({ from, to, from_amount, to_amount, userId: requestedUserId = null }) {
+        const userId = requestedUserId || await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const body = {
                 from_currency: from.toLowerCase(),
@@ -640,8 +640,8 @@ class QuidaxAdapter {
      * SWAP: Create a real quotation (valid 15s). Returns id for confirm/refresh.
      * Endpoint: POST /users/{id}/swap_quotation
      */
-    async getSwapQuote({ from, to, amount, side = 'from' }) {
-        const userId = await this._getAuthUserId();
+    async getSwapQuote({ from, to, amount, side = 'from', userId: requestedUserId = null }) {
+        const userId = requestedUserId || await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const body = {
                 from_currency: from.toLowerCase(),
@@ -660,8 +660,8 @@ class QuidaxAdapter {
      * SWAP: Confirm/Execute a quotation by ID.
      * Endpoint: POST /users/{id}/swap_quotation/{quotation_id}/confirm
      */
-    async executeSwap(quotationId) {
-        const userId = await this._getAuthUserId();
+    async executeSwap(quotationId, requestedUserId = null) {
+        const userId = requestedUserId || await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.post(`/users/${userId}/swap_quotation/${quotationId}/confirm`);
             return response.data?.data || response.data;
@@ -673,8 +673,8 @@ class QuidaxAdapter {
      * Endpoint: POST /users/{id}/swap_quotation/{quotation_id}/refresh
      * Body (optional): { from_currency, to_currency, from_amount OR to_amount }
      */
-    async refreshSwapQuotation(quotationId, body = {}) {
-        const userId = await this._getAuthUserId();
+    async refreshSwapQuotation(quotationId, body = {}, requestedUserId = null) {
+        const userId = requestedUserId || await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.post(
                 `/users/${userId}/swap_quotation/${quotationId}/refresh`,
@@ -689,8 +689,8 @@ class QuidaxAdapter {
      * Endpoint: GET /users/{id}/swap_transactions/{transaction_id}
      * Returns: { id, status: "initiated"|"completed"|"failed", received_amount, execution_price, ... }
      */
-    async getSwapTransaction(transactionId) {
-        const userId = await this._getAuthUserId();
+    async getSwapTransaction(transactionId, requestedUserId = null) {
+        const userId = requestedUserId || await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/swap_transactions/${transactionId}`);
             return response.data?.data || response.data;

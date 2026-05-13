@@ -125,6 +125,7 @@ const Exchange = () => {
     const quotationIdRef = useRef(null);
     const autoRefreshFiredRef = useRef(false);
     const refreshCallbackRef = useRef(null);
+    const refreshInFlightRef = useRef(false);
 
     useEffect(() => {
         if (activeTab === 'exchange') {
@@ -152,14 +153,14 @@ const Exchange = () => {
 
     // Countdown timer — driven by quotation.expires_at; auto-refreshes at 0
     useEffect(() => {
-        if (!quotation?.expires_at) { setCountdownSecs(0); return; }
+        if (!quotation?.expires_at || !['quoted', 'refreshing'].includes(swapPhase)) { setCountdownSecs(0); return; }
         autoRefreshFiredRef.current = false;
         const expiresAt = new Date(quotation.expires_at).getTime();
 
         const interval = setInterval(() => {
             const secsLeft = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
             setCountdownSecs(secsLeft);
-            if (secsLeft === 0 && !autoRefreshFiredRef.current) {
+            if (Date.now() >= expiresAt && !autoRefreshFiredRef.current) {
                 autoRefreshFiredRef.current = true;
                 clearInterval(interval);
                 refreshCallbackRef.current?.();
@@ -167,7 +168,7 @@ const Exchange = () => {
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [quotation?.expires_at]);
+    }, [quotation?.expires_at, swapPhase]);
 
     // Reset to idle when the user changes currency or amount while a quote is active
     useEffect(() => {
@@ -366,7 +367,8 @@ const Exchange = () => {
     // Step 3: Refresh an active quotation (manual or auto)
     const handleQuotationRefresh = async () => {
         const qid = quotationIdRef.current;
-        if (!qid || isRefreshing) return;
+        if (!qid || refreshInFlightRef.current || !['quoted', 'refreshing'].includes(swapPhase)) return;
+        refreshInFlightRef.current = true;
         setIsRefreshing(true);
         setSwapPhase('refreshing');
         try {
@@ -384,12 +386,17 @@ const Exchange = () => {
             } else {
                 setSwapError(result.error || 'Rate refresh failed. Please try again.');
                 setSwapPhase('failed');
+                quotationIdRef.current = null;
+                setQuotation(null);
             }
         } catch (e) {
             setSwapError('Rate refresh failed. Please try again.');
             setSwapPhase('failed');
+            quotationIdRef.current = null;
+            setQuotation(null);
         } finally {
             setIsRefreshing(false);
+            refreshInFlightRef.current = false;
         }
     };
 
@@ -440,12 +447,10 @@ const Exchange = () => {
         setSwapError(null);
 
         try {
-            // Safety check: refresh first if less than 1 second left
-            const secsLeft = quotation
-                ? Math.max(0, Math.floor((new Date(quotation.expires_at).getTime() - Date.now()) / 1000))
-                : 0;
+            // Safety check: refresh first only once the quote is actually expired.
+            const expiresAt = quotation?.expires_at ? new Date(quotation.expires_at).getTime() : 0;
 
-            if (secsLeft < 1) {
+            if (expiresAt && Date.now() >= expiresAt) {
                 setIsRefreshing(true);
                 const refreshResult = await cryptoService.refreshSwapQuotation(qid, {
                     from_currency: fromAsset.code,
@@ -456,6 +461,8 @@ const Exchange = () => {
                 if (!refreshResult.success || !refreshResult.data?.id) {
                     setSwapError(refreshResult.error || 'Could not refresh rate. Please try again.');
                     setSwapPhase('failed');
+                    quotationIdRef.current = null;
+                    setQuotation(null);
                     setLoading(false);
                     return;
                 }
@@ -465,7 +472,13 @@ const Exchange = () => {
             }
 
             setSwapPhase('confirming');
-            const confirmResult = await cryptoService.confirmSwapQuotation(quotationIdRef.current);
+            const activeQuotationId = quotationIdRef.current;
+            quotationIdRef.current = null;
+            setQuotation(null);
+            const confirmResult = await cryptoService.confirmSwapQuotation(activeQuotationId, {
+                from_currency: fromAsset.code,
+                from_amount: parseFloat(payAmount),
+            });
 
             if (!confirmResult.success || !confirmResult.data?.id) {
                 setSwapError(confirmResult.error || 'Swap confirmation failed.');

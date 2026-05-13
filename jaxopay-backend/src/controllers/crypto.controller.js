@@ -111,10 +111,12 @@ export const getExchangeRates = catchAsync(async (req, res) => {
   // ─── Strategy 1: Quidax Temporary Swap Quotation ─────────────────────────
   // Most accurate: includes real fees, uses Quidax's own matching engine.
   try {
+    const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
     const quote = await quidax.getTemporarySwapQuote({
       from: fromCurr,
       to:   toCurr,
       from_amount: refAmount,
+      userId: quidaxUserId,
     });
 
     if (quote && parseFloat(quote.to_amount) > 0) {
@@ -227,8 +229,10 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
 
     // Get live rate + exact to_amount via Quidax swap quotation
     let quotation;
+    let quidaxUserId;
     try {
-      quotation = await quidax.getSwapQuote({ from: from_coin, to: to_fiat, amount: qty, side: 'from' });
+      quidaxUserId = await getQuidaxSubUserIdForRequest(req);
+      quotation = await quidax.getSwapQuote({ from: from_coin, to: to_fiat, amount: qty, side: 'from', userId: quidaxUserId });
       if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) throw new Error('Bad quotation');
     } catch (e) {
       logger.warn('[Exchange] Quidax quotation failed, falling back to ticker:', e.message);
@@ -279,7 +283,7 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
     let quidaxSwapId = quotation?.id || null;
     if (quotation?.id) {
       try {
-        const confirmed = await quidax.executeSwap(quotation.id);
+        const confirmed = await quidax.executeSwap(quotation.id, quidaxUserId);
         if (confirmed?.id) quidaxSwapId = confirmed.id;
       } catch (e) {
         logger.warn('[Exchange] Quidax confirm failed (balances already updated):', e.message);
@@ -388,8 +392,10 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
 
     // Get live rate + exact crypto_amount via Quidax swap quotation
     let quotation;
+    let quidaxUserId;
     try {
-      quotation = await quidax.getSwapQuote({ from: from_fiat, to: to_coin, amount: qty, side: 'from' });
+      quidaxUserId = await getQuidaxSubUserIdForRequest(req);
+      quotation = await quidax.getSwapQuote({ from: from_fiat, to: to_coin, amount: qty, side: 'from', userId: quidaxUserId });
       if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) throw new Error('Bad quotation');
     } catch (e) {
       logger.warn('[Exchange] Quidax quotation failed, falling back to ticker:', e.message);
@@ -444,7 +450,7 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
     let quidaxSwapId = quotation?.id || null;
     if (quotation?.id) {
       try {
-        const confirmed = await quidax.executeSwap(quotation.id);
+        const confirmed = await quidax.executeSwap(quotation.id, quidaxUserId);
         if (confirmed?.id) quidaxSwapId = confirmed.id;
       } catch (e) {
         logger.warn('[Exchange] Quidax confirm failed (balances already updated):', e.message);
@@ -733,6 +739,24 @@ async function ensureQuidaxSubUser(jaxopayUserId, userEmail, firstName, lastName
   return quidaxId;
 }
 
+async function getQuidaxSubUserIdForRequest(req) {
+  const userRow = await query(
+    `SELECT u.quidax_user_id, p.first_name, p.last_name
+     FROM users u
+     LEFT JOIN user_profiles p ON p.user_id = u.id
+     WHERE u.id = $1`,
+    [req.user.id]
+  );
+  const userProfile = userRow.rows[0] || {};
+
+  return ensureQuidaxSubUser(
+    req.user.id,
+    req.user.email,
+    userProfile.first_name,
+    userProfile.last_name
+  );
+}
+
 // Get deposit address for crypto
 export const getCryptoDepositAddress = catchAsync(async (req, res) => {
   const { coin, network } = req.query;
@@ -927,8 +951,10 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
   // ── Step 1: Create a Quidax swap quotation ────────────────────────────────
   // This reserves liquidity and returns exact to_amount (inclusive of Quidax fees).
   let quotation;
+  let quidaxUserId;
   try {
-    quotation = await quidax.getSwapQuote({ from: fromUpper, to: toUpper, amount: fromAmt, side: 'from' });
+    quidaxUserId = await getQuidaxSubUserIdForRequest(req);
+    quotation = await quidax.getSwapQuote({ from: fromUpper, to: toUpper, amount: fromAmt, side: 'from', userId: quidaxUserId });
     if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) {
       throw new Error('Invalid quotation returned');
     }
@@ -976,7 +1002,7 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
     // Confirm the Quidax swap (enqueues execution on their side)
     let quidaxSwapId = quotation.id;
     try {
-      const confirmed = await quidax.executeSwap(quotation.id);
+      const confirmed = await quidax.executeSwap(quotation.id, quidaxUserId);
       if (confirmed?.id) quidaxSwapId = confirmed.id;
     } catch (e) {
       logger.warn('[CryptoSwap] Quidax confirm failed (balances already updated):', e.message);
@@ -1113,6 +1139,7 @@ export const getSwapQuote = catchAsync(async (req, res) => {
     throw new AppError('from, to, and amount are required', 400);
   }
   try {
+    const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
     // Delegate to the real swap_quotation endpoint (temporary_swap_quotation
     // does not exist on openapi.quidax.io)
     const data = await quidax.getSwapQuote({
@@ -1120,6 +1147,7 @@ export const getSwapQuote = catchAsync(async (req, res) => {
       to,
       amount,
       side: side === 'to' ? 'to' : 'from',
+      userId: quidaxUserId,
     });
     res.status(200).json({ success: true, data });
   } catch (err) {
@@ -1252,11 +1280,13 @@ export const createSwapQuotation = catchAsync(async (req, res) => {
   if (from_amount != null && to_amount != null) throw new AppError('Provide exactly one of from_amount or to_amount', 400);
   if (from_amount == null && to_amount == null) throw new AppError('Exactly one of from_amount or to_amount is required', 400);
 
+  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
   const quotation = await quidax.getSwapQuote({
     from: from_currency,
     to: to_currency,
     amount: from_amount != null ? from_amount : to_amount,
     side: from_amount != null ? 'from' : 'to',
+    userId: quidaxUserId,
   });
 
   if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) {
@@ -1281,7 +1311,8 @@ export const refreshSwapQuotation = catchAsync(async (req, res) => {
   if (from_amount != null) body.from_amount = String(from_amount);
   else if (to_amount != null) body.to_amount = String(to_amount);
 
-  const quotation = await quidax.refreshSwapQuotation(id, body);
+  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
+  const quotation = await quidax.refreshSwapQuotation(id, body, quidaxUserId);
 
   if (!quotation?.id) throw new AppError('Could not refresh swap quotation. Please try again.', 503);
 
@@ -1292,12 +1323,29 @@ export const refreshSwapQuotation = catchAsync(async (req, res) => {
 // POST /crypto/swap/quotation/:id/confirm
 export const confirmSwapQuotation = catchAsync(async (req, res) => {
   const { id } = req.params;
+  const { from_currency, from_amount } = req.body || {};
 
   if (req.user.kyc_tier < 2) throw new AppError('KYC Tier 2+ required for swaps', 403);
   if (!id) throw new AppError('Quotation ID is required', 400);
 
+  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
+
+  if (from_currency && from_amount != null) {
+    const fromCurrency = from_currency.toUpperCase();
+    const fromType = getWalletType(fromCurrency);
+    const localWallet = await query(
+      `SELECT balance FROM wallets
+       WHERE user_id = $1 AND currency = $2 AND wallet_type = $3 AND deleted_at IS NULL`,
+      [req.user.id, fromCurrency, fromType]
+    );
+
+    if (localWallet.rows.length === 0 || parseFloat(localWallet.rows[0].balance) < parseFloat(from_amount)) {
+      throw new AppError('Insufficient balance', 400);
+    }
+  }
+
   // Execute swap on Quidax — this is the authoritative action
-  const confirmed = await quidax.executeSwap(id);
+  const confirmed = await quidax.executeSwap(id, quidaxUserId);
 
   if (!confirmed?.id) throw new AppError('Swap execution failed. Please refresh and try again.', 503);
 
@@ -1374,13 +1422,15 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
 export const getSwapTransaction = catchAsync(async (req, res) => {
   const { id } = req.params;
   if (!id) throw new AppError('Transaction ID is required', 400);
-  const data = await quidax.getSwapTransaction(id);
+  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
+  const data = await quidax.getSwapTransaction(id, quidaxUserId);
   res.status(200).json({ success: true, data });
 });
 
 // GET /crypto/swap/transactions — list all swap transactions
 export const getSwapTransactions = catchAsync(async (req, res) => {
-  const data = await quidax.getSwapTransactions();
+  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
+  const data = await quidax.getSwapTransactions(quidaxUserId);
   res.status(200).json({ success: true, data });
 });
 

@@ -136,11 +136,11 @@ const cryptoService = {
   },
 
   // Step 4: Confirm a quotation — executes the swap
-  confirmSwapQuotation: async (quotation_id) => {
+  confirmSwapQuotation: async (quotation_id, body = {}) => {
     try {
-      const body = await apiClient.post(`/crypto/swap/quotation/${quotation_id}/confirm`);
-      if (body?.success && body?.data) return { success: true, data: body.data };
-      return { success: false, error: body?.message || 'Confirmation failed' };
+      const res = await apiClient.post(`/crypto/swap/quotation/${quotation_id}/confirm`, body);
+      if (res?.success && res?.data) return { success: true, data: res.data };
+      return { success: false, error: res?.message || 'Confirmation failed' };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -348,4 +348,3 @@ const cryptoService = {
 };
 
 export default cryptoService;
-
