@@ -4,19 +4,21 @@
  */
 
 import crypto from 'crypto';
-import WebhookVerifier from '../webhookVerifier.js';
+import verifier from '../webhookVerifier.js';
 
 describe('WebhookVerifier', () => {
-  let verifier;
   const originalEnv = process.env;
 
   beforeEach(() => {
-    verifier = new WebhookVerifier();
+    verifier.recentWebhooks.clear();
     process.env = { ...originalEnv };
   });
 
   afterEach(() => {
     process.env = originalEnv;
+  });
+
+  afterAll(() => {
     if (verifier.cleanupInterval) {
       clearInterval(verifier.cleanupInterval);
     }
@@ -113,8 +115,7 @@ describe('WebhookVerifier', () => {
       process.env.QUIDAX_WEBHOOK_SECRET = secret;
 
       const result = verifier.verify('quidax', {
-        'x-quidax-signature': signature,
-        'x-quidax-timestamp': timestamp.toString()
+        'x-quidax-signature': `t=${timestamp},s=${signature}`
       }, payload);
 
       expect(result).toBe(true);
@@ -130,8 +131,7 @@ describe('WebhookVerifier', () => {
       process.env.QUIDAX_WEBHOOK_SECRET = secret;
 
       const result = verifier.verify('quidax', {
-        'x-quidax-signature': signature,
-        'x-quidax-timestamp': oldTimestamp.toString()
+        'x-quidax-signature': `t=${oldTimestamp},s=${signature}`
       }, payload);
 
       expect(result).toBe(false);
@@ -243,4 +243,3 @@ describe('WebhookVerifier', () => {
     });
   });
 });
-

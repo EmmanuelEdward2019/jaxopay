@@ -873,9 +873,12 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
     const retryRef = useRef(0);
     const retryTimerRef = useRef(null);
 
-    const walletInfo = balanceMap[code];
-    const existingWallet = wallets.find(w => w.currency?.toUpperCase() === code?.toUpperCase());
     const isCrypto = type === 'crypto';
+    const walletInfo = balanceMap[code];
+    const existingWallet = wallets.find(w =>
+        w.currency?.toUpperCase() === code?.toUpperCase()
+        && (!isCrypto || w.wallet_type === 'crypto')
+    );
 
     const handleCopy = (text) => {
         if (!text) return;

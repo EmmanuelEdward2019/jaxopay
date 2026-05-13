@@ -768,11 +768,19 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
     const tag = addressData.destination_tag || addressData.tag || addressData.memo || '';
 
     if (address) {
-      // Persist to DB so webhook handler can also fall back to address-matching
+      // Persist to DB so webhook handler can also fall back to address-matching.
+      // Upsert here because the backend should not depend on the frontend having
+      // already created the crypto wallet row.
       await query(
-        `UPDATE wallets SET crypto_address = $1, crypto_tag = $2, updated_at = NOW()
-         WHERE user_id = $3 AND currency = $4 AND wallet_type = 'crypto'`,
-        [address, tag, req.user.id, coin.toUpperCase()]
+        `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, crypto_address, crypto_tag, is_active)
+         VALUES ($1, $2, 'crypto', 0, 0, $3, $4, true)
+         ON CONFLICT (user_id, currency, wallet_type) DO UPDATE
+           SET crypto_address = EXCLUDED.crypto_address,
+               crypto_tag = EXCLUDED.crypto_tag,
+               is_active = true,
+               deleted_at = NULL,
+               updated_at = NOW()`,
+        [req.user.id, coin.toUpperCase(), address, tag]
       );
     }
 

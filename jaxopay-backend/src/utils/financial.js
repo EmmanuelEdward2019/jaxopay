@@ -12,7 +12,7 @@ Decimal.set({
   precision: 20, // Match database DECIMAL(20, 8)
   rounding: Decimal.ROUND_HALF_UP,
   toExpNeg: -9,
-  toExpPos: 9,
+  toExpPos: 21,
 });
 
 /**
@@ -163,4 +163,3 @@ export default {
   roundToCurrencyUnit,
   Decimal,
 };
-

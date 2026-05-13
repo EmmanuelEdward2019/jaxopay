@@ -294,6 +294,14 @@ class WebhookVerifier {
             else if (vPart) signature = vPart.slice(3);
         }
 
+        if (timestamp) {
+            const timestampMs = Number(timestamp) * 1000;
+            if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > this.REPLAY_WINDOW_MS) {
+                logger.warn('[WEBHOOK] Quidax: signature timestamp outside acceptable window');
+                return false;
+            }
+        }
+
         // signed_payload = timestamp + "." + rawBody  (per Quidax docs)
         const toSign = timestamp ? `${timestamp}.${payload}` : payload;
 

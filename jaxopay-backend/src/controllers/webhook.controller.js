@@ -6,6 +6,7 @@ import logger from '../utils/logger.js';
 import crypto from 'crypto';
 import { SMILE_APPROVED_RESULT_CODES, SMILE_PROVISIONAL_RESULT_CODES } from '../services/smileId.service.js';
 import * as kycNotify from '../services/kycNotification.service.js';
+import { creditUserWalletByQuidax, persistQuidaxWalletAddress } from '../services/quidaxWebhook.service.js';
 
 /**
  * Unified webhook handler for all providers
@@ -611,139 +612,6 @@ async function updateQuidaxSwap(data, status) {
         });
     } catch (err) {
         logger.error('[WEBHOOK] updateQuidaxSwap error:', err);
-        throw err;
-    }
-}
-
-/**
- * wallet.address.generated webhook — fired when a sub-user's wallet address is
- * created asynchronously. Persists the address into wallets.crypto_address so
- * deposit webhooks can match by address as a fallback.
- */
-async function persistQuidaxWalletAddress(data) {
-    const quidaxSubUserId = data.user?.id ? String(data.user.id) : null;
-    const address = data.address;
-    const currency = data.currency?.toUpperCase();
-    const tag = data.destination_tag || null;
-
-    if (!quidaxSubUserId || !address || !currency) {
-        logger.warn('[WEBHOOK] wallet.address.generated: missing user.id, address or currency', { data });
-        return;
-    }
-
-    try {
-        // Find the Jaxopay user by their Quidax sub-user ID
-        const userRes = await query(
-            'SELECT id FROM users WHERE quidax_user_id = $1',
-            [quidaxSubUserId]
-        );
-        if (userRes.rows.length === 0) {
-            logger.warn(`[WEBHOOK] wallet.address.generated: no user found for quidax_user_id=${quidaxSubUserId}`);
-            return;
-        }
-        const userId = userRes.rows[0].id;
-
-        // Update wallet record with the generated address
-        await query(
-            `UPDATE wallets
-             SET crypto_address = $1, crypto_tag = $2, updated_at = NOW()
-             WHERE user_id = $3 AND currency = $4 AND wallet_type = 'crypto'`,
-            [address, tag, userId, currency]
-        );
-
-        logger.info(`[WEBHOOK] ✅ wallet.address.generated: ${currency} address ${address} saved for user ${userId}`);
-    } catch (err) {
-        logger.error('[WEBHOOK] persistQuidaxWalletAddress error:', err.message);
-    }
-}
-
-async function creditUserWalletByQuidax(data) {
-    const { amount, currency, address, id: quidaxTxId } = data;
-    const tag = data.address_info?.tag || data.tag || '';
-
-    // Quidax webhook carries data.user.id when using sub-accounts (self-custody model).
-    // This is the primary lookup — each Jaxopay user has a unique Quidax sub-user ID.
-    const quidaxSubUserId = data.user?.id ? String(data.user.id) : null;
-
-    try {
-        await transaction(async (client) => {
-            // 1. Find the Jaxopay wallet — try sub-user ID first, fall back to address
-            let walletRow = null;
-
-            if (quidaxSubUserId) {
-                const bySubUser = await client.query(
-                    `SELECT w.id, w.user_id
-                     FROM wallets w
-                     JOIN users u ON u.id = w.user_id
-                     WHERE u.quidax_user_id = $1
-                       AND w.currency = $2
-                       AND w.wallet_type = 'crypto'
-                       AND w.is_active = true`,
-                    [quidaxSubUserId, currency.toUpperCase()]
-                );
-                if (bySubUser.rows.length > 0) walletRow = bySubUser.rows[0];
-            }
-
-            // Fallback: match by the stored deposit address (covers legacy / migrated users)
-            if (!walletRow && address) {
-                const byAddress = await client.query(
-                    `SELECT id, user_id FROM wallets
-                     WHERE (crypto_address = $1 OR crypto_address = $2)
-                       AND currency = $3
-                       AND wallet_type = 'crypto'
-                       AND is_active = true`,
-                    [address, address.toLowerCase(), currency.toUpperCase()]
-                );
-                if (byAddress.rows.length > 0) walletRow = byAddress.rows[0];
-            }
-
-            if (!walletRow) {
-                logger.warn(
-                    `[WEBHOOK] Quidax deposit: No wallet found — quidaxUserId=${quidaxSubUserId}, address=${address}, currency=${currency}`
-                );
-                return;
-            }
-
-            const { id: walletId, user_id: userId } = walletRow;
-
-            // 2. Idempotency — don't double-credit
-            const dupRes = await client.query(
-                `SELECT id FROM wallet_transactions WHERE metadata->>'quidax_tx_id' = $1`,
-                [String(quidaxTxId)]
-            );
-            if (dupRes.rows.length > 0) {
-                logger.info(`[WEBHOOK] Quidax deposit already processed: ${quidaxTxId}`);
-                return;
-            }
-
-            // 3. Credit the wallet — update both balance and available_balance
-            await client.query(
-                `UPDATE wallets
-                 SET balance           = balance           + $1,
-                     available_balance = COALESCE(available_balance, 0) + $1,
-                     updated_at        = NOW()
-                 WHERE id = $2`,
-                [parseFloat(amount), walletId]
-            );
-
-            // 4. Record the transaction
-            await client.query(
-                `INSERT INTO wallet_transactions
-                 (wallet_id, transaction_type, amount, currency, status, description, metadata)
-                 VALUES ($1, 'deposit', $2, $3, 'completed', $4, $5)`,
-                [
-                    walletId,
-                    parseFloat(amount),
-                    currency.toUpperCase(),
-                    `Crypto deposit via Quidax (${quidaxTxId})`,
-                    JSON.stringify({ quidax_tx_id: String(quidaxTxId), address, tag, quidax_user_id: quidaxSubUserId, source: 'quidax' })
-                ]
-            );
-
-            logger.info(`[WEBHOOK] ✅ Quidax credited: ${amount} ${currency} → wallet ${walletId} (user ${userId})`);
-        });
-    } catch (err) {
-        logger.error('[WEBHOOK] creditUserWalletByQuidax error:', err);
         throw err;
     }
 }

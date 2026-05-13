@@ -24,7 +24,7 @@ export default {
     '!src/config/database.js'
   ],
   
-  coverageThresholds: {
+  coverageThreshold: {
     global: {
       branches: 60,
       functions: 60,
@@ -66,4 +66,3 @@ export default {
   // Restore mocks between tests
   restoreMocks: true
 };
-
