@@ -45,7 +45,7 @@ const FALLBACK_RATES = {
     'TON': 0.14, 'RNDR': 0.1, 'STRK': 1.5, 'SUI': 0.22,
     'XYO': 70, 'HYPE': 0.04, 'FARTCOIN': 0.7, 'ZK': 4,
     'LSK': 0.6, 'CFX': 4, 'S': 1.5, 'AXCNH': 1,
-    'QDX': 30, 'RNDR': 0.1, 'CNGN': 1650,
+    'QDX': 30, 'CNGN': 1650,
 };
 
 // Fiat currency codes for filtering (used to exclude fiat from crypto lists)
@@ -112,7 +112,7 @@ const COIN_COLORS = {
     PEPE: '#3d8c40', FLOKI: '#f6921a', BONK: '#f5a623', QDX: '#1a73e8',
     SLP: '#e84393', ALGO: '#000000', WIF: '#b47edb', NOS: '#1abc9c',
     // Layer 1 & Layer 2
-    NEAR: '#00c08b', TON: '#0098ea', SUI: '#4da2ff', SOL: '#9945ff',
+    NEAR: '#00c08b', TON: '#0098ea', SUI: '#4da2ff',
     RNDR: '#1a1a2e', STRK: '#29296e', ZK: '#4e529a', LSK: '#0a477e',
     CFX: '#1d1d3b', S: '#5c6bc0',
     // Meme & others
@@ -133,6 +133,25 @@ const CoinIcon = ({ code, size = 36, isFiat = false }) => {
             {(code || '??').slice(0, 4).toUpperCase()}
         </div>
     );
+};
+
+const toBalanceNumber = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const getSpendableWalletBalance = (wallet) => {
+    const balance = toBalanceNumber(wallet?.balance);
+    const availableBalance = wallet?.available_balance == null ? null : toBalanceNumber(wallet.available_balance);
+    const lockedBalance = toBalanceNumber(wallet?.locked_balance);
+
+    if (balance <= 0) return 0;
+    if (lockedBalance > 0) {
+        const unlockedBalance = availableBalance == null ? balance - lockedBalance : availableBalance;
+        return Math.max(0, Math.min(unlockedBalance, balance));
+    }
+    if (availableBalance == null || availableBalance <= 0) return balance;
+    return Math.max(0, Math.min(availableBalance, balance));
 };
 
 // Static fallback networks (complete Quidax-supported list)
@@ -221,6 +240,9 @@ const Wallets = () => {
     wallets.forEach(w => {
         balanceMap[w.currency?.toUpperCase()] = {
             balance: parseFloat(w.balance) || 0,
+            spendable_balance: getSpendableWalletBalance(w),
+            available_balance: parseFloat(w.available_balance) || 0,
+            locked_balance: parseFloat(w.locked_balance) || 0,
             wallet_id: w.id,
             wallet_type: w.wallet_type,
             is_active: w.is_active,
@@ -874,7 +896,6 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
     const retryTimerRef = useRef(null);
 
     const isCrypto = type === 'crypto';
-    const walletInfo = balanceMap[code];
     const existingWallet = wallets.find(w =>
         w.currency?.toUpperCase() === code?.toUpperCase()
         && (!isCrypto || w.wallet_type === 'crypto')
@@ -1097,7 +1118,7 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
 };
 
 // ── Withdraw Form ────────────────────────────────────────────────────────
-const WithdrawForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) => {
+const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
     const [amount, setAmount] = useState('');
     const [recipient, setRecipient] = useState('');
     const [network, setNetwork] = useState('');
@@ -1113,9 +1134,8 @@ const WithdrawForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =
     const [resolvingAccount, setResolvingAccount] = useState(false);
 
     const isCrypto = type === 'crypto';
-    const balance = balanceMap[code]?.balance || 0;
+    const balance = balanceMap[code]?.spendable_balance ?? balanceMap[code]?.balance ?? 0;
     const walletId = balanceMap[code]?.wallet_id;
-    const wallet = wallets.find(w => w.id === walletId);
 
     // Fetch networks for crypto
     useEffect(() => {
@@ -1272,7 +1292,7 @@ const WithdrawForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =
 };
 
 // ── Transfer Form (Internal P2P) ─────────────────────────────────────────
-const TransferForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) => {
+const TransferForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
     const [recipient, setRecipient] = useState('');
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
@@ -1352,7 +1372,7 @@ const TransferForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =
 };
 
 // ── External Transfer Form (Fiat → Bank, Crypto → Blockchain) ────────────
-const ExternalTransferForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) => {
+const ExternalTransferForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
     const [amount, setAmount] = useState('');
     const [recipient, setRecipient] = useState('');
     const [network, setNetwork] = useState('');
@@ -1368,7 +1388,7 @@ const ExternalTransferForm = ({ code, type, wallets, balanceMap, onClose, onRefr
     const [resolvingAccount, setResolvingAccount] = useState(false);
 
     const isCrypto = type === 'crypto';
-    const balance = balanceMap[code]?.balance || 0;
+    const balance = balanceMap[code]?.spendable_balance ?? balanceMap[code]?.balance ?? 0;
     const walletId = balanceMap[code]?.wallet_id;
 
     // Fetch networks for crypto

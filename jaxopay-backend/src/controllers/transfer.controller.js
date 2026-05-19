@@ -2,11 +2,34 @@ import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import axios from 'axios';
-import crypto from 'crypto';
 import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js';
 
 const KORAPAY_API = 'https://api.korapay.com/merchant/api/v1';
 const korapayAdapter = new KorapayAdapter();
+
+const toAmountNumber = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+};
+
+export const getSpendableBalance = (wallet) => {
+    const balance = toAmountNumber(wallet?.balance);
+    const availableBalance = wallet?.available_balance == null ? null : toAmountNumber(wallet.available_balance);
+    const lockedBalance = toAmountNumber(wallet?.locked_balance);
+
+    if (balance <= 0) return 0;
+
+    if (lockedBalance > 0) {
+        const unlockedBalance = availableBalance == null ? balance - lockedBalance : availableBalance;
+        return Math.max(0, Math.min(unlockedBalance, balance));
+    }
+
+    if (availableBalance == null || availableBalance <= 0) {
+        return balance;
+    }
+
+    return Math.max(0, Math.min(availableBalance, balance));
+};
 
 function koraHeaders() {
     const secret = process.env.KORAPAY_SECRET_KEY;
@@ -122,68 +145,84 @@ export const sendTransfer = catchAsync(async (req, res) => {
         narration,
         currency = 'NGN',
     } = req.body;
+    const amountValue = Number(amount);
+    const transferCurrency = currency.toUpperCase();
 
-    if (!wallet_id || !bank_code || !account_number || !account_name || !amount || amount <= 0) {
+    if (!wallet_id || !bank_code || !account_number || !account_name || !Number.isFinite(amountValue) || amountValue <= 0) {
         throw new AppError('wallet_id, bank_code, account_number, account_name, and amount are required', 400);
     }
 
     // Korapay disbursements only support certain currencies
     const DISBURSE_SUPPORTED = new Set(['NGN', 'KES', 'GHS', 'ZAR']);
-    if (!DISBURSE_SUPPORTED.has(currency.toUpperCase())) {
+    if (!DISBURSE_SUPPORTED.has(transferCurrency)) {
         throw new AppError(
-            `Bank transfers in ${currency.toUpperCase()} are not currently available. Supported: NGN, KES, GHS, ZAR. Convert your balance using Swap first.`,
+            `Bank transfers in ${transferCurrency} are not currently available. Supported: NGN, KES, GHS, ZAR. Convert your balance using Swap first.`,
             400
         );
     }
 
-    // 1. Verify wallet belongs to user and has sufficient balance
-    const walletResult = await query(
-        'SELECT id, currency, balance, COALESCE(available_balance, balance) as available_balance FROM wallets WHERE id = $1 AND user_id = $2 AND is_active = true',
-        [wallet_id, req.user.id]
-    );
-    if (walletResult.rows.length === 0) throw new AppError('Wallet not found', 404);
-    const wallet = walletResult.rows[0];
-
-    if (parseFloat(wallet.available_balance) < parseFloat(amount)) {
-        throw new AppError(`Insufficient balance. Available: ${wallet.currency} ${parseFloat(wallet.available_balance).toLocaleString()}`, 400);
-    }
-
     const reference = `TXF-${req.user.id.slice(0, 8)}-${Date.now()}`;
 
-    // 2. Lock the funds and create a pending transaction atomically
+    // 1. Verify wallet belongs to user, reserve funds, and create a pending transaction atomically.
     await transaction(async (client) => {
-        // Deduct from wallet (lock funds) - use available_balance if exists, otherwise just deduct balance
+        const walletResult = await client.query(
+            `SELECT id, currency, balance, available_balance, locked_balance
+             FROM wallets
+             WHERE id = $1 AND user_id = $2 AND is_active = true
+             FOR UPDATE`,
+            [wallet_id, req.user.id]
+        );
+        if (walletResult.rows.length === 0) throw new AppError('Wallet not found', 404);
+
+        const wallet = walletResult.rows[0];
+        if (wallet.currency.toUpperCase() !== transferCurrency) {
+            throw new AppError(`Wallet currency ${wallet.currency} does not match transfer currency ${transferCurrency}`, 400);
+        }
+
+        const spendableBalance = getSpendableBalance(wallet);
+
+        if (spendableBalance < amountValue) {
+            throw new AppError(`Insufficient balance. Available: ${wallet.currency} ${spendableBalance.toLocaleString()}`, 400);
+        }
+
         await client.query(
             `UPDATE wallets
              SET balance = balance - $1,
+                 available_balance = CASE
+                   WHEN COALESCE(locked_balance, 0) > 0 THEN GREATEST(
+                     (CASE WHEN available_balance IS NULL THEN balance - COALESCE(locked_balance, 0) ELSE available_balance END) - $1,
+                     0
+                   )
+                   WHEN COALESCE(available_balance, 0) <= 0 AND balance > 0 THEN GREATEST(balance - $1, 0)
+                   ELSE GREATEST(LEAST(COALESCE(available_balance, balance), balance) - $1, 0)
+                 END,
                  updated_at = NOW()
              WHERE id = $2`,
-            [parseFloat(amount), wallet_id]
+            [amountValue, wallet_id]
         );
 
-        // Create pending transaction record
         await client.query(
             `INSERT INTO transactions
                (user_id, from_wallet_id, transaction_type, from_amount, from_currency, net_amount, fee_amount,
                 status, description, reference, metadata)
              VALUES ($1, $2, 'bank_transfer', $3, $4, $3, 0, 'pending', $5, $6, $7)`,
             [
-                req.user.id, wallet_id, parseFloat(amount), currency,
+                req.user.id, wallet_id, amountValue, transferCurrency,
                 narration || `Transfer to ${account_name}`,
                 reference,
-                JSON.stringify({ bank_code, account_number, account_name, bank_name, currency }),
+                JSON.stringify({ bank_code, account_number, account_name, bank_name, currency: transferCurrency }),
             ]
         );
     });
 
-    // 3. Call Korapay disbursement API
+    // 2. Call Korapay disbursement API
     try {
         const koraPayload = {
             reference,
             destination: {
                 type: 'bank_account',
-                amount: parseFloat(amount),
-                currency,
+                amount: amountValue,
+                currency: transferCurrency,
                 narration: narration || `Transfer to ${account_name} via Jaxopay`,
                 bank_account: {
                     bank: bank_code,
@@ -196,7 +235,7 @@ export const sendTransfer = catchAsync(async (req, res) => {
             },
         };
 
-        logger.info(`[Transfer] Initiating Korapay payout: ${reference} → ${account_name} (${bank_code}/${account_number}) ${currency} ${amount}`);
+        logger.info(`[Transfer] Initiating Korapay payout: ${reference} → ${account_name} (${bank_code}/${account_number}) ${transferCurrency} ${amountValue}`);
 
         const response = await axios.post(
             `${KORAPAY_API}/transactions/disburse`,
@@ -226,8 +265,8 @@ export const sendTransfer = catchAsync(async (req, res) => {
             data: {
                 reference,
                 status: transferStatus,
-                amount: parseFloat(amount),
-                currency,
+                amount: amountValue,
+                currency: transferCurrency,
                 recipient: { account_name, account_number, bank_name, bank_code },
                 provider_reference: transferData?.provider_reference || null,
             },
@@ -238,10 +277,13 @@ export const sendTransfer = catchAsync(async (req, res) => {
         logger.error('[Transfer] Korapay disburse failed:', koraErr.response?.data || koraErr.message);
 
         await transaction(async (client) => {
-            // Restore balance
             await client.query(
-                `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`,
-                [parseFloat(amount), wallet_id]
+                `UPDATE wallets
+                 SET balance = balance + $1,
+                     available_balance = COALESCE(available_balance, 0) + $1,
+                     updated_at = NOW()
+                 WHERE id = $2`,
+                [amountValue, wallet_id]
             );
             await client.query(
                 `UPDATE transactions SET status = 'failed', updated_at = NOW() WHERE reference = $1`,
@@ -257,7 +299,7 @@ export const sendTransfer = catchAsync(async (req, res) => {
             userMessage = 'Bank transfers are temporarily unavailable while the server is being configured. Please coordinate with support to whitelist this server\'s IP.';
             logger.error('[Transfer] CONFIGURATION REQUIRED: Server IP must be whitelisted in Korapay merchant dashboard for disbursements.');
         } else if (/channel.*not.*enabled|not.*enabled.*channel/i.test(koraMsg)) {
-            userMessage = `Bank transfers in ${currency} are not currently available. Only NGN transfers are supported at this time.`;
+            userMessage = `Bank transfers in ${transferCurrency} are not currently available. Only NGN transfers are supported at this time.`;
         } else if (koraMsg) {
             userMessage = `Transfer failed: ${koraMsg}. Your funds have been returned.`;
         }
