@@ -1,4 +1,4 @@
-import { getSpendableBalance } from '../transfer.controller.js';
+import { getSpendableBalance } from '../../utils/walletBalance.js';
 
 describe('transfer controller balance handling', () => {
   test('uses wallet balance when legacy available_balance is zero and nothing is locked', () => {
@@ -19,6 +19,16 @@ describe('transfer controller balance handling', () => {
     });
 
     expect(spendable).toBeCloseTo(128.23);
+  });
+
+  test('falls back to balance minus locked_balance when available_balance is missing', () => {
+    const spendable = getSpendableBalance({
+      balance: '10.00000000',
+      available_balance: null,
+      locked_balance: '2.50000000',
+    });
+
+    expect(spendable).toBeCloseTo(7.5);
   });
 
   test('caps stale available_balance to the current wallet balance', () => {

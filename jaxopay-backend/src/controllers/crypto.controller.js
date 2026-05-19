@@ -5,6 +5,7 @@ import cache, { CacheTTL } from '../utils/cache.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance, convertCurrency } from '../utils/financial.js';
+import { getSpendableBalance } from '../utils/walletBalance.js';
 
 // ─── Ticker Cache (module-level, shared across requests) ─────────────────────
 // Pre-fetches all Quidax market tickers every 15s so exchange rate lookups
@@ -854,25 +855,33 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
     throw new AppError('KYC Tier 2 or higher required for crypto withdrawals', 403);
   }
 
-  if (!coin || !address || !amount) {
+  if (!coin || !address || amount == null) {
     throw new AppError('Coin, address, and amount are required', 400);
   }
+
+  const amountValue = Number(amount);
+  if (!Number.isFinite(amountValue) || amountValue <= 0) {
+    throw new AppError('Amount must be greater than zero', 400);
+  }
+
+  const coinUpper = coin.toUpperCase();
 
   const result = await transaction(async (client) => {
     // 1. Get wallet and lock
     const wallet = await client.query(
-      `SELECT id, balance FROM wallets
+      `SELECT id, balance, available_balance, locked_balance FROM wallets
        WHERE user_id = $1 AND currency = $2 AND wallet_type = 'crypto' AND is_active = true
        FOR UPDATE`,
-      [req.user.id, coin.toUpperCase()]
+      [req.user.id, coinUpper]
     );
 
     if (wallet.rows.length === 0) {
       throw new AppError(`No ${coin} wallet found`, 404);
     }
 
-    if (parseFloat(wallet.rows[0].balance) < amount) {
-      throw new AppError('Insufficient balance for withdrawal', 400);
+    const spendableBalance = getSpendableBalance(wallet.rows[0]);
+    if (spendableBalance < amountValue) {
+      throw new AppError(`Insufficient balance for withdrawal. Available: ${coinUpper} ${spendableBalance.toLocaleString()}`, 400);
     }
 
     // 2. Perform withdrawal on Quidax
@@ -882,7 +891,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
         currency: coin,
         network,
         fund_uid: address,
-        amount,
+        amount: amountValue,
         fund_uid2: memo
       });
       quidaxWithdrawId = withdrawRes?.data?.id || withdrawRes?.id;
@@ -893,8 +902,19 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
 
     // 3. Deduct from local wallet
     await client.query(
-      'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
-      [amount, wallet.rows[0].id]
+      `UPDATE wallets
+       SET balance = balance - $1,
+           available_balance = CASE
+             WHEN COALESCE(locked_balance, 0) > 0 THEN GREATEST(
+               (CASE WHEN available_balance IS NULL THEN balance - COALESCE(locked_balance, 0) ELSE available_balance END) - $1,
+               0
+             )
+             WHEN COALESCE(available_balance, 0) <= 0 AND balance > 0 THEN GREATEST(balance - $1, 0)
+             ELSE GREATEST(LEAST(COALESCE(available_balance, balance), balance) - $1, 0)
+           END,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [amountValue, wallet.rows[0].id]
     );
 
     // 4. Record transaction
@@ -905,8 +925,8 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
        RETURNING id`,
       [
         wallet.rows[0].id,
-        amount,
-        coin.toUpperCase(),
+        amountValue,
+        coinUpper,
         `Withdrawal to ${address}`,
         JSON.stringify({
           network,
