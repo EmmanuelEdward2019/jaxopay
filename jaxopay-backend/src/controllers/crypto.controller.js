@@ -6,6 +6,8 @@ import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance, convertCurrency } from '../utils/financial.js';
 import { getSpendableBalance } from '../utils/walletBalance.js';
+import { getQuidaxErrorMessage } from '../utils/quidax.js';
+import { randomUUID } from 'crypto';
 
 // ─── Ticker Cache (module-level, shared across requests) ─────────────────────
 // Pre-fetches all Quidax market tickers every 15s so exchange rate lookups
@@ -13,6 +15,12 @@ import { getSpendableBalance } from '../utils/walletBalance.js';
 let _tickerSnapshot = {}; // { usdtngn: { ticker: { buy, sell, last, ... } }, ... }
 let _tickerSnapshotTime = 0;
 const TICKER_TTL_MS = 15000;
+
+function createCryptoWithdrawalReference(userId) {
+  const userPart = String(userId || 'user').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'user';
+  const uniquePart = randomUUID().replace(/-/g, '').slice(0, 12);
+  return `QWD-${userPart}-${Date.now()}-${uniquePart}`;
+}
 
 async function refreshTickerCache() {
   try {
@@ -865,8 +873,9 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
   }
 
   const coinUpper = coin.toUpperCase();
+  const reference = createCryptoWithdrawalReference(req.user.id);
 
-  const result = await transaction(async (client) => {
+  const withdrawal = await transaction(async (client) => {
     // 1. Get wallet and lock
     const wallet = await client.query(
       `SELECT id, balance, available_balance, locked_balance FROM wallets
@@ -884,23 +893,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
       throw new AppError(`Insufficient balance for withdrawal. Available: ${coinUpper} ${spendableBalance.toLocaleString()}`, 400);
     }
 
-    // 2. Perform withdrawal on Quidax
-    let quidaxWithdrawId = null;
-    try {
-      const withdrawRes = await quidax.withdraw({
-        currency: coin,
-        network,
-        fund_uid: address,
-        amount: amountValue,
-        fund_uid2: memo
-      });
-      quidaxWithdrawId = withdrawRes?.data?.id || withdrawRes?.id;
-    } catch (err) {
-      logger.error(`[CryptoWithdraw] Quidax Failed:`, err.message);
-      throw new AppError(`External withdrawal failed: ${err.message}`, 502);
-    }
-
-    // 3. Deduct from local wallet
+    // 2. Deduct locally before calling Quidax so successful provider requests are never untracked.
     await client.query(
       `UPDATE wallets
        SET balance = balance - $1,
@@ -917,34 +910,105 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
       [amountValue, wallet.rows[0].id]
     );
 
-    // 4. Record transaction
+    // 3. Record the pending transaction with the same reference sent to Quidax.
     const txResult = await client.query(
       `INSERT INTO wallet_transactions 
-       (wallet_id, transaction_type, amount, currency, status, description, metadata)
-       VALUES ($1, 'withdrawal', $2, $3, 'pending', $4, $5)
+       (wallet_id, transaction_type, amount, currency, status, description, reference, metadata)
+       VALUES ($1, 'withdrawal', $2, $3, 'pending', $4, $5, $6)
        RETURNING id`,
       [
         wallet.rows[0].id,
         amountValue,
         coinUpper,
         `Withdrawal to ${address}`,
+        reference,
         JSON.stringify({
           network,
           address,
-          quidax_withdraw_id: quidaxWithdrawId,
-          memo
+          memo,
+          quidax_reference: reference,
         })
       ]
     );
 
-    return { txId: txResult.rows[0].id };
+    return {
+      txId: txResult.rows[0].id,
+      walletId: wallet.rows[0].id,
+    };
   });
+
+  let quidaxWithdrawId = null;
+  try {
+    const withdrawRes = await quidax.withdraw({
+      currency: coin,
+      network,
+      fund_uid: address,
+      amount: amountValue,
+      fund_uid2: memo,
+      reference,
+      transaction_note: `Jaxopay withdrawal ${reference}`,
+      narration: 'Jaxopay withdrawal',
+    });
+    quidaxWithdrawId = withdrawRes?.data?.id || withdrawRes?.id;
+
+    try {
+      await query(
+        `UPDATE wallet_transactions
+         SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [
+          JSON.stringify({
+            quidax_withdraw_id: quidaxWithdrawId,
+            quidax_status: withdrawRes?.status || null,
+            quidax_response_reference: withdrawRes?.reference || null,
+          }),
+          withdrawal.txId,
+        ]
+      );
+    } catch (dbErr) {
+      logger.error(`[CryptoWithdraw] Could not attach Quidax withdrawal id to local tx ${withdrawal.txId}:`, dbErr.message);
+    }
+  } catch (err) {
+    const providerMessage = getQuidaxErrorMessage(err);
+    logger.error(`[CryptoWithdraw] Quidax failed for ${reference}: ${providerMessage}`);
+
+    await transaction(async (client) => {
+      await client.query(
+        `UPDATE wallets
+         SET balance = balance + $1,
+             available_balance = COALESCE(available_balance, 0) + $1,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [amountValue, withdrawal.walletId]
+      );
+
+      await client.query(
+        `UPDATE wallet_transactions
+         SET status = 'failed',
+             metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [
+          JSON.stringify({
+            quidax_error: providerMessage,
+            failed_at: new Date().toISOString(),
+          }),
+          withdrawal.txId,
+        ]
+      );
+    });
+
+    throw new AppError(`External withdrawal failed: ${providerMessage}`, 502);
+  }
 
   res.status(200).json({
     success: true,
     message: 'Withdrawal request submitted. Confirmation pending from Quidax.',
     data: {
-      ...result,
+      txId: withdrawal.txId,
+      reference,
+      provider_reference: quidaxWithdrawId,
       status: 'pending',
       note: 'Status will update via webhook when Quidax confirms the withdrawal'
     }

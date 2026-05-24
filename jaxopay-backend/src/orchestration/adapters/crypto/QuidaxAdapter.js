@@ -1,6 +1,7 @@
 import { createApiClient } from '../../../utils/apiClient.js';
 import logger from '../../../utils/logger.js';
 import { circuitBreakers } from '../../../utils/circuitBreaker.js';
+import { buildQuidaxWithdrawalBody } from '../../../utils/quidax.js';
 
 /**
  * QuidaxAdapter
@@ -601,16 +602,19 @@ class QuidaxAdapter {
     /**
      * Request a withdrawal (Crypto or Fiat)
      */
-    async withdraw({ currency, amount, fund_uid, fund_uid2 = '', network = '' }) {
+    async withdraw({ currency, amount, fund_uid, fund_uid2 = '', network = '', reference, transaction_note, narration }) {
         const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
-            const body = {
-                currency: currency.toLowerCase(),
-                amount: String(amount),
-                fund_uid: fund_uid,
-            };
-            if (fund_uid2) body.fund_uid2 = fund_uid2;
-            if (network) body.network = network.toLowerCase();
+            const body = buildQuidaxWithdrawalBody({
+                currency,
+                amount,
+                fund_uid,
+                fund_uid2,
+                network,
+                reference,
+                transaction_note,
+                narration,
+            });
 
             const response = await this.client.post(`/users/${userId}/withdraws`, body);
             return response.data?.data || response.data;

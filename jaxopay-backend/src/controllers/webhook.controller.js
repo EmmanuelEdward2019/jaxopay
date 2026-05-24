@@ -470,13 +470,17 @@ async function processQuidax(payload) {
 async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
     try {
         await transaction(async (client) => {
-            // Find transaction by Quidax withdrawal ID in metadata
+            const quidaxReference = webhookData?.reference ? String(webhookData.reference) : null;
+
+            // Find transaction by Quidax withdrawal ID, with reference as a fallback
+            // in case the provider accepted the withdrawal before our id update completed.
             const txRes = await client.query(
-                `SELECT id, wallet_id, amount, currency
+                `SELECT id, wallet_id, amount, currency, status AS current_status
                  FROM wallet_transactions
                  WHERE metadata->>'quidax_withdraw_id' = $1
+                    OR ($2::text IS NOT NULL AND (metadata->>'quidax_reference' = $2 OR reference = $2))
                  FOR UPDATE`,
-                [String(quidaxWithdrawId)]
+                [String(quidaxWithdrawId), quidaxReference]
             );
 
             if (txRes.rows.length === 0) {
@@ -485,6 +489,14 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
             }
 
             const tx = txRes.rows[0];
+            if (tx.current_status === status) {
+                logger.info(`[WEBHOOK] Quidax withdrawal ${quidaxWithdrawId} already ${status}; skipping duplicate webhook`);
+                return;
+            }
+            if (['completed', 'failed'].includes(tx.current_status)) {
+                logger.warn(`[WEBHOOK] Quidax withdrawal ${quidaxWithdrawId} already final (${tx.current_status}); ignoring ${status}`);
+                return;
+            }
 
             // Update transaction status
             await client.query(
@@ -504,7 +516,11 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
             // If withdrawal failed, refund the amount back to wallet
             if (status === 'failed') {
                 await client.query(
-                    'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
+                    `UPDATE wallets
+                     SET balance = balance + $1,
+                         available_balance = COALESCE(available_balance, 0) + $1,
+                         updated_at = NOW()
+                     WHERE id = $2`,
                     [tx.amount, tx.wallet_id]
                 );
 
