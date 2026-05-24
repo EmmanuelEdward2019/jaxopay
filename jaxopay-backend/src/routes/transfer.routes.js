@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyToken, requireKYCTier } from '../middleware/auth.js';
+import { verifyToken, requireKYCTier, restrictTo } from '../middleware/auth.js';
 import { validate } from '../middleware/validator.js';
 import { body, query } from 'express-validator';
 import {
@@ -19,7 +19,7 @@ router.use(verifyToken);
 router.get('/banks', listBanks);
 
 // GET /transfers/merchant-balances — Korapay merchant balances
-router.get('/merchant-balances', getMerchantBalances);
+router.get('/merchant-balances', restrictTo('admin', 'super_admin'), getMerchantBalances);
 
 // GET /transfers/history — user's transfer history
 router.get(

@@ -4,31 +4,35 @@ import logger from '../utils/logger.js';
 import axios from 'axios';
 import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js';
 import { getSpendableBalance } from '../utils/walletBalance.js';
+import {
+    getKorapayBaseUrl,
+    getKorapayCountryCode,
+    getKorapayErrorDetails,
+    getKorapayHeaders,
+    getKorapayTransferFailureMessage,
+    isKorapayAuthError,
+    isKorapayChannelDisabledError,
+    isKorapayIpWhitelistError,
+} from '../utils/korapay.js';
 
-const KORAPAY_API = 'https://api.korapay.com/merchant/api/v1';
 const korapayAdapter = new KorapayAdapter();
-
-function koraHeaders() {
-    const secret = process.env.KORAPAY_SECRET_KEY;
-    if (!secret) throw new AppError('Bank transfer service not configured', 503);
-    return { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' };
-}
 
 // ─────────────────────────────────────────────
 // GET /transfers/banks  — ALL Nigerian banks from Korapay live API
 // ─────────────────────────────────────────────
 export const listBanks = catchAsync(async (req, res) => {
     const currency = req.query.currency || 'NGN';
+    const countryCode = req.query.countryCode || getKorapayCountryCode(currency);
 
     try {
-        const response = await axios.get(`${KORAPAY_API}/misc/banks`, {
-            params: { currency },
-            headers: koraHeaders(),
+        const response = await axios.get(`${getKorapayBaseUrl()}/misc/banks`, {
+            params: { countryCode },
+            headers: getKorapayHeaders(),
             timeout: 15000,
         });
 
         const banks = response.data?.data || [];
-        logger.info(`[Transfer] Fetched ${banks.length} banks from Korapay (currency=${currency})`);
+        logger.info(`[Transfer] Fetched ${banks.length} banks from Korapay (countryCode=${countryCode})`);
 
         if (banks.length === 0) {
             throw new AppError('No banks returned. Please try again.', 503);
@@ -65,6 +69,8 @@ export const listBanks = catchAsync(async (req, res) => {
             { code: "100039", name: "Titan Trust" }
         ];
 
+        const details = getKorapayErrorDetails(err);
+        logger.warn(`[Transfer] Korapay bank list failed (${details.statusCode || 'no status'}): ${details.message}`);
         return res.status(200).json({ success: true, data: fallbackBanks, total: fallbackBanks.length, fallback: true });
     }
 });
@@ -80,9 +86,9 @@ export const resolveAccount = catchAsync(async (req, res) => {
 
     try {
         const response = await axios.post(
-            `${KORAPAY_API}/misc/banks/resolve`,
+            `${getKorapayBaseUrl()}/misc/banks/resolve`,
             { bank: bank_code, account: account_number, currency },
-            { headers: koraHeaders(), timeout: 15000 }
+            { headers: getKorapayHeaders(), timeout: 15000 }
         );
         const data = response.data?.data;
         res.status(200).json({
@@ -95,7 +101,18 @@ export const resolveAccount = catchAsync(async (req, res) => {
             }
         });
     } catch (err) {
-        // Return mock data for local testing if the Korapay API token is failing
+        const details = getKorapayErrorDetails(err);
+        logger.error(`[Transfer] Korapay account resolve failed (${details.statusCode || 'no status'}): ${details.message}`);
+
+        if (process.env.NODE_ENV === 'production') {
+            const authError = isKorapayAuthError(err);
+            const message = authError
+                ? 'Bank account verification is temporarily unavailable because Korapay did not authorize this request.'
+                : `Could not verify bank account: ${details.message}`;
+            throw new AppError(message, authError ? 503 : 502);
+        }
+
+        // Return mock data only outside production so local testing is not blocked.
         res.status(200).json({
             success: true,
             data: {
@@ -215,9 +232,9 @@ export const sendTransfer = catchAsync(async (req, res) => {
         logger.info(`[Transfer] Initiating Korapay payout: ${reference} → ${account_name} (${bank_code}/${account_number}) ${transferCurrency} ${amountValue}`);
 
         const response = await axios.post(
-            `${KORAPAY_API}/transactions/disburse`,
+            `${getKorapayBaseUrl()}/transactions/disburse`,
             koraPayload,
-            { headers: koraHeaders(), timeout: 30000 }
+            { headers: getKorapayHeaders(), timeout: 30000 }
         );
 
         const transferData = response.data?.data;
@@ -251,7 +268,8 @@ export const sendTransfer = catchAsync(async (req, res) => {
 
     } catch (koraErr) {
         // Korapay request failed — reverse the locked funds
-        logger.error('[Transfer] Korapay disburse failed:', koraErr.response?.data || koraErr.message);
+        const details = getKorapayErrorDetails(koraErr);
+        logger.error(`[Transfer] Korapay disburse failed (${details.statusCode || 'no status'}): ${details.message}`);
 
         await transaction(async (client) => {
             await client.query(
@@ -268,20 +286,16 @@ export const sendTransfer = catchAsync(async (req, res) => {
             );
         });
 
-        // Provide user-friendly error messages for common Korapay errors
-        const koraMsg = koraErr.response?.data?.message || koraErr.message || '';
-        let userMessage = 'Transfer failed. Your funds have been returned. Please try again.';
-
-        if (/whitelist.*ip|ip.*whitelist/i.test(koraMsg)) {
-            userMessage = 'Bank transfers are temporarily unavailable while the server is being configured. Please coordinate with support to whitelist this server\'s IP.';
+        if (isKorapayIpWhitelistError(koraErr)) {
             logger.error('[Transfer] CONFIGURATION REQUIRED: Server IP must be whitelisted in Korapay merchant dashboard for disbursements.');
-        } else if (/channel.*not.*enabled|not.*enabled.*channel/i.test(koraMsg)) {
-            userMessage = `Bank transfers in ${transferCurrency} are not currently available. Only NGN transfers are supported at this time.`;
-        } else if (koraMsg) {
-            userMessage = `Transfer failed: ${koraMsg}. Your funds have been returned.`;
+        } else if (isKorapayAuthError(koraErr)) {
+            logger.error('[Transfer] CONFIGURATION REQUIRED: Korapay rejected payout authorization. Check live secret key, payout enablement, and payout IP whitelist.');
+        } else if (isKorapayChannelDisabledError(koraErr)) {
+            logger.error(`[Transfer] CONFIGURATION REQUIRED: Korapay payout channel is not enabled for ${transferCurrency}.`);
         }
 
-        throw new AppError(userMessage, 502);
+        const userMessage = getKorapayTransferFailureMessage(koraErr, transferCurrency);
+        throw new AppError(userMessage, isKorapayAuthError(koraErr) ? 503 : 502);
     }
 });
 

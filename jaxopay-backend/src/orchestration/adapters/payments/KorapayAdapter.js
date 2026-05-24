@@ -1,6 +1,7 @@
 import BaseAdapter from '../../interfaces/BaseAdapter.js';
 import { createApiClient, normalizeError } from '../../../utils/apiClient.js';
 import logger from '../../../utils/logger.js';
+import { getKorapayBaseUrl, getKorapayCountryCode } from '../../../utils/korapay.js';
 
 /**
  * KorapayAdapter — Full integration
@@ -19,11 +20,11 @@ class KorapayAdapter extends BaseAdapter {
     constructor(config = {}) {
         super(config);
         this.name = 'Korapay';
-        this.publicKey = process.env.KORAPAY_PUBLIC_KEY;
-        this.secretKey = process.env.KORAPAY_SECRET_KEY;
+        this.publicKey = process.env.KORAPAY_PUBLIC_KEY?.trim();
+        this.secretKey = process.env.KORAPAY_SECRET_KEY?.trim();
 
-        // Default to live; set KORAPAY_BASE_URL=https://api.korapay.com/merchant/api/v1 for sandbox/test
-        const baseURL = process.env.KORAPAY_BASE_URL || 'https://api.korapay.com/merchant/api/v1';
+        // Kora uses mode-specific keys against the merchant API base URL.
+        const baseURL = getKorapayBaseUrl();
 
         this.client = createApiClient({
             baseURL,
@@ -119,7 +120,8 @@ class KorapayAdapter extends BaseAdapter {
     /* ─── List Banks ──────────────────────────────────────────── */
     async listBanks(currency = 'NGN') {
         this._ensureKeys();
-        const res = await this.client.get('/misc/banks', { params: { currency } });
+        const countryCode = getKorapayCountryCode(currency);
+        const res = await this.client.get('/misc/banks', { params: { countryCode } });
         return res.data?.data || [];
     }
 
@@ -137,7 +139,7 @@ class KorapayAdapter extends BaseAdapter {
     /* ─── Balance Check ───────────────────────────────────────── */
     async getBalances() {
         this._ensureKeys();
-        const res = await this.client.get('/merchant/balances');
+        const res = await this.client.get('/balances');
         return res.data?.data || [];
     }
 
@@ -191,7 +193,7 @@ class KorapayAdapter extends BaseAdapter {
     async checkHealth() {
         try {
             this._ensureKeys();
-            await this.client.get('/misc/banks', { params: { currency: 'NGN' }, timeout: 8000 });
+            await this.client.get('/balances', { timeout: 8000 });
             return true;
         } catch {
             return false;
