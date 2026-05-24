@@ -1,7 +1,7 @@
 import { createApiClient } from '../../../utils/apiClient.js';
 import logger from '../../../utils/logger.js';
 import { circuitBreakers } from '../../../utils/circuitBreaker.js';
-import { buildQuidaxWithdrawalBody } from '../../../utils/quidax.js';
+import { buildQuidaxWithdrawalBody, mapQuidaxWalletToCurrency } from '../../../utils/quidax.js';
 
 /**
  * QuidaxAdapter
@@ -906,11 +906,32 @@ class QuidaxAdapter {
             return cached;
         }
 
-        const response = await this.publicClient.get('/currencies', { timeout: 10000 });
-        const payload = response.data?.data || response.data;
-        this._setCache(cacheKey, payload);
-        logger.debug('[Quidax] Fetched and cached currencies from API');
-        return payload;
+        if (this.baseURL.includes('openapi.quidax.io')) {
+            const payload = await this._getCurrenciesFromWallets();
+            this._setCache(cacheKey, payload);
+            return payload;
+        }
+
+        try {
+            const response = await this.publicClient.get('/currencies', { timeout: 10000 });
+            const payload = response.data?.data || response.data;
+            this._setCache(cacheKey, payload);
+            logger.debug('[Quidax] Fetched and cached currencies from API');
+            return payload;
+        } catch (err) {
+            if (err.response?.status !== 404) throw err;
+
+            logger.warn('[Quidax] /currencies is unavailable on this API base; falling back to /users/me/wallets');
+            const payload = await this._getCurrenciesFromWallets();
+            this._setCache(cacheKey, payload);
+            return payload;
+        }
+    }
+
+    async _getCurrenciesFromWallets() {
+        const response = await this.client.get('/users/me/wallets', { timeout: 10000 });
+        const wallets = response.data?.data || response.data || [];
+        return wallets.map(mapQuidaxWalletToCurrency).filter((currency) => currency.code);
     }
 
     /**

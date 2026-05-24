@@ -478,7 +478,7 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
                 `SELECT id, wallet_id, amount, currency, status AS current_status
                  FROM wallet_transactions
                  WHERE metadata->>'quidax_withdraw_id' = $1
-                    OR ($2::text IS NOT NULL AND (metadata->>'quidax_reference' = $2 OR reference = $2))
+                    OR ($2::text IS NOT NULL AND metadata->>'quidax_reference' = $2)
                  FOR UPDATE`,
                 [String(quidaxWithdrawId), quidaxReference]
             );

@@ -38,3 +38,15 @@ export function getQuidaxErrorMessage(error) {
         || 'Unknown Quidax error';
 }
 
+export function mapQuidaxWalletToCurrency(wallet) {
+    const code = String(wallet?.currency || wallet?.code || wallet?.name || '').toUpperCase();
+    return {
+        code,
+        name: wallet?.name || code,
+        type: wallet?.is_crypto === false || wallet?.is_crypto === '0' ? 'fiat' : 'coin',
+        min_deposit_amount: wallet?.min_deposit_amount || '0',
+        precision: wallet?.precision || 8,
+        networks: Array.isArray(wallet?.networks) ? wallet.networks : [],
+        withdraw_fee: wallet?.withdraw_fee || '0',
+    };
+}

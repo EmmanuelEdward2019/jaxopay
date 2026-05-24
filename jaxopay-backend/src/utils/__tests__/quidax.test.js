@@ -1,4 +1,4 @@
-import { buildQuidaxWithdrawalBody, getQuidaxErrorMessage } from '../quidax.js';
+import { buildQuidaxWithdrawalBody, getQuidaxErrorMessage, mapQuidaxWalletToCurrency } from '../quidax.js';
 
 describe('Quidax utilities', () => {
   test('builds withdrawal payload with required reference', () => {
@@ -38,5 +38,21 @@ describe('Quidax utilities', () => {
       },
     })).toBe('Validation failed: reference: Reference is required');
   });
-});
 
+  test('maps wallet records to supported currency records', () => {
+    expect(mapQuidaxWalletToCurrency({
+      name: 'USDT',
+      currency: 'usdt',
+      is_crypto: true,
+      networks: [{ network: 'trc20' }],
+    })).toEqual({
+      code: 'USDT',
+      name: 'USDT',
+      type: 'coin',
+      min_deposit_amount: '0',
+      precision: 8,
+      networks: [{ network: 'trc20' }],
+      withdraw_fee: '0',
+    });
+  });
+});

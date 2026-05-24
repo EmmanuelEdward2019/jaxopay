@@ -913,15 +913,14 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
     // 3. Record the pending transaction with the same reference sent to Quidax.
     const txResult = await client.query(
       `INSERT INTO wallet_transactions 
-       (wallet_id, transaction_type, amount, currency, status, description, reference, metadata)
-       VALUES ($1, 'withdrawal', $2, $3, 'pending', $4, $5, $6)
+       (wallet_id, transaction_type, amount, currency, status, description, metadata)
+       VALUES ($1, 'withdrawal', $2, $3, 'pending', $4, $5)
        RETURNING id`,
       [
         wallet.rows[0].id,
         amountValue,
         coinUpper,
         `Withdrawal to ${address}`,
-        reference,
         JSON.stringify({
           network,
           address,
