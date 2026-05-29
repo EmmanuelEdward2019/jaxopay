@@ -602,8 +602,8 @@ class QuidaxAdapter {
     /**
      * Request a withdrawal (Crypto or Fiat)
      */
-    async withdraw({ currency, amount, fund_uid, fund_uid2 = '', network = '', reference, transaction_note, narration }) {
-        const userId = await this._getAuthUserId();
+    async withdraw({ currency, amount, fund_uid, fund_uid2 = '', network = '', reference, transaction_note, narration, userId: requestedUserId = null }) {
+        const userId = requestedUserId || await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const body = buildQuidaxWithdrawalBody({
                 currency,

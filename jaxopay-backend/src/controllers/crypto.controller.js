@@ -874,6 +874,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
 
   const coinUpper = coin.toUpperCase();
   const reference = createCryptoWithdrawalReference(req.user.id);
+  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
 
   const withdrawal = await transaction(async (client) => {
     // 1. Get wallet and lock
@@ -926,6 +927,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
           address,
           memo,
           quidax_reference: reference,
+          quidax_user_id: quidaxUserId,
         })
       ]
     );
@@ -947,6 +949,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
       reference,
       transaction_note: `Jaxopay withdrawal ${reference}`,
       narration: 'Jaxopay withdrawal',
+      userId: quidaxUserId,
     });
     quidaxWithdrawId = withdrawRes?.data?.id || withdrawRes?.id;
 
