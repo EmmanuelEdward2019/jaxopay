@@ -106,7 +106,7 @@ export const createWallet = catchAsync(async (req, res) => {
   const result = await query(
     `INSERT INTO wallets (user_id, currency, wallet_type, balance)
      VALUES ($1, $2, $3, 0)
-     ON CONFLICT (user_id, currency, wallet_type) DO UPDATE
+     ON CONFLICT (user_id, currency) DO UPDATE
        SET updated_at = NOW()
      RETURNING id, currency, wallet_type, balance, is_active, created_at`,
     [req.user.id, currencyUpper, wallet_type]

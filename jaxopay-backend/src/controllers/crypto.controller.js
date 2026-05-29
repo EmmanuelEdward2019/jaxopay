@@ -807,7 +807,7 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
       await query(
         `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, crypto_address, crypto_tag, is_active)
          VALUES ($1, $2, 'crypto', 0, 0, $3, $4, true)
-         ON CONFLICT (user_id, currency, wallet_type) DO UPDATE
+         ON CONFLICT (user_id, currency) DO UPDATE
            SET crypto_address = EXCLUDED.crypto_address,
                crypto_tag = EXCLUDED.crypto_tag,
                is_active = true,

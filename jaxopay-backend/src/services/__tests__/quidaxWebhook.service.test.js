@@ -76,7 +76,7 @@ describe('Quidax webhook service', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(mockClient.query).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining('ON CONFLICT (user_id, currency, wallet_type) DO UPDATE'),
+      expect.stringContaining('ON CONFLICT (user_id, currency) DO UPDATE'),
       ['user-123', 'TRX', 'THaZjLxjAbxhcForYJPE7LmdWHu1Cn8Pry', null]
     );
     expect(logger.info).toHaveBeenCalledWith(

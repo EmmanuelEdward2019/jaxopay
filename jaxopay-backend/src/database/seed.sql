@@ -59,7 +59,7 @@ VALUES
   ('550e8400-e29b-41d4-a716-446655440001', 'USD', 'fiat', 1000.00, 1000.00, NOW()),
   ('550e8400-e29b-41d4-a716-446655440001', 'USDT', 'crypto', 500.00, 500.00, NOW()),
   ('550e8400-e29b-41d4-a716-446655440001', 'BTC', 'crypto', 0.05, 0.05, NOW())
-ON CONFLICT (user_id, currency, wallet_type) DO NOTHING;
+ON CONFLICT (user_id, currency) DO NOTHING;
 
 -- Insert seed completed
 SELECT 'Seed data inserted successfully' AS result;
