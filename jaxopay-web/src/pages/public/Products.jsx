@@ -68,23 +68,7 @@ export default function Products() {
       bgColor: 'bg-purple-50',
       gradient: 'from-purple-500 to-violet-600'
     },
-    {
-      id: 'giftcards',
-      icon: FaGift,
-      title: 'Gift Card Trading',
-      description: 'Buy and sell gift cards from top brands at the best rates.',
-      features: [
-        'Trade 100+ gift card brands',
-        'Instant verification',
-        'Competitive exchange rates',
-        'Secure escrow system',
-      ],
-      image: 'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=800&auto=format&fit=crop',
-      link: '/products/giftcards',
-      color: 'text-amber-500',
-      bgColor: 'bg-amber-50',
-      gradient: 'from-amber-400 to-orange-500'
-    },
+
   ];
 
   const quickFeatures = [

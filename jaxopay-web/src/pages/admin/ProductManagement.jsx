@@ -31,9 +31,6 @@ const ProductManagement = () => {
         if (path.includes('crypto')) {
             setPageTitle('Crypto Asset Management');
             setProductType('crypto');
-        } else if (path.includes('giftcards')) {
-            setPageTitle('Gift Card Trade Registry');
-            setProductType('gift_card');
         }
     }, [location]);
 
@@ -71,7 +68,6 @@ const ProductManagement = () => {
     const getProductIcon = () => {
         switch (productType) {
             case 'crypto': return <TrendingUp className="w-6 h-6 text-orange-500" />;
-            case 'gift_card': return <Gift className="w-6 h-6 text-purple-500" />;
             default: return <Activity className="w-6 h-6 text-gray-500" />;
         }
     };

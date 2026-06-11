@@ -39,7 +39,6 @@ export default function Terms() {
         '• Virtual card issuance',
         '• Bill payment services',
         '• Flight booking',
-        '• Gift card marketplace',
         'Services may vary by country and are subject to regulatory approval.',
       ],
     },

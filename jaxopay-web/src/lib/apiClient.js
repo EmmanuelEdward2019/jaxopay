@@ -55,7 +55,6 @@ function sanitizeDashboardErrorMessage(input) {
     [/Strowallet/gi, 'Virtual card service'],
     [/BitVCard/gi, 'virtual cards'],
     [/VTpass/gi, 'Bill payment service'],
-    [/Reloadly/gi, 'Gift card service'],
     [/Korapay/gi, 'Payment service'],
     [/MEXC/gi, 'Exchange service'],
     [/Smile Identity|Smile ID/gi, 'Identity verification'],
@@ -142,8 +141,6 @@ apiClient.interceptors.response.use(
         let timeoutMessage;
         if (url.includes('/bills/')) {
           timeoutMessage = 'This bill step is taking longer than usual (provider checks can be slow). Check your connection and try again.';
-        } else if (url.includes('/gift-cards') && !url.includes('/gift-cards/my-cards')) {
-          timeoutMessage = 'Gift cards are taking longer than expected to load. Please try again in a moment.';
         } else if (url.includes('/kyc') || url.includes('/verify')) {
           timeoutMessage = 'The request took too long. Try again on a stable connection — verification uploads can be large.';
         } else {

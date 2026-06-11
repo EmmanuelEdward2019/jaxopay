@@ -224,7 +224,6 @@ const DashboardHome = () => {
     { name: 'Deposit', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'text-success' },
     { name: 'Withdraw', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'text-danger' },
     { name: 'Swap', icon: ArrowLeftRight, href: '/dashboard/instant-swap?from=USDT&to=NGN', color: 'text-primary' },
-    { name: 'Trade', icon: Activity, href: '/dashboard/trade', color: 'text-warning' },
   ];
 
   const statsDisplay = [
@@ -395,97 +394,7 @@ const DashboardHome = () => {
         })}
       </div>
 
-      {/* Markets Overview */}
-      <div className="glass-card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <BarChart2 className="w-5 h-5 text-primary" />
-            <h3 className="text-base font-semibold font-heading text-foreground">Trending Markets</h3>
-          </div>
-          <Link to="/dashboard/markets" className="text-xs text-primary hover:underline font-medium">
-            View All
-          </Link>
-        </div>
 
-        {loading ? (
-          <div className="space-y-3">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
-                <div className="flex-1 space-y-1">
-                  <div className="h-4 w-20 bg-muted rounded animate-pulse" />
-                  <div className="h-3 w-12 bg-muted rounded animate-pulse" />
-                </div>
-                <div className="h-4 w-24 bg-muted rounded animate-pulse" />
-              </div>
-            ))}
-          </div>
-        ) : markets.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left text-xs font-medium text-muted-foreground py-2 pr-4">Asset</th>
-                  <th className="text-right text-xs font-medium text-muted-foreground py-2 px-4">Price</th>
-                  <th className="text-right text-xs font-medium text-muted-foreground py-2 px-4">24h Change</th>
-                  <th className="text-right text-xs font-medium text-muted-foreground py-2 pl-4 hidden sm:table-cell">Volume</th>
-                </tr>
-              </thead>
-              <tbody>
-                {markets.map((market) => {
-                  const pair = market.pair || market.symbol || '';
-                  const base = (pair.split(/[-_/]/)[0] || '').toUpperCase();
-                  const tickerKey = pair.toLowerCase();
-                  const ticker = tickers[tickerKey] || {};
-                  const price = parseFloat(ticker.last || ticker.sell || ticker.buy || market.last || 0);
-                  const change = parseFloat(ticker.change || ticker.price_change_percent || market.change || 0);
-                  const volume = parseFloat(ticker.vol || ticker.volume || market.volume || 0);
-                  const isUp = change >= 0;
-
-                  return (
-                    <tr
-                      key={pair}
-                      className="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors"
-                      onClick={() => window.location.href = `/dashboard/trade/${pair}`}
-                    >
-                      <td className="py-3 pr-4">
-                        <div className="flex items-center gap-2.5">
-                          <CoinBadge symbol={base} />
-                          <div>
-                            <p className="text-sm font-semibold text-foreground">{base}</p>
-                            <p className="text-[10px] text-muted-foreground">{pair.replace(/[-_]/, '/').toUpperCase()}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="text-right py-3 px-4">
-                        <span className="text-sm font-medium text-foreground tabular-nums">
-                          {price > 0 ? price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 }) : '--'}
-                        </span>
-                      </td>
-                      <td className="text-right py-3 px-4">
-                        <span className={`inline-flex items-center gap-1 text-xs font-semibold ${isUp ? 'text-success' : 'text-danger'}`}>
-                          {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                          {change !== 0 ? `${isUp ? '+' : ''}${change.toFixed(2)}%` : '--'}
-                        </span>
-                      </td>
-                      <td className="text-right py-3 pl-4 hidden sm:table-cell">
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {volume > 0 ? volume.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '--'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            <BarChart2 className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">Market data unavailable</p>
-          </div>
-        )}
-      </div>
 
       {/* Recent Transactions */}
       <div className="glass-card p-6">

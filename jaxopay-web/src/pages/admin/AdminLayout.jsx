@@ -33,7 +33,6 @@ const navItems = [
     { path: '/admin/wallets', icon: Wallet, label: 'Wallets', roles: ['admin', 'super_admin'] },
     { path: '/admin/cards', icon: CreditCard, label: 'Cards', roles: ['admin', 'super_admin'] },
     { path: '/admin/crypto', icon: TrendingUp, label: 'Crypto Assets', roles: ['admin', 'super_admin'] },
-    { path: '/admin/giftcards', icon: Gift, label: 'Gift Cards', roles: ['admin', 'super_admin'] },
     { path: '/admin/features', icon: Settings, label: 'Platform Features', roles: ['super_admin'] },
     { path: '/admin/system', icon: ShieldAlert, label: 'System Configurations', roles: ['admin', 'super_admin'] },
     { path: '/admin/audit', icon: Activity, label: 'Audit Logs', roles: ['super_admin', 'compliance_officer'] },

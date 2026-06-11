@@ -47,7 +47,7 @@ const NAV_GROUPS = (isFeatureEnabled) => [
       { name: 'Global Pay', href: '/dashboard/cross-border', icon: Globe, enabled: true },
       { name: 'Virtual Cards', href: '/dashboard/cards', icon: CreditCard, enabled: isFeatureEnabled('virtual_cards') },
       { name: 'Bill Payments', href: '/dashboard/bills', icon: Receipt, enabled: isFeatureEnabled('bill_payments') },
-      { name: 'Gift Cards', href: '/dashboard/gift-cards', icon: Gift, enabled: isFeatureEnabled('gift_cards') },
+
     ],
   },
   {

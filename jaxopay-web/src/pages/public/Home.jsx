@@ -72,12 +72,7 @@ export default function Home() {
       description: 'Buy, sell, and exchange cryptocurrencies with ease. Secure, fast, and reliable crypto transactions.',
       color: 'text-[#8B5CF6]' // Purple
     },
-    {
-      icon: FaGift,
-      title: 'Gift Cards',
-      description: 'Trade and redeem gift cards from popular global brands instantly. The perfect gift for anyone.',
-      color: 'text-[#FBBF24]' // Amber
-    },
+
   ];
 
   const features = [
