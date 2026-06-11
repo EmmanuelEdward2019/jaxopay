@@ -258,10 +258,10 @@ const SystemManagement = () => {
                                     <div className="space-y-2">
                                         {domain.adapters.map(adapter => (
                                             <div key={adapter.name} className="flex items-center justify-between p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-600 shadow-sm">
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">{adapter.name}</span>
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">{adapter.name.replace(/_/g, ' ')}</span>
                                                 <div className="flex items-center gap-1.5">
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                                                    <span className="text-[10px] font-bold text-green-600 uppercase">Status: OK</span>
+                                                    <div className={`w-1.5 h-1.5 rounded-full ${adapter.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                                                    <span className={`text-[10px] font-bold uppercase ${adapter.status === 'active' ? 'text-green-600' : 'text-red-600'}`}>Status: {adapter.status === 'active' ? 'OK' : 'INACTIVE'}</span>
                                                 </div>
                                             </div>
                                         ))}

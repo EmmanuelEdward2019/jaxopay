@@ -1336,14 +1336,49 @@ export const updateUserFeatureAccess = catchAsync(async (req, res) => {
 
 // Get Orchestration Status (super_admin/admin)
 export const getOrchestrationStatus = catchAsync(async (req, res) => {
-  const providers = providerRegistry.getAll();
-  const status = Object.keys(providers).map(type => ({
-    type,
-    adapters: Object.keys(providers[type]).map(name => ({
-      name,
-      status: 'active'
-    }))
-  }));
+  const isConfigured = (key) => process.env[key] && !process.env[key].includes('your_');
+
+  const status = [
+    {
+      type: 'payment',
+      adapters: [
+        { name: 'korapay', status: isConfigured('KORAPAY_SECRET_KEY') ? 'active' : 'inactive' },
+        { name: 'safehaven', status: isConfigured('SAFEHAVEN_CLIENT_ID') ? 'active' : 'inactive' }
+      ]
+    },
+    {
+      type: 'card',
+      adapters: [
+        { name: 'strowallet', status: isConfigured('STROWALLET_PUBLIC_KEY') ? 'active' : 'inactive' },
+        { name: 'graph', status: isConfigured('GRAPH_API_KEY') ? 'active' : 'inactive' }
+      ]
+    },
+    {
+      type: 'utility',
+      adapters: [
+        { name: 'vtpass', status: (process.env.VTPASS_BILLS_ENABLED === 'true' && isConfigured('VTPASS_PUBLIC_KEY')) ? 'active' : 'inactive' },
+        { name: 'strowallet_bills', status: isConfigured('STROWALLET_PUBLIC_KEY') ? 'active' : 'inactive' }
+      ]
+    },
+    {
+      type: 'digital',
+      adapters: [
+        { name: 'reloadly', status: isConfigured('RELOADLY_CLIENT_ID') ? 'active' : 'inactive' }
+      ]
+    },
+    {
+      type: 'crypto',
+      adapters: [
+        { name: 'quidax', status: isConfigured('QUIDAX_SECRET_KEY') ? 'active' : 'inactive' }
+      ]
+    },
+    {
+      type: 'compliance',
+      adapters: [
+        { name: 'smile_identity', status: isConfigured('SMILE_ID_API_KEY') ? 'active' : 'inactive' }
+      ]
+    }
+  ];
 
   res.status(200).json({ success: true, data: status });
 });

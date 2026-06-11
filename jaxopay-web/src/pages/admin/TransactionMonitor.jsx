@@ -76,14 +76,19 @@ const TransactionMonitor = () => {
     const handleExport = () => {
         // Generate CSV from transactions
         const headers = ['ID', 'Type', 'Amount', 'Currency', 'Status', 'Date'];
-        const rows = transactions.map(tx => [
-            tx.id,
-            tx.type,
-            tx.amount,
-            tx.currency,
-            tx.status,
-            formatDateTime(tx.created_at),
-        ]);
+        const rows = transactions.map(tx => {
+            const displayType = tx.transaction_type || tx.type;
+            const displayAmount = tx.from_amount || tx.net_amount || tx.amount || 0;
+            const displayCurrency = tx.from_currency || tx.currency || 'NGN';
+            return [
+                tx.id,
+                displayType,
+                displayAmount,
+                displayCurrency,
+                tx.status,
+                formatDateTime(tx.created_at),
+            ];
+        });
         const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
@@ -195,6 +200,9 @@ const TransactionMonitor = () => {
                                         Transaction
                                     </th>
                                     <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        User
+                                    </th>
+                                    <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Amount
                                     </th>
                                     <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -210,8 +218,12 @@ const TransactionMonitor = () => {
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                 {transactions.map((tx) => {
-                                    const typeInfo = TYPE_ICONS[tx.type] || TYPE_ICONS.transfer;
+                                    const displayType = tx.transaction_type || tx.type || 'transfer';
+                                    const typeInfo = TYPE_ICONS[displayType] || TYPE_ICONS.transfer;
                                     const IconComponent = typeInfo.icon;
+                                    const displayAmount = tx.from_amount || tx.net_amount || tx.amount || 0;
+                                    const displayCurrency = tx.from_currency || tx.currency || 'NGN';
+                                    
                                     return (
                                         <tr key={tx.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                                             <td className="px-6 py-4">
@@ -221,18 +233,23 @@ const TransactionMonitor = () => {
                                                     </div>
                                                     <div>
                                                         <p className="font-medium text-gray-900 dark:text-white capitalize">
-                                                            {tx.type}
+                                                            {displayType.replace(/_/g, ' ')}
                                                         </p>
                                                         <p className="text-xs text-gray-500 font-mono">{tx.id?.slice(0, 12)}...</p>
                                                     </div>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4">
-                                                <span className={`font-semibold ${tx.type === 'credit' ? 'text-primary-600' :
-                                                    tx.type === 'debit' ? 'text-red-600' : 'text-gray-900 dark:text-white'
+                                                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                                    {tx.user_email || 'System/Unknown'}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`font-semibold ${displayType === 'credit' ? 'text-primary-600' :
+                                                    displayType === 'debit' ? 'text-red-600' : 'text-gray-900 dark:text-white'
                                                     }`}>
-                                                    {tx.type === 'credit' ? '+' : tx.type === 'debit' ? '-' : ''}
-                                                    {formatCurrency(tx.amount, tx.currency)}
+                                                    {displayType === 'credit' ? '+' : displayType === 'debit' ? '-' : ''}
+                                                    {formatCurrency(displayAmount, displayCurrency)}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4">
@@ -319,7 +336,7 @@ const TransactionMonitor = () => {
                                     <X className="w-5 h-5 text-gray-500" />
                                 </button>
                             </div>
-                            <div className="p-6 space-y-4">
+                            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                     <div>
                                         <span className="text-gray-500">Transaction ID</span>
@@ -327,14 +344,26 @@ const TransactionMonitor = () => {
                                     </div>
                                     <div>
                                         <span className="text-gray-500">Type</span>
-                                        <p className="text-gray-900 dark:text-white capitalize">{selectedTx.type}</p>
+                                        <p className="text-gray-900 dark:text-white capitalize">{(selectedTx.transaction_type || selectedTx.type)?.replace(/_/g, ' ')}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">User Email</span>
+                                        <p className="text-gray-900 dark:text-white">{selectedTx.user_email || 'System'}</p>
                                     </div>
                                     <div>
                                         <span className="text-gray-500">Amount</span>
                                         <p className="font-semibold text-gray-900 dark:text-white">
-                                            {formatCurrency(selectedTx.amount, selectedTx.currency)}
+                                            {formatCurrency(selectedTx.from_amount || selectedTx.net_amount || selectedTx.amount || 0, selectedTx.from_currency || selectedTx.currency || 'NGN')}
                                         </p>
                                     </div>
+                                    {selectedTx.fee_amount && parseFloat(selectedTx.fee_amount) > 0 && (
+                                        <div>
+                                            <span className="text-gray-500">Fee Amount</span>
+                                            <p className="font-semibold text-gray-900 dark:text-white">
+                                                {formatCurrency(selectedTx.fee_amount, selectedTx.from_currency || selectedTx.currency || 'NGN')}
+                                            </p>
+                                        </div>
+                                    )}
                                     <div>
                                         <span className="text-gray-500">Status</span>
                                         <p>
@@ -362,6 +391,21 @@ const TransactionMonitor = () => {
                                         <div className="col-span-2">
                                             <span className="text-gray-500">Reference</span>
                                             <p className="font-mono text-gray-900 dark:text-white">{selectedTx.reference}</p>
+                                        </div>
+                                    )}
+                                    {selectedTx.metadata && Object.keys(selectedTx.metadata).length > 0 && (
+                                        <div className="col-span-2 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                                            <span className="text-gray-500 font-bold mb-2 block">Additional Metadata</span>
+                                            <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg space-y-2">
+                                                {Object.entries(selectedTx.metadata).map(([key, value]) => (
+                                                    <div key={key} className="flex flex-col">
+                                                        <span className="text-xs text-gray-400 capitalize">{key.replace(/_/g, ' ')}</span>
+                                                        <span className="text-sm text-gray-900 dark:text-white font-mono break-all">
+                                                            {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
