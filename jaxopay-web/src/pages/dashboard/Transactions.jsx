@@ -96,6 +96,8 @@ const StatusIcon = ({ status, size = 'md' }) => {
 const TransactionReceipt = ({ transaction, receiptRef }) => {
     const colors = getTransactionColors(transaction.transaction_type, transaction.direction);
     const isCredit = transaction.direction === 'credit' || transaction.transaction_type === 'deposit';
+    const displayAmount = Math.abs(transaction.amount || transaction.from_amount || 0);
+    const displayCurrency = transaction.currency || transaction.from_currency;
 
     const getMetadataFields = (meta) => {
         if (!meta) return [];
@@ -153,7 +155,7 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
                     marginBottom: 8,
                     letterSpacing: '-0.02em',
                 }}>
-                    {isCredit ? '+' : '-'}{formatCurrency(transaction.amount, transaction.currency)}
+                    {isCredit ? '+' : '-'}{formatCurrency(displayAmount, displayCurrency)}
                 </p>
                 <div style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -229,6 +231,8 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
 
     const isCredit = transaction.direction === 'credit' || transaction.transaction_type === 'deposit';
     const colors = getTransactionColors(transaction.transaction_type, transaction.direction);
+    const displayAmount = Math.abs(transaction.amount || transaction.from_amount || 0);
+    const displayCurrency = transaction.currency || transaction.from_currency;
 
     const copyReference = async () => {
         try {
@@ -269,15 +273,14 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
 
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({
-                    title: 'Jaxopay Transaction Receipt',
-                    text: `${isCredit ? '+' : '-'}${formatCurrency(transaction.amount, transaction.currency)} · ${transaction.status}`,
-                    files: [file],
+                    title: 'Transaction Receipt',
+                    text: `${isCredit ? '+' : '-'}${formatCurrency(displayAmount, displayCurrency)} · ${transaction.status}`,
+                    url: window.location.href,
                 });
-            } else if (navigator.share) {
-                await navigator.share({
-                    title: 'Jaxopay Transaction Receipt',
-                    text: `${isCredit ? '+' : '-'}${formatCurrency(transaction.amount, transaction.currency)} · Ref: ${transaction.reference || transaction.id?.slice(0, 8)} · ${transaction.status}`,
-                });
+            } else if (navigator.clipboard) {
+                await navigator.clipboard.writeText(
+                    `Transaction Receipt\n${isCredit ? '+' : '-'}${formatCurrency(displayAmount, displayCurrency)} · Ref: ${transaction.reference || transaction.id?.slice(0, 8)} · ${transaction.status}`
+                );
             } else {
                 // Fallback: copy reference
                 await copyReference();
@@ -374,9 +377,9 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
                             </div>
                         </div>
 
-                        <p className={`text-3xl font-bold tracking-tight mb-1 ${isCredit ? 'text-emerald-500' : 'text-foreground'}`}>
-                            {isCredit ? '+' : '-'}{formatCurrency(transaction.amount, transaction.currency)}
-                        </p>
+                        <h2 className={`text-4xl font-bold mt-2 ${isCredit ? 'text-emerald-500' : 'text-foreground'}`}>
+                            {isCredit ? '+' : '-'}{formatCurrency(displayAmount, displayCurrency)}
+                        </h2>
 
                         <p className="text-muted-foreground text-sm">
                             {transaction.description || formatTransactionType(transaction.transaction_type)}
