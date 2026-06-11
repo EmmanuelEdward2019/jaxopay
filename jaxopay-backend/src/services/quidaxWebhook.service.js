@@ -1,5 +1,6 @@
 import { transaction as dbTransaction } from '../config/database.js';
 import defaultLogger from '../utils/logger.js';
+import { sendTransactionEmails } from './email.service.js';
 
 export function getQuidaxUserRefs(data) {
   const user = data?.user || {};
@@ -195,6 +196,22 @@ export function createQuidaxWebhookService({
         );
 
         logger.info(`[WEBHOOK] ✅ Quidax credited: ${amount} ${currencyUpper} → wallet ${walletId} (user ${userId})`);
+
+        // Send email notification
+        try {
+            const userRes = await client.query('SELECT name, email FROM users WHERE id = $1', [userId]);
+            if (userRes.rows.length > 0) {
+                await sendTransactionEmails({
+                    type: 'Deposit',
+                    amount: amount,
+                    currency: currencyUpper,
+                    reference: String(quidaxTxId),
+                    details: 'Crypto Wallet Funding'
+                }, userRes.rows[0]);
+            }
+        } catch (emailErr) {
+            logger.error('[WEBHOOK] Quidax deposit email notify error:', emailErr);
+        }
       });
     } catch (err) {
       logger.error('[WEBHOOK] creditUserWalletByQuidax error:', err);

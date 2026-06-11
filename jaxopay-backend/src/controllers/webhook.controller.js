@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { SMILE_APPROVED_RESULT_CODES, SMILE_PROVISIONAL_RESULT_CODES } from '../services/smileId.service.js';
 import * as kycNotify from '../services/kycNotification.service.js';
 import { creditUserWalletByQuidax, persistQuidaxWalletAddress } from '../services/quidaxWebhook.service.js';
+import { sendTransactionEmails } from '../services/email.service.js';
 
 /**
  * Unified webhook handler for all providers
@@ -156,6 +157,22 @@ async function processKorapay(payload, headers) {
                             [user_id, wallet_id, amount, currency, `VBA-${data.reference || Date.now()}`]
                         );
                         logger.info(`[WEBHOOK] ✅ Wallet ${wallet_id} credited ${amount} ${currency} via VBA`);
+
+                        // Send email
+                        try {
+                            const userRes = await query('SELECT name, email FROM users WHERE id = $1', [user_id]);
+                            if (userRes.rows.length > 0) {
+                                await sendTransactionEmails({
+                                    type: 'Deposit',
+                                    amount: amount,
+                                    currency: currency,
+                                    reference: `VBA-${data.reference || Date.now()}`,
+                                    details: 'Bank Transfer Received (VBA)'
+                                }, userRes.rows[0]);
+                            }
+                        } catch (emailErr) {
+                            logger.error('[WEBHOOK] VBA email notify error:', emailErr);
+                        }
                     } else {
                         logger.warn(`[WEBHOOK] VBA not found for ref: ${vbaRef}`);
                     }
@@ -302,6 +319,21 @@ async function creditUserWallet(reference, amount, currency) {
             [amount, tx.rows[0].user_id, (currency || 'USD').toUpperCase()]
         );
         logger.info(`[WEBHOOK] Wallet credited: ${amount} ${currency} for ref ${reference}`);
+
+        try {
+            const userRes = await query('SELECT name, email FROM users WHERE id = $1', [tx.rows[0].user_id]);
+            if (userRes.rows.length > 0) {
+                await sendTransactionEmails({
+                    type: 'Deposit',
+                    amount: amount,
+                    currency: currency,
+                    reference: reference,
+                    details: 'Wallet Funding via Checkout'
+                }, userRes.rows[0]);
+            }
+        } catch (emailErr) {
+            logger.error('[WEBHOOK] Deposit email notify error:', emailErr);
+        }
     } catch (err) {
         logger.error('[WEBHOOK] creditUserWallet error:', err);
     }
