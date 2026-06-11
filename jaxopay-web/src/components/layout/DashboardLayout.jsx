@@ -34,7 +34,9 @@ const NAV_GROUPS = (isFeatureEnabled) => [
   {
     label: 'Main',
     items: [
+      { name: 'Home', href: '/dashboard/home', icon: LayoutDashboard, enabled: true },
       { name: 'Wallets', href: '/dashboard/wallets', icon: Wallet, enabled: true },
+      { name: 'Transactions', href: '/dashboard/transactions', icon: Activity, enabled: true },
       { name: 'Swap', href: '/dashboard/instant-swap?from=USDT&to=NGN', icon: ArrowLeftRight, enabled: isFeatureEnabled('crypto') },
     ],
   },

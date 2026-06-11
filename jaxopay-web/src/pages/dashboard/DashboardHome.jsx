@@ -507,7 +507,7 @@ const DashboardHome = () => {
         ) : (
           <div className="space-y-3">
             {transactions.slice(0, 5).map((tx, i) => {
-              const isCredit = tx.type === 'credit' || tx.transaction_type === 'credit';
+              const isCredit = tx.direction === 'credit' || ['deposit', 'crypto_sell'].includes(tx.transaction_type);
               return (
                 <div key={tx.id || i} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
                   <div className="flex items-center gap-3">

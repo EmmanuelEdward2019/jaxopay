@@ -248,7 +248,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="wallets" replace />} />
+            <Route index element={<Navigate to="home" replace />} />
             <Route path="home" element={<DashboardHome />} />
             <Route path="portfolio" element={<Dashboard />} />
 
