@@ -16,14 +16,31 @@ export const getDashboardSummary = catchAsync(async (req, res) => {
        ORDER BY created_at ASC`,
             [userId]
         ),
-        // Get recent transactions (last 10) from the main transactions table
         query(
-            `SELECT id, transaction_type, from_amount, from_currency, to_amount, to_currency,
-              status, description, created_at
-       FROM transactions
-       WHERE user_id = $1
-       ORDER BY created_at DESC
-       LIMIT 10`,
+            `WITH combined AS (
+               SELECT id, transaction_type, from_amount as amount, from_currency as currency,
+                      status, description, created_at
+               FROM transactions
+               WHERE user_id = $1
+
+               UNION ALL
+
+               SELECT bp.id, 'bill_payment' as transaction_type, bp.amount, bp.currency,
+                      bp.status, 'Bill Payment: ' || bp.service_type as description, bp.created_at
+               FROM bill_payments bp
+               WHERE bp.user_id = $1
+
+               UNION ALL
+
+               SELECT wtx.id, wtx.transaction_type, wtx.amount, wtx.currency,
+                      wtx.status, wtx.description, wtx.created_at
+               FROM wallet_transactions wtx
+               JOIN wallets w ON w.id = wtx.wallet_id
+               WHERE w.user_id = $1 AND wtx.transaction_id IS NULL
+             )
+             SELECT * FROM combined
+             ORDER BY created_at DESC
+             LIMIT 10`,
             [userId]
         ),
         // Get active virtual cards count

@@ -847,7 +847,12 @@ export const payBill = catchAsync(async (req, res) => {
         amount,
         currency: currency.toUpperCase(),
         reference: result.reference,
-        details: `Provider: ${provider_id} | Account: ${account_number}${token ? ` | Token: ${token}` : ''}`,
+        details: 'Bill Payment transaction',
+        metadata: {
+          Provider: provider_id,
+          Account: account_number,
+          ...(token && { 'Token/PIN': token })
+        }
       },
       {
         name: userProfile.rows[0]?.first_name || 'User',

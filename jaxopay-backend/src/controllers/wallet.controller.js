@@ -404,7 +404,7 @@ export const transferBetweenWallets = catchAsync(async (req, res) => {
     amount: amountDecimal.toString(),
     currency,
     reference: result.transactionId,
-    description: description || 'Internal wallet transfer'
+    details: description || 'Internal wallet transfer'
   }, {
     name: firstName,
     email: req.user.email
@@ -619,7 +619,7 @@ export const addFunds = catchAsync(async (req, res) => {
     amount,
     currency: result.currency,
     reference: 'REF-' + Date.now(),
-    description
+    details: description
   }, {
     name: firstName,
     email: req.user.email

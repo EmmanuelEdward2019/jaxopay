@@ -84,7 +84,8 @@ export const sendTransactionEmails = async (transactionData, userData) => {
       currency,
       reference,
       details,
-      id
+      id,
+      metadata
     } = transactionData;
 
     const { name, email } = userData;
@@ -101,6 +102,8 @@ export const sendTransactionEmails = async (transactionData, userData) => {
         currency,
         reference,
         details,
+        id,
+        metadata,
         date: new Date().toLocaleString()
       }
     });
@@ -110,24 +113,25 @@ export const sendTransactionEmails = async (transactionData, userData) => {
     let adminEmailPromise = Promise.resolve();
 
     if (adminEmailsRaw) {
-      // Split by comma and trim whitespace to support multiple emails
-      const adminEmails = adminEmailsRaw.split(',').map(email => email.trim());
-
-      adminEmailPromise = sendEmail({
-        to: adminEmails,
-        subject: `[ADMIN ALERT] New ${type} Transaction: ${currency} ${amount}`,
-        template: 'adminTransactionAlert',
-        data: {
-          id: id || reference || 'N/A',
-          userName: name,
-          userEmail: email,
-          type,
-          amount,
-          currency,
-          reference,
-          frontendUrl: process.env.FRONTEND_URL
-        }
-      });
+      const adminEmails = adminEmailsRaw.split(',').map(e => e.trim());
+      if (adminEmails.length > 0) {
+        adminEmailPromise = sendEmail({
+          to: adminEmails,
+          subject: `[ADMIN ALERT] New ${type} Transaction: ${currency} ${amount}`,
+          template: 'adminTransactionAlert',
+          data: {
+            id: id || reference || 'N/A',
+            userName: name,
+            userEmail: email,
+            type,
+            amount,
+            currency,
+            reference,
+            metadata,
+            frontendUrl: process.env.FRONTEND_URL
+          }
+        });
+      }
     }
 
     return await Promise.all([userEmailPromise, adminEmailPromise]);

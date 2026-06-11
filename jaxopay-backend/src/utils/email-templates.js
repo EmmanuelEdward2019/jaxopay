@@ -79,6 +79,12 @@ export const templates = {
         <span class="transaction-label">Reference</span>
         <span class="transaction-value">${data.reference}</span>
       </div>
+      ${data.id ? `
+      <div class="transaction-row">
+        <span class="transaction-label">Transaction ID</span>
+        <span class="transaction-value">${data.id}</span>
+      </div>
+      ` : ''}
       <div class="transaction-row">
         <span class="transaction-label">Amount</span>
         <span class="transaction-value">${data.currency} ${data.amount}</span>
@@ -91,6 +97,12 @@ export const templates = {
         <span class="transaction-label">Date</span>
         <span class="transaction-value">${data.date || new Date().toLocaleString()}</span>
       </div>
+      ${data.metadata ? Object.entries(data.metadata).map(([key, value]) => `
+      <div class="transaction-row">
+        <span class="transaction-label">${key}</span>
+        <span class="transaction-value">${value}</span>
+      </div>
+      `).join('') : ''}
       ${data.details ? `
         <div style="margin-top: 16px; font-size: 14px; color: #4b5563;">
           <strong>Details:</strong><br/>
@@ -123,6 +135,16 @@ export const templates = {
         <span class="transaction-label">Reference</span>
         <span class="transaction-value">${data.reference}</span>
       </div>
+      <div class="transaction-row">
+        <span class="transaction-label">Transaction ID</span>
+        <span class="transaction-value">${data.id}</span>
+      </div>
+      ${data.metadata ? Object.entries(data.metadata).map(([key, value]) => `
+      <div class="transaction-row">
+        <span class="transaction-label">${key}</span>
+        <span class="transaction-value">${value}</span>
+      </div>
+      `).join('') : ''}
     </div>
 
     <div style="text-align: center;">

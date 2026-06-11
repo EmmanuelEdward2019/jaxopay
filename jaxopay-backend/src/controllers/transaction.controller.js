@@ -15,56 +15,106 @@ export const getTransactions = catchAsync(async (req, res) => {
 
   const offset = (page - 1) * limit;
 
-  // Build query conditions
-  let conditions = 'WHERE w.user_id = $1';
+  // Build base query with UNION ALL
+  const combinedQuery = `
+    SELECT 
+      wt.id, 
+      wt.from_wallet_id as wallet_id, 
+      wt.transaction_type, 
+      wt.from_amount as amount, 
+      wt.from_currency as currency,
+      wt.status, 
+      wt.description, 
+      wt.metadata, 
+      wt.created_at,
+      wt.reference,
+      wt.user_id
+    FROM transactions wt
+
+    UNION ALL
+
+    SELECT 
+      bp.id, 
+      NULL as wallet_id, 
+      'bill_payment' as transaction_type, 
+      bp.amount, 
+      bp.currency,
+      bp.status, 
+      'Bill Payment: ' || bp.service_type as description, 
+      bp.metadata, 
+      bp.created_at,
+      bp.reference,
+      bp.user_id
+    FROM bill_payments bp
+
+    UNION ALL
+
+    SELECT 
+      wtx.id, 
+      wtx.wallet_id, 
+      wtx.transaction_type, 
+      wtx.amount, 
+      wtx.currency,
+      wtx.status, 
+      wtx.description, 
+      wtx.metadata, 
+      wtx.created_at,
+      wtx.metadata->>'quidax_tx_id' as reference,
+      w.user_id
+    FROM wallet_transactions wtx
+    JOIN wallets w ON w.id = wtx.wallet_id
+    WHERE wtx.transaction_id IS NULL
+  `;
+
+  // Build filtering conditions
+  let conditions = 'WHERE user_id = $1';
   const params = [req.user.id];
   let paramCount = 1;
 
   if (type) {
     paramCount++;
-    conditions += ` AND wt.transaction_type = $${paramCount}`;
+    conditions += ` AND transaction_type = $${paramCount}`;
     params.push(type);
   }
 
   if (status) {
     paramCount++;
-    conditions += ` AND wt.status = $${paramCount}`;
+    conditions += ` AND status = $${paramCount}`;
     params.push(status);
   }
 
   if (currency) {
     paramCount++;
-    conditions += ` AND wt.currency = $${paramCount}`;
+    conditions += ` AND currency = $${paramCount}`;
     params.push(currency.toUpperCase());
   }
 
   if (start_date) {
     paramCount++;
-    conditions += ` AND wt.created_at >= $${paramCount}`;
+    conditions += ` AND created_at >= $${paramCount}`;
     params.push(start_date);
   }
 
   if (end_date) {
     paramCount++;
-    conditions += ` AND wt.created_at <= $${paramCount}`;
+    conditions += ` AND created_at <= $${paramCount}`;
     params.push(end_date);
   }
 
   // Run data and count queries in parallel for better performance
   const [result, countResult] = await Promise.all([
     query(
-      `SELECT wt.id, wt.from_wallet_id as wallet_id, wt.transaction_type, wt.from_amount as amount, wt.from_currency as currency,
-              wt.status, wt.description, wt.metadata, wt.created_at
-       FROM transactions wt
-       ${conditions.replace('w.user_id', 'wt.user_id').replace('wt.wallet_id', 'wt.from_wallet_id')}
-       ORDER BY wt.created_at DESC
+      `WITH combined AS (${combinedQuery})
+       SELECT * FROM combined
+       ${conditions}
+       ORDER BY created_at DESC
        LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`,
       [...params, limit, offset]
     ),
     query(
-      `SELECT COUNT(*) as total
-       FROM transactions wt
-       ${conditions.replace('w.user_id', 'wt.user_id').replace('wt.wallet_id', 'wt.from_wallet_id')}`,
+      `WITH combined AS (${combinedQuery})
+       SELECT COUNT(*) as total FROM combined
+       ${conditions}`,
       params
     )
   ]);
@@ -88,11 +138,9 @@ export const getTransaction = catchAsync(async (req, res) => {
   const { transactionId } = req.params;
 
   const result = await query(
-    `SELECT wt.id, wt.from_wallet_id as wallet_id, wt.transaction_type, wt.from_amount as amount, wt.from_currency as currency,
-            wt.status, wt.description, wt.metadata, wt.created_at, wt.updated_at,
-            wt.user_id
-     FROM transactions wt
-     WHERE wt.id = $1 AND wt.user_id = $2`,
+    `WITH combined AS (${combinedQuery})
+     SELECT * FROM combined
+     WHERE id = $1 AND user_id = $2`,
     [transactionId, req.user.id]
   );
 
@@ -112,34 +160,37 @@ export const getTransactionStats = catchAsync(async (req, res) => {
 
   // Total volume by type
   const volumeByType = await query(
-    `SELECT wt.transaction_type, wt.from_currency as currency, SUM(wt.from_amount) as total_amount, COUNT(*) as count
-     FROM transactions wt
-     WHERE wt.user_id = $1
-       AND wt.created_at >= NOW() - INTERVAL '${parseInt(period)} days'
-       AND wt.status = 'completed'
-     GROUP BY wt.transaction_type, wt.from_currency
+    `WITH combined AS (${combinedQuery})
+     SELECT transaction_type, currency, SUM(amount) as total_amount, COUNT(*) as count
+     FROM combined
+     WHERE user_id = $1
+       AND created_at >= NOW() - INTERVAL '${parseInt(period)} days'
+       AND status = 'completed'
+     GROUP BY transaction_type, currency
      ORDER BY total_amount DESC`,
     [req.user.id]
   );
 
   // Daily transaction count
   const dailyCount = await query(
-    `SELECT DATE(wt.created_at) as date, COUNT(*) as count
-     FROM transactions wt
-     WHERE wt.user_id = $1
-       AND wt.created_at >= NOW() - INTERVAL '${parseInt(period)} days'
-     GROUP BY DATE(wt.created_at)
+    `WITH combined AS (${combinedQuery})
+     SELECT DATE(created_at) as date, COUNT(*) as count
+     FROM combined
+     WHERE user_id = $1
+       AND created_at >= NOW() - INTERVAL '${parseInt(period)} days'
+     GROUP BY DATE(created_at)
      ORDER BY date DESC`,
     [req.user.id]
   );
 
   // Status breakdown
   const statusBreakdown = await query(
-    `SELECT wt.status, COUNT(*) as count
-     FROM transactions wt
-     WHERE wt.user_id = $1
-       AND wt.created_at >= NOW() - INTERVAL '${parseInt(period)} days'
-     GROUP BY wt.status`,
+    `WITH combined AS (${combinedQuery})
+     SELECT status, COUNT(*) as count
+     FROM combined
+     WHERE user_id = $1
+       AND created_at >= NOW() - INTERVAL '${parseInt(period)} days'
+     GROUP BY status`,
     [req.user.id]
   );
 

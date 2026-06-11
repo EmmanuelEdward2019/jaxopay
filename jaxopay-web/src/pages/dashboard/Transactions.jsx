@@ -97,6 +97,22 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
     const colors = getTransactionColors(transaction.transaction_type, transaction.direction);
     const isCredit = transaction.direction === 'credit' || transaction.transaction_type === 'deposit';
 
+    const getMetadataFields = (meta) => {
+        if (!meta) return [];
+        const result = [];
+        if (meta.bank_name) result.push({ label: 'Bank', value: meta.bank_name });
+        if (meta.account_number) result.push({ label: 'Account', value: meta.account_number });
+        if (meta.account_name) result.push({ label: 'Account Name', value: meta.account_name });
+        if (meta.provider) result.push({ label: 'Provider', value: meta.provider });
+        if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
+        if (meta.network) result.push({ label: 'Network', value: meta.network });
+        if (meta.address) result.push({ label: 'Address', value: meta.address });
+        if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
+        if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
+        if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });
+        return result;
+    };
+
     const fields = [
         { label: 'Transaction Type', value: formatTransactionType(transaction.transaction_type) },
         { label: 'Status', value: transaction.status?.charAt(0).toUpperCase() + transaction.status?.slice(1) },
@@ -108,6 +124,7 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
             value: formatCurrency(transaction.fee, transaction.currency),
         },
         transaction.exchange_rate && { label: 'Exchange Rate', value: `1 ${transaction.from_currency || ''} = ${transaction.exchange_rate} ${transaction.to_currency || ''}` },
+        ...getMetadataFields(transaction.metadata),
     ].filter(Boolean);
 
     return (
@@ -274,8 +291,25 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
         }
     };
 
+    const getMetadataFields = (meta) => {
+        if (!meta) return [];
+        const result = [];
+        if (meta.bank_name) result.push({ label: 'Bank', value: meta.bank_name });
+        if (meta.account_number) result.push({ label: 'Account', value: meta.account_number });
+        if (meta.account_name) result.push({ label: 'Account Name', value: meta.account_name });
+        if (meta.provider) result.push({ label: 'Provider', value: meta.provider });
+        if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
+        if (meta.network) result.push({ label: 'Network', value: meta.network });
+        if (meta.address) result.push({ label: 'Address', value: meta.address });
+        if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
+        if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
+        if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });
+        return result;
+    };
+
     const fields = [
         { label: 'Transaction Type', value: formatTransactionType(transaction.transaction_type) },
+        { label: 'Status', value: transaction.status?.charAt(0).toUpperCase() + transaction.status?.slice(1) },
         { label: 'Date & Time', value: formatDateTime(transaction.created_at) },
         transaction.reference && { label: 'Reference', value: transaction.reference },
         transaction.description && { label: 'Description', value: transaction.description },
@@ -291,6 +325,7 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
             label: 'Converted',
             value: `${formatCurrency(transaction.from_amount, transaction.from_currency)} → ${formatCurrency(transaction.to_amount, transaction.to_currency)}`,
         },
+        ...getMetadataFields(transaction.metadata),
     ].filter(Boolean);
 
     return (
