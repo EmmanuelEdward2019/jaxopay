@@ -50,7 +50,6 @@ const STATIC_CABLE_PROVIDERS = [
   { id: 'dstv', name: 'DSTV Subscription', fields: ['smartcard_number'], image_url: null },
   { id: 'gotv', name: 'GOtv Subscription', fields: ['smartcard_number'], image_url: null },
   { id: 'startimes', name: 'Star Times Subscription', fields: ['smartcard_number'], image_url: null },
-  { id: 'showmax', name: 'Showmax Subscription', fields: ['phone'], image_url: null },
 ];
 
 function staticStrowalletNetworkProviders() {
@@ -197,7 +196,6 @@ const BILL_CATEGORIES = [
   { id: 'data', name: 'Data Bundle', icon: '📶', description: 'Buy data bundles for any network' },
   { id: 'sme_data', name: 'SME Data', icon: '📡', description: 'SME data plans' },
   { id: 'epin', name: 'Recharge PIN', icon: '🎫', description: 'Airtime e-PIN (MTN, Glo, Airtel, 9mobile)' },
-  { id: 'internet', name: 'Internet', icon: '🌐', description: 'Spectranet and other broadband providers' },
   { id: 'education', name: 'Education', icon: '🎓', description: 'WAEC, JAMB & more' },
 ];
 

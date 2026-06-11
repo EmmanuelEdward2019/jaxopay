@@ -48,15 +48,6 @@ const BILL_CATEGORIES = [
         description: 'Pay DSTV, GOtv, Startimes subscriptions',
     },
     {
-        id: 'internet', name: 'Internet', icon: Wifi,
-        color: 'bg-primary/10 text-primary',
-        fieldLabel: 'Account Number',
-        fieldPlaceholder: 'Enter your account number',
-        fieldType: 'text',
-        requiresValidation: true,
-        description: 'Pay Spectranet and other broadband providers',
-    },
-    {
         id: 'education', name: 'Education', icon: GraduationCap,
         color: 'bg-cyan-100 text-cyan-600',
         fieldLabel: 'Pin / Reg Number',
