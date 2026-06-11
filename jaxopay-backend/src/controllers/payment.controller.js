@@ -2,12 +2,10 @@ import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { ledgerService } from '../orchestration/index.js';
-import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js';
+import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import complianceEngine from '../orchestration/compliance/ComplianceEngine.js';
 import axios from 'axios';
 import { decimal, validateAmount, calculateFee, formatForDB, hasSufficientBalance } from '../utils/financial.js';
-
-const korapay = new KorapayAdapter();
 
 // ─────────────────────────────────────────────
 // GET /payments/corridors
@@ -185,32 +183,30 @@ export const sendMoney = catchAsync(async (req, res) => {
     );
   });
 
-  // 5. Execute payout via Korapay
+  // 5. Execute payout via Quidax
   let providerResult = null;
   let finalStatus = 'processing';
 
   try {
-    providerResult = await korapay.execute({
-      amount: parseFloat(sourceAmountDecimal.toString()), // Convert for API
-      currency: source_currency.toUpperCase(),
-      userId: req.user.id,
-      type: 'payout',
-      metadata: {
-        reference,
-        narration: purpose,
-        destination: {
-          type: 'bank_account',
-          amount: parseFloat(destinationAmount.toString()),
-          currency: (destination_currency || source_currency).toUpperCase(),
-          bank_account: { bank: ben.bank_code, account: ben.account_number },
-          customer: { name: benName }
-        }
-      }
+    const beneficiary = await QuidaxAdapter.addFiatBankAccount('me', {
+      currency: (destination_currency || source_currency).toUpperCase(),
+      bank_code: ben.bank_code,
+      account_number: ben.account_number,
+      account_name: benName
     });
 
-    finalStatus = providerResult.success ? 'processing' : 'failed';
+    providerResult = await QuidaxAdapter.withdraw({
+      userId: 'me',
+      currency: (destination_currency || source_currency).toUpperCase(),
+      amount: parseFloat(destinationAmount.toString()),
+      fund_uid: beneficiary.id,
+      reference: reference,
+      transaction_note: purpose
+    });
+
+    finalStatus = providerResult?.status || 'processing';
   } catch (err) {
-    logger.error('[Payments] Korapay payout error:', err.message);
+    logger.error('[Payments] Quidax payout error:', err.message);
     finalStatus = 'processing'; // webhook will finalize
   }
 
@@ -297,17 +293,10 @@ async function getLiveRates() {
   };
 
   try {
-    // Try Korapay FX rates
-    if (process.env.KORAPAY_SECRET_KEY) {
-      const res = await axios.get('https://api.korapay.com/merchant/api/v1/misc/exchange-rates', {
-        headers: { Authorization: `Bearer ${process.env.KORAPAY_SECRET_KEY}` },
-        timeout: 3000
-      });
-      if (res.data?.data) {
-        const live = {};
-        res.data.data.forEach(r => { live[`${r.currency}_NGN`] = r.rate; });
-        return { ...STATIC_RATES, ...live };
-      }
+    // Try Quidax FX rates for supported pairs
+    const usd_ngn = await QuidaxAdapter.getExchangeRate('usd', 'ngn');
+    if (usd_ngn) {
+      return { ...STATIC_RATES, USD_NGN: usd_ngn, NGN_USD: 1/usd_ngn };
     }
   } catch (e) {
     logger.warn('[Payments] Could not fetch live FX rates, using static:', e.message);

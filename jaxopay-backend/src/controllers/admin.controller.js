@@ -1342,7 +1342,6 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
     {
       type: 'payment',
       adapters: [
-        { name: 'korapay', status: isConfigured('KORAPAY_SECRET_KEY') ? 'active' : 'inactive' },
         { name: 'safehaven', status: isConfigured('SAFEHAVEN_CLIENT_ID') ? 'active' : 'inactive' }
       ]
     },

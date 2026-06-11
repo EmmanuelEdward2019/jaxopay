@@ -1,40 +1,20 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
-import axios from 'axios';
-import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js';
+import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import { getSpendableBalance } from '../utils/walletBalance.js';
-import {
-    getKorapayBaseUrl,
-    getKorapayCountryCode,
-    getKorapayErrorDetails,
-    getKorapayHeaders,
-    getKorapayTransferFailureMessage,
-    isKorapayAuthError,
-    isKorapayChannelDisabledError,
-    isKorapayIpWhitelistError,
-} from '../utils/korapay.js';
-
-const korapayAdapter = new KorapayAdapter();
 
 // ─────────────────────────────────────────────
-// GET /transfers/banks  — ALL Nigerian banks from Korapay live API
+// GET /transfers/banks  — ALL banks from Quidax live API
 // ─────────────────────────────────────────────
 export const listBanks = catchAsync(async (req, res) => {
     const currency = req.query.currency || 'NGN';
-    const countryCode = req.query.countryCode || getKorapayCountryCode(currency);
 
     try {
-        const response = await axios.get(`${getKorapayBaseUrl()}/misc/banks`, {
-            params: { countryCode },
-            headers: getKorapayHeaders(),
-            timeout: 15000,
-        });
+        const banks = await QuidaxAdapter.getBanks(currency);
+        logger.info(`[Transfer] Fetched ${banks?.length || 0} banks from Quidax (currency=${currency})`);
 
-        const banks = response.data?.data || [];
-        logger.info(`[Transfer] Fetched ${banks.length} banks from Korapay (countryCode=${countryCode})`);
-
-        if (banks.length === 0) {
+        if (!banks || banks.length === 0) {
             throw new AppError('No banks returned. Please try again.', 503);
         }
 
@@ -69,8 +49,7 @@ export const listBanks = catchAsync(async (req, res) => {
             { code: "100039", name: "Titan Trust" }
         ];
 
-        const details = getKorapayErrorDetails(err);
-        logger.warn(`[Transfer] Korapay bank list failed (${details.statusCode || 'no status'}): ${details.message}`);
+        logger.warn(`[Transfer] Quidax bank list failed: ${err.message}`);
         return res.status(200).json({ success: true, data: fallbackBanks, total: fallbackBanks.length, fallback: true });
     }
 });
@@ -85,31 +64,21 @@ export const resolveAccount = catchAsync(async (req, res) => {
     }
 
     try {
-        const response = await axios.post(
-            `${getKorapayBaseUrl()}/misc/banks/resolve`,
-            { bank: bank_code, account: account_number, currency },
-            { headers: getKorapayHeaders(), timeout: 15000 }
-        );
-        const data = response.data?.data;
+        const data = await QuidaxAdapter.verifyBankAccount(account_number, bank_code);
         res.status(200).json({
             success: true,
             data: {
-                account_name: data?.account_name,
+                account_name: data?.account_name || data?.name,
                 bank_name: data?.bank_name,
-                account_number: data?.account_number,
-                bank_code: data?.bank_code,
+                account_number: data?.account_number || account_number,
+                bank_code: data?.bank_code || bank_code,
             }
         });
     } catch (err) {
-        const details = getKorapayErrorDetails(err);
-        logger.error(`[Transfer] Korapay account resolve failed (${details.statusCode || 'no status'}): ${details.message}`);
+        logger.error(`[Transfer] Quidax account resolve failed: ${err.message}`);
 
         if (process.env.NODE_ENV === 'production') {
-            const authError = isKorapayAuthError(err);
-            const message = authError
-                ? 'Bank account verification is temporarily unavailable because Korapay did not authorize this request.'
-                : `Could not verify bank account: ${details.message}`;
-            throw new AppError(message, authError ? 503 : 502);
+            throw new AppError(`Could not verify bank account: ${err.message}`, 502);
         }
 
         // Return mock data only outside production so local testing is not blocked.
@@ -126,7 +95,7 @@ export const resolveAccount = catchAsync(async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// POST /transfers/send  — initiate bank transfer via Korapay
+// POST /transfers/send  — initiate bank transfer via Quidax
 // ─────────────────────────────────────────────
 export const sendTransfer = catchAsync(async (req, res) => {
     const {
@@ -146,11 +115,11 @@ export const sendTransfer = catchAsync(async (req, res) => {
         throw new AppError('wallet_id, bank_code, account_number, account_name, and amount are required', 400);
     }
 
-    // Korapay disbursements only support certain currencies
-    const DISBURSE_SUPPORTED = new Set(['NGN', 'KES', 'GHS', 'ZAR']);
+    // Supported fiat withdrawal currencies by Quidax
+    const DISBURSE_SUPPORTED = new Set(['NGN', 'GHS']);
     if (!DISBURSE_SUPPORTED.has(transferCurrency)) {
         throw new AppError(
-            `Bank transfers in ${transferCurrency} are not currently available. Supported: NGN, KES, GHS, ZAR. Convert your balance using Swap first.`,
+            `Bank transfers in ${transferCurrency} are not currently available via Quidax. Supported: NGN, GHS.`,
             400
         );
     }
@@ -209,43 +178,36 @@ export const sendTransfer = catchAsync(async (req, res) => {
         );
     });
 
-    // 2. Call Korapay disbursement API
+    // 2. Call Quidax API
     try {
-        const koraPayload = {
-            reference,
-            destination: {
-                type: 'bank_account',
-                amount: amountValue,
-                currency: transferCurrency,
-                narration: narration || `Transfer to ${account_name} via Jaxopay`,
-                bank_account: {
-                    bank: bank_code,
-                    account: account_number,
-                },
-                customer: {
-                    name: account_name,
-                    email: req.user.email,
-                },
-            },
-        };
+        logger.info(`[Transfer] Adding fiat bank account to Quidax for user...`);
+        // First add the bank account to get the fund_uid
+        const beneficiary = await QuidaxAdapter.addFiatBankAccount('me', {
+            currency: transferCurrency,
+            bank_code: bank_code,
+            account_number: account_number,
+            account_name: account_name
+        });
+        const fund_uid = beneficiary.id;
 
-        logger.info(`[Transfer] Initiating Korapay payout: ${reference} → ${account_name} (${bank_code}/${account_number}) ${transferCurrency} ${amountValue}`);
+        logger.info(`[Transfer] Initiating Quidax payout: ${reference} → ${account_name} (${bank_code}/${account_number}) ${transferCurrency} ${amountValue}`);
 
-        const response = await axios.post(
-            `${getKorapayBaseUrl()}/transactions/disburse`,
-            koraPayload,
-            { headers: getKorapayHeaders(), timeout: 30000 }
-        );
+        const transferData = await QuidaxAdapter.withdraw({
+            userId: 'me', // Withdraw from master wallet for fiat? Or sub-user? If user's wallet is aggregated in Jaxopay DB, we withdraw from master wallet.
+            currency: transferCurrency,
+            amount: amountValue,
+            fund_uid: fund_uid,
+            reference: reference,
+            transaction_note: narration || `Transfer to ${account_name} via Jaxopay`
+        });
 
-        const transferData = response.data?.data;
         const transferStatus = transferData?.status || 'processing';
 
-        logger.info(`[Transfer] Korapay response for ${reference}: ${transferStatus}`);
+        logger.info(`[Transfer] Quidax response for ${reference}: ${transferStatus}`);
 
         // If immediately successful, release lockings and complete transaction
-        if (['success', 'successful'].includes(transferStatus?.toLowerCase())) {
+        if (['success', 'successful', 'completed'].includes(transferStatus?.toLowerCase())) {
             await transaction(async (client) => {
-                // Balance was already deducted on lock; just update transaction status
                 await client.query(
                     `UPDATE transactions SET status = 'completed', updated_at = NOW() WHERE reference = $1`,
                     [reference]
@@ -262,14 +224,13 @@ export const sendTransfer = catchAsync(async (req, res) => {
                 amount: amountValue,
                 currency: transferCurrency,
                 recipient: { account_name, account_number, bank_name, bank_code },
-                provider_reference: transferData?.provider_reference || null,
+                provider_reference: transferData?.id || null,
             },
         });
 
-    } catch (koraErr) {
-        // Korapay request failed — reverse the locked funds
-        const details = getKorapayErrorDetails(koraErr);
-        logger.error(`[Transfer] Korapay disburse failed (${details.statusCode || 'no status'}): ${details.message}`);
+    } catch (quidaxErr) {
+        // Quidax request failed — reverse the locked funds
+        logger.error(`[Transfer] Quidax disburse failed: ${quidaxErr.message}`);
 
         await transaction(async (client) => {
             await client.query(
@@ -286,16 +247,7 @@ export const sendTransfer = catchAsync(async (req, res) => {
             );
         });
 
-        if (isKorapayIpWhitelistError(koraErr)) {
-            logger.error('[Transfer] CONFIGURATION REQUIRED: Server IP must be whitelisted in Korapay merchant dashboard for disbursements.');
-        } else if (isKorapayAuthError(koraErr)) {
-            logger.error('[Transfer] CONFIGURATION REQUIRED: Korapay rejected payout authorization. Check live secret key, payout enablement, and payout IP whitelist.');
-        } else if (isKorapayChannelDisabledError(koraErr)) {
-            logger.error(`[Transfer] CONFIGURATION REQUIRED: Korapay payout channel is not enabled for ${transferCurrency}.`);
-        }
-
-        const userMessage = getKorapayTransferFailureMessage(koraErr, transferCurrency);
-        throw new AppError(userMessage, isKorapayAuthError(koraErr) ? 503 : 502);
+        throw new AppError(`Failed to process transfer: ${quidaxErr.message}`, 502);
     }
 });
 
@@ -335,11 +287,17 @@ export const getTransferHistory = catchAsync(async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// GET /transfers/merchant-balances  — Korapay merchant balances (admin only)
+// GET /transfers/merchant-balances  — Quidax merchant balances (admin only)
 // ─────────────────────────────────────────────
 export const getMerchantBalances = catchAsync(async (req, res) => {
     try {
-        const balances = await korapayAdapter.getBalances();
+        const wallets = await QuidaxAdapter.getUserWallets();
+        // filter only fiat or map it
+        const balances = wallets.map(w => ({
+            currency: w.currency.toUpperCase(),
+            balance: w.balance,
+            available: w.balance,
+        }));
         res.status(200).json({ success: true, data: balances });
     } catch (err) {
         logger.error('[Transfer] Merchant balance check failed:', err.message);

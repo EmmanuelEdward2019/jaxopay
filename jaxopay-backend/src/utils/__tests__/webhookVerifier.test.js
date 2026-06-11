@@ -24,85 +24,7 @@ describe('WebhookVerifier', () => {
     }
   });
 
-  describe('Korapay Verification', () => {
-    test('should verify valid Korapay signature', () => {
-      const secret = 'test_secret_key';
-      const payload = JSON.stringify({ event: 'charge.success', data: { amount: 100 } });
-      const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
 
-      process.env.KORAPAY_SECRET_KEY = secret;
-
-      const result = verifier.verify('korapay', {
-        'x-korapay-signature': signature
-      }, payload);
-
-      expect(result).toBe(true);
-    });
-
-    test('should reject invalid Korapay signature', () => {
-      process.env.KORAPAY_SECRET_KEY = 'test_secret_key';
-
-      const result = verifier.verify('korapay', {
-        'x-korapay-signature': 'invalid_signature'
-      }, 'payload');
-
-      expect(result).toBe(false);
-    });
-
-    test('should reject when signature missing', () => {
-      process.env.KORAPAY_SECRET_KEY = 'test_secret_key';
-
-      const result = verifier.verify('korapay', {}, 'payload');
-
-      expect(result).toBe(false);
-    });
-
-    test('should allow in development when no secret configured', () => {
-      process.env.NODE_ENV = 'development';
-      delete process.env.KORAPAY_SECRET_KEY;
-
-      const result = verifier.verify('korapay', {
-        'x-korapay-signature': 'any_signature'
-      }, 'payload');
-
-      expect(result).toBe(true);
-    });
-
-    test('should reject in production when no secret configured', () => {
-      process.env.NODE_ENV = 'production';
-      delete process.env.KORAPAY_SECRET_KEY;
-
-      const result = verifier.verify('korapay', {}, 'payload');
-
-      expect(result).toBe(false);
-    });
-  });
-
-  describe('Paystack Verification', () => {
-    test('should verify valid Paystack signature', () => {
-      const secret = 'test_secret_key';
-      const payload = JSON.stringify({ event: 'charge.success' });
-      const signature = crypto.createHmac('sha512', secret).update(payload).digest('hex');
-
-      process.env.PAYSTACK_SECRET_KEY = secret;
-
-      const result = verifier.verify('paystack', {
-        'x-paystack-signature': signature
-      }, payload);
-
-      expect(result).toBe(true);
-    });
-
-    test('should reject invalid Paystack signature', () => {
-      process.env.PAYSTACK_SECRET_KEY = 'test_secret_key';
-
-      const result = verifier.verify('paystack', {
-        'x-paystack-signature': 'invalid'
-      }, 'payload');
-
-      expect(result).toBe(false);
-    });
-  });
 
   describe('Quidax Verification', () => {
     test('should verify valid Quidax signature with timestamp', () => {
@@ -154,28 +76,7 @@ describe('WebhookVerifier', () => {
     });
   });
 
-  describe('Flutterwave Verification', () => {
-    test('should verify valid Flutterwave hash', () => {
-      const hash = 'test_secret_hash';
-      process.env.FLUTTERWAVE_SECRET_HASH = hash;
 
-      const result = verifier.verify('flutterwave', {
-        'verif-hash': hash
-      }, 'payload');
-
-      expect(result).toBe(true);
-    });
-
-    test('should reject invalid Flutterwave hash', () => {
-      process.env.FLUTTERWAVE_SECRET_HASH = 'correct_hash';
-
-      const result = verifier.verify('flutterwave', {
-        'verif-hash': 'wrong_hash'
-      }, 'payload');
-
-      expect(result).toBe(false);
-    });
-  });
 
   describe('Replay Attack Prevention', () => {
     test('should prevent duplicate webhook processing', () => {
@@ -212,10 +113,10 @@ describe('WebhookVerifier', () => {
 
   describe('Edge Cases', () => {
     test('should handle empty payload', () => {
-      process.env.KORAPAY_SECRET_KEY = 'secret';
+      process.env.FINCRA_SECRET_KEY = 'secret';
       
-      const result = verifier.verify('korapay', {
-        'x-korapay-signature': 'sig'
+      const result = verifier.verify('fincra', {
+        'x-fincra-signature': 'sig'
       }, '');
 
       expect(result).toBe(false);
@@ -227,10 +128,10 @@ describe('WebhookVerifier', () => {
       const payloadStr = JSON.stringify(payload);
       const signature = crypto.createHmac('sha256', secret).update(payloadStr).digest('hex');
 
-      process.env.KORAPAY_SECRET_KEY = secret;
+      process.env.FINCRA_SECRET_KEY = secret;
 
-      const result = verifier.verify('korapay', {
-        'x-korapay-signature': signature
+      const result = verifier.verify('fincra', {
+        'x-fincra-signature': signature
       }, payload);
 
       expect(result).toBe(true);

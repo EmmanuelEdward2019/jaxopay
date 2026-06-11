@@ -28,7 +28,7 @@ class RoutingEngine {
         );
 
         const config = res.rows[0]?.config || {};
-        // Example config: { "routing": { "NG": ["korapay", "paystack"], "DEFAULT": ["wise"] } }
+        // Example config: { "routing": { "NG": ["quidax"], "DEFAULT": ["quidax"] } }
         return config.routing?.[country] || config.routing?.['DEFAULT'] || [];
     }
 

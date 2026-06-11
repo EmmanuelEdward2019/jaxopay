@@ -38,7 +38,7 @@ export const handleWebhook = catchAsync(async (req, res) => {
                 'Verify QUIDAX_WEBHOOK_SECRET matches the "Signature Secret" in the Quidax dashboard.'
             );
             // continue to processing below
-        } else if (!['korapay', 'vtpass', 'graph', 'smile_identity', 'smile', 'smile-id'].includes(provider.toLowerCase())) {
+        } else if (!['vtpass', 'graph', 'smile_identity', 'smile', 'smile-id'].includes(provider.toLowerCase())) {
             return res.status(401).json({ success: false, message: 'Invalid signature' });
         }
     }
@@ -46,21 +46,12 @@ export const handleWebhook = catchAsync(async (req, res) => {
     // 2. Route to handler
     try {
         switch (provider.toLowerCase()) {
-            case 'korapay':
-                await processKorapay(body, headers);
-                break;
             case 'vtpass':
                 await processVTpass(body);
                 break;
             case 'graph':
             case 'graph_finance':
                 await processGraph(body);
-                break;
-            case 'flutterwave':
-                await processFlutterwave(body);
-                break;
-            case 'paystack':
-                await processPaystack(body);
                 break;
             case 'smile-id':
                 await processSmileIdentity(body);
@@ -79,113 +70,7 @@ export const handleWebhook = catchAsync(async (req, res) => {
     res.status(200).json({ success: true, message: 'Webhook received' });
 });
 
-// ─────────────────────────────────────────────
-// Korapay
-// ─────────────────────────────────────────────
-async function processKorapay(payload, headers) {
-    // Verify Korapay HMAC signature
-    const korapaySecret = process.env.KORAPAY_SECRET_KEY;
-    if (korapaySecret && headers['x-korapay-signature']) {
-        const hash = crypto.createHmac('sha256', korapaySecret)
-            .update(JSON.stringify(payload))
-            .digest('hex');
-        if (hash !== headers['x-korapay-signature']) {
-            logger.warn('[WEBHOOK] Korapay signature mismatch');
-            return;
-        }
-    }
 
-    const event = payload.event;
-    const data = payload.data;
-
-    switch (event) {
-        case 'charge.success':
-        case 'charge.failed': {
-            // Incoming payment (e.g. user funding wallet via Korapay checkout)
-            const status = event === 'charge.success' ? 'completed' : 'failed';
-            await updateTransactionStatus(data.reference, status, data);
-
-            if (status === 'completed' && data.amount) {
-                // Credit the user's wallet
-                await creditUserWallet(data.reference, data.amount, data.currency);
-            }
-            break;
-        }
-        case 'transfer.success':
-        case 'transfer.failed': {
-            // Outgoing payout (e.g. user sending to beneficiary bank)
-            const payoutStatus = event === 'transfer.success' ? 'completed' : 'failed';
-            await query(
-                'UPDATE payments SET status = $1, updated_at = NOW() WHERE reference = $2',
-                [payoutStatus, data.reference]
-            );
-
-            if (payoutStatus === 'failed') {
-                // Refund user wallet on failed payout
-                await refundFailedPayment(data.reference);
-            }
-            logger.info(`[WEBHOOK] Korapay payout ${data.reference} → ${payoutStatus}`);
-            break;
-        }
-        case 'virtual_bank_account_transfer.success': {
-            // Someone sent money TO a user's VBA (Virtual Bank Account)
-            // Find VBA by account reference, credit the linked wallet
-            const vbaRef = data.virtual_bank_account?.account_reference || data.account_reference;
-            const amount = data.amount;
-            const currency = data.currency || 'NGN';
-
-            logger.info(`[WEBHOOK] VBA transfer received: ref=${vbaRef}, amount=${amount} ${currency}`);
-
-            if (vbaRef && amount) {
-                try {
-                    const vba = await query(
-                        'SELECT user_id, wallet_id FROM virtual_bank_accounts WHERE provider_reference = $1 AND is_active = true',
-                        [vbaRef]
-                    );
-                    if (vba.rows.length > 0) {
-                        const { user_id, wallet_id } = vba.rows[0];
-                        await query(
-                            'UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance, 0) + $1, updated_at = NOW() WHERE id = $2',
-                            [amount, wallet_id]
-                        );
-                        // Record transaction
-                        await query(
-                            `INSERT INTO transactions
-                               (user_id, to_wallet_id, transaction_type, from_amount, to_amount,
-                                from_currency, to_currency, net_amount, fee_amount, status, description, reference)
-                             VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $3, 0, 'completed', 'VBA bank transfer received', $5)`,
-                            [user_id, wallet_id, amount, currency, `VBA-${data.reference || Date.now()}`]
-                        );
-                        logger.info(`[WEBHOOK] ✅ Wallet ${wallet_id} credited ${amount} ${currency} via VBA`);
-
-                        // Send email
-                        try {
-                            const userRes = await query('SELECT name, email FROM users WHERE id = $1', [user_id]);
-                            if (userRes.rows.length > 0) {
-                                await sendTransactionEmails({
-                                    type: 'Deposit',
-                                    amount: amount,
-                                    currency: currency,
-                                    reference: `VBA-${data.reference || Date.now()}`,
-                                    details: 'Bank Transfer Received (VBA)'
-                                }, userRes.rows[0]);
-                            }
-                        } catch (emailErr) {
-                            logger.error('[WEBHOOK] VBA email notify error:', emailErr);
-                        }
-                    } else {
-                        logger.warn(`[WEBHOOK] VBA not found for ref: ${vbaRef}`);
-                    }
-                } catch (vbaErr) {
-                    logger.error('[WEBHOOK] VBA credit error:', vbaErr);
-                }
-            }
-            break;
-        }
-        default:
-            logger.info(`[WEBHOOK] Korapay unhandled event: ${event}`);
-    }
-}
 
 // ─────────────────────────────────────────────
 // VTpass
@@ -265,24 +150,7 @@ async function processGraph(payload) {
     }
 }
 
-// ─────────────────────────────────────────────
-// Legacy / other providers
-// ─────────────────────────────────────────────
-async function processFlutterwave(payload) {
-    const { event, data } = payload;
-    if (event === 'transfer.completed') {
-        const status = data.status === 'SUCCESSFUL' ? 'completed' : 'failed';
-        await updateTransactionStatus(data.reference, status, data);
-    }
-}
 
-async function processPaystack(payload) {
-    const { event, data } = payload;
-    if (event === 'charge.success') {
-        await updateTransactionStatus(data.reference, 'completed', data);
-        await creditUserWallet(data.reference, data.amount / 100, data.currency);
-    }
-}
 
 // ─────────────────────────────────────────────
 // Shared helpers
@@ -504,19 +372,32 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
         await transaction(async (client) => {
             const quidaxReference = webhookData?.reference ? String(webhookData.reference) : null;
 
-            // Find transaction by Quidax withdrawal ID, with reference as a fallback
-            // in case the provider accepted the withdrawal before our id update completed.
-            const txRes = await client.query(
+            // Check wallet_transactions first (crypto withdrawals)
+            let txType = 'wallet_transactions';
+            let txRes = await client.query(
                 `SELECT id, wallet_id, amount, currency, status AS current_status
                  FROM wallet_transactions
                  WHERE metadata->>'quidax_withdraw_id' = $1
-                    OR ($2::text IS NOT NULL AND metadata->>'quidax_reference' = $2)
+                    OR ($2::text IS NOT NULL AND (metadata->>'quidax_reference' = $2 OR reference = $2))
                  FOR UPDATE`,
                 [String(quidaxWithdrawId), quidaxReference]
             );
 
+            // If not found, check transactions (fiat withdrawals / payouts)
             if (txRes.rows.length === 0) {
-                logger.warn(`[WEBHOOK] Quidax withdrawal not found: ${quidaxWithdrawId}`);
+                txType = 'transactions';
+                txRes = await client.query(
+                    `SELECT id, from_wallet_id AS wallet_id, from_amount AS amount, from_currency AS currency, status AS current_status
+                     FROM transactions
+                     WHERE metadata->>'quidax_withdraw_id' = $1
+                        OR ($2::text IS NOT NULL AND (metadata->>'quidax_reference' = $2 OR reference = $2))
+                     FOR UPDATE`,
+                    [String(quidaxWithdrawId), quidaxReference]
+                );
+            }
+
+            if (txRes.rows.length === 0) {
+                logger.warn(`[WEBHOOK] Quidax withdrawal not found: ${quidaxWithdrawId} or ref ${quidaxReference}`);
                 return;
             }
 
@@ -531,19 +412,35 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
             }
 
             // Update transaction status
-            await client.query(
-                `UPDATE wallet_transactions
-                 SET status = $1,
-                     metadata = metadata || $2::jsonb,
-                     updated_at = NOW(),
-                     completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
-                 WHERE id = $3`,
-                [
-                    status,
-                    JSON.stringify({ webhook_data: webhookData, updated_at: new Date().toISOString() }),
-                    tx.id
-                ]
-            );
+            if (txType === 'wallet_transactions') {
+                await client.query(
+                    `UPDATE wallet_transactions
+                     SET status = $1,
+                         metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+                         updated_at = NOW(),
+                         completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
+                     WHERE id = $3`,
+                    [
+                        status,
+                        JSON.stringify({ webhook_data: webhookData, updated_at: new Date().toISOString() }),
+                        tx.id
+                    ]
+                );
+            } else {
+                await client.query(
+                    `UPDATE transactions
+                     SET status = $1,
+                         metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+                         updated_at = NOW(),
+                         completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
+                     WHERE id = $3`,
+                    [
+                        status,
+                        JSON.stringify({ webhook_data: webhookData, updated_at: new Date().toISOString() }),
+                        tx.id
+                    ]
+                );
+            }
 
             // If withdrawal failed, refund the amount back to wallet
             if (status === 'failed') {
@@ -558,7 +455,7 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
 
                 logger.info(`[WEBHOOK] ✅ Quidax withdrawal failed - refunded ${tx.amount} ${tx.currency} to wallet ${tx.wallet_id}`);
             } else {
-                logger.info(`[WEBHOOK] ✅ Quidax withdrawal ${status}: ${tx.amount} ${tx.currency} (TX: ${tx.id})`);
+                logger.info(`[WEBHOOK] ✅ Quidax withdrawal ${status}: ${tx.amount} ${tx.currency} (${txType} ID: ${tx.id})`);
             }
         });
     } catch (err) {

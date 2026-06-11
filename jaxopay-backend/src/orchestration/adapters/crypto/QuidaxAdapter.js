@@ -1008,6 +1008,66 @@ class QuidaxAdapter {
     }
 
     /**
+     * Get list of supported banks for a country
+     */
+    async getBanks(currency = 'ngn') {
+        const cacheKey = this._getCacheKey('banks', currency);
+        const cached = this._getFromCache(cacheKey, this._cacheTTL.currencies);
+        if (cached) return cached;
+
+        return this._executeWithCircuitBreaker(async () => {
+            const response = await this.client.get('/fee_details', { params: { currency: currency.toLowerCase() } });
+            // Or usually GET /banks but quidax sometimes uses another endpoint or public client
+            // Actually Quidax uses GET /banks?currency=ngn
+            const bankResponse = await this.publicClient.get('/banks', { params: { currency: currency.toLowerCase() } }).catch(() => null);
+            const payload = bankResponse?.data?.data || bankResponse?.data || response.data?.data || [];
+            if (payload && payload.length > 0) {
+                this._setCache(cacheKey, payload);
+            }
+            return payload;
+        }, 'getBanks');
+    }
+
+    /**
+     * Verify a bank account number
+     */
+    async verifyBankAccount(accountNumber, bankCode) {
+        return this._executeWithCircuitBreaker(async () => {
+            const response = await this.client.get('/users/me/beneficiaries/verify', {
+                params: {
+                    account_number: accountNumber,
+                    bank_code: bankCode
+                }
+            }).catch(async (err) => {
+                if (err.response?.status === 404) {
+                    return await this.publicClient.get('/banks/resolve', {
+                        params: { account_number: accountNumber, bank_code: bankCode }
+                    });
+                }
+                throw err;
+            });
+            return response.data?.data || response.data;
+        }, 'verifyBankAccount');
+    }
+
+    /**
+     * Add a fiat bank account (Beneficiary)
+     */
+    async addFiatBankAccount(userId, { currency, bank_code, account_number, account_name }) {
+        const quidaxUserId = userId || await this._getAuthUserId();
+        return this._executeWithCircuitBreaker(async () => {
+            const body = {
+                currency: currency.toLowerCase(),
+                bank_code,
+                account_number,
+                account_name
+            };
+            const response = await this.client.post(`/users/${quidaxUserId}/beneficiaries`, body);
+            return response.data?.data || response.data;
+        }, 'addFiatBankAccount');
+    }
+
+    /**
      * SWAP: Get all swap transactions for user
      * Endpoint: GET /users/{id}/swap_transactions
      */

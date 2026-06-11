@@ -97,13 +97,10 @@ export function validateEnvironment() {
     warnings.push('RESEND_API_KEY not configured - email notifications will fail');
   }
 
-  if (!process.env.TWILIO_ACCOUNT_SID || isPlaceholder(process.env.TWILIO_ACCOUNT_SID)) {
-    warnings.push('Twilio not configured - SMS/OTP will be unavailable');
-  }
 
   // Check webhook secrets in production
   if (nodeEnv === 'production') {
-    const webhookSecrets = ['KORAPAY_SECRET_KEY', 'GRAPH_WEBHOOK_SECRET'];
+    const webhookSecrets = ['GRAPH_WEBHOOK_SECRET'];
     webhookSecrets.forEach(secret => {
       if (!process.env[secret] || isPlaceholder(process.env[secret])) {
         warnings.push(`${secret} not set - webhook verification will fail`);

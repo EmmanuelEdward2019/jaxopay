@@ -66,14 +66,8 @@ class WebhookVerifier {
         const payload = rawBody || (typeof body === 'string' ? body : JSON.stringify(body));
 
         switch (provider.toLowerCase()) {
-            case 'flutterwave':
-                return this._verifyFlutterwave(headers, payload);
-            case 'paystack':
-                return this._verifyPaystack(headers, payload);
             case 'fincra':
                 return this._verifyFincra(headers, payload);
-            case 'korapay':
-                return this._verifyKorapay(headers, payload);
             case 'safehaven':
                 return this._verifySafeHaven(headers, payload);
             case 'sudo':
@@ -96,67 +90,7 @@ class WebhookVerifier {
         }
     }
 
-    _verifyFlutterwave(headers, payload) {
-        const secret = process.env.FLUTTERWAVE_SECRET_HASH;
-        const signature = headers['verif-hash'];
 
-        // NEVER fail open in production
-        if (!secret) {
-            logger.warn('[WEBHOOK] Flutterwave webhook secret not configured');
-            return process.env.NODE_ENV === 'development';
-        }
-
-        if (!signature) {
-            logger.warn('[WEBHOOK] Flutterwave signature missing');
-            return false;
-        }
-
-        return signature === secret;
-    }
-
-    _verifyPaystack(headers, payload) {
-        const secret = process.env.PAYSTACK_SECRET_KEY;
-        const signature = headers['x-paystack-signature'];
-
-        if (!secret) {
-            logger.warn('[WEBHOOK] Paystack secret not configured');
-            return process.env.NODE_ENV === 'development';
-        }
-
-        if (!signature) {
-            logger.warn('[WEBHOOK] Paystack signature missing');
-            return false;
-        }
-
-        const hash = crypto
-            .createHmac('sha512', secret)
-            .update(payload)
-            .digest('hex');
-
-        return hash === signature;
-    }
-
-    _verifyKorapay(headers, payload) {
-        const secret = process.env.KORAPAY_SECRET_KEY;
-        const signature = headers['x-korapay-signature'];
-
-        if (!secret) {
-            logger.warn('[WEBHOOK] Korapay secret not configured');
-            return process.env.NODE_ENV === 'development';
-        }
-
-        if (!signature) {
-            logger.warn('[WEBHOOK] Korapay signature missing');
-            return false;
-        }
-
-        const hash = crypto
-            .createHmac('sha256', secret)
-            .update(payload)
-            .digest('hex');
-
-        return hash === signature;
-    }
 
     _verifyFincra(headers, payload) {
         const secret = process.env.FINCRA_SECRET_KEY;
