@@ -15,12 +15,12 @@ export const getPaymentCorridors = catchAsync(async (req, res) => {
   let rates = await getLiveRates();
 
   const corridors = [
-    { from: 'USD', to: 'NGN', rate: rates.USD_NGN, fee_percentage: 1.5, min_amount: 5, max_amount: 10000, delivery_time: '5–30 minutes', provider: 'korapay' },
-    { from: 'USD', to: 'GHS', rate: rates.USD_GHS, fee_percentage: 1.5, min_amount: 5, max_amount: 10000, delivery_time: '5–30 minutes', provider: 'korapay' },
-    { from: 'USD', to: 'KES', rate: rates.USD_KES, fee_percentage: 1.5, min_amount: 5, max_amount: 10000, delivery_time: '5–30 minutes', provider: 'korapay' },
-    { from: 'EUR', to: 'NGN', rate: rates.EUR_NGN, fee_percentage: 1.5, min_amount: 5, max_amount: 10000, delivery_time: '5–30 minutes', provider: 'korapay' },
-    { from: 'GBP', to: 'NGN', rate: rates.GBP_NGN, fee_percentage: 1.5, min_amount: 5, max_amount: 10000, delivery_time: '5–30 minutes', provider: 'korapay' },
-    { from: 'NGN', to: 'USD', rate: rates.NGN_USD, fee_percentage: 1.5, min_amount: 1000, max_amount: 5000000, delivery_time: '5–30 minutes', provider: 'korapay' },
+    { from: 'USD', to: 'NGN', rate: rates.USD_NGN, fee_percentage: 1.5, min_amount: 5, max_amount: 10000, delivery_time: '5–30 minutes', provider: 'quidax' },
+    { from: 'USD', to: 'GHS', rate: rates.USD_GHS, fee_percentage: 1.5, min_amount: 5, max_amount: 10000, delivery_time: '5–30 minutes', provider: 'quidax' },
+    { from: 'USD', to: 'KES', rate: rates.USD_KES, fee_percentage: 1.5, min_amount: 5, max_amount: 10000, delivery_time: '5–30 minutes', provider: 'quidax' },
+    { from: 'EUR', to: 'NGN', rate: rates.EUR_NGN, fee_percentage: 1.5, min_amount: 5, max_amount: 10000, delivery_time: '5–30 minutes', provider: 'quidax' },
+    { from: 'GBP', to: 'NGN', rate: rates.GBP_NGN, fee_percentage: 1.5, min_amount: 5, max_amount: 10000, delivery_time: '5–30 minutes', provider: 'quidax' },
+    { from: 'NGN', to: 'USD', rate: rates.NGN_USD, fee_percentage: 1.5, min_amount: 1000, max_amount: 5000000, delivery_time: '5–30 minutes', provider: 'quidax' },
   ];
 
   res.status(200).json({ success: true, data: corridors });
@@ -105,7 +105,7 @@ export const deleteBeneficiary = catchAsync(async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// POST /payments/send  (powered by Korapay)
+// POST /payments/send  (powered by Quidax)
 // ─────────────────────────────────────────────
 export const sendMoney = catchAsync(async (req, res) => {
   const { beneficiary_id, source_currency, destination_currency, source_amount, purpose = 'Personal Transfer' } = req.body;
@@ -212,7 +212,7 @@ export const sendMoney = catchAsync(async (req, res) => {
 
   await query('UPDATE transactions SET status = $1 WHERE reference = $2', [finalStatus, reference]);
 
-  logger.info(`[Payments] ${reference} → Korapay → ${finalStatus}`);
+  logger.info(`[Payments] ${reference} → Quidax → ${finalStatus}`);
 
   res.status(201).json({
     success: true,

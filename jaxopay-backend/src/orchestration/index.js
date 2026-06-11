@@ -6,7 +6,7 @@ import PaymentService from './services/PaymentService.js';
 
 // Import Adapters
 import SafeHavenAdapter from './adapters/payments/SafeHavenAdapter.js';
-import KorapayAdapter from './adapters/payments/KorapayAdapter.js';
+import QuidaxAdapter from './adapters/crypto/QuidaxAdapter.js';
 import StrowalletAdapter from './adapters/cards/StrowalletAdapter.js';
 import GraphAdapter from './adapters/cards/GraphAdapter.js';
 import VTpassAdapter from './adapters/utilities/VTpassAdapter.js';
@@ -17,7 +17,7 @@ import ReloadlyAdapter from './adapters/digital/ReloadlyAdapter.js';
 const initOrchestration = () => {
     // Payments
     providerRegistry.register('payment', 'safehaven', new SafeHavenAdapter());
-    providerRegistry.register('payment', 'korapay', new KorapayAdapter());
+    providerRegistry.register('payment', 'quidax', QuidaxAdapter); // QuidaxAdapter is an exported instance
 
     // Cards
     providerRegistry.register('card', 'graph', new GraphAdapter());
@@ -29,7 +29,7 @@ const initOrchestration = () => {
     // Digital Goods
     providerRegistry.register('digital', 'reloadly', new ReloadlyAdapter());
 
-    console.log('✅ Orchestration Layer Initialized (Strowallet, Graph, Korapay, VTpass, Reloadly)');
+    console.log('✅ Orchestration Layer Initialized (Strowallet, Graph, Quidax, VTpass, Reloadly)');
 };
 
 /**

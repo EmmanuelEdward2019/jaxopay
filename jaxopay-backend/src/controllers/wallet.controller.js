@@ -5,6 +5,7 @@ import emailService from '../services/email.service.js';
 import axios from 'axios';
 import crypto from 'crypto';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance } from '../utils/financial.js';
+import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 
 const buildApiV1Url = (path) => {
   const rawBaseUrl = (process.env.API_BASE_URL || 'http://localhost:3001').trim();
@@ -124,7 +125,7 @@ export const createWallet = catchAsync(async (req, res) => {
   });
 });
 
-// Initialize Korapay deposit — generates a real checkout URL and records a pending transaction
+// Initialize Quidax deposit — generates a real checkout URL and records a pending transaction
 export const initializeDeposit = catchAsync(async (req, res) => {
   const { wallet_id, amount, currency = 'NGN' } = req.body;
 
@@ -142,15 +143,7 @@ export const initializeDeposit = catchAsync(async (req, res) => {
   const wallet = walletResult.rows[0];
   const depositCurrency = wallet.currency; // Use the wallet's own currency
   const reference = `DEP-${req.user.id.slice(0, 8)}-${Date.now()}`;
-  const korapaySecret = process.env.KORAPAY_SECRET_KEY;
   const frontendUrl = process.env.FRONTEND_URL || 'https://jaxopay.com';
-
-  if (!KORAPAY_CHECKOUT_CURRENCIES.has(depositCurrency)) {
-    throw new AppError(
-      `Online deposits are currently only available in NGN. Deposit NGN, then convert to ${depositCurrency} using Swap.`,
-      400
-    );
-  }
 
   // Validate and format amount using decimal.js
   const amountDecimal = validateAmount(amount, 1, 10000000); // Min 1, Max 10M
@@ -165,55 +158,22 @@ export const initializeDeposit = catchAsync(async (req, res) => {
     [req.user.id, wallet_id, amountForDB, depositCurrency, reference]
   );
 
-  if (!korapaySecret || korapaySecret === 'your_korapay_secret_key') {
-    // Dev simulation — immediately complete the deposit using transaction
-    logger.info('[Wallet] No real Korapay key — simulating instant deposit for dev');
-
-    await transaction(async (client) => {
-      await client.query(
-        `UPDATE wallets SET balance = balance + $1, available_balance = available_balance + $1, updated_at = NOW() WHERE id = $2`,
-        [amountForDB, wallet_id]
-      );
-      await client.query(
-        `UPDATE transactions SET status = 'completed', completed_at = NOW() WHERE reference = $1`,
-        [reference]
-      );
-    });
-    return res.status(200).json({
-      success: true,
-      message: 'Dev mode: deposit completed instantly',
-      data: { checkout_url: null, reference, mode: 'simulation', wallet_id, amount, currency: depositCurrency }
-    });
-  }
-
   try {
     const profileResult = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
     const profile = profileResult.rows[0] || {};
 
-    const payload = {
-      amount: parseFloat(amountDecimal.toString()), // Convert decimal to float for API
-      currency: depositCurrency,
-      reference,
-      notification_url: buildApiV1Url('/webhooks/korapay'),
-      redirect_url: `${frontendUrl}/dashboard/wallets?deposit=pending&ref=${reference}&wallet=${wallet_id}`,
-      ...(depositCurrency === 'NGN' ? { merchant_bears_cost: true } : {}),
-      customer: {
-        name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || req.user.email,
-        email: req.user.email,
-      },
-      metadata: { walletId: wallet_id, userId: req.user.id, reference },
-    };
+    logger.info(`[Wallet] Quidax deposit payload: ${depositCurrency} ${amount} ref=${reference}`);
 
-    logger.info(`[Wallet] Korapay deposit payload: ${depositCurrency} ${amount} ref=${reference}`);
+    const response = await QuidaxAdapter.initiateFiatDeposit({
+        currency: depositCurrency,
+        amount: parseFloat(amountDecimal.toString()),
+        first_name: profile.first_name || 'User',
+        last_name: profile.last_name || 'User',
+        email: req.user.email
+    });
 
-    const response = await axios.post(
-      'https://api.korapay.com/merchant/api/v1/charges/initialize',
-      payload,
-      { headers: { Authorization: `Bearer ${korapaySecret}` }, timeout: 15000 }
-    );
-
-    const checkoutUrl = response.data?.data?.checkout_url;
-    logger.info(`[Wallet] Korapay deposit initialized: ${reference} — ${amount} ${depositCurrency}`);
+    const checkoutUrl = response.data?.payment_url || response.data?.checkout_url || response.data?.authorization_url || null;
+    logger.info(`[Wallet] Quidax deposit initialized: ${reference} — ${amount} ${depositCurrency}`);
 
     res.status(200).json({
       success: true,
@@ -221,35 +181,16 @@ export const initializeDeposit = catchAsync(async (req, res) => {
       data: { checkout_url: checkoutUrl, reference, amount, currency: depositCurrency, wallet_id }
     });
   } catch (err) {
-    // Roll back the pending transaction if Korapay init fails
+    // Roll back the pending transaction if Quidax init fails
     await query('DELETE FROM transactions WHERE reference = $1 AND status = $2', [reference, 'pending']);
-    const providerError = err.response?.data;
-    const extErr = providerError?.message || err.message;
-    const validationDetails = formatProviderValidationErrors(providerError?.data);
-    logger.error('[Wallet] Korapay init error:', err.response?.data || err.message);
+    const extErr = err.message;
+    logger.error('[Wallet] Quidax init error:', err);
 
-    // Provide user-friendly messages for common Korapay errors
-    let userMessage = `Payment initialization failed: ${extErr}`;
-    if (providerError?.data?.notification_url) {
-      userMessage = 'Payment callback URL is misconfigured. Please contact support.';
-    } else if (/channel.*not.*enabled|checkout.*payment/i.test(extErr)) {
-      userMessage = `Online deposits in ${depositCurrency} are not enabled on this account. Please contact support or deposit in NGN and convert using Swap.`;
-    } else if (/collection.*wallet.*not.*found/i.test(extErr)) {
-      userMessage = `The ${depositCurrency} collection account is not set up yet. Please deposit in NGN and convert using Swap.`;
-    } else if (/issue with your input/i.test(extErr) && validationDetails) {
-      userMessage = `Payment initialization failed: ${validationDetails}`;
-    } else if (/internal server error|something went wrong|issue with your input/i.test(extErr)) {
-      userMessage = depositCurrency === 'NGN'
-        ? 'The payment provider encountered an error for NGN deposits. Please try again.'
-        : `The payment provider encountered an error for ${depositCurrency} deposits. Please try depositing in NGN instead.`;
-    }
-
-    throw new AppError(userMessage, 502);
+    throw new AppError(`Payment initialization failed: ${extErr}`, 502);
   }
 });
 
-// Verify Korapay deposit — called by frontend after user returns from payment page
-// Checks Korapay API for payment status and credits wallet if successful
+// Verify Quidax deposit
 export const verifyDeposit = catchAsync(async (req, res) => {
   const { reference } = req.body;
   if (!reference) throw new AppError('reference is required', 400);
@@ -270,33 +211,33 @@ export const verifyDeposit = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Payment was not successful', data: { status: 'failed', reference } });
   }
 
-  const korapaySecret = process.env.KORAPAY_SECRET_KEY;
-
-  // If no real key, check if pending (for simulation testing)
-  if (!korapaySecret || korapaySecret === 'your_korapay_secret_key') {
-    // In dev, mark as completed since we already simulated above
-    return res.status(200).json({ success: true, message: 'Dev mode verified', data: { status: 'completed', reference } });
-  }
-
   try {
-    // Verify with Korapay
-    const response = await axios.get(
-      `https://api.korapay.com/merchant/api/v1/charges/${reference}`,
-      { headers: { Authorization: `Bearer ${korapaySecret}` }, timeout: 15000 }
-    );
+    // Check if Quidax client exists and try fetching status (on_ramp_transactions endpoint is typically list or GET by ID)
+    // Note: Quidax may use webhooks for on_ramp, so this might just be a passive check
+    let chargeStatus = 'pending';
+    let kAmount = tx.from_amount;
+    let kCurrency = tx.to_currency;
 
-    const chargeStatus = response.data?.data?.status;
-    logger.info(`[Wallet] Korapay verify ${reference}: ${chargeStatus}`);
+    if (QuidaxAdapter.client) {
+      const response = await QuidaxAdapter.client.get('/custodial/on_ramp_transactions').catch(() => null);
+      if (response && response.data && response.data.data) {
+        const txs = response.data.data;
+        // Quidax on-ramp transaction ref match
+        const found = txs.find(t => t.reference === reference || t.id === reference);
+        if (found) {
+            chargeStatus = found.status;
+            kAmount = found.amount || tx.from_amount;
+            kCurrency = found.currency || tx.to_currency;
+        }
+      }
+    }
 
-    if (chargeStatus === 'success') {
-      // Credit the wallet atomically
+    logger.info(`[Wallet] Quidax verify ${reference}: ${chargeStatus}`);
+
+    if (chargeStatus === 'success' || chargeStatus === 'completed') {
       await transaction(async (client) => {
-        // Check not already credited (race condition guard)
         const currentTx = await client.query('SELECT status FROM transactions WHERE reference = $1 FOR UPDATE', [reference]);
         if (currentTx.rows[0]?.status === 'completed') return;
-
-        const kAmount = response.data?.data?.amount || tx.from_amount;
-        const kCurrency = response.data?.data?.currency || tx.to_currency;
 
         await client.query(
           `UPDATE wallets SET balance = balance + $1, available_balance = available_balance + $1, updated_at = NOW() WHERE id = $2`,
@@ -306,7 +247,6 @@ export const verifyDeposit = catchAsync(async (req, res) => {
           `UPDATE transactions SET status = 'completed', to_amount = $1, completed_at = NOW() WHERE reference = $2`,
           [kAmount, reference]
         );
-        logger.info(`[Wallet] ✅ Wallet ${tx.to_wallet_id} credited ${kAmount} ${kCurrency} — ref ${reference}`);
       });
 
       res.status(200).json({
@@ -321,8 +261,8 @@ export const verifyDeposit = catchAsync(async (req, res) => {
       res.status(200).json({ success: true, message: 'Payment still processing', data: { status: chargeStatus || 'pending' } });
     }
   } catch (err) {
-    logger.error('[Wallet] Korapay verify error:', err.response?.data || err.message);
-    throw new AppError(err.response?.data?.message || 'Could not verify payment status. Please contact support.', 500);
+    logger.error('[Wallet] Quidax verify error:', err);
+    throw new AppError('Could not verify payment status. Please contact support.', 500);
   }
 });
 
@@ -634,157 +574,13 @@ export const addFunds = catchAsync(async (req, res) => {
 
 
 // ─────────────────────────────────────────────────────────────────────
-// Virtual Bank Account (VBA) — Korapay
-// Gives each user a real NUBAN so they can receive bank transfers
+// Virtual Bank Account (VBA)
 // ─────────────────────────────────────────────────────────────────────
 
 /**
  * GET /wallets/vba/:walletId
- * Returns existing VBA for wallet, or creates one on-the-fly via Korapay
+ * Note: Since switching to Quidax, static VBAs are unsupported.
  */
 export const getOrCreateVBA = catchAsync(async (req, res) => {
-  const { walletId } = req.params;
-
-  // Verify wallet belongs to user
-  const walletResult = await query(
-    'SELECT id, currency FROM wallets WHERE id = $1 AND user_id = $2 AND is_active = true',
-    [walletId, req.user.id]
-  );
-  if (walletResult.rows.length === 0) throw new AppError('Wallet not found', 404);
-  const wallet = walletResult.rows[0];
-
-  // Check if VBA already exists in DB
-  const existingVBA = await query(
-    'SELECT * FROM virtual_bank_accounts WHERE wallet_id = $1 AND is_active = true',
-    [walletId]
-  );
-
-  if (existingVBA.rows.length > 0) {
-    return res.status(200).json({
-      success: true,
-      data: existingVBA.rows[0],
-    });
-  }
-
-  // No VBA yet — create one via Korapay
-  const korapaySecret = process.env.KORAPAY_SECRET_KEY;
-  if (!korapaySecret || korapaySecret.includes('your_')) {
-    throw new AppError('Payment provider not configured. Please contact support.', 503);
-  }
-
-  // Get user profile for the account name
-  const profileResult = await query(
-    'SELECT first_name, last_name FROM user_profiles WHERE user_id = $1',
-    [req.user.id]
-  );
-  const profile = profileResult.rows[0] || {};
-  const accountName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'JAXOPAY User';
-  const accountRef = `JXVBA-${req.user.id.slice(0, 8)}-${wallet.currency}`;
-
-  try {
-    const koraPayload = {
-      account_name: accountName,
-      account_reference: accountRef.replace(/[^a-zA-Z0-9]/g, ''), // Ensure alphanumeric
-      permanent: true,
-      bank_code: '035',  // Wema Bank (widely supported for VBA)
-      customer: {
-        name: accountName,
-        email: req.user.email,
-      },
-    };
-
-    logger.info(`[VBA] Creating Korapay VBA for ${req.user.email}: ref=${koraPayload.account_reference}`);
-
-    let vbaData;
-
-    // Check if we are using a test key or if we should attempt a real call
-    if (korapaySecret.includes('test')) {
-      // Mock response for Sandbox/Test environments
-      vbaData = {
-        account_name: accountName,
-        account_number: '8' + Math.floor(Math.random() * 1000000000).toString().padStart(9, '0'),
-        bank_name: 'Wema Bank (Sandbox)',
-        bank_code: '035',
-        account_reference: koraPayload.account_reference
-      };
-      logger.info('[VBA] Sandbox Mode: Returning Mock Virtual Bank Account');
-    } else {
-      const response = await axios.post(
-        'https://api.korapay.com/merchant/api/v1/virtual-bank-account',
-        koraPayload,
-        {
-          headers: { Authorization: `Bearer ${korapaySecret}`, 'Content-Type': 'application/json' },
-          timeout: 30000,
-        }
-      );
-      vbaData = response.data?.data;
-    }
-
-    if (!vbaData?.account_number) {
-      logger.error('[VBA] Korapay did not return account_number:', vbaData);
-      throw new AppError('Could not generate virtual account. Please try again.', 502);
-    }
-
-    // Persist to DB
-    const insertResult = await query(
-      `INSERT INTO virtual_bank_accounts
-         (user_id, wallet_id, account_name, account_number, bank_name, bank_code,
-          provider, provider_reference, currency, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, 'korapay', $7, $8, true)
-       RETURNING *`,
-      [
-        req.user.id,
-        walletId,
-        vbaData.account_name || accountName,
-        vbaData.account_number,
-        vbaData.bank_name || 'Wema Bank',
-        vbaData.bank_code || '035',
-        vbaData.account_reference || koraPayload.account_reference,
-        wallet.currency,
-      ]
-    );
-
-    logger.info(`[VBA] ✅ Created VBA ${vbaData.account_number} for wallet ${walletId}`);
-
-    res.status(200).json({
-      success: true,
-      message: 'Virtual account created successfully',
-      data: insertResult.rows[0],
-    });
-
-  } catch (error) {
-    logger.error('Korapay VBA Error:', error.response?.data || error);
-
-    // Ultimate Fallback for any other API failures when testing
-    if (process.env.NODE_ENV !== 'production') {
-      logger.info('[VBA] API Failed, but returning Mock Fallback since not in production.');
-      const mockVbaData = {
-        account_name: accountName,
-        account_number: '7' + Math.floor(Math.random() * 1000000000).toString().padStart(9, '0'),
-        bank_name: 'Mock Bank (Error Fallback)',
-        bank_code: '000',
-        account_reference: accountRef.replace(/[^a-zA-Z0-9]/g, '')
-      };
-      const insertResult = await query(
-        `INSERT INTO virtual_bank_accounts
-               (user_id, wallet_id, account_name, account_number, bank_name, bank_code,
-                provider, provider_reference, currency, is_active)
-             VALUES ($1, $2, $3, $4, $5, $6, 'korapay_mock', $7, $8, true)
-             RETURNING *`,
-        [
-          req.user.id, walletId, mockVbaData.account_name, mockVbaData.account_number,
-          mockVbaData.bank_name, mockVbaData.bank_code, mockVbaData.account_reference, wallet.currency
-        ]
-      );
-      return res.status(200).json({ success: true, data: insertResult.rows[0] });
-    }
-
-    // Map the actual Korapay error to a user-friendly message
-    const koraMessage = error.response?.data?.message || error.message || '';
-    let userMessage = koraMessage || 'Could not create virtual account. Please try again later.';
-    if (koraMessage.toLowerCase().includes('not enabled')) {
-      userMessage = 'Virtual bank account feature is being activated. Please try again later or contact support.';
-    }
-    throw new AppError(userMessage, 502);
-  }
+  throw new AppError('Static Virtual Bank Accounts are not supported on this platform version. Please use the standard deposit method.', 400);
 });
