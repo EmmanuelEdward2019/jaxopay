@@ -121,7 +121,6 @@ export const API_ENDPOINTS = {
   CARDS: '/cards',
   BILLS: '/bills',
   FLIGHTS: '/flights',
-  GIFT_CARDS: '/gift-cards',
   KYC: '/kyc',
   USERS: '/users',
 };
@@ -130,8 +129,8 @@ export const API_ENDPOINTS = {
 export const FEATURES = {
   CRYPTO: 'crypto',
   VIRTUAL_CARDS: 'virtual_cards',
-  GIFT_CARDS: 'gift_cards',
   FLIGHTS: 'flights',
+  BULK_SMS: 'bulk_sms',
   UTILITIES: 'utilities',
   CROSS_BORDER: 'cross_border',
   BILL_PAYMENTS: 'bill_payments',

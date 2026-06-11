@@ -500,7 +500,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
     const { user: currentUser } = useAuthStore();
 
     const availableProducts = [
-        'crypto', 'virtual_cards', 'gift_cards', 'flights', 'bill_payments', 'bulk_sms'
+        'crypto', 'virtual_cards', 'flights', 'bill_payments', 'bulk_sms'
     ];
 
     useEffect(() => {

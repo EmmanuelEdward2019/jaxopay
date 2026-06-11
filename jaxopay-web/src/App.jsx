@@ -30,8 +30,6 @@ import Cookies from './pages/public/Cookies';
 import Payments from './pages/products/Payments';
 import VirtualCards from './pages/products/VirtualCards';
 import Crypto from './pages/products/Crypto';
-
-import GiftCards from './pages/products/GiftCards';
 import Blog from './pages/public/Blog';
 import Careers from './pages/public/Careers';
 
@@ -47,7 +45,6 @@ import Exchange from './pages/dashboard/Exchange';
 import Trade from './pages/dashboard/Trade';
 import InstantSwap from './pages/dashboard/InstantSwap';
 import DashboardHome from './pages/dashboard/DashboardHome';
-import DashboardGiftCards from './pages/dashboard/GiftCards';
 import KYC from './pages/dashboard/KYC';
 import CrossBorder from './pages/dashboard/CrossBorder';
 
@@ -210,8 +207,6 @@ function App() {
           <Route path="/products/payments" element={<Payments />} />
           <Route path="/products/cards" element={<VirtualCards />} />
           <Route path="/products/crypto" element={<Crypto />} />
-
-          <Route path="/products/giftcards" element={<GiftCards />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/cookies" element={<Cookies />} />
@@ -288,12 +283,6 @@ function App() {
             <Route path="bills" element={
               <FeatureGuard feature="bill_payments">
                 <Bills />
-              </FeatureGuard>
-            } />
-
-            <Route path="gift-cards" element={
-              <FeatureGuard feature="gift_cards">
-                <DashboardGiftCards />
               </FeatureGuard>
             } />
             <Route path="settings" element={<Settings />} />
@@ -380,12 +369,6 @@ function App() {
               </RoleProtectedRoute>
             } />
             <Route path="crypto" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                <ProductManagement />
-              </RoleProtectedRoute>
-            } />
-
-            <Route path="giftcards" element={
               <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
                 <ProductManagement />
               </RoleProtectedRoute>
