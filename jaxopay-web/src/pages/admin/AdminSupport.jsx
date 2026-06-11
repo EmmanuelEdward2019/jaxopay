@@ -2,40 +2,24 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     MessageCircle,
-    Plus,
     Search,
-    Filter,
-    ChevronRight,
-    Clock,
-    CheckCircle2,
-    AlertCircle,
-    X,
-    Send,
-    Paperclip,
-    User,
+    RefreshCw,
     Shield,
-    RefreshCw
+    User,
+    Send,
+    Paperclip
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import ticketService from '../../services/ticketService';
 import { formatDateTime } from '../../utils/formatters';
 
-const Support = () => {
+const AdminSupport = () => {
     const { user } = useAuthStore();
-
     const [tickets, setTickets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTicket, setSelectedTicket] = useState(null);
-    const [showCreateModal, setShowCreateModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
-
-    // Create ticket state
-    const [subject, setSubject] = useState('');
-    const [category, setCategory] = useState('technical');
-    const [priority, setPriority] = useState('medium');
-    const [message, setMessage] = useState('');
-    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Reply state
     const [replyMessage, setReplyMessage] = useState('');
@@ -54,8 +38,7 @@ const Support = () => {
 
     const fetchTickets = async () => {
         setLoading(true);
-        const result = await ticketService.getMyTickets();
-
+        const result = await ticketService.getAllTickets();
         if (result.success) {
             setTickets(result.data);
         }
@@ -67,22 +50,6 @@ const Support = () => {
         if (result.success) {
             setTicketMessages(result.data.messages);
         }
-    };
-
-    const handleCreateTicket = async (e) => {
-        e.preventDefault();
-        setIsSubmitting(true);
-        const result = await ticketService.createTicket({ subject, category, priority, description: message });
-        if (result.success) {
-            setShowCreateModal(false);
-            fetchTickets();
-            // Reset form
-            setSubject('');
-            setCategory('technical');
-            setPriority('medium');
-            setMessage('');
-        }
-        setIsSubmitting(false);
     };
 
     const handleReply = async (e) => {
@@ -111,7 +78,8 @@ const Support = () => {
 
     const filteredTickets = tickets.filter(t => {
         const matchesSearch = t.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            t.id.toLowerCase().includes(searchQuery.toLowerCase());
+            t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (t.email && t.email.toLowerCase().includes(searchQuery.toLowerCase()));
         const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
         return matchesSearch && matchesStatus;
     });
@@ -132,19 +100,12 @@ const Support = () => {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">
-                        Support Tickets
+                        Ticket Management
                     </h1>
                     <p className="text-muted-foreground">
-                        Get help from our support team
+                        Manage and respond to user support requests
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-2xl transition-all shadow-lg shadow-primary/20"
-                >
-                    <Plus className="w-5 h-5" />
-                    New Ticket
-                </button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -155,7 +116,7 @@ const Support = () => {
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                             <input
                                 type="text"
-                                placeholder="Search tickets..."
+                                placeholder="Search by subject, ID, email..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2 bg-muted/50 border-none rounded-xl text-sm focus:ring-2 focus:ring-ring outline-none"
@@ -203,6 +164,9 @@ const Support = () => {
                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase w-fit ${getStatusStyles(ticket.status)}`}>
                                                 {ticket.status}
                                             </span>
+                                            <span className="text-[10px] text-primary font-bold uppercase truncate max-w-[150px]">
+                                                {ticket.email}
+                                            </span>
                                         </div>
                                         <p className="text-[10px] text-muted-foreground uppercase font-medium">{formatDateTime(ticket.updated_at)}</p>
                                     </div>
@@ -232,9 +196,11 @@ const Support = () => {
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                        <p>User: <span className="font-medium text-foreground">{selectedTicket.email}</span></p>
+                                        <span>•</span>
                                         <p>Category: <span className="font-medium text-foreground capitalize">{selectedTicket.category}</span></p>
                                         <span>•</span>
-                                        <p>Priority: <span className={`font-bold ${selectedTicket.priority === 'urgent' ? 'text-danger' :
+                                        <p>Priority: <span className={`font-bold ${selectedTicket.priority === 'urgent' ? 'text-red-500' :
                                             selectedTicket.priority === 'high' ? 'text-amber-500' : 'text-muted-foreground'
                                             }`}>{selectedTicket.priority}</span></p>
                                     </div>
@@ -258,29 +224,32 @@ const Support = () => {
                             </div>
 
                             {/* Messages Area */}
-                            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-muted/30/10">
+                            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-muted/30">
                                 {ticketMessages.map((msg, idx) => {
                                     const isFromUser = msg.sender_id === selectedTicket.user_id;
                                     const isStaff = ['admin', 'super_admin', 'compliance_officer'].includes(msg.role);
+                                    
+                                    // In admin view, staff messages are on the right, user messages on the left.
+                                    const isSelf = isStaff;
 
                                     return (
-                                        <div key={msg.id} className={`flex ${isFromUser ? 'justify-end' : 'justify-start'}`}>
-                                            <div className={`max-w-[80%] flex gap-3 ${isFromUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                                        <div key={msg.id} className={`flex ${isSelf ? 'justify-end' : 'justify-start'}`}>
+                                            <div className={`max-w-[80%] flex gap-3 ${isSelf ? 'flex-row-reverse' : 'flex-row'}`}>
                                                 <div className="shrink-0">
-                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isStaff ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isSelf ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'
                                                         }`}>
-                                                        {isStaff ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                                                        {isSelf ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <div className={`p-4 rounded-2xl ${isFromUser
+                                                    <div className={`p-4 rounded-2xl ${isSelf
                                                         ? 'bg-primary text-white rounded-tr-none'
                                                         : 'bg-card text-foreground border border-border rounded-tl-none shadow-sm'
                                                         }`}>
                                                         <p className="text-sm border-white leading-relaxed">{msg.message}</p>
                                                     </div>
-                                                    <p className={`text-[10px] mt-1 text-muted-foreground ${isFromUser ? 'text-right' : 'text-left'}`}>
-                                                        {isStaff ? (msg.role === 'compliance_officer' ? 'Compliance Team' : 'System Admin') : (isFromUser ? 'You' : 'User')} • {formatDateTime(msg.created_at)}
+                                                    <p className={`text-[10px] mt-1 text-muted-foreground ${isSelf ? 'text-right' : 'text-left'}`}>
+                                                        {isSelf ? (msg.role === 'compliance_officer' ? 'Compliance Team' : 'System Admin') : selectedTicket.email} • {formatDateTime(msg.created_at)}
                                                     </p>
                                                 </div>
                                             </div>
@@ -300,7 +269,7 @@ const Support = () => {
                                         <textarea
                                             value={replyMessage}
                                             onChange={(e) => setReplyMessage(e.target.value)}
-                                            placeholder="Write your reply here..."
+                                            placeholder="Write your response to the user..."
                                             className="w-full bg-muted/50 border-none rounded-xl p-4 pr-16 text-sm resize-none focus:ring-2 focus:ring-ring outline-none h-24"
                                             disabled={isReplying}
                                         />
@@ -330,123 +299,14 @@ const Support = () => {
                             </div>
                             <h3 className="text-2xl font-bold text-foreground mb-2">Select a Ticket</h3>
                             <p className="text-muted-foreground max-w-sm">
-                                Choose a ticket from the list on the left to view the conversation, or create a new one to get assistance.
+                                Choose a ticket from the list on the left to view the conversation and respond to the user.
                             </p>
-                            <button
-                                onClick={() => setShowCreateModal(true)}
-                                className="mt-8 px-8 py-3 bg-primary text-white font-bold rounded-2xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
-                            >
-                                Create New Ticket
-                            </button>
                         </div>
                     )}
                 </div>
             </div>
-
-            {/* Create Ticket Modal */}
-            <AnimatePresence>
-                {showCreateModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreateModal(false)}>
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-card rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl"
-                            onClick={e => e.stopPropagation()}
-                        >
-                            <div className="p-8">
-                                <div className="flex items-center justify-between mb-8">
-                                    <h3 className="text-2xl font-bold text-foreground">New Support Ticket</h3>
-                                    <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-muted rounded-full transition-colors">
-                                        <X className="w-6 h-6 text-muted-foreground" />
-                                    </button>
-                                </div>
-
-                                <form onSubmit={handleCreateTicket} className="space-y-6">
-                                    <div>
-                                        <label className="block text-sm font-bold text-foreground mb-2">Subject</label>
-                                        <input
-                                            type="text"
-                                            required
-                                            value={subject}
-                                            onChange={(e) => setSubject(e.target.value)}
-                                            placeholder="What can we help you with?"
-                                            className="w-full px-4 py-3 bg-muted/50 border-none rounded-2xl focus:ring-2 focus:ring-primary outline-none"
-                                        />
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-bold text-foreground mb-2">Category</label>
-                                            <select
-                                                value={category}
-                                                onChange={(e) => setCategory(e.target.value)}
-                                                className="w-full px-4 py-3 bg-muted/50 border-none rounded-2xl focus:ring-2 focus:ring-ring outline-none"
-                                            >
-                                                <option value="technical">Technical Issue</option>
-                                                <option value="billing">Billing & Payouts</option>
-                                                <option value="kyc">KYC Verification</option>
-                                                <option value="exchange">Exchange & Swaps</option>
-                                                <option value="other">Other</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-bold text-foreground mb-2">Priority</label>
-                                            <select
-                                                value={priority}
-                                                onChange={(e) => setPriority(e.target.value)}
-                                                className="w-full px-4 py-3 bg-muted/50 border-none rounded-2xl focus:ring-2 focus:ring-ring outline-none"
-                                            >
-                                                <option value="low">Low</option>
-                                                <option value="medium">Medium</option>
-                                                <option value="high">High</option>
-                                                <option value="urgent">Urgent</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-bold text-foreground mb-2">Message</label>
-                                        <textarea
-                                            required
-                                            value={message}
-                                            onChange={(e) => setMessage(e.target.value)}
-                                            placeholder="Please provide details about your issue..."
-                                            className="w-full px-4 py-3 bg-muted/50 border-none rounded-2xl focus:ring-2 focus:ring-primary outline-none h-32 resize-none"
-                                        />
-                                    </div>
-
-                                    <div className="bg-primary/10 p-4 rounded-2xl flex items-start gap-3">
-                                        <Shield className="w-5 h-5 text-primary mt-0.5" />
-                                        <p className="text-xs text-primary">
-                                            Our support team usually responds within 2-4 hours. For urgent matters, please use the high priority flag.
-                                        </p>
-                                    </div>
-
-                                    <div className="flex gap-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowCreateModal(false)}
-                                            className="flex-1 py-4 bg-muted text-muted-foreground font-bold rounded-2xl hover:bg-muted transition-all"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            type="submit"
-                                            disabled={isSubmitting}
-                                            className="flex-1 py-4 bg-primary text-white font-bold rounded-2xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
-                                        >
-                                            {isSubmitting ? 'Submitting...' : 'Submit Ticket'}
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
         </div>
     );
 };
 
-export default Support;
+export default AdminSupport;

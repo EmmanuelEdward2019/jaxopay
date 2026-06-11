@@ -37,7 +37,7 @@ const navItems = [
     { path: '/admin/system', icon: ShieldAlert, label: 'System Configurations', roles: ['admin', 'super_admin'] },
     { path: '/admin/audit', icon: Activity, label: 'Audit Logs', roles: ['super_admin', 'compliance_officer'] },
     { path: '/admin/announcements', icon: Megaphone, label: 'Announcements', roles: ['admin', 'super_admin', 'compliance_officer'] },
-    { path: '/dashboard/support', icon: LifeBuoy, label: 'Support Tickets', roles: ['admin', 'super_admin', 'compliance_officer'] },
+    { path: '/admin/support', icon: LifeBuoy, label: 'Support Tickets', roles: ['admin', 'super_admin', 'compliance_officer'] },
 ];
 
 const AdminLayout = () => {

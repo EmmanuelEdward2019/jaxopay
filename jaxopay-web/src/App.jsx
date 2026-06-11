@@ -64,6 +64,7 @@ import CardManagement from './pages/admin/CardManagement';
 import ProductManagement from './pages/admin/ProductManagement';
 import AMLCompliance from './pages/admin/AMLCompliance';
 import AnnouncementManagement from './pages/admin/AnnouncementManagement';
+import AdminSupport from './pages/admin/AdminSupport';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -347,6 +348,13 @@ function App() {
             <Route path="audit" element={
               <RoleProtectedRoute allowedRoles={['super_admin', 'compliance_officer']}>
                 <AuditLogs />
+              </RoleProtectedRoute>
+            } />
+
+            {/* Support Tickets - Admin, Super Admin, Compliance */}
+            <Route path="support" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer']}>
+                <AdminSupport />
               </RoleProtectedRoute>
             } />
 
