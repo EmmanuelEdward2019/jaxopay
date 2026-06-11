@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
 import {
   Wallet,
   ArrowUpRight,
@@ -22,6 +23,7 @@ import dashboardService from '../../services/dashboardService';
 import cryptoService from '../../services/cryptoService';
 import walletService from '../../services/walletService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
+import { TransactionDetailModal } from './Transactions';
 
 const COIN_COLORS = [
   'from-yellow-400 to-orange-500',
@@ -129,6 +131,7 @@ const DashboardHome = () => {
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [balanceDisplay, setBalanceDisplay] = useState(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -420,7 +423,11 @@ const DashboardHome = () => {
             {transactions.slice(0, 5).map((tx, i) => {
               const isCredit = tx.direction === 'credit' || ['deposit', 'crypto_sell'].includes(tx.transaction_type);
               return (
-                <div key={tx.id || i} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                <button 
+                  key={tx.id || i} 
+                  onClick={() => setSelectedTransaction(tx)}
+                  className="w-full text-left flex items-center justify-between py-3 px-2 border-b border-border/50 last:border-0 hover:bg-muted/40 active:bg-muted/60 transition-colors rounded-xl"
+                >
                   <div className="flex items-center gap-3">
                     <div className={`p-1.5 rounded-lg ${isCredit ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
                       {isCredit ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
@@ -444,12 +451,21 @@ const DashboardHome = () => {
                       </p>
                     )}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         )}
       </div>
+      
+      <AnimatePresence>
+        {selectedTransaction && (
+          <TransactionDetailModal 
+            transaction={selectedTransaction} 
+            onClose={() => setSelectedTransaction(null)} 
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

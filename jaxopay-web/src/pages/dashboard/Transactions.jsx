@@ -221,7 +221,7 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
 };
 
 // ─── Full-screen modal ────────────────────────────────────────────────────────
-const TransactionDetailModal = ({ transaction, onClose }) => {
+export const TransactionDetailModal = ({ transaction, onClose }) => {
     const receiptRef = useRef(null);
     const [copied, setCopied] = useState(false);
     const [downloading, setDownloading] = useState(false);
