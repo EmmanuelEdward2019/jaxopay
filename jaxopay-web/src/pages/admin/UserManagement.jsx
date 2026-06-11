@@ -144,7 +144,7 @@ const UserManagement = () => {
                     </button>
                     <button
                         onClick={fetchUsers}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg"
                     >
                         <RefreshCw className="w-4 h-4" />
                         Refresh
@@ -474,7 +474,7 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="flex-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg disabled:opacity-50"
+                            className="flex-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg disabled:opacity-50"
                         >
                             {loading ? 'Creating...' : 'Create User'}
                         </button>
@@ -680,7 +680,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                                         setEditMode(false);
                                     }}
                                     disabled={loading}
-                                    className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg disabled:opacity-50"
+                                    className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg disabled:opacity-50"
                                 >
                                     {loading ? 'Saving...' : 'Save Changes'}
                                 </button>

@@ -77,7 +77,7 @@ const FeatureManagement = () => {
                 </div>
                 <button
                     onClick={fetchToggles}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg transition-colors"
                 >
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                     Refresh
@@ -287,7 +287,7 @@ const FeatureConfigModal = ({ toggle, onClose, onUpdate }) => {
                         <button
                             onClick={handleSave}
                             disabled={saving || user?.role !== 'super_admin'}
-                            className="flex-1 py-3 bg-primary-600 text-white font-bold rounded-xl hover:bg-primary-700 shadow-lg shadow-primary-200 dark:shadow-none disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                            className="flex-1 py-3 bg-primary-600 text-gray-900 font-bold rounded-xl hover:bg-primary-700 shadow-lg shadow-primary-200 dark:shadow-none disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                         >
                             {saving ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
                             {saving ? 'Saving...' : 'Save Configuration'}

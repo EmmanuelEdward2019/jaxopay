@@ -103,7 +103,7 @@ const AnnouncementManagement = () => {
                 </div>
                 <button
                     onClick={() => setShowCreateModal(true)}
-                    className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-2xl transition-all shadow-lg"
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-700 text-gray-900 font-bold rounded-2xl transition-all shadow-lg"
                 >
                     <Plus className="w-5 h-5" />
                     New Announcement
@@ -296,7 +296,7 @@ const AnnouncementManagement = () => {
                                         <button
                                             type="submit"
                                             disabled={isSubmitting}
-                                            className="flex-1 py-4 bg-primary-600 text-white font-bold rounded-2xl hover:bg-primary-700 transition-all shadow-lg shadow-primary-500/20 disabled:opacity-50"
+                                            className="flex-1 py-4 bg-primary-600 text-gray-900 font-bold rounded-2xl hover:bg-primary-700 transition-all shadow-lg shadow-primary-500/20 disabled:opacity-50"
                                         >
                                             {isSubmitting ? 'Creating...' : 'Post Announcement'}
                                         </button>

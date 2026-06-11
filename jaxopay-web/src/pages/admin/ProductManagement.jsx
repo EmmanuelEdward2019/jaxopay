@@ -115,7 +115,7 @@ const ProductManagement = () => {
                 <button
                     onClick={() => setFilters({ ...filters, status: 'completed' })}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filters.status === 'completed'
-                        ? 'bg-primary-600 text-white'
+                        ? 'bg-primary-600 text-gray-900'
                         : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700'
                         }`}
                 >

@@ -69,7 +69,7 @@ const AMLCompliance = () => {
                 </div>
                 <button
                     onClick={fetchData}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg"
                 >
                     <RefreshCw className="w-4 h-4" />
                     Refresh

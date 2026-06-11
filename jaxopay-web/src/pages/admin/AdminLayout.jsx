@@ -123,7 +123,7 @@ const AdminLayout = () => {
                                 end={item.exact}
                                 className={({ isActive }) =>
                                     `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${isActive
-                                        ? 'bg-accent-500/20 text-accent-400 border-l-4 border-accent-500 shadow-lg shadow-accent-500/10'
+                                        ? 'bg-accent-500/20 text-gray-200 border-l-4 border-accent-500 shadow-lg shadow-accent-500/10'
                                         : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
                                     }`
                                 }
