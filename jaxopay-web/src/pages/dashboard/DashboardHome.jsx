@@ -14,6 +14,7 @@ import {
   Eye,
   EyeOff,
   CreditCard,
+  Receipt,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
@@ -224,6 +225,7 @@ const DashboardHome = () => {
     { name: 'Deposit', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'text-success' },
     { name: 'Withdraw', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'text-danger' },
     { name: 'Swap', icon: ArrowLeftRight, href: '/dashboard/instant-swap?from=USDT&to=NGN', color: 'text-primary' },
+    { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', color: 'text-warning' },
   ];
 
   const statsDisplay = [

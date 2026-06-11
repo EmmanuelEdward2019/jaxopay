@@ -145,25 +145,26 @@ const Bills = () => {
         setAccountNumber('');
         setValidatedAccount(null);
 
-        if (selectedCategory?.id === 'data') {
+        if (selectedCategory?.id === 'data' || selectedCategory?.id === 'cable_tv') {
             setLoading(true);
             setError(null);
             try {
-                const result = await billService.getProviders('data', 'NG', { network: provider.id });
+                const extraParam = selectedCategory?.id === 'data' ? { network: provider.id } : { cable: provider.id };
+                const result = await billService.getProviders(selectedCategory.id, 'NG', extraParam);
                 const list = extractProviderList(result);
                 const enriched = list[0];
                 const vars = enriched?.variations || [];
                 if (!result.success || !enriched || vars.length === 0) {
                     setError(
                         result.error ||
-                            'No data plans returned for this network. Pick another network or try again later.'
+                            'No plans returned for this provider. Pick another or try again later.'
                     );
                     setLoading(false);
                     return;
                 }
                 setSelectedProvider(enriched);
             } catch {
-                setError('Could not load data plans. Check your connection and try again.');
+                setError('Could not load plans. Check your connection and try again.');
                 setLoading(false);
                 return;
             }
@@ -438,14 +439,14 @@ const Bills = () => {
                                     <label className="block text-sm font-medium text-foreground mb-2">
                                         {selectedCategory?.fieldLabel}
                                     </label>
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-col sm:flex-row gap-2">
                                         <input
                                             type={selectedCategory?.fieldType || 'text'}
                                             list={`recent-accounts-${selectedCategory?.id}`}
                                             value={accountNumber}
                                             onChange={(e) => { setAccountNumber(e.target.value); setValidatedAccount(null); }}
                                             placeholder={selectedCategory?.fieldPlaceholder}
-                                            className="flex-1 px-4 py-3 bg-card border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-ring outline-none"
+                                            className="flex-1 w-full px-4 py-3 bg-card border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-ring outline-none min-w-0"
                                         />
                                         {recentInputs.length > 0 && (
                                             <datalist id={`recent-accounts-${selectedCategory?.id}`}>
@@ -458,7 +459,7 @@ const Bills = () => {
                                             <button
                                                 onClick={handleValidateAccount}
                                                 disabled={!accountNumber || validating}
-                                                className="px-4 py-3 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg disabled:opacity-50 transition-colors whitespace-nowrap"
+                                                className="w-full sm:w-auto px-4 py-3 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg disabled:opacity-50 transition-colors shrink-0"
                                             >
                                                 {validating ? 'Verifying...' : 'Verify'}
                                             </button>
