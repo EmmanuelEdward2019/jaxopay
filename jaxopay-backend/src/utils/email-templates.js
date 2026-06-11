@@ -226,6 +226,37 @@ export const templates = {
     </div>`
       : ''}
   `),
+
+  ticketCreated: (data) => layout(`
+    <h1 style="margin-top: 0;">Support Ticket Received</h1>
+    <p>Hi ${data.name},</p>
+    <p>We've received your support request: <strong>${data.subject}</strong></p>
+    <p>Your tracking ID is <span class="highlight">#${data.id}</span>. Our team will review this and get back to you shortly.</p>
+    <div style="text-align: center;">
+      <a href="${data.frontendUrl}/dashboard/support" class="button">View Ticket</a>
+    </div>
+    <div class="divider"></div>
+    <p>Thank you for reaching out.</p>
+  `),
+
+  ticketReplied: (data) => layout(`
+    <h1 style="margin-top: 0;">New Reply on Your Ticket</h1>
+    <p>Hi ${data.name},</p>
+    <p>Our support team has responded to your ticket: <strong>${data.subject}</strong></p>
+    <div style="text-align: center;">
+      <a href="${data.frontendUrl}/dashboard/support" class="button">View Reply</a>
+    </div>
+  `),
+
+  ticketClosed: (data) => layout(`
+    <h1 style="margin-top: 0;">Support Ticket Closed</h1>
+    <p>Hi ${data.name},</p>
+    <p>Your support ticket (<strong>${data.subject}</strong>) has been marked as closed.</p>
+    <p>We hope we were able to resolve your issue. Please let us know how we did by leaving a review!</p>
+    <div style="text-align: center;">
+      <a href="${data.frontendUrl}/dashboard/support" class="button">Rate & Review</a>
+    </div>
+  `),
 };
 
 // Aliases for backward compatibility

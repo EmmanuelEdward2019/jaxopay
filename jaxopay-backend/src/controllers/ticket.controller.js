@@ -1,6 +1,7 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { sendEmail } from '../services/email.service.js';
 
 // Create a new support ticket
 export const createTicket = catchAsync(async (req, res) => {
@@ -29,6 +30,30 @@ export const createTicket = catchAsync(async (req, res) => {
 
         return ticket;
     });
+
+    // Fetch user details for email
+    const userResult = await query(
+        `SELECT u.email, up.first_name 
+         FROM users u 
+         LEFT JOIN user_profiles up ON u.id = up.user_id 
+         WHERE u.id = $1`,
+        [req.user.id]
+    );
+
+    if (userResult.rows.length > 0) {
+        const user = userResult.rows[0];
+        sendEmail({
+            to: user.email,
+            subject: `Support Ticket Received: ${subject}`,
+            template: 'ticketCreated',
+            data: {
+                name: user.first_name || 'User',
+                subject: subject,
+                id: result.id,
+                frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173'
+            }
+        }).catch(err => logger.error('Error sending ticket created email:', err));
+    }
 
     res.status(201).json({
         success: true,
@@ -151,6 +176,31 @@ export const replyToTicket = catchAsync(async (req, res) => {
         return messageResult.rows[0];
     });
 
+    // If admin replied, send email to user
+    if (isAdmin) {
+        const userResult = await query(
+            `SELECT u.email, up.first_name 
+             FROM users u 
+             LEFT JOIN user_profiles up ON u.id = up.user_id 
+             WHERE u.id = $1`,
+            [ticket.user_id]
+        );
+
+        if (userResult.rows.length > 0) {
+            const user = userResult.rows[0];
+            sendEmail({
+                to: user.email,
+                subject: `New Reply on Ticket: ${ticket.subject}`,
+                template: 'ticketReplied',
+                data: {
+                    name: user.first_name || 'User',
+                    subject: ticket.subject,
+                    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173'
+                }
+            }).catch(err => logger.error('Error sending ticket reply email:', err));
+        }
+    }
+
     res.status(201).json({
         success: true,
         data: result
@@ -179,6 +229,29 @@ export const closeTicket = catchAsync(async (req, res) => {
         "UPDATE support_tickets SET status = 'closed', updated_at = NOW() WHERE id = $1",
         [id]
     );
+
+    // Send ticket closed email
+    const userResult = await query(
+        `SELECT u.email, up.first_name 
+         FROM users u 
+         LEFT JOIN user_profiles up ON u.id = up.user_id 
+         WHERE u.id = $1`,
+        [ticket.user_id]
+    );
+
+    if (userResult.rows.length > 0) {
+        const user = userResult.rows[0];
+        sendEmail({
+            to: user.email,
+            subject: `Support Ticket Closed: ${ticket.subject}`,
+            template: 'ticketClosed',
+            data: {
+                name: user.first_name || 'User',
+                subject: ticket.subject,
+                frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173'
+            }
+        }).catch(err => logger.error('Error sending ticket closed email:', err));
+    }
 
     res.status(200).json({
         success: true,
@@ -222,5 +295,51 @@ export const getAllTickets = catchAsync(async (req, res) => {
     res.status(200).json({
         success: true,
         data: result.rows
+    });
+});
+
+// Rate a ticket
+export const rateTicket = catchAsync(async (req, res) => {
+    const { id } = req.params;
+    const { rating, review_comment } = req.body;
+
+    if (!rating || rating < 1 || rating > 5) {
+        throw new AppError('Rating must be between 1 and 5', 400);
+    }
+
+    const ticketResult = await query(
+        'SELECT * FROM support_tickets WHERE id = $1',
+        [id]
+    );
+
+    if (ticketResult.rows.length === 0) {
+        throw new AppError('Ticket not found', 404);
+    }
+
+    const ticket = ticketResult.rows[0];
+
+    // Only the ticket owner can rate it
+    if (ticket.user_id !== req.user.id) {
+        throw new AppError('Unauthorized', 403);
+    }
+
+    // Only closed tickets can be rated
+    if (ticket.status !== 'closed') {
+        throw new AppError('Only closed tickets can be rated', 400);
+    }
+
+    // Check if already rated
+    if (ticket.rating) {
+        throw new AppError('Ticket has already been rated', 400);
+    }
+
+    await query(
+        'UPDATE support_tickets SET rating = $1, review_comment = $2, updated_at = NOW() WHERE id = $3',
+        [rating, review_comment, id]
+    );
+
+    res.status(200).json({
+        success: true,
+        message: 'Ticket rated successfully'
     });
 });
