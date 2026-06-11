@@ -1334,7 +1334,7 @@ export const updateUserFeatureAccess = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: result.rows[0] });
 });
 
-import { providerRegistry } from '../orchestration/index.js';
+
 
 // Get Orchestration Status (super_admin/admin)
 export const getOrchestrationStatus = catchAsync(async (req, res) => {
