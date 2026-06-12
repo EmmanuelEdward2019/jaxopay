@@ -4,38 +4,46 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to Digital Ocean Droplet
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy files to Droplet via SCP
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "./jaxopay-backend/*, !./jaxopay-backend/node_modules"
+          target: "/home/jaxo/jaxopay-backend"
+          strip_components: 2
+
+      - name: SSH into Droplet to Restart App
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DROPLET_IP }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Navigate to the backend directory
+            set -e
             cd /home/jaxo/jaxopay-backend
             
-            # Pull the latest changes from main
-            git fetch --all
-            git reset --hard origin/main
-            git pull origin main
-            
-            # Install dependencies
+            echo "Installing dependencies..."
             npm install
             
-            # Install pm2 globally if not already installed
+            echo "Checking for pm2..."
             if ! command -v pm2 &> /dev/null; then
               npm install -g pm2
             fi
             
-            # Start or restart the application with PM2
+            echo "Restarting application..."
             pm2 start src/server.js --name "jaxopay-backend" || pm2 restart "jaxopay-backend"
-            
-            # Save the PM2 process list so it restarts on server reboot
             pm2 save
-            pm2 startup | tail -n 1 | bash || true
+            
+            echo "Deployment successful!"
