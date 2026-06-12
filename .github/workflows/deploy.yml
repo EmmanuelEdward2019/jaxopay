@@ -20,9 +20,8 @@ jobs:
           host: ${{ secrets.DROPLET_IP }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./jaxopay-backend/*, !./jaxopay-backend/node_modules"
-          target: "/home/jaxo/jaxopay-backend"
-          strip_components: 2
+          source: "jaxopay-backend/"
+          target: "/home/jaxo/"
 
       - name: SSH into Droplet to Restart App
         uses: appleboy/ssh-action@v1.0.3
