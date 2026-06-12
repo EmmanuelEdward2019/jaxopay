@@ -579,62 +579,112 @@ export const addFunds = catchAsync(async (req, res) => {
 
 /**
  * GET /wallets/vba/:walletId
- * Fetches the Virtual Bank Account (VBA) for a fiat wallet from Quidax.
+ * Returns the Virtual Bank Account (VBA) / NGN deposit details for a fiat wallet.
+ *
+ * Per Quidax docs v3.0: NGN deposits are made via a dedicated bank account
+ * tied to the sub-user's NGN wallet. The bank account details are returned
+ * inside the wallet object at GET /users/{id}/wallets/ngn.
  */
 export const getOrCreateVBA = catchAsync(async (req, res) => {
   const { walletId } = req.params;
 
-  // Verify wallet belongs to user
+  // 1. Verify wallet belongs to user and is NGN
   const walletResult = await query(
     'SELECT id, currency FROM wallets WHERE id = $1 AND user_id = $2 AND is_active = true',
     [walletId, req.user.id]
   );
-  
+
   if (walletResult.rows.length === 0) {
     throw new AppError('Wallet not found', 404);
   }
 
   const wallet = walletResult.rows[0];
-  
+
   if (wallet.currency.toUpperCase() !== 'NGN') {
-    throw new AppError(`Virtual bank accounts are only available for NGN wallets.`, 400);
+    throw new AppError('Virtual bank accounts are only available for NGN wallets.', 400);
   }
 
+  // 2. Look up the user's Quidax sub-account ID from DB
+  let quidaxUserId = null;
   try {
-    // Attempt to fetch the NGN wallet from Quidax to get the bank_account details
-    const quidaxWallets = await QuidaxAdapter.getUserWallets(); // Fetch master or sub-user wallets
-    const ngnWallet = quidaxWallets.find(w => w.currency.toLowerCase() === 'ngn');
+    const userRow = await query(
+      'SELECT quidax_user_id FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    quidaxUserId = userRow.rows[0]?.quidax_user_id || null;
+  } catch (dbErr) {
+    logger.warn(`[VBA] Could not fetch quidax_user_id for user ${req.user.id}: ${dbErr.message}`);
+  }
+
+  // Use 'me' (master account) as fallback if no sub-account yet
+  const targetUserId = quidaxUserId || 'me';
+
+  try {
+    // 3. Fetch the NGN wallet from Quidax for this user
+    // Per Quidax docs: GET /users/{id}/wallets/ngn returns the wallet with bank_account details
+    const ngnWalletRes = await QuidaxAdapter.client.get(`/users/${targetUserId}/wallets/ngn`);
+    const ngnWallet = ngnWalletRes.data?.data || ngnWalletRes.data;
+
+    logger.info(`[VBA] Quidax NGN wallet for user ${targetUserId}: ${JSON.stringify(ngnWallet)}`);
 
     let bankAccount = null;
 
-    if (ngnWallet && ngnWallet.bank_account) {
-      bankAccount = {
-        bank_name: ngnWallet.bank_account.bank_name,
-        account_number: ngnWallet.bank_account.account_number,
-        account_name: ngnWallet.bank_account.account_name
-      };
-    } else if (ngnWallet && ngnWallet.deposit_address) {
-      // Sometimes Quidax puts it here
-       bankAccount = {
-        bank_name: "Quidax Deposit",
-        account_number: ngnWallet.deposit_address,
-        account_name: "Jaxopay User"
-      };
-    } else {
-       // Fallback for development if Quidax hasn't generated one
-       bankAccount = {
-        bank_name: "Quidax Virtual Bank",
-        account_number: "Generating...",
-        account_name: "Please contact support if this persists"
-       }
+    if (ngnWallet) {
+      if (ngnWallet.bank_account && ngnWallet.bank_account.account_number) {
+        // Standard Quidax VBA format
+        bankAccount = {
+          bank_name: ngnWallet.bank_account.bank_name || 'Quidax Virtual Bank',
+          account_number: ngnWallet.bank_account.account_number,
+          account_name: ngnWallet.bank_account.account_name || req.user.email,
+        };
+      } else if (ngnWallet.deposit_address && ngnWallet.deposit_address.length > 5) {
+        // Some Quidax accounts surface the account number as deposit_address
+        bankAccount = {
+          bank_name: ngnWallet.bank_name || 'Quidax Virtual Bank',
+          account_number: ngnWallet.deposit_address,
+          account_name: ngnWallet.account_name || req.user.email,
+        };
+      } else if (ngnWallet.bank_name || ngnWallet.account_number) {
+        // Flat field format (some API versions)
+        bankAccount = {
+          bank_name: ngnWallet.bank_name || 'Quidax Virtual Bank',
+          account_number: ngnWallet.account_number || 'Pending',
+          account_name: ngnWallet.account_name || req.user.email,
+        };
+      }
     }
 
-    res.status(200).json({
+    if (!bankAccount) {
+      // Quidax hasn't provisioned a bank account yet — this is normal for new accounts.
+      // Return a pending state so the frontend can inform the user.
+      logger.warn(`[VBA] No bank account found in Quidax NGN wallet for ${targetUserId}. Full wallet: ${JSON.stringify(ngnWallet)}`);
+      return res.status(200).json({
+        success: true,
+        pending: true,
+        data: {
+          bank_name: 'Pending Activation',
+          account_number: 'Your virtual account is being set up. Please contact support if this persists.',
+          account_name: req.user.email,
+        }
+      });
+    }
+
+    return res.status(200).json({
       success: true,
-      data: bankAccount
+      data: bankAccount,
     });
+
   } catch (error) {
-    logger.error('[Wallet] Error fetching VBA from Quidax:', error);
-    throw new AppError('Failed to fetch virtual bank account details from Quidax.', 502);
+    const status = error.response?.status;
+    const msg = error.response?.data?.message || error.response?.data?.error || error.message;
+    logger.error(`[VBA] Quidax error fetching NGN wallet for ${targetUserId} (HTTP ${status}): ${msg}`);
+    logger.error(`[VBA] Full Quidax error: ${JSON.stringify(error.response?.data)}`);
+
+    // Return a graceful error — do NOT re-throw as 502 (which drops CORS headers via Nginx)
+    return res.status(200).json({
+      success: false,
+      error: 'Could not retrieve bank account details from payment provider. Please try again or contact support.',
+    });
   }
 });
+
