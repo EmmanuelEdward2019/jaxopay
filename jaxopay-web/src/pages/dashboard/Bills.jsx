@@ -76,6 +76,7 @@ const Bills = () => {
     const [paymentResult, setPaymentResult] = useState(null);
     const [meterType, setMeterType] = useState('prepaid'); // prepaid | postpaid (electricity)
     const [providerSearch, setProviderSearch] = useState('');
+    const [dataPlanTab, setDataPlanTab] = useState('All'); // For categorizing data plans
     const { recentInputs, addRecentInput } = useRecentInputs(selectedCategory?.id);
 
     useEffect(() => {
@@ -251,6 +252,31 @@ const Bills = () => {
         : (accountNumber && accountNumber.length >= 10 && amount && parseFloat(amount) > 0 &&
             (!needsBundlePlan || selectedVariation) &&
             (!hasVariations || selectedVariation));
+
+    // Helper to categorize data plans
+    const getPlanCategory = (planName) => {
+        const name = (planName || '').toLowerCase();
+        if (name.match(/\b(daily|1 day|2 day|3 day|24 hour|24hr)\b/)) return 'Daily';
+        if (name.match(/\b(weekly|7 day|14 day)\b/)) return 'Weekly';
+        if (name.match(/\b(monthly|30 day|1 month)\b/)) return 'Monthly';
+        if (name.match(/\b(yearly|annual|365 day)\b/)) return 'Yearly';
+        return 'Others';
+    };
+
+    const categorizedPlans = selectedProvider?.variations ? selectedProvider.variations.reduce((acc, v) => {
+        const cat = getPlanCategory(v.name);
+        if (!acc[cat]) acc[cat] = [];
+        acc[cat].push(v);
+        return acc;
+    }, {}) : {};
+
+    const availableTabs = ['All', 'Daily', 'Weekly', 'Monthly', 'Yearly', 'Others'].filter(
+        tab => tab === 'All' || (categorizedPlans[tab] && categorizedPlans[tab].length > 0)
+    );
+
+    const filteredVariations = selectedProvider?.variations
+        ? (dataPlanTab === 'All' ? selectedProvider.variations : categorizedPlans[dataPlanTab] || [])
+        : [];
 
     return (
         <div className="space-y-6">
@@ -487,8 +513,26 @@ const Bills = () => {
                                                 selectedCategory?.id === 'cable_tv' ? 'Select Subscription Package' :
                                                     'Select Plan'}
                                         </label>
+
+                                        {selectedCategory?.id === 'data' && availableTabs.length > 1 && (
+                                            <div className="flex overflow-x-auto gap-2 mb-3 pb-2 scrollbar-hide">
+                                                {availableTabs.map(tab => (
+                                                    <button
+                                                        key={tab}
+                                                        onClick={() => { setDataPlanTab(tab); setSelectedVariation(null); setAmount(''); }}
+                                                        className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-medium transition-colors ${dataPlanTab === tab
+                                                            ? 'bg-primary text-white shadow-sm'
+                                                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                                                        }`}
+                                                    >
+                                                        {tab}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+
                                         <div className="space-y-2 max-h-56 overflow-y-auto pr-1 rounded-lg">
-                                            {selectedProvider.variations.map((v, idx) => (
+                                            {filteredVariations.map((v, idx) => (
                                                 <button
                                                     key={v.variation_code || `plan-${idx}`}
                                                     onClick={() => {
@@ -503,12 +547,15 @@ const Bills = () => {
                                                 >
                                                     <span className="text-sm font-medium text-foreground">{v.name}</span>
                                                     {(v.amount != null && v.amount !== '') || v.variation_amount || v.price ? (
-                                                        <span className="text-sm font-bold text-primary">
+                                                        <span className="text-sm font-bold text-primary shrink-0 ml-3">
                                                             ₦{parseFloat(v.amount ?? v.variation_amount ?? v.price).toLocaleString()}
                                                         </span>
                                                     ) : null}
                                                 </button>
                                             ))}
+                                            {filteredVariations.length === 0 && (
+                                                <p className="text-center text-muted-foreground py-4 text-sm">No plans available in this category.</p>
+                                            )}
                                         </div>
                                     </div>
                                 )}
