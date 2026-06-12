@@ -32,7 +32,8 @@ class QuidaxAdapter {
         this.client = createApiClient({
             baseURL: this.baseURL,
             headers: {
-                'Authorization': `Bearer ${this.secretKey}`,
+                // Customer service requested to use QUIDAX_API_KEY instead of Secret Key
+                'Authorization': `Bearer ${this.apiKey}`,
                 'Content-Type': 'application/json',
             },
             timeout: 25000,
