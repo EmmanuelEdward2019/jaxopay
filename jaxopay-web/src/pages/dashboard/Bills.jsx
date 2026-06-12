@@ -254,19 +254,28 @@ const Bills = () => {
             (!hasVariations || selectedVariation));
 
     // Helper to categorize data plans
-    const getPlanCategory = (planName) => {
+    const getPlanCategory = (plan) => {
         // Strip spaces and symbols to match variations like "1 day", "7days", "1-Day" easily
-        const name = (planName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const name = (plan.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const price = parseFloat((plan.amount ?? plan.variation_amount ?? plan.price) || 0);
         
-        if (name.includes('daily') || name.includes('1day') || name.includes('2day') || name.includes('3day') || name.includes('24hour') || name.includes('24hr')) return 'Daily';
-        if (name.includes('weekly') || name.includes('7day') || name.includes('14day')) return 'Weekly';
-        if (name.includes('monthly') || name.includes('30day') || name.includes('1month')) return 'Monthly';
+        // Check long durations first so "30 days" overrides "daily" in "2GB daily for 30 days"
         if (name.includes('yearly') || name.includes('annual') || name.includes('365day')) return 'Yearly';
+        if (name.includes('monthly') || name.includes('30day') || name.includes('1month')) return 'Monthly';
+        if (name.includes('weekly') || name.includes('7day') || name.includes('14day')) return 'Weekly';
+
+        // Check for daily keywords
+        if (name.includes('daily') || name.includes('1day') || name.includes('2day') || name.includes('3day') || name.includes('24hour') || name.includes('24hr')) {
+            // High price plans with "daily" are usually Monthly router plans with a daily quota
+            if (price >= 5000) return 'Monthly'; 
+            return 'Daily';
+        }
+
         return 'Others';
     };
 
     const categorizedPlans = selectedProvider?.variations ? selectedProvider.variations.reduce((acc, v) => {
-        const cat = getPlanCategory(v.name);
+        const cat = getPlanCategory(v);
         if (!acc[cat]) acc[cat] = [];
         acc[cat].push(v);
         return acc;
