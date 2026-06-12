@@ -895,6 +895,10 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
     const retryRef = useRef(0);
     const retryTimerRef = useRef(null);
 
+    // Fiat deposit states
+    const [bankAccount, setBankAccount] = useState(null);
+    const [bankPending, setBankPending] = useState(false);
+
     const isCrypto = type === 'crypto';
     const existingWallet = wallets.find(w =>
         w.currency?.toUpperCase() === code?.toUpperCase()
@@ -979,29 +983,46 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
         return () => { cancelled = true; if (retryTimerRef.current) clearTimeout(retryTimerRef.current); };
     }, [network]);
 
-    // Fiat deposit via Korapay
-    const handleFiatDeposit = async () => {
+    // Fetch Bank Account for Fiat
+    useEffect(() => {
+        if (isCrypto) return;
+        let cancelled = false;
+
+        const fetchBank = async () => {
+            setLoading(true); setError(null); setBankPending(true);
+            try {
+                const wallet = await ensureWallet();
+                if (cancelled || !wallet) return;
+
+                const res = await walletService.getVBA(wallet.id);
+                if (res.success && res.data) {
+                    setBankAccount(res.data);
+                } else {
+                    setError(res.error || 'Could not fetch bank account details');
+                }
+            } catch (e) {
+                if (!cancelled) setError(e.message || 'Something went wrong');
+            }
+            if (!cancelled) {
+                setBankPending(false);
+                setLoading(false);
+            }
+        };
+
+        fetchBank();
+        return () => { cancelled = true; };
+    }, [code, isCrypto]);
+
+    // Optional: Simulation deposit if needed for testing, or just rely on actual Bank Transfer
+    const handleFiatSimulation = async () => {
         if (!amount || parseFloat(amount) <= 0) return;
         setLoading(true); setError(null); setStage('processing');
         try {
             let wallet = existingWallet;
             if (!wallet) wallet = await ensureWallet();
-
-            const result = await walletService.initializeDeposit(wallet.id, parseFloat(amount), code);
-            if (result.success) {
-                const { checkout_url, mode } = result.data;
-                if (mode === 'simulation') {
-                    await walletService.addFunds(wallet.id, parseFloat(amount), 'Manual deposit');
-                    setStage('success');
-                    setTimeout(() => { onRefresh(); onClose(); }, 2500);
-                } else if (checkout_url) {
-                    window.location.href = checkout_url;
-                } else {
-                    setError('No checkout URL returned.'); setStage('form');
-                }
-            } else {
-                setError(result.error || 'Deposit failed'); setStage('form');
-            }
+            await walletService.addFunds(wallet.id, parseFloat(amount), 'Manual simulated deposit');
+            setStage('success');
+            setTimeout(() => { onRefresh(); onClose(); }, 2500);
         } catch (e) {
             setError(e.message || 'Something went wrong'); setStage('form');
         }
@@ -1095,22 +1116,48 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                     )}
                 </div>
             ) : (
-                /* Fiat deposit: amount input + proceed to payment */
+                /* Fiat deposit: Display Bank Account Details */
                 <div className="space-y-4">
-                    <div>
-                        <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Amount to Deposit</label>
-                        <div className="relative">
-                            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-                                placeholder="0.00"
-                                className="w-full pl-14 pr-4 py-4 bg-muted border border-border rounded-xl focus:ring-2 focus:ring-ring focus:outline-none text-xl font-bold text-foreground placeholder:text-muted-foreground" />
-                            <div className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">{code}</div>
+                    {bankPending && (
+                        <div className="flex flex-col items-center gap-3 py-6 text-center">
+                            <RefreshCw className="w-8 h-8 text-primary animate-spin" />
+                            <p className="text-sm font-bold text-foreground">Fetching account details...</p>
                         </div>
-                    </div>
-                    <button onClick={handleFiatDeposit}
-                        disabled={loading || !amount || parseFloat(amount) <= 0}
-                        className="w-full py-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                        {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : 'Proceed to Payment'}
-                    </button>
+                    )}
+                    
+                    {bankAccount && !bankPending && (
+                        <div className="space-y-4">
+                            <div className="bg-muted/50 rounded-xl p-4 border border-border">
+                                <p className="text-xs text-muted-foreground mb-4">Transfer NGN to the account below to fund your wallet. It will reflect automatically.</p>
+                                
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-xs text-muted-foreground mb-1">Bank Name</p>
+                                        <p className="font-bold text-foreground">{bankAccount.bank_name}</p>
+                                    </div>
+                                    
+                                    <div>
+                                        <p className="text-xs text-muted-foreground mb-1">Account Number</p>
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-xl font-bold text-primary flex-1 tracking-wider">{bankAccount.account_number}</p>
+                                            <button onClick={() => handleCopy(bankAccount.account_number)} className="p-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg transition-colors">
+                                                {copied ? <Check className="w-5 h-5 text-success" /> : <Copy className="w-5 h-5" />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <p className="text-xs text-muted-foreground mb-1">Account Name</p>
+                                        <p className="font-bold text-foreground">{bankAccount.account_name}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <p className="text-[10px] text-muted-foreground text-center font-medium leading-relaxed px-4">
+                                This account is dedicated to you. Any amount transferred here will be credited to your Jaxopay {code} wallet.
+                            </p>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

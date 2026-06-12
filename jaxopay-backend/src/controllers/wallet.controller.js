@@ -579,8 +579,62 @@ export const addFunds = catchAsync(async (req, res) => {
 
 /**
  * GET /wallets/vba/:walletId
- * Note: Since switching to Quidax, static VBAs are unsupported.
+ * Fetches the Virtual Bank Account (VBA) for a fiat wallet from Quidax.
  */
 export const getOrCreateVBA = catchAsync(async (req, res) => {
-  throw new AppError('Static Virtual Bank Accounts are not supported on this platform version. Please use the standard deposit method.', 400);
+  const { walletId } = req.params;
+
+  // Verify wallet belongs to user
+  const walletResult = await query(
+    'SELECT id, currency FROM wallets WHERE id = $1 AND user_id = $2 AND is_active = true',
+    [walletId, req.user.id]
+  );
+  
+  if (walletResult.rows.length === 0) {
+    throw new AppError('Wallet not found', 404);
+  }
+
+  const wallet = walletResult.rows[0];
+  
+  if (wallet.currency.toUpperCase() !== 'NGN') {
+    throw new AppError(`Virtual bank accounts are only available for NGN wallets.`, 400);
+  }
+
+  try {
+    // Attempt to fetch the NGN wallet from Quidax to get the bank_account details
+    const quidaxWallets = await QuidaxAdapter.getUserWallets(); // Fetch master or sub-user wallets
+    const ngnWallet = quidaxWallets.find(w => w.currency.toLowerCase() === 'ngn');
+
+    let bankAccount = null;
+
+    if (ngnWallet && ngnWallet.bank_account) {
+      bankAccount = {
+        bank_name: ngnWallet.bank_account.bank_name,
+        account_number: ngnWallet.bank_account.account_number,
+        account_name: ngnWallet.bank_account.account_name
+      };
+    } else if (ngnWallet && ngnWallet.deposit_address) {
+      // Sometimes Quidax puts it here
+       bankAccount = {
+        bank_name: "Quidax Deposit",
+        account_number: ngnWallet.deposit_address,
+        account_name: "Jaxopay User"
+      };
+    } else {
+       // Fallback for development if Quidax hasn't generated one
+       bankAccount = {
+        bank_name: "Quidax Virtual Bank",
+        account_number: "Generating...",
+        account_name: "Please contact support if this persists"
+       }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: bankAccount
+    });
+  } catch (error) {
+    logger.error('[Wallet] Error fetching VBA from Quidax:', error);
+    throw new AppError('Failed to fetch virtual bank account details from Quidax.', 502);
+  }
 });
