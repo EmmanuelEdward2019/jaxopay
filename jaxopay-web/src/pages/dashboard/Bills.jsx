@@ -255,11 +255,13 @@ const Bills = () => {
 
     // Helper to categorize data plans
     const getPlanCategory = (planName) => {
-        const name = (planName || '').toLowerCase();
-        if (name.match(/\b(daily|1 day|2 day|3 day|24 hour|24hr)\b/)) return 'Daily';
-        if (name.match(/\b(weekly|7 day|14 day)\b/)) return 'Weekly';
-        if (name.match(/\b(monthly|30 day|1 month)\b/)) return 'Monthly';
-        if (name.match(/\b(yearly|annual|365 day)\b/)) return 'Yearly';
+        // Strip spaces and symbols to match variations like "1 day", "7days", "1-Day" easily
+        const name = (planName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        
+        if (name.includes('daily') || name.includes('1day') || name.includes('2day') || name.includes('3day') || name.includes('24hour') || name.includes('24hr')) return 'Daily';
+        if (name.includes('weekly') || name.includes('7day') || name.includes('14day')) return 'Weekly';
+        if (name.includes('monthly') || name.includes('30day') || name.includes('1month')) return 'Monthly';
+        if (name.includes('yearly') || name.includes('annual') || name.includes('365day')) return 'Yearly';
         return 'Others';
     };
 
