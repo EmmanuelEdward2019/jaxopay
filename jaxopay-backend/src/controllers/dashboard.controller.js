@@ -26,7 +26,7 @@ export const getDashboardSummary = catchAsync(async (req, res) => {
                UNION ALL
 
                SELECT bp.id, 'bill_payment' as transaction_type, bp.amount, bp.currency,
-                      bp.status, 'Bill Payment: ' || bp.service_type as description, bp.created_at, bp.metadata, bp.reference
+                      bp.status, 'Bill Payment: ' || bp.bill_category as description, bp.created_at, bp.metadata, bp.reference
                FROM bill_payments bp
                WHERE bp.user_id = $1
 

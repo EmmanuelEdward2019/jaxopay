@@ -475,7 +475,7 @@ class QuidaxAdapter {
         const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/wallets`);
-            return response.data;
+            return response.data?.data || response.data;
         }, 'getAllWallets');
     }
 
@@ -486,7 +486,7 @@ class QuidaxAdapter {
         const userId = await this._getAuthUserId();
         return this._executeWithCircuitBreaker(async () => {
             const response = await this.client.get(`/users/${userId}/wallets/${currency.toLowerCase()}`);
-            return response.data;
+            return response.data?.data || response.data;
         }, 'getWallet');
     }
 
