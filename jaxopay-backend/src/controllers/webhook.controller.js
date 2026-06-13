@@ -317,7 +317,7 @@ async function refundFailedPayment(reference) {
 }
 
 // ─────────────────────────────────────────────
-// Korapay Webhooks (Fiat Deposits via VBA)
+// Korapay Webhooks (Fiat Deposits via Checkout & VBA)
 // ─────────────────────────────────────────────
 async function processKorapay(payload) {
     const { event, data } = payload;
@@ -329,21 +329,39 @@ async function processKorapay(payload) {
         
         if (status !== 'success') return;
 
-        // Ensure idempotency using the transaction reference from Korapay
+        const merchantRef = data.merchant_reference || data.reference;
+
+        // 1. Try to match an existing pending deposit transaction (Checkout flow)
+        const pendingTx = await query(
+            'SELECT id, to_wallet_id, user_id FROM transactions WHERE reference = $1 AND status = $2 FOR UPDATE',
+            [merchantRef, 'pending']
+        );
+
+        if (pendingTx.rows.length > 0) {
+            const tx = pendingTx.rows[0];
+            await transaction(async (client) => {
+                const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
+                await client.query(
+                    `UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
+                    [netAmount, tx.to_wallet_id]
+                );
+                await client.query(
+                    `UPDATE transactions SET status = 'completed', to_amount = $1, completed_at = NOW() WHERE reference = $2`,
+                    [netAmount, merchantRef]
+                );
+            });
+            logger.info(`[WEBHOOK] ✅ Korapay Checkout deposit complete: credited ${amount} ${currency} for ref ${merchantRef}`);
+            return;
+        }
+
+        // 2. Ensure idempotency for VBA transfers
         const txCheck = await query('SELECT id FROM transactions WHERE external_reference = $1', [reference]);
         if (txCheck.rows.length > 0) {
             logger.info(`[WEBHOOK] Korapay deposit ${reference} already processed.`);
             return;
         }
 
-        // Find the Virtual Bank Account based on the account_number or account_reference
-        // Korapay sends the customer's VBA details in the webhook (or we match via email/reference)
-        // Wait, Korapay charge.success for VBA usually includes `payment_method: "bank_transfer"`
-        // and `payer_bank_account` or similar. But what's the actual VBA?
-        // We assigned `account_reference` during creation, which might be in `data.reference` or `data.merchant_reference`.
-        const merchantRef = data.merchant_reference || data.reference;
-
-        // Try to find the VBA via the merchant_reference we passed during creation
+        // 3. Fallback: Find the Virtual Bank Account based on the account_reference
         const vbaRes = await query(
             'SELECT wallet_id, user_id, account_number FROM virtual_bank_accounts WHERE provider_reference = $1',
             [merchantRef]
@@ -363,7 +381,7 @@ async function processKorapay(payload) {
                     }
                 }
             }
-            logger.warn(`[WEBHOOK] Korapay VBA not found for deposit: ${merchantRef}`);
+            logger.warn(`[WEBHOOK] Korapay match not found for deposit: ${merchantRef}`);
             return;
         }
 

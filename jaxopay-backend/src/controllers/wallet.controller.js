@@ -126,7 +126,7 @@ export const createWallet = catchAsync(async (req, res) => {
   });
 });
 
-// Initialize Quidax deposit — generates a real checkout URL and records a pending transaction
+// Initialize Korapay deposit — generates a real checkout URL and records a pending transaction
 export const initializeDeposit = catchAsync(async (req, res) => {
   const { wallet_id, amount, currency = 'NGN' } = req.body;
 
@@ -144,7 +144,22 @@ export const initializeDeposit = catchAsync(async (req, res) => {
   const wallet = walletResult.rows[0];
   const depositCurrency = wallet.currency; // Use the wallet's own currency
   const reference = `DEP-${req.user.id.slice(0, 8)}-${Date.now()}`;
+  const korapaySecret = process.env.KORAPAY_SECRET_KEY;
   const frontendUrl = process.env.FRONTEND_URL || 'https://jaxopay.com';
+
+  const KORAPAY_CHECKOUT_CURRENCIES = new Set(
+    (process.env.KORAPAY_CHECKOUT_CURRENCIES || 'NGN')
+      .split(',')
+      .map((curr) => curr.trim().toUpperCase())
+      .filter(Boolean)
+  );
+
+  if (!KORAPAY_CHECKOUT_CURRENCIES.has(depositCurrency)) {
+    throw new AppError(
+      `Online deposits are currently only available in NGN. Deposit NGN, then convert to ${depositCurrency} using Swap.`,
+      400
+    );
+  }
 
   // Validate and format amount using decimal.js
   const amountDecimal = validateAmount(amount, 1, 10000000); // Min 1, Max 10M
@@ -159,22 +174,55 @@ export const initializeDeposit = catchAsync(async (req, res) => {
     [req.user.id, wallet_id, amountForDB, depositCurrency, reference]
   );
 
+  if (!korapaySecret || korapaySecret.includes('your_')) {
+    // Dev simulation — immediately complete the deposit using transaction
+    logger.info('[Wallet] No real Korapay key — simulating instant deposit for dev');
+
+    await transaction(async (client) => {
+      await client.query(
+        `UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
+        [amountForDB, wallet_id]
+      );
+      await client.query(
+        `UPDATE transactions SET status = 'completed', completed_at = NOW() WHERE reference = $1`,
+        [reference]
+      );
+    });
+    return res.status(200).json({
+      success: true,
+      message: 'Dev mode: deposit completed instantly',
+      data: { checkout_url: null, reference, mode: 'simulation', wallet_id, amount, currency: depositCurrency }
+    });
+  }
+
   try {
     const profileResult = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
     const profile = profileResult.rows[0] || {};
 
-    logger.info(`[Wallet] Quidax deposit payload: ${depositCurrency} ${amount} ref=${reference}`);
+    const payload = {
+      amount: parseFloat(amountDecimal.toString()), // Convert decimal to float for API
+      currency: depositCurrency,
+      reference,
+      notification_url: buildApiV1Url('/webhooks/korapay'),
+      redirect_url: `${frontendUrl}/dashboard/wallets?deposit=pending&ref=${reference}&wallet=${wallet_id}`,
+      ...(depositCurrency === 'NGN' ? { merchant_bears_cost: true } : {}),
+      customer: {
+        name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || req.user.email,
+        email: req.user.email,
+      },
+      metadata: { walletId: wallet_id, userId: req.user.id, reference },
+    };
 
-    const response = await QuidaxAdapter.initiateFiatDeposit({
-        currency: depositCurrency,
-        amount: parseFloat(amountDecimal.toString()),
-        first_name: profile.first_name || 'User',
-        last_name: profile.last_name || 'User',
-        email: req.user.email
-    });
+    logger.info(`[Wallet] Korapay checkout payload: ${depositCurrency} ${amount} ref=${reference}`);
 
-    const checkoutUrl = response.data?.payment_url || response.data?.checkout_url || response.data?.authorization_url || null;
-    logger.info(`[Wallet] Quidax deposit initialized: ${reference} — ${amount} ${depositCurrency}`);
+    const response = await axios.post(
+      'https://api.korapay.com/merchant/api/v1/charges/initialize',
+      payload,
+      { headers: { Authorization: `Bearer ${korapaySecret}` }, timeout: 15000 }
+    );
+
+    const checkoutUrl = response.data?.data?.checkout_url;
+    logger.info(`[Wallet] Korapay deposit initialized: ${reference} — ${amount} ${depositCurrency}`);
 
     res.status(200).json({
       success: true,
@@ -182,16 +230,16 @@ export const initializeDeposit = catchAsync(async (req, res) => {
       data: { checkout_url: checkoutUrl, reference, amount, currency: depositCurrency, wallet_id }
     });
   } catch (err) {
-    // Roll back the pending transaction if Quidax init fails
+    // Roll back the pending transaction if Korapay init fails
     await query('DELETE FROM transactions WHERE reference = $1 AND status = $2', [reference, 'pending']);
-    const extErr = err.message;
-    logger.error('[Wallet] Quidax init error:', err);
+    const extErr = err.response?.data?.message || err.message;
+    logger.error('[Wallet] Korapay init error:', err.response?.data || err.message);
 
     throw new AppError(`Payment initialization failed: ${extErr}`, 502);
   }
 });
 
-// Verify Quidax deposit
+// Verify Korapay deposit
 export const verifyDeposit = catchAsync(async (req, res) => {
   const { reference } = req.body;
   if (!reference) throw new AppError('reference is required', 400);
@@ -212,58 +260,59 @@ export const verifyDeposit = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Payment was not successful', data: { status: 'failed', reference } });
   }
 
+  const korapaySecret = process.env.KORAPAY_SECRET_KEY;
+
+  // If no real key, check if pending (for simulation testing)
+  if (!korapaySecret || korapaySecret.includes('your_')) {
+    // In dev, mark as completed since we already simulated above
+    return res.status(200).json({ success: true, message: 'Dev mode verified', data: { status: 'completed', reference } });
+  }
+
   try {
-    // Check if Quidax client exists and try fetching status (on_ramp_transactions endpoint is typically list or GET by ID)
-    // Note: Quidax may use webhooks for on_ramp, so this might just be a passive check
-    let chargeStatus = 'pending';
-    let kAmount = tx.from_amount;
-    let kCurrency = tx.to_currency;
+    // Verify with Korapay
+    const response = await axios.get(
+      `https://api.korapay.com/merchant/api/v1/charges/${reference}`,
+      { headers: { Authorization: `Bearer ${korapaySecret}` }, timeout: 15000 }
+    );
 
-    if (QuidaxAdapter.client) {
-      const response = await QuidaxAdapter.client.get('/custodial/on_ramp_transactions').catch(() => null);
-      if (response && response.data && response.data.data) {
-        const txs = response.data.data;
-        // Quidax on-ramp transaction ref match
-        const found = txs.find(t => t.reference === reference || t.id === reference);
-        if (found) {
-            chargeStatus = found.status;
-            kAmount = found.amount || tx.from_amount;
-            kCurrency = found.currency || tx.to_currency;
-        }
-      }
-    }
+    const chargeStatus = response.data?.data?.status;
+    logger.info(`[Wallet] Korapay verify ${reference}: ${chargeStatus}`);
 
-    logger.info(`[Wallet] Quidax verify ${reference}: ${chargeStatus}`);
-
-    if (chargeStatus === 'success' || chargeStatus === 'completed') {
+    if (chargeStatus === 'success') {
+      // Credit the wallet atomically
       await transaction(async (client) => {
+        // Check not already credited (race condition guard)
         const currentTx = await client.query('SELECT status FROM transactions WHERE reference = $1 FOR UPDATE', [reference]);
         if (currentTx.rows[0]?.status === 'completed') return;
 
+        const kAmount = response.data?.data?.amount || tx.from_amount;
+        const kCurrency = response.data?.data?.currency || tx.to_currency;
+
         await client.query(
-          `UPDATE wallets SET balance = balance + $1, available_balance = available_balance + $1, updated_at = NOW() WHERE id = $2`,
+          `UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
           [kAmount, tx.to_wallet_id]
         );
         await client.query(
           `UPDATE transactions SET status = 'completed', to_amount = $1, completed_at = NOW() WHERE reference = $2`,
           [kAmount, reference]
         );
+        logger.info(`[Wallet] ✅ Wallet ${tx.to_wallet_id} credited ${kAmount} ${kCurrency} — ref ${reference}`);
       });
 
       res.status(200).json({
         success: true,
-        message: 'Payment verified and wallet credited!',
-        data: { status: 'completed', reference, amount: tx.from_amount, currency: tx.to_currency }
+        message: 'Payment verified and credited',
+        data: { status: 'completed', reference }
       });
-    } else if (chargeStatus === 'failed' || chargeStatus === 'cancelled') {
-      await query('UPDATE transactions SET status = $1, failed_at = NOW() WHERE reference = $2', [chargeStatus, reference]);
-      res.status(400).json({ success: false, message: 'Payment was not successful', data: { status: chargeStatus } });
+    } else if (chargeStatus === 'failed') {
+      await query(`UPDATE transactions SET status = 'failed', updated_at = NOW() WHERE reference = $1`, [reference]);
+      res.status(400).json({ success: false, message: 'Payment failed', data: { status: 'failed' } });
     } else {
       res.status(200).json({ success: true, message: 'Payment still processing', data: { status: chargeStatus || 'pending' } });
     }
   } catch (err) {
-    logger.error('[Wallet] Quidax verify error:', err);
-    throw new AppError('Could not verify payment status. Please contact support.', 500);
+    logger.error('[Wallet] Korapay verify error:', err.response?.data || err.message);
+    throw new AppError(err.response?.data?.message || 'Could not verify payment status. Please contact support.', 500);
   }
 });
 
