@@ -655,9 +655,29 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
     }
 
     if (!bankAccount) {
+      try {
+        // Attempt to generate a payment address for NGN explicitly
+        logger.info(`[VBA] No bank account found, attempting to generate one via POST /users/${targetUserId}/wallets/ngn/addresses`);
+        const newAddrRes = await QuidaxAdapter.client.post(`/users/${targetUserId}/wallets/ngn/addresses`);
+        const newAddr = newAddrRes.data?.data || newAddrRes.data;
+        logger.info(`[VBA] Generated NGN address: ${JSON.stringify(newAddr)}`);
+        
+        if (newAddr) {
+          bankAccount = {
+            bank_name: newAddr.bank_name || 'Quidax Virtual Bank',
+            account_number: newAddr.account_number || newAddr.deposit_address || newAddr.address || 'Pending',
+            account_name: newAddr.account_name || req.user.email,
+          };
+        }
+      } catch (genErr) {
+        logger.warn(`[VBA] Could not generate NGN address for ${targetUserId}: ${genErr.message}`);
+      }
+    }
+
+    if (!bankAccount || !bankAccount.account_number || bankAccount.account_number === 'Pending') {
       // Quidax hasn't provisioned a bank account yet — this is normal for new accounts.
       // Return a pending state so the frontend can inform the user.
-      logger.warn(`[VBA] No bank account found in Quidax NGN wallet for ${targetUserId}. Full wallet: ${JSON.stringify(ngnWallet)}`);
+      logger.warn(`[VBA] Still no valid bank account after generation attempt for ${targetUserId}. Full wallet: ${JSON.stringify(ngnWallet)}`);
       return res.status(200).json({
         success: true,
         pending: true,
