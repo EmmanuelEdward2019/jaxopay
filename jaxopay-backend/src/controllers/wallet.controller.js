@@ -6,6 +6,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance } from '../utils/financial.js';
 import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
+import KorapayAdapter from '../orchestration/adapters/fiat/KorapayAdapter.js';
 
 const buildApiV1Url = (path) => {
   const rawBaseUrl = (process.env.API_BASE_URL || 'http://localhost:3001').trim();
@@ -604,129 +605,72 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
     throw new AppError('Virtual bank accounts are only available for NGN wallets.', 400);
   }
 
-  // 2. Look up the user's Quidax sub-account ID from DB
-  let quidaxUserId = null;
+  // 2. Look up existing VBA in our local database
   try {
-    const userRow = await query(
-      'SELECT quidax_user_id FROM users WHERE id = $1',
+    const vbaResult = await query(
+      'SELECT bank_name, account_number, account_name FROM virtual_bank_accounts WHERE user_id = $1 AND is_active = true',
       [req.user.id]
     );
-    quidaxUserId = userRow.rows[0]?.quidax_user_id || null;
-  } catch (dbErr) {
-    logger.warn(`[VBA] Could not fetch quidax_user_id for user ${req.user.id}: ${dbErr.message}`);
-  }
 
-  // Use 'me' (master account) as fallback if no sub-account yet
-  const targetUserId = quidaxUserId || 'me';
-
-  try {
-    // 3. Fetch the NGN wallet from Quidax for this user
-    // Per Quidax docs: GET /users/{id}/wallets/ngn returns the wallet with bank_account details
-    const ngnWalletRes = await QuidaxAdapter.client.get(`/users/${targetUserId}/wallets/ngn`);
-    const ngnWallet = ngnWalletRes.data?.data || ngnWalletRes.data;
-
-    logger.info(`[VBA] Quidax NGN wallet for user ${targetUserId}: ${JSON.stringify(ngnWallet)}`);
-
-    let bankAccount = null;
-
-    if (ngnWallet) {
-      if (ngnWallet.bank_account && ngnWallet.bank_account.account_number) {
-        // Standard Quidax VBA format
-        bankAccount = {
-          bank_name: ngnWallet.bank_account.bank_name || 'Quidax Virtual Bank',
-          account_number: ngnWallet.bank_account.account_number,
-          account_name: ngnWallet.bank_account.account_name || req.user.email,
-        };
-      } else if (ngnWallet.deposit_address && ngnWallet.deposit_address.length > 5) {
-        // Some Quidax accounts surface the account number as deposit_address
-        bankAccount = {
-          bank_name: ngnWallet.bank_name || 'Quidax Virtual Bank',
-          account_number: ngnWallet.deposit_address,
-          account_name: ngnWallet.account_name || req.user.email,
-        };
-      } else if (ngnWallet.bank_name || ngnWallet.account_number) {
-        // Flat field format (some API versions)
-        bankAccount = {
-          bank_name: ngnWallet.bank_name || 'Quidax Virtual Bank',
-          account_number: ngnWallet.account_number || 'Pending',
-          account_name: ngnWallet.account_name || req.user.email,
-        };
-      }
+    if (vbaResult.rows.length > 0) {
+      return res.status(200).json({
+        success: true,
+        data: vbaResult.rows[0],
+      });
     }
 
-    if (!bankAccount) {
-      try {
-        // Fallback: If sub-user has no bank account (due to KYC limits or delay),
-        // we use the Master Account's bank details and ask the user to use their email/ID as a reference.
-        logger.info(`[VBA] No bank account found for ${targetUserId}. Falling back to master account ('me').`);
-        const masterWalletRes = await QuidaxAdapter.client.get(`/users/me/wallets/ngn`);
-        const masterWallet = masterWalletRes.data?.data || masterWalletRes.data;
-
-        if (masterWallet) {
-          if (masterWallet.bank_account && masterWallet.bank_account.account_number) {
-            bankAccount = {
-              bank_name: masterWallet.bank_account.bank_name || 'Quidax Virtual Bank',
-              account_number: masterWallet.bank_account.account_number,
-              account_name: masterWallet.bank_account.account_name || 'Jaxopay Funding',
-            };
-          } else if (masterWallet.deposit_address && masterWallet.deposit_address.length > 5) {
-            bankAccount = {
-              bank_name: masterWallet.bank_name || 'Quidax Virtual Bank',
-              account_number: masterWallet.deposit_address,
-              account_name: masterWallet.account_name || 'Jaxopay Funding',
-            };
-          } else {
-            // Quidax did not return any deposit address or bank account for the master account.
-            // Provide a static placeholder bank account to bypass "Pending Activation" for testing.
-            logger.warn(`[VBA] Master account has no NGN bank account on Quidax. Using placeholder.`);
-            bankAccount = {
-              bank_name: 'Jaxopay Corporate Bank (Providus)',
-              account_number: '9901234567',
-              account_name: 'Jaxopay Funding - ' + (req.user.email || targetUserId)
-            };
-          }
-        }
-      } catch (genErr) {
-        logger.warn(`[VBA] Could not fetch master account NGN wallet for fallback: ${genErr.message}`);
-        
-        // Provide a placeholder in case of network failure during testing
-        bankAccount = {
-          bank_name: 'Jaxopay Corporate Bank (Providus)',
-          account_number: '9901234567',
-          account_name: 'Jaxopay Funding - ' + (req.user.email || targetUserId)
-        };
-      }
-    }
-
-    if (!bankAccount || !bankAccount.account_number || bankAccount.account_number === 'Pending') {
-      // Still no bank account found even on master
-      logger.warn(`[VBA] Still no valid bank account after master fallback for ${targetUserId}. Full wallet: ${JSON.stringify(ngnWallet)}`);
+    // 3. No existing VBA. Check if Korapay keys are configured.
+    if (!process.env.KORAPAY_SECRET_KEY) {
+      logger.warn(`[VBA] KORAPAY_SECRET_KEY not set. Cannot generate fiat account for ${req.user.id}.`);
       return res.status(200).json({
         success: true,
         pending: true,
         data: {
           bank_name: 'Pending Activation',
-          account_number: 'Your virtual account is being set up. Please contact support if this persists.',
+          account_number: 'Payment processor not configured.',
           account_name: req.user.email,
         }
       });
     }
 
+    // 4. Fetch user profile to pass to Korapay
+    const profileResult = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
+    const profile = profileResult.rows[0] || {};
+    const firstName = profile.first_name || 'User';
+    const lastName = profile.last_name || 'Account';
+
+    // 5. Create new VBA via Korapay
+    logger.info(`[VBA] Generating new Korapay Virtual Bank Account for user ${req.user.id}`);
+    const vbaData = await KorapayAdapter.createVirtualBankAccount({
+      reference: `VBA-${req.user.id.slice(0, 8)}-${Date.now()}`,
+      account_name: `${firstName} ${lastName}`,
+      customer_name: `${firstName} ${lastName}`,
+      customer_email: req.user.email
+    });
+
+    // 6. Save new VBA to our database
+    await query(
+      `INSERT INTO virtual_bank_accounts (wallet_id, user_id, account_number, bank_name, account_name, provider, provider_reference)
+       VALUES ($1, $2, $3, $4, $5, 'korapay', $6)`,
+      [wallet.id, req.user.id, vbaData.account_number, vbaData.bank_name, vbaData.account_name, vbaData.reference]
+    );
+
     return res.status(200).json({
       success: true,
-      data: bankAccount,
+      data: {
+        bank_name: vbaData.bank_name,
+        account_number: vbaData.account_number,
+        account_name: vbaData.account_name,
+      },
     });
 
   } catch (error) {
-    const status = error.response?.status;
-    const msg = error.response?.data?.message || error.response?.data?.error || error.message;
-    logger.error(`[VBA] Quidax error fetching NGN wallet for ${targetUserId} (HTTP ${status}): ${msg}`);
-    logger.error(`[VBA] Full Quidax error: ${JSON.stringify(error.response?.data)}`);
-
-    // Return a graceful error — do NOT re-throw as 502 (which drops CORS headers via Nginx)
+    logger.error(`[VBA] Error generating NGN virtual bank account for ${req.user.id}: ${error.message}`);
+    
+    // Return a graceful error
     return res.status(200).json({
       success: false,
-      error: 'Could not retrieve bank account details from payment provider. Please try again or contact support.',
+      error: 'Could not generate virtual bank account details. Please try again or contact support.',
     });
   }
 });

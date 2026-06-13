@@ -59,6 +59,9 @@ export const handleWebhook = catchAsync(async (req, res) => {
             case 'quidax':
                 await processQuidax(body);
                 break;
+            case 'korapay':
+                await processKorapay(body);
+                break;
             default:
                 logger.info(`[WEBHOOK] No handler for ${provider}, acknowledged.`);
         }
@@ -310,6 +313,102 @@ async function refundFailedPayment(reference) {
         logger.info(`[WEBHOOK] Refunded failed payment ${reference}: ${refund} ${source_currency}`);
     } catch (err) {
         logger.error('[WEBHOOK] refundFailedPayment error:', err);
+    }
+}
+
+// ─────────────────────────────────────────────
+// Korapay Webhooks (Fiat Deposits via VBA)
+// ─────────────────────────────────────────────
+async function processKorapay(payload) {
+    const { event, data } = payload;
+
+    logger.info(`[WEBHOOK] Korapay event: ${event}`, { reference: data?.reference });
+
+    if (event === 'charge.success') {
+        const { amount, currency, reference, fee, status, customer } = data;
+        
+        if (status !== 'success') return;
+
+        // Ensure idempotency using the transaction reference from Korapay
+        const txCheck = await query('SELECT id FROM transactions WHERE external_reference = $1', [reference]);
+        if (txCheck.rows.length > 0) {
+            logger.info(`[WEBHOOK] Korapay deposit ${reference} already processed.`);
+            return;
+        }
+
+        // Find the Virtual Bank Account based on the account_number or account_reference
+        // Korapay sends the customer's VBA details in the webhook (or we match via email/reference)
+        // Wait, Korapay charge.success for VBA usually includes `payment_method: "bank_transfer"`
+        // and `payer_bank_account` or similar. But what's the actual VBA?
+        // We assigned `account_reference` during creation, which might be in `data.reference` or `data.merchant_reference`.
+        const merchantRef = data.merchant_reference || data.reference;
+
+        // Try to find the VBA via the merchant_reference we passed during creation
+        const vbaRes = await query(
+            'SELECT wallet_id, user_id, account_number FROM virtual_bank_accounts WHERE provider_reference = $1',
+            [merchantRef]
+        );
+
+        if (vbaRes.rows.length === 0) {
+            // Alternative lookup if merchantRef doesn't match: find user by email
+            const email = customer?.email;
+            if (email) {
+                const userRes = await query('SELECT id FROM users WHERE email = $1', [email]);
+                if (userRes.rows.length > 0) {
+                    const userId = userRes.rows[0].id;
+                    const walletRes = await query('SELECT id FROM wallets WHERE user_id = $1 AND currency = $2', [userId, currency || 'NGN']);
+                    if (walletRes.rows.length > 0) {
+                        await applyKorapayDeposit(userId, walletRes.rows[0].id, amount, currency || 'NGN', fee, reference);
+                        return;
+                    }
+                }
+            }
+            logger.warn(`[WEBHOOK] Korapay VBA not found for deposit: ${merchantRef}`);
+            return;
+        }
+
+        const { wallet_id, user_id } = vbaRes.rows[0];
+        await applyKorapayDeposit(user_id, wallet_id, amount, currency || 'NGN', fee, reference);
+    }
+}
+
+async function applyKorapayDeposit(userId, walletId, amount, currency, fee, reference) {
+    try {
+        await transaction(async (client) => {
+            // Log transaction
+            const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
+            
+            await client.query(
+                `INSERT INTO transactions
+                 (user_id, to_wallet_id, transaction_type, from_amount, to_amount,
+                  from_currency, to_currency, net_amount, fee_amount, status, description, external_reference)
+                 VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $5, $6, 'completed', 'Bank Transfer Deposit', $7)`,
+                [userId, walletId, amount, currency, netAmount, fee || 0, reference]
+            );
+
+            // Credit wallet
+            await client.query(
+                `UPDATE wallets SET balance = balance + $1, updated_at = NOW()
+                 WHERE id = $2`,
+                [netAmount, walletId]
+            );
+        });
+
+        logger.info(`[WEBHOOK] ✅ Korapay deposit complete: credited ${amount} ${currency} to user ${userId}`);
+
+        // Notify user
+        const userRes = await query('SELECT name, email FROM users WHERE id = $1', [userId]);
+        if (userRes.rows.length > 0) {
+            await sendTransactionEmails({
+                type: 'Deposit',
+                amount: amount,
+                currency: currency,
+                reference: reference,
+                details: 'Virtual Bank Account Transfer'
+            }, userRes.rows[0]);
+        }
+    } catch (err) {
+        logger.error(`[WEBHOOK] Korapay deposit error: ${err.message}`);
     }
 }
 

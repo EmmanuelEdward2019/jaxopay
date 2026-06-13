@@ -81,6 +81,8 @@ class WebhookVerifier {
             case 'smile':
             case 'smile-id':
                 return this._verifySmileIdentity(body);
+            case 'korapay':
+                return this._verifyKorapay(headers, payload);
             case 'quidax':
                 // Always pass raw body for Quidax — their HMAC is over raw HTTP bytes
                 return this._verifyQuidax(headers, rawBody || payload);
@@ -176,6 +178,24 @@ class WebhookVerifier {
             return true;
         }
         return verifySmileCallbackSignature(parsed);
+    }
+
+    _verifyKorapay(headers, payload) {
+        const secret = process.env.KORAPAY_SECRET_KEY;
+        const signature = headers['x-korapay-signature'];
+
+        if (!secret) {
+            logger.warn('[WEBHOOK] Korapay secret not configured');
+            return process.env.NODE_ENV === 'development';
+        }
+
+        if (!signature) {
+            logger.warn('[WEBHOOK] Korapay signature missing');
+            return false;
+        }
+
+        const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+        return hash === signature;
     }
 
     /**
