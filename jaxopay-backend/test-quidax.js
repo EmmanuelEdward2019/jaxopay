@@ -1,5 +1,7 @@
-const axios = require('axios');
-require('dotenv').config();
+import axios from 'axios';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const QUIDAX_API_KEY = process.env.QUIDAX_API_KEY;
 const QUIDAX_BASE_URL = process.env.QUIDAX_BASE_URL || 'https://api.quidax.com/v1';
