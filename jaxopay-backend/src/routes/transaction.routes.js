@@ -15,8 +15,8 @@ router.use(verifyToken);
 
 // Get transaction statistics
 router.get(
-  '/stats',
-  query('period').optional().isInt({ min: 1, max: 365 }),
+  '/statistics',
+  query('period').optional().isString(),
   validate,
   getTransactionStats
 );

@@ -20,14 +20,14 @@ export const getTransactions = catchAsync(async (req, res) => {
     SELECT 
       wt.id, 
       wt.from_wallet_id as wallet_id, 
-      wt.transaction_type, 
+      wt.transaction_type::varchar, 
       wt.from_amount as amount, 
       wt.from_currency as currency,
       wt.status, 
-      wt.description, 
+      wt.description::text, 
       wt.metadata, 
       wt.created_at,
-      wt.reference,
+      wt.reference::varchar,
       wt.user_id
     FROM transactions wt
 
@@ -36,14 +36,14 @@ export const getTransactions = catchAsync(async (req, res) => {
     SELECT 
       bp.id, 
       NULL::uuid as wallet_id, 
-      'bill_payment' as transaction_type, 
+      'bill_payment'::varchar as transaction_type, 
       bp.amount, 
       bp.currency,
       bp.status, 
-      'Bill Payment: ' || bp.service_type as description, 
+      ('Bill Payment: ' || bp.bill_category)::text as description, 
       bp.metadata, 
       bp.created_at,
-      bp.reference,
+      bp.reference::varchar,
       bp.user_id
     FROM bill_payments bp
 
@@ -52,14 +52,14 @@ export const getTransactions = catchAsync(async (req, res) => {
     SELECT 
       wtx.id, 
       wtx.wallet_id, 
-      wtx.transaction_type, 
+      wtx.transaction_type::varchar, 
       wtx.amount, 
       wtx.currency,
       wtx.status, 
-      wtx.description, 
+      wtx.description::text, 
       wtx.metadata, 
       wtx.created_at,
-      wtx.metadata->>'quidax_tx_id' as reference,
+      (wtx.metadata->>'quidax_tx_id')::varchar as reference,
       w.user_id
     FROM wallet_transactions wtx
     JOIN wallets w ON w.id = wtx.wallet_id
