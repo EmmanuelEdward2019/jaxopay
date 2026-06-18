@@ -1443,6 +1443,27 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
     }
   }
 
+  // For fiat->crypto swaps, Quidax sub-account balance is 0 because fiat is held locally (e.g. Korapay).
+  // We must fund the Quidax sub-account from the master Quidax account just before the swap.
+  if (from_currency && from_amount != null) {
+    const fromCurrency = from_currency.toUpperCase();
+    const fromType = getWalletType(fromCurrency);
+    if (fromType === 'fiat') {
+      try {
+        await quidax.internalTransfer({
+          currency: fromCurrency,
+          amount: from_amount,
+          receiver: quidaxUserId,
+          userId: 'me'
+        });
+        logger.info(`[ConfirmSwap] Funded sub-user ${quidaxUserId} with ${from_amount} ${fromCurrency} for swap`);
+      } catch (err) {
+        logger.error(`[ConfirmSwap] Internal transfer failed for ${fromCurrency}:`, err.message);
+        throw new AppError(`Swap failed: JaxoPay liquidity issue or transfer error.`, 503);
+      }
+    }
+  }
+
   // Execute swap on Quidax — this is the authoritative action
   const confirmed = await quidax.executeSwap(id, quidaxUserId);
 

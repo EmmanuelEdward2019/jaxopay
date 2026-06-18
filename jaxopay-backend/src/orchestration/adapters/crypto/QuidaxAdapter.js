@@ -623,6 +623,25 @@ class QuidaxAdapter {
     }
 
     /**
+     * INTERNAL TRANSFER: Move funds between master and sub-user accounts.
+     * Endpoint: POST /users/{id}/internal_transfers
+     * To transfer from master to sub-user, use id='me' and receiver=subUserId.
+     */
+    async internalTransfer({ currency, amount, receiver, userId: requestedUserId = null }) {
+        const userId = requestedUserId || await this._getAuthUserId();
+        return this._executeWithCircuitBreaker(async () => {
+            const body = {
+                currency: currency.toLowerCase(),
+                amount: String(amount),
+                receiver: String(receiver)
+            };
+            logger.info(`[Quidax] Internal transfer: ${amount} ${currency} from ${userId} to ${receiver}`);
+            const response = await this.client.post(`/users/${userId}/internal_transfers`, body);
+            return response.data?.data || response.data;
+        }, 'internalTransfer');
+    }
+
+    /**
      * SWAP: Temporary quotation — preview rate WITHOUT creating a real swap.
      * Endpoint: POST /users/{id}/temporary_swap_quotation
      */
