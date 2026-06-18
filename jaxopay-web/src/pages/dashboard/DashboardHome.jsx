@@ -150,25 +150,39 @@ const DashboardHome = () => {
         setSummary(data);
         setTransactions(data.transactions || []);
 
-        const walletsData = data.wallets || [];
+        // Stats (wallet count, tx count, cards) still come from summary
+        setStats(prev => ({
+          ...(data.stats || {}),
+          wallet_count: data.stats?.wallet_count || (data.wallets || []).length,
+          transaction_count: data.stats?.transaction_count || (data.transactions || []).length,
+          active_cards: data.stats?.active_cards || 0,
+          // total_balance will be overwritten below once walletsRes is processed
+          total_balance: prev.total_balance,
+        }));
+      }
+
+      if (walletsRes.status === 'fulfilled' && walletsRes.value?.success) {
+        const fetchedWallets = Array.isArray(walletsRes.value.data) ? walletsRes.value.data : [];
+        setWallets(fetchedWallets);
+
+        // Compute total portfolio value from the same wallet data the Wallets tab uses
+        let totalUSD = 0;
+        for (const wallet of fetchedWallets) {
+          const bal = parseFloat(wallet.balance) || 0;
+          const rate = FALLBACK_RATES[wallet.currency] || 1;
+          totalUSD += bal / rate;
+        }
+        setStats(prev => ({ ...prev, total_balance: totalUSD }));
+      } else if (summaryRes.status === 'fulfilled' && summaryRes.value?.success) {
+        // Fallback: derive total from summary wallets when the separate call failed
+        const walletsData = summaryRes.value.data?.wallets || [];
         let totalUSD = 0;
         for (const wallet of walletsData) {
           const bal = parseFloat(wallet.balance) || 0;
           const rate = FALLBACK_RATES[wallet.currency] || 1;
           totalUSD += bal / rate;
         }
-
-        setStats({
-          ...(data.stats || {}),
-          total_balance: totalUSD,
-          wallet_count: data.stats?.wallet_count || walletsData.length,
-          transaction_count: data.stats?.transaction_count || (data.transactions || []).length,
-          active_cards: data.stats?.active_cards || 0,
-        });
-      }
-
-      if (walletsRes.status === 'fulfilled' && walletsRes.value?.success) {
-        setWallets(Array.isArray(walletsRes.value.data) ? walletsRes.value.data : []);
+        setStats(prev => ({ ...prev, total_balance: totalUSD }));
       }
 
       if (marketsRes.status === 'fulfilled' && marketsRes.value?.success) {
