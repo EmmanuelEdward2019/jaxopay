@@ -125,7 +125,7 @@ export const getExchangeRates = catchAsync(async (req, res) => {
       from: fromCurr,
       to:   toCurr,
       from_amount: refAmount,
-      userId: quidaxUserId,
+       ,
     });
 
     if (quote && parseFloat(quote.to_amount) > 0) {
@@ -241,7 +241,7 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
     let quidaxUserId;
     try {
       quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-      quotation = await quidax.getSwapQuote({ from: from_coin, to: to_fiat, amount: qty, side: 'from', userId: quidaxUserId });
+      quotation = await quidax.getSwapQuote({ from: from_coin, to: to_fiat, amount: qty, side: 'from' });
       if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) throw new Error('Bad quotation');
     } catch (e) {
       logger.warn('[Exchange] Quidax quotation failed, falling back to ticker:', e.message);
@@ -292,7 +292,7 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
     let quidaxSwapId = quotation?.id || null;
     if (quotation?.id) {
       try {
-        const confirmed = await quidax.executeSwap(quotation.id, quidaxUserId);
+        const confirmed = await quidax.executeSwap(quotation.id);
         if (confirmed?.id) quidaxSwapId = confirmed.id;
       } catch (e) {
         logger.warn('[Exchange] Quidax confirm failed (balances already updated):', e.message);
@@ -404,7 +404,7 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
     let quidaxUserId;
     try {
       quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-      quotation = await quidax.getSwapQuote({ from: from_fiat, to: to_coin, amount: qty, side: 'from', userId: quidaxUserId });
+      quotation = await quidax.getSwapQuote({ from: from_fiat, to: to_coin, amount: qty, side: 'from' });
       if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) throw new Error('Bad quotation');
     } catch (e) {
       logger.warn('[Exchange] Quidax quotation failed, falling back to ticker:', e.message);
@@ -459,7 +459,7 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
     let quidaxSwapId = quotation?.id || null;
     if (quotation?.id) {
       try {
-        const confirmed = await quidax.executeSwap(quotation.id, quidaxUserId);
+        const confirmed = await quidax.executeSwap(quotation.id);
         if (confirmed?.id) quidaxSwapId = confirmed.id;
       } catch (e) {
         logger.warn('[Exchange] Quidax confirm failed (balances already updated):', e.message);
@@ -949,7 +949,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
       reference,
       transaction_note: `Jaxopay withdrawal ${reference}`,
       narration: 'Jaxopay withdrawal',
-      userId: quidaxUserId,
+       ,
     });
     quidaxWithdrawId = withdrawRes?.data?.id || withdrawRes?.id;
 
@@ -1039,7 +1039,7 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
   let quidaxUserId;
   try {
     quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-    quotation = await quidax.getSwapQuote({ from: fromUpper, to: toUpper, amount: fromAmt, side: 'from', userId: quidaxUserId });
+    quotation = await quidax.getSwapQuote({ from: fromUpper, to: toUpper, amount: fromAmt, side: 'from' });
     if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) {
       throw new Error('Invalid quotation returned');
     }
@@ -1087,7 +1087,7 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
     // Confirm the Quidax swap (enqueues execution on their side)
     let quidaxSwapId = quotation.id;
     try {
-      const confirmed = await quidax.executeSwap(quotation.id, quidaxUserId);
+      const confirmed = await quidax.executeSwap(quotation.id);
       if (confirmed?.id) quidaxSwapId = confirmed.id;
     } catch (e) {
       logger.warn('[CryptoSwap] Quidax confirm failed (balances already updated):', e.message);
@@ -1231,8 +1231,7 @@ export const getSwapQuote = catchAsync(async (req, res) => {
       from,
       to,
       amount,
-      side: side === 'to' ? 'to' : 'from',
-      userId: quidaxUserId,
+      side: side === 'to' ? 'to' : 'from'
     });
     res.status(200).json({ success: true, data });
   } catch (err) {
@@ -1370,8 +1369,7 @@ export const createSwapQuotation = catchAsync(async (req, res) => {
     from: from_currency,
     to: to_currency,
     amount: from_amount != null ? from_amount : to_amount,
-    side: from_amount != null ? 'from' : 'to',
-    userId: quidaxUserId,
+    side: from_amount != null ? 'from' : 'to'
   });
 
   if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) {
@@ -1397,7 +1395,7 @@ export const refreshSwapQuotation = catchAsync(async (req, res) => {
   else if (to_amount != null) body.to_amount = String(to_amount);
 
   const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-  const quotation = await quidax.refreshSwapQuotation(id, body, quidaxUserId);
+  const quotation = await quidax.refreshSwapQuotation(id, body);
 
   if (!quotation?.id) throw new AppError('Could not refresh swap quotation. Please try again.', 503);
 
@@ -1424,48 +1422,20 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
       [req.user.id, fromCurrency, fromType]
     );
 
-    // Soft check only — local DB can be stale vs Quidax sub-user balance.
-    // Quidax's executeSwap is the authoritative validation; we only block here
-    // when the local wallet is completely missing (never created) to surface a
-    // clearer message than a generic Quidax error.
     if (localWallet.rows.length === 0) {
-      logger.warn(`[ConfirmSwap] No local wallet found for ${fromCurrency} (user ${req.user.id}) — proceeding; Quidax will validate`);
+      throw new AppError(`No local wallet found for ${fromCurrency}`, 404);
     } else {
       const localBal = parseFloat(localWallet.rows[0].balance);
       const requestedAmt = parseFloat(from_amount);
       if (localBal < requestedAmt) {
-        logger.warn(
-          `[ConfirmSwap] Local balance mismatch: user=${req.user.id} ${fromCurrency} local=${localBal} requested=${requestedAmt} — proceeding with Quidax as authority`
-        );
-        // Do NOT throw here — Quidax holds the real balance. A local shortfall
-        // usually means the DB is stale, not that the user truly has no funds.
+        throw new AppError('Insufficient balance', 400);
       }
     }
   }
 
-  // For fiat->crypto swaps, Quidax sub-account balance is 0 because fiat is held locally (e.g. Korapay).
-  // We must fund the Quidax sub-account from the master Quidax account just before the swap.
-  if (from_currency && from_amount != null) {
-    const fromCurrency = from_currency.toUpperCase();
-    const fromType = getWalletType(fromCurrency);
-    if (fromType === 'fiat') {
-      try {
-        await quidax.internalTransfer({
-          currency: fromCurrency,
-          amount: from_amount,
-          receiver: quidaxUserId,
-          userId: 'me'
-        });
-        logger.info(`[ConfirmSwap] Funded sub-user ${quidaxUserId} with ${from_amount} ${fromCurrency} for swap`);
-      } catch (err) {
-        logger.error(`[ConfirmSwap] Internal transfer failed for ${fromCurrency}:`, err.message);
-        throw new AppError(`Swap failed: JaxoPay liquidity issue or transfer error.`, 503);
-      }
-    }
-  }
 
   // Execute swap on Quidax — this is the authoritative action
-  const confirmed = await quidax.executeSwap(id, quidaxUserId);
+  const confirmed = await quidax.executeSwap(id);
 
   if (!confirmed?.id) throw new AppError('Swap execution failed. Please refresh and try again.', 503);
 
@@ -1543,14 +1513,14 @@ export const getSwapTransaction = catchAsync(async (req, res) => {
   const { id } = req.params;
   if (!id) throw new AppError('Transaction ID is required', 400);
   const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-  const data = await quidax.getSwapTransaction(id, quidaxUserId);
+  const data = await quidax.getSwapTransaction(id);
   res.status(200).json({ success: true, data });
 });
 
 // GET /crypto/swap/transactions — list all swap transactions
 export const getSwapTransactions = catchAsync(async (req, res) => {
   const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-  const data = await quidax.getSwapTransactions(quidaxUserId);
+  const data = await quidax.getSwapTransactions();
   res.status(200).json({ success: true, data });
 });
 
