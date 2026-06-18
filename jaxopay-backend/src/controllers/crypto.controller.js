@@ -124,8 +124,7 @@ export const getExchangeRates = catchAsync(async (req, res) => {
     const quote = await quidax.getTemporarySwapQuote({
       from: fromCurr,
       to:   toCurr,
-      from_amount: refAmount,
-       ,
+      from_amount: refAmount
     });
 
     if (quote && parseFloat(quote.to_amount) > 0) {
@@ -948,8 +947,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
       fund_uid2: memo,
       reference,
       transaction_note: `Jaxopay withdrawal ${reference}`,
-      narration: 'Jaxopay withdrawal',
-       ,
+      narration: 'Jaxopay withdrawal'
     });
     quidaxWithdrawId = withdrawRes?.data?.id || withdrawRes?.id;
 
