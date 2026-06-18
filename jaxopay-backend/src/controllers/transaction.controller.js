@@ -35,7 +35,7 @@ export const getTransactions = catchAsync(async (req, res) => {
 
     SELECT 
       bp.id, 
-      NULL as wallet_id, 
+      NULL::uuid as wallet_id, 
       'bill_payment' as transaction_type, 
       bp.amount, 
       bp.currency,

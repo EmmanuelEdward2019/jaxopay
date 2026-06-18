@@ -514,18 +514,35 @@ export const getWalletTransactions = catchAsync(async (req, res) => {
 
   // Get transactions
   const result = await query(
-    `SELECT wt.id, wt.transaction_type, wt.from_amount as amount, wt.from_currency as currency, wt.status,
-            wt.description, wt.metadata, wt.created_at
-     FROM transactions wt
-     ${conditions.replace('wt.wallet_id = $1', '(wt.from_wallet_id = $1 OR wt.to_wallet_id = $1)')}
-     ORDER BY wt.created_at DESC
-     LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`,
+    `WITH combined AS (
+      SELECT id, transaction_type, from_amount as amount, from_currency as currency, status, description, metadata, created_at, from_wallet_id as w_id1, to_wallet_id as w_id2
+      FROM transactions
+      UNION ALL
+      SELECT id, transaction_type, amount, currency, status, description, metadata, created_at, wallet_id as w_id1, wallet_id as w_id2
+      FROM wallet_transactions
+      WHERE transaction_id IS NULL
+     )
+     SELECT id, transaction_type, amount, currency, status, description, metadata, created_at
+     FROM combined
+     WHERE w_id1 = $1 OR w_id2 = $1
+     ${type ? ' AND transaction_type = $' + paramCount : ''}
+     ${status ? ' AND status = $' + (type ? paramCount + 1 : paramCount) : ''}
+     ORDER BY created_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
     [...params, limit, offset]
   );
 
   // Get total count
   const countResult = await query(
-    `SELECT COUNT(*) as total FROM transactions wt ${conditions.replace('wt.wallet_id = $1', '(wt.from_wallet_id = $1 OR wt.to_wallet_id = $1)')}`,
+    `WITH combined AS (
+      SELECT id, transaction_type, status, from_wallet_id as w_id1, to_wallet_id as w_id2 FROM transactions
+      UNION ALL
+      SELECT id, transaction_type, status, wallet_id as w_id1, wallet_id as w_id2 FROM wallet_transactions WHERE transaction_id IS NULL
+     )
+     SELECT COUNT(*) as total FROM combined
+     WHERE w_id1 = $1 OR w_id2 = $1
+     ${type ? ' AND transaction_type = $' + paramCount : ''}
+     ${status ? ' AND status = $' + (type ? paramCount + 1 : paramCount) : ''}`,
     params
   );
 
