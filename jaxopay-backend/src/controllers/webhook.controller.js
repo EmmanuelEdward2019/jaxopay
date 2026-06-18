@@ -192,7 +192,14 @@ async function creditUserWallet(reference, amount, currency) {
         logger.info(`[WEBHOOK] Wallet credited: ${amount} ${currency} for ref ${reference}`);
 
         try {
-            const userRes = await query('SELECT name, email FROM users WHERE id = $1', [tx.rows[0].user_id]);
+            // users.name does not exist — names are in user_profiles
+            const userRes = await query(
+                `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+                 FROM users u
+                 LEFT JOIN user_profiles up ON up.user_id = u.id
+                 WHERE u.id = $1`,
+                [tx.rows[0].user_id]
+            );
             if (userRes.rows.length > 0) {
                 await sendTransactionEmails({
                     type: 'Deposit',
@@ -339,8 +346,8 @@ async function processKorapay(payload) {
 
         if (pendingTx.rows.length > 0) {
             const tx = pendingTx.rows[0];
+            const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
             await transaction(async (client) => {
-                const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
                 await client.query(
                     `UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
                     [netAmount, tx.to_wallet_id]
@@ -350,7 +357,29 @@ async function processKorapay(payload) {
                     [netAmount, merchantRef]
                 );
             });
-            logger.info(`[WEBHOOK] ✅ Korapay Checkout deposit complete: credited ${amount} ${currency} for ref ${merchantRef}`);
+            logger.info(`[WEBHOOK] ✅ Korapay Checkout deposit complete: credited ${netAmount} ${currency} for ref ${merchantRef}`);
+
+            // Send email notification to user + admin (Checkout flow)
+            try {
+                const userRes = await query(
+                    `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+                     FROM users u
+                     LEFT JOIN user_profiles up ON up.user_id = u.id
+                     WHERE u.id = $1`,
+                    [tx.user_id]
+                );
+                if (userRes.rows.length > 0) {
+                    sendTransactionEmails({
+                        type: 'Deposit',
+                        amount: netAmount,
+                        currency: currency,
+                        reference: merchantRef,
+                        details: 'Wallet Funding via Checkout'
+                    }, userRes.rows[0]).catch(e => logger.error('[WEBHOOK] Checkout deposit email error:', e));
+                }
+            } catch (emailErr) {
+                logger.error('[WEBHOOK] Checkout deposit email notify error:', emailErr);
+            }
             return;
         }
 
@@ -414,16 +443,22 @@ async function applyKorapayDeposit(userId, walletId, amount, currency, fee, refe
 
         logger.info(`[WEBHOOK] ✅ Korapay deposit complete: credited ${amount} ${currency} to user ${userId}`);
 
-        // Notify user
-        const userRes = await query('SELECT name, email FROM users WHERE id = $1', [userId]);
+        // Notify user — names live in user_profiles, not users
+        const userRes = await query(
+            `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+             FROM users u
+             LEFT JOIN user_profiles up ON up.user_id = u.id
+             WHERE u.id = $1`,
+            [userId]
+        );
         if (userRes.rows.length > 0) {
-            await sendTransactionEmails({
+            sendTransactionEmails({
                 type: 'Deposit',
                 amount: amount,
                 currency: currency,
                 reference: reference,
                 details: 'Virtual Bank Account Transfer'
-            }, userRes.rows[0]);
+            }, userRes.rows[0]).catch(e => logger.error('[WEBHOOK] VBA deposit email error:', e));
         }
     } catch (err) {
         logger.error(`[WEBHOOK] Korapay deposit error: ${err.message}`);

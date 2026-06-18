@@ -1,4 +1,4 @@
-import { transaction as dbTransaction } from '../config/database.js';
+import { transaction as dbTransaction, query } from '../config/database.js';
 import defaultLogger from '../utils/logger.js';
 import { sendTransactionEmails } from './email.service.js';
 
@@ -134,6 +134,7 @@ export function createQuidaxWebhookService({
     }
 
     try {
+      let capturedUserId = null;
       await transaction(async (client) => {
         let walletRow = null;
 
@@ -197,22 +198,34 @@ export function createQuidaxWebhookService({
 
         logger.info(`[WEBHOOK] ✅ Quidax credited: ${amount} ${currencyUpper} → wallet ${walletId} (user ${userId})`);
 
-        // Send email notification
-        try {
-            const userRes = await client.query('SELECT name, email FROM users WHERE id = $1', [userId]);
-            if (userRes.rows.length > 0) {
-                await sendTransactionEmails({
-                    type: 'Deposit',
-                    amount: amount,
-                    currency: currencyUpper,
-                    reference: String(quidaxTxId),
-                    details: 'Crypto Wallet Funding'
-                }, userRes.rows[0]);
-            }
-        } catch (emailErr) {
-            logger.error('[WEBHOOK] Quidax deposit email notify error:', emailErr);
-        }
+        // Capture userId for use after transaction closes
+        capturedUserId = userId;
       });
+
+      // Send email notification OUTSIDE the transaction so a mail error
+      // can never roll back a successful wallet credit.
+      if (capturedUserId) {
+        try {
+          const userRes = await query(
+            `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+             FROM users u
+             LEFT JOIN user_profiles up ON up.user_id = u.id
+             WHERE u.id = $1`,
+            [capturedUserId]
+          );
+          if (userRes.rows.length > 0) {
+            sendTransactionEmails({
+              type: 'Deposit',
+              amount,
+              currency: currencyUpper,
+              reference: String(quidaxTxId),
+              details: 'Crypto Wallet Funding'
+            }, userRes.rows[0]).catch(e => logger.error('[WEBHOOK] Quidax deposit email error:', e));
+          }
+        } catch (emailErr) {
+          logger.error('[WEBHOOK] Quidax deposit email notify error:', emailErr);
+        }
+      }
     } catch (err) {
       logger.error('[WEBHOOK] creditUserWalletByQuidax error:', err);
       throw err;
