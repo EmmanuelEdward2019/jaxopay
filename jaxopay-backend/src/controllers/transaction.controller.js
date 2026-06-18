@@ -1,6 +1,56 @@
 import { query } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 
+const combinedQuery = `
+  SELECT 
+    wt.id, 
+    wt.from_wallet_id as wallet_id, 
+    wt.transaction_type::varchar, 
+    wt.from_amount as amount, 
+    wt.from_currency as currency,
+    wt.status, 
+    wt.description::text, 
+    wt.metadata, 
+    wt.created_at,
+    wt.reference::varchar,
+    wt.user_id
+  FROM transactions wt
+
+  UNION ALL
+
+  SELECT 
+    bp.id, 
+    NULL::uuid as wallet_id, 
+    'bill_payment'::varchar as transaction_type, 
+    bp.amount, 
+    bp.currency,
+    bp.status, 
+    ('Bill Payment: ' || bp.bill_category)::text as description, 
+    bp.metadata, 
+    bp.created_at,
+    bp.reference::varchar,
+    bp.user_id
+  FROM bill_payments bp
+
+  UNION ALL
+
+  SELECT 
+    wtx.id, 
+    wtx.wallet_id, 
+    wtx.transaction_type::varchar, 
+    wtx.amount, 
+    wtx.currency,
+    wtx.status, 
+    wtx.description::text, 
+    wtx.metadata, 
+    wtx.created_at,
+    (wtx.metadata->>'quidax_tx_id')::varchar as reference,
+    w.user_id
+  FROM wallet_transactions wtx
+  JOIN wallets w ON w.id = wtx.wallet_id
+  WHERE wtx.transaction_id IS NULL
+`;
+
 // Get all user transactions
 export const getTransactions = catchAsync(async (req, res) => {
   const {
@@ -13,58 +63,9 @@ export const getTransactions = catchAsync(async (req, res) => {
     end_date,
   } = req.query;
 
-  const offset = (page - 1) * limit;
-
-  // Build base query with UNION ALL
-  const combinedQuery = `
-    SELECT 
-      wt.id, 
-      wt.from_wallet_id as wallet_id, 
-      wt.transaction_type::varchar, 
-      wt.from_amount as amount, 
-      wt.from_currency as currency,
-      wt.status, 
-      wt.description::text, 
-      wt.metadata, 
-      wt.created_at,
-      wt.reference::varchar,
-      wt.user_id
-    FROM transactions wt
-
-    UNION ALL
-
-    SELECT 
-      bp.id, 
-      NULL::uuid as wallet_id, 
-      'bill_payment'::varchar as transaction_type, 
-      bp.amount, 
-      bp.currency,
-      bp.status, 
-      ('Bill Payment: ' || bp.bill_category)::text as description, 
-      bp.metadata, 
-      bp.created_at,
-      bp.reference::varchar,
-      bp.user_id
-    FROM bill_payments bp
-
-    UNION ALL
-
-    SELECT 
-      wtx.id, 
-      wtx.wallet_id, 
-      wtx.transaction_type::varchar, 
-      wtx.amount, 
-      wtx.currency,
-      wtx.status, 
-      wtx.description::text, 
-      wtx.metadata, 
-      wtx.created_at,
-      (wtx.metadata->>'quidax_tx_id')::varchar as reference,
-      w.user_id
-    FROM wallet_transactions wtx
-    JOIN wallets w ON w.id = wtx.wallet_id
-    WHERE wtx.transaction_id IS NULL
-  `;
+  const parsedPage = parseInt(page, 10) || 1;
+  const parsedLimit = parseInt(limit, 10) || 20;
+  const offset = (parsedPage - 1) * parsedLimit;
 
   // Build filtering conditions
   let conditions = 'WHERE user_id = $1';
@@ -101,7 +102,6 @@ export const getTransactions = catchAsync(async (req, res) => {
     params.push(end_date);
   }
 
-  // Run data and count queries in parallel for better performance
   const [result, countResult] = await Promise.all([
     query(
       `WITH combined AS (${combinedQuery})
@@ -109,7 +109,7 @@ export const getTransactions = catchAsync(async (req, res) => {
        ${conditions}
        ORDER BY created_at DESC
        LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`,
-      [...params, limit, offset]
+      [...params, parsedLimit, offset]
     ),
     query(
       `WITH combined AS (${combinedQuery})
@@ -124,10 +124,10 @@ export const getTransactions = catchAsync(async (req, res) => {
     data: {
       transactions: result.rows,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: parsedPage,
+        limit: parsedLimit,
         total: parseInt(countResult.rows[0].total),
-        pages: Math.ceil(countResult.rows[0].total / limit),
+        pages: Math.ceil(countResult.rows[0].total / parsedLimit),
       },
     },
   });
