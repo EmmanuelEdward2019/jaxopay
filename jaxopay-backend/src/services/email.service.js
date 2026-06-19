@@ -1,28 +1,46 @@
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 import logger from '../utils/logger.js';
 import templates from '../utils/email-templates.js';
 
-// Initialize Resend with lazy loading
-let resendInstance = null;
+// Create transporter (lazy initialization to avoid crashes if nodemailer not configured)
+let transporter = null;
 
-const getResend = () => {
-  if (!resendInstance) {
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey || apiKey === '') {
-      logger.warn('📧 Resend API Key not found. Email service will run in development mode (logged to console).');
+const getTransporter = () => {
+  if (!transporter) {
+    // Check if credentials are actually configured
+    const isConfigured = process.env.SMTP_USER &&
+      process.env.SMTP_PASS &&
+      process.env.SMTP_USER !== 'your-email@gmail.com';
+
+    if (!isConfigured) {
+      logger.warn('📧 Email service not configured - using development mode (emails will be logged to console)');
       return null;
     }
-    resendInstance = new Resend(apiKey);
+
+    try {
+      transporter = nodemailer.createTransporter({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+    } catch (error) {
+      logger.warn('Email service configuration error:', error.message);
+      return null;
+    }
   }
-  return resendInstance;
+  return transporter;
 };
 
 /**
- * Send a single email using Resend
+ * Send a single email using Nodemailer
  */
 export const sendEmail = async ({ to, subject, template, data, html }) => {
   try {
-    const resend = getResend();
+    const emailTransporter = getTransporter();
     const from = `${process.env.FROM_NAME || 'JAXOPAY'} <${process.env.FROM_EMAIL || 'noreply@jaxopay.com'}>`;
 
     // Get HTML content from template or raw html
@@ -30,7 +48,7 @@ export const sendEmail = async ({ to, subject, template, data, html }) => {
       ? templates[template](data)
       : (html || data?.html);
 
-    if (!resend) {
+    if (!emailTransporter) {
       // Development mode
       logger.info('📧 [DEV MODE] Email would be sent:');
       logger.info(`   To: ${to}`);
@@ -38,27 +56,25 @@ export const sendEmail = async ({ to, subject, template, data, html }) => {
       logger.info(`   Template: ${template || 'Custom HTML'}`);
       if (data?.verificationLink) logger.info(`   🔗 Link: ${data.verificationLink}`);
       if (data?.resetLink) logger.info(`   🔗 Reset: ${data.resetLink}`);
-      return { id: 'dev-mode-id', mock: true };
+      return { messageId: 'dev-mode-id', mock: true };
     }
 
-    const response = await resend.emails.send({
+    const mailOptions = {
       from,
       to,
       subject,
       html: htmlContent,
-    });
+    };
 
-    if (response.error) {
-      throw new Error(response.error.message);
-    }
+    const info = await emailTransporter.sendMail(mailOptions);
 
     logger.info('Email sent successfully:', {
       to,
       subject,
-      id: response.data.id,
+      messageId: info.messageId,
     });
 
-    return response.data;
+    return info;
   } catch (error) {
     logger.error('Email sending failed:', {
       to,
@@ -161,7 +177,7 @@ export const sendGiftCardDelivery = async ({
   redemptionUrl,
 }) => {
   try {
-    const resend = getResend();
+    const emailTransporter = getTransporter();
     const from = `${process.env.FROM_NAME || 'JAXOPAY'} <${process.env.FROM_EMAIL || 'noreply@jaxopay.com'}>`;
 
     const htmlContent = `
@@ -199,26 +215,17 @@ export const sendGiftCardDelivery = async ({
       <p>Great news! Your <strong>${brandName}</strong> gift card purchase is complete. Below are your redemption details:</p>
 
       <div class="card-box">
-        <h3 style="margin-top:0; color:#667eea;">💳 ${productName}</h3>
-        <p style="font-size:18px; color:#666;">Value: <strong>${currency} ${amount}</strong> ${quantity > 1 ? `(${quantity} cards)` : ''}</p>
-
-        ${redeemCode ? `
-        <div>
-          <p style="margin:5px 0; color:#666;">Redemption Code:</p>
-          <div class="code-box">${redeemCode}</div>
-        </div>
-        ` : ''}
-
+        <p style="margin: 0 0 10px 0; color: #666;">Gift Card Code:</p>
+        <div class="code-box">${redeemCode}</div>
+        
         ${redeemPin ? `
-        <div>
-          <p style="margin:5px 0; color:#666;">PIN:</p>
-          <div class="pin-box">${redeemPin}</div>
-        </div>
+        <p style="margin: 15px 0 5px 0; color: #666;">Security PIN:</p>
+        <div class="pin-box">${redeemPin}</div>
         ` : ''}
+      </div>
 
-        ${redemptionUrl ? `
-        <a href="${redemptionUrl}" class="button" target="_blank">Redeem Now →</a>
-        ` : ''}
+      <div class="warning">
+        <strong>⚠️ Keep this safe!</strong> Treat this code like cash. Do not share it with anyone unless you are gifting it to them.
       </div>
 
       <div class="details">
@@ -227,72 +234,82 @@ export const sendGiftCardDelivery = async ({
           <span class="value">${productName}</span>
         </div>
         <div class="details-row">
-          <span class="label">Card Value</span>
-          <span class="value">${currency} ${amount} ${quantity > 1 ? `× ${quantity}` : ''}</span>
+          <span class="label">Value</span>
+          <span class="value">${currency} ${amount}</span>
         </div>
+        ${quantity > 1 ? `
+        <div class="details-row">
+          <span class="label">Quantity</span>
+          <span class="value">${quantity}</span>
+        </div>
+        ` : ''}
         <div class="details-row">
           <span class="label">Total Paid</span>
           <span class="value">${costCurrency} ${totalCost}</span>
         </div>
         <div class="details-row">
-          <span class="label">Reference</span>
+          <span class="label">Order Ref</span>
           <span class="value">${reference}</span>
         </div>
-        ${transactionId ? `
-        <div class="details-row">
-          <span class="label">Transaction ID</span>
-          <span class="value">${transactionId}</span>
-        </div>
-        ` : ''}
       </div>
 
-      ${redeemInstructions ? `
-      <div class="warning">
-        <strong>📝 Redemption Instructions:</strong><br>
-        ${redeemInstructions}
+      ${redemptionUrl ? `
+      <div style="text-align: center;">
+        <a href="${redemptionUrl}" class="button">Redeem Now</a>
       </div>
       ` : ''}
 
-      <p style="margin-top:20px; color:#666; font-size:14px;">
-        ⚠️ <strong>Important:</strong> Keep this email safe. The redemption code is valuable and cannot be replaced if lost.
-      </p>
-
-      <p style="margin-top:20px;">
-        Questions? Visit our <a href="${process.env.FRONTEND_URL || 'https://jaxopay.com'}/support">support center</a> or reply to this email.
-      </p>
+      ${redeemInstructions ? `
+      <div style="margin-top: 25px;">
+        <h3 style="color: #333; margin-bottom: 10px;">How to Redeem:</h3>
+        <div style="color: #666; font-size: 14px; line-height: 1.6;">
+          ${redeemInstructions}
+        </div>
+      </div>
+      ` : ''}
     </div>
     <div class="footer">
-      <p>This gift card was purchased through JAXOPAY</p>
-      <p>© ${new Date().getFullYear()} JAXOPAY. All rights reserved.</p>
+      <p>If you have any issues redeeming your gift card, please contact our support team with your Order Ref: ${reference}.</p>
+      <p>&copy; ${new Date().getFullYear()} JAXOPAY. All rights reserved.</p>
     </div>
   </div>
 </body>
 </html>
     `;
 
-    if (!resend) {
-      // Development mode
-      logger.info('📧 [DEV MODE] Gift Card Delivery Email:');
+    if (!emailTransporter) {
+      logger.info('📧 [DEV MODE] Gift Card Email would be sent:');
       logger.info(`   To: ${recipientEmail}`);
-      logger.info(`   Product: ${productName}`);
-      logger.info(`   Code: ${redeemCode || 'N/A'}`);
-      logger.info(`   PIN: ${redeemPin || 'N/A'}`);
-      logger.info(`   Reference: ${reference}`);
-      return { id: 'dev-mode-gift-card', mock: true };
+      logger.info(`   Code: ${redeemCode}`);
+      return { messageId: 'dev-mode-gc-id', mock: true };
     }
 
-    const response = await resend.emails.send({
+    const mailOptions = {
       from,
       to: recipientEmail,
-      subject: `🎁 Your ${brandName} Gift Card - ${currency} ${amount}`,
+      subject: `Your ${brandName} Gift Card is here! 🎁`,
       html: htmlContent,
+    };
+
+    const info = await emailTransporter.sendMail(mailOptions);
+
+    logger.info('Gift Card Email sent successfully:', {
+      to: recipientEmail,
+      reference,
+      messageId: info.messageId,
     });
 
-    logger.info(`✅ Gift card delivery email sent to ${recipientEmail} (ID: ${response.id})`);
-    return response;
+    return info;
   } catch (error) {
-    logger.error('Failed to send gift card delivery email:', error);
-    throw error;
+    logger.error('Gift Card Email sending failed:', {
+      to: recipientEmail,
+      reference,
+      error: error.message,
+    });
+    
+    // Even if email fails, we don't want to throw and crash the purchase process
+    // The user can still see the code in the app dashboard
+    return { error: error.message, failed: true };
   }
 };
 

@@ -384,7 +384,7 @@ async function processKorapay(payload) {
         }
 
         // 2. Ensure idempotency for VBA transfers
-        const txCheck = await query('SELECT id FROM transactions WHERE external_reference = $1', [reference]);
+        const txCheck = await query('SELECT id FROM transactions WHERE reference = $1', [reference]);
         if (txCheck.rows.length > 0) {
             logger.info(`[WEBHOOK] Korapay deposit ${reference} already processed.`);
             return;
@@ -428,7 +428,7 @@ async function applyKorapayDeposit(userId, walletId, amount, currency, fee, refe
             await client.query(
                 `INSERT INTO transactions
                  (user_id, to_wallet_id, transaction_type, from_amount, to_amount,
-                  from_currency, to_currency, net_amount, fee_amount, status, description, external_reference)
+                  from_currency, to_currency, net_amount, fee_amount, status, description, reference)
                  VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $5, $6, 'completed', 'Bank Transfer Deposit', $7)`,
                 [userId, walletId, amount, currency, netAmount, fee || 0, reference]
             );
