@@ -515,12 +515,16 @@ export const getWalletTransactions = catchAsync(async (req, res) => {
   // Get transactions
   const result = await query(
     `WITH combined AS (
-      SELECT id, transaction_type, from_amount as amount, from_currency as currency, status, description, metadata, created_at, from_wallet_id as w_id1, to_wallet_id as w_id2
+      SELECT id, transaction_type::varchar, from_amount::numeric as amount, from_currency::varchar as currency, status::varchar, description::text, metadata, created_at, from_wallet_id as w_id1, to_wallet_id as w_id2
       FROM transactions
       UNION ALL
-      SELECT id, transaction_type, amount, currency, status, description, metadata, created_at, wallet_id as w_id1, wallet_id as w_id2
-      FROM wallet_transactions
-      WHERE transaction_id IS NULL
+      SELECT id, transaction_type::varchar, amount::numeric, currency::varchar, status::varchar, description::text, metadata, created_at, wallet_id as w_id1, wallet_id as w_id2
+      FROM wallet_transactions wtx
+      WHERE NOT EXISTS (
+        SELECT 1 FROM transactions t
+        WHERE (wtx.metadata->>'quidax_tx_id') IS NOT NULL
+          AND (t.metadata->>'quidax_tx_id') = (wtx.metadata->>'quidax_tx_id')
+      )
      )
      SELECT id, transaction_type, amount, currency, status, description, metadata, created_at
      FROM combined
@@ -535,9 +539,13 @@ export const getWalletTransactions = catchAsync(async (req, res) => {
   // Get total count
   const countResult = await query(
     `WITH combined AS (
-      SELECT id, transaction_type, status, from_wallet_id as w_id1, to_wallet_id as w_id2 FROM transactions
+      SELECT id, transaction_type::varchar, status::varchar, from_wallet_id as w_id1, to_wallet_id as w_id2 FROM transactions
       UNION ALL
-      SELECT id, transaction_type, status, wallet_id as w_id1, wallet_id as w_id2 FROM wallet_transactions WHERE transaction_id IS NULL
+      SELECT id, transaction_type::varchar, status::varchar, wallet_id as w_id1, wallet_id as w_id2 FROM wallet_transactions wtx WHERE NOT EXISTS (
+        SELECT 1 FROM transactions t
+        WHERE (wtx.metadata->>'quidax_tx_id') IS NOT NULL
+          AND (t.metadata->>'quidax_tx_id') = (wtx.metadata->>'quidax_tx_id')
+      )
      )
      SELECT COUNT(*) as total FROM combined
      WHERE w_id1 = $1 OR w_id2 = $1

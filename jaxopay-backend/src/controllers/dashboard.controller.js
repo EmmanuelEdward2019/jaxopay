@@ -26,7 +26,7 @@ export const getDashboardSummary = catchAsync(async (req, res) => {
                UNION ALL
 
                SELECT bp.id::uuid, 'bill_payment'::varchar as transaction_type, bp.amount::numeric, bp.currency::varchar,
-                      bp.status::varchar, ('Bill Payment: ' || bp.bill_category)::text as description, bp.created_at::timestamp, bp.metadata::jsonb, bp.reference::varchar
+                      bp.status::varchar, ('Bill Payment: ' || bp.service_type)::text as description, bp.created_at::timestamp, bp.metadata::jsonb, bp.reference::varchar
                FROM bill_payments bp
                WHERE bp.user_id = $1
 
@@ -36,7 +36,11 @@ export const getDashboardSummary = catchAsync(async (req, res) => {
                       wtx.status::varchar, wtx.description::text, wtx.created_at::timestamp, wtx.metadata::jsonb, (wtx.metadata->>'quidax_tx_id')::varchar as reference
                FROM wallet_transactions wtx
                JOIN wallets w ON w.id = wtx.wallet_id
-               WHERE w.user_id = $1 AND wtx.transaction_id IS NULL
+               WHERE w.user_id = $1 AND NOT EXISTS (
+                 SELECT 1 FROM transactions t
+                 WHERE (wtx.metadata->>'quidax_tx_id') IS NOT NULL
+                   AND (t.metadata->>'quidax_tx_id') = (wtx.metadata->>'quidax_tx_id')
+               )
              )
              SELECT * FROM combined
              ORDER BY created_at DESC

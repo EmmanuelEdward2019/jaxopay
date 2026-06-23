@@ -6,10 +6,10 @@ const combinedQuery = `
     wt.id, 
     wt.from_wallet_id as wallet_id, 
     wt.transaction_type::varchar, 
-    wt.from_amount as amount, 
-    wt.from_currency as currency,
-    wt.status, 
-    wt.description::text, 
+    wt.from_amount::numeric as amount,
+    wt.from_currency::varchar as currency,
+    wt.status::varchar,
+    wt.description::text,
     wt.metadata, 
     wt.created_at,
     wt.reference::varchar,
@@ -22,10 +22,10 @@ const combinedQuery = `
     bp.id, 
     NULL::uuid as wallet_id, 
     'bill_payment'::varchar as transaction_type, 
-    bp.amount, 
-    bp.currency,
-    bp.status, 
-    ('Bill Payment: ' || bp.bill_category)::text as description, 
+    bp.amount::numeric,
+    bp.currency::varchar,
+    bp.status::varchar,
+    ('Bill Payment: ' || bp.service_type)::text as description,
     bp.metadata, 
     bp.created_at,
     bp.reference::varchar,
@@ -38,17 +38,21 @@ const combinedQuery = `
     wtx.id, 
     wtx.wallet_id, 
     wtx.transaction_type::varchar, 
-    wtx.amount, 
-    wtx.currency,
-    wtx.status, 
-    wtx.description::text, 
+    wtx.amount::numeric,
+    wtx.currency::varchar,
+    wtx.status::varchar,
+    wtx.description::text,
     wtx.metadata, 
     wtx.created_at,
     (wtx.metadata->>'quidax_tx_id')::varchar as reference,
     w.user_id
   FROM wallet_transactions wtx
   JOIN wallets w ON w.id = wtx.wallet_id
-  WHERE wtx.transaction_id IS NULL
+  WHERE NOT EXISTS (
+    SELECT 1 FROM transactions t
+    WHERE (wtx.metadata->>'quidax_tx_id') IS NOT NULL
+      AND (t.metadata->>'quidax_tx_id') = (wtx.metadata->>'quidax_tx_id')
+  )
 `;
 
 // Get all user transactions

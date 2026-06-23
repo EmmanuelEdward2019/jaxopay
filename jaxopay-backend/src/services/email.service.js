@@ -1,9 +1,26 @@
 import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import logger from '../utils/logger.js';
 import templates from '../utils/email-templates.js';
 
-// Create transporter (lazy initialization to avoid crashes if nodemailer not configured)
+// Lazy-initialized providers. Resend is preferred (production transport);
+// nodemailer/SMTP is used as a fallback when only SMTP credentials are set.
 let transporter = null;
+let resendClient = null;
+
+const isPlaceholder = (val) => !val || /your[-_]?|placeholder|change[-_]?this/i.test(String(val));
+
+const getResend = () => {
+  if (resendClient) return resendClient;
+  if (isPlaceholder(process.env.RESEND_API_KEY)) return null;
+  try {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  } catch (error) {
+    logger.warn('Resend configuration error:', error.message);
+    return null;
+  }
+  return resendClient;
+};
 
 const getTransporter = () => {
   if (!transporter) {
@@ -13,12 +30,11 @@ const getTransporter = () => {
       process.env.SMTP_USER !== 'your-email@gmail.com';
 
     if (!isConfigured) {
-      logger.warn('📧 Email service not configured - using development mode (emails will be logged to console)');
       return null;
     }
 
     try {
-      transporter = nodemailer.createTransporter({
+      transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.SMTP_PORT) || 587,
         secure: process.env.SMTP_SECURE === 'true',
@@ -36,11 +52,35 @@ const getTransporter = () => {
 };
 
 /**
- * Send a single email using Nodemailer
+ * Deliver a fully-rendered email via the configured provider.
+ * Order of preference: Resend → SMTP/nodemailer → dev-mode (logged, not sent).
+ * Returns { delivered: false } when no provider is configured so callers can
+ * fall back to dev-mode logging.
+ */
+const deliverEmail = async ({ from, to, subject, html }) => {
+  const resend = getResend();
+  if (resend) {
+    const { data, error } = await resend.emails.send({ from, to, subject, html });
+    if (error) {
+      throw new Error(error.message || JSON.stringify(error));
+    }
+    return { delivered: true, messageId: data?.id, provider: 'resend' };
+  }
+
+  const emailTransporter = getTransporter();
+  if (emailTransporter) {
+    const info = await emailTransporter.sendMail({ from, to, subject, html });
+    return { delivered: true, messageId: info.messageId, provider: 'smtp' };
+  }
+
+  return { delivered: false };
+};
+
+/**
+ * Send a single email via the configured provider (Resend preferred, SMTP fallback)
  */
 export const sendEmail = async ({ to, subject, template, data, html }) => {
   try {
-    const emailTransporter = getTransporter();
     const from = `${process.env.FROM_NAME || 'JAXOPAY'} <${process.env.FROM_EMAIL || 'noreply@jaxopay.com'}>`;
 
     // Get HTML content from template or raw html
@@ -48,9 +88,11 @@ export const sendEmail = async ({ to, subject, template, data, html }) => {
       ? templates[template](data)
       : (html || data?.html);
 
-    if (!emailTransporter) {
-      // Development mode
-      logger.info('📧 [DEV MODE] Email would be sent:');
+    const result = await deliverEmail({ from, to, subject, html: htmlContent });
+
+    if (!result.delivered) {
+      // Development mode — no email provider configured
+      logger.warn('📧 [DEV MODE] Email provider not configured (set RESEND_API_KEY or SMTP_*). Email NOT sent:');
       logger.info(`   To: ${to}`);
       logger.info(`   Subject: ${subject}`);
       logger.info(`   Template: ${template || 'Custom HTML'}`);
@@ -59,22 +101,14 @@ export const sendEmail = async ({ to, subject, template, data, html }) => {
       return { messageId: 'dev-mode-id', mock: true };
     }
 
-    const mailOptions = {
-      from,
-      to,
-      subject,
-      html: htmlContent,
-    };
-
-    const info = await emailTransporter.sendMail(mailOptions);
-
     logger.info('Email sent successfully:', {
       to,
       subject,
-      messageId: info.messageId,
+      messageId: result.messageId,
+      provider: result.provider,
     });
 
-    return info;
+    return result;
   } catch (error) {
     logger.error('Email sending failed:', {
       to,
@@ -177,7 +211,6 @@ export const sendGiftCardDelivery = async ({
   redemptionUrl,
 }) => {
   try {
-    const emailTransporter = getTransporter();
     const from = `${process.env.FROM_NAME || 'JAXOPAY'} <${process.env.FROM_EMAIL || 'noreply@jaxopay.com'}>`;
 
     const htmlContent = `
@@ -277,29 +310,28 @@ export const sendGiftCardDelivery = async ({
 </html>
     `;
 
-    if (!emailTransporter) {
-      logger.info('📧 [DEV MODE] Gift Card Email would be sent:');
+    const result = await deliverEmail({
+      from,
+      to: recipientEmail,
+      subject: `Your ${brandName} Gift Card is here! 🎁`,
+      html: htmlContent,
+    });
+
+    if (!result.delivered) {
+      logger.warn('📧 [DEV MODE] Email provider not configured. Gift Card Email NOT sent:');
       logger.info(`   To: ${recipientEmail}`);
       logger.info(`   Code: ${redeemCode}`);
       return { messageId: 'dev-mode-gc-id', mock: true };
     }
 
-    const mailOptions = {
-      from,
-      to: recipientEmail,
-      subject: `Your ${brandName} Gift Card is here! 🎁`,
-      html: htmlContent,
-    };
-
-    const info = await emailTransporter.sendMail(mailOptions);
-
     logger.info('Gift Card Email sent successfully:', {
       to: recipientEmail,
       reference,
-      messageId: info.messageId,
+      messageId: result.messageId,
+      provider: result.provider,
     });
 
-    return info;
+    return result;
   } catch (error) {
     logger.error('Gift Card Email sending failed:', {
       to: recipientEmail,

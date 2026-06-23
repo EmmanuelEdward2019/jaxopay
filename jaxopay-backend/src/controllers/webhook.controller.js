@@ -331,6 +331,12 @@ async function processKorapay(payload) {
 
     logger.info(`[WEBHOOK] Korapay event: ${event}`, { reference: data?.reference });
 
+    // Payout / disbursement result (fiat withdrawal via Korapay)
+    if (event === 'transfer.success' || event === 'transfer.failed') {
+        await processKorapayPayout(event, data);
+        return;
+    }
+
     if (event === 'charge.success') {
         const { amount, currency, reference, fee, status, customer } = data;
         
@@ -462,6 +468,84 @@ async function applyKorapayDeposit(userId, walletId, amount, currency, fee, refe
         }
     } catch (err) {
         logger.error(`[WEBHOOK] Korapay deposit error: ${err.message}`);
+    }
+}
+
+// Finalize a Korapay payout (fiat withdrawal): complete on success, reverse funds on failure.
+async function processKorapayPayout(event, data) {
+    const reference = data?.reference || data?.merchant_reference;
+    if (!reference) {
+        logger.warn('[WEBHOOK] Korapay payout event missing reference');
+        return;
+    }
+
+    const txRes = await query(
+        `SELECT id, user_id, from_wallet_id, from_amount, from_currency, reference, status
+         FROM transactions
+         WHERE reference = $1 AND transaction_type = 'bank_transfer'`,
+        [reference]
+    );
+    if (txRes.rows.length === 0) {
+        logger.warn(`[WEBHOOK] Korapay payout ${reference} — no matching transfer found`);
+        return;
+    }
+    const tx = txRes.rows[0];
+
+    // Idempotency: ignore events for already-finalized transfers
+    if (['completed', 'failed'].includes(tx.status)) {
+        logger.info(`[WEBHOOK] Korapay payout ${reference} already ${tx.status}`);
+        return;
+    }
+
+    if (event === 'transfer.success') {
+        await transaction(async (client) => {
+            await client.query(
+                `UPDATE transactions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE reference = $1`,
+                [reference]
+            );
+        });
+        logger.info(`[WEBHOOK] ✅ Korapay payout complete: ${reference}`);
+        await notifyTransfer(tx, 'Withdrawal');
+    } else {
+        // transfer.failed — return the reserved funds to the wallet
+        await transaction(async (client) => {
+            await client.query(
+                `UPDATE wallets
+                 SET balance = balance + $1, available_balance = COALESCE(available_balance, 0) + $1, updated_at = NOW()
+                 WHERE id = $2`,
+                [tx.from_amount, tx.from_wallet_id]
+            );
+            await client.query(
+                `UPDATE transactions SET status = 'failed', failure_reason = $2, updated_at = NOW() WHERE reference = $1`,
+                [reference, data?.message || data?.reason || 'Payout failed at provider']
+            );
+        });
+        logger.warn(`[WEBHOOK] ❌ Korapay payout failed, funds reversed: ${reference}`);
+        await notifyTransfer(tx, 'Withdrawal Failed');
+    }
+}
+
+// Email the user about a bank-transfer (withdrawal) outcome.
+async function notifyTransfer(tx, label) {
+    try {
+        const userRes = await query(
+            `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+             FROM users u
+             LEFT JOIN user_profiles up ON up.user_id = u.id
+             WHERE u.id = $1`,
+            [tx.user_id]
+        );
+        if (userRes.rows.length > 0) {
+            sendTransactionEmails({
+                type: label,
+                amount: tx.from_amount,
+                currency: tx.from_currency,
+                reference: tx.reference,
+                details: 'Bank Transfer',
+            }, userRes.rows[0]).catch((e) => logger.error('[WEBHOOK] Transfer email error:', e));
+        }
+    } catch (e) {
+        logger.error('[WEBHOOK] Transfer notify error:', e.message);
     }
 }
 
