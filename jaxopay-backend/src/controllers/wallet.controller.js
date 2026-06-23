@@ -279,7 +279,9 @@ export const verifyDeposit = catchAsync(async (req, res) => {
     logger.info(`[Wallet] Korapay verify ${reference}: ${chargeStatus}`);
 
     if (chargeStatus === 'success') {
-      // Credit the wallet atomically
+      // Credit the wallet atomically. `credited` is only set when THIS call performs
+      // the credit, so the email fires exactly once (the webhook path guards the same way).
+      let credited = null;
       await transaction(async (client) => {
         // Check not already credited (race condition guard)
         const currentTx = await client.query('SELECT status FROM transactions WHERE reference = $1 FOR UPDATE', [reference]);
@@ -296,8 +298,34 @@ export const verifyDeposit = catchAsync(async (req, res) => {
           `UPDATE transactions SET status = 'completed', to_amount = $1, completed_at = NOW() WHERE reference = $2`,
           [kAmount, reference]
         );
+        credited = { amount: kAmount, currency: kCurrency };
         logger.info(`[Wallet] ✅ Wallet ${tx.to_wallet_id} credited ${kAmount} ${kCurrency} — ref ${reference}`);
       });
+
+      // Notify user + admin (only when this request actually credited the wallet)
+      if (credited) {
+        try {
+          const userRes = await query(
+            `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+             FROM users u
+             LEFT JOIN user_profiles up ON up.user_id = u.id
+             WHERE u.id = $1`,
+            [tx.user_id]
+          );
+          if (userRes.rows.length > 0) {
+            emailService.sendTransactionEmails({
+              id: reference,
+              type: 'Deposit',
+              amount: credited.amount,
+              currency: credited.currency,
+              reference,
+              details: 'Wallet Funding',
+            }, userRes.rows[0]).catch((e) => logger.error('[Wallet] verify deposit email error:', e.message));
+          }
+        } catch (e) {
+          logger.error('[Wallet] verify deposit notify error:', e.message);
+        }
+      }
 
       res.status(200).json({
         success: true,

@@ -95,7 +95,7 @@ const authService = {
     try {
       const response = await apiClient.post('/auth/reset-password', {
         token,
-        new_password: newPassword,
+        password: newPassword,
       });
       return { success: true, data: response.data };
     } catch (error) {

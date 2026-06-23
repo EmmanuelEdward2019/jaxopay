@@ -652,7 +652,7 @@ export const forgotPassword = catchAsync(async (req, res) => {
     template: 'password-reset',
     data: {
       name: 'User',
-      resetLink: `${process.env.FRONTEND_URL}/reset-password/${resetToken}`,
+      resetLink: `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`,
     },
   });
 
@@ -668,30 +668,28 @@ export const forgotPassword = catchAsync(async (req, res) => {
 export const resetPassword = catchAsync(async (req, res) => {
   const { token, password } = req.body;
 
-  // Find valid reset token
+  // Find the matching reset token among recent, unused, non-expired records.
+  // Tokens are hashed, so we cannot look up by token directly — compare against
+  // each candidate. (The previous "latest token only" approach broke whenever a
+  // second user requested a reset before the first used their link.)
   const result = await query(
     `SELECT pr.id, pr.user_id, pr.token_hash, pr.expires_at
      FROM password_resets pr
-     WHERE pr.used_at IS NULL
+     WHERE pr.used_at IS NULL AND pr.expires_at > NOW()
      ORDER BY pr.created_at DESC
-     LIMIT 1`
+     LIMIT 50`
   );
 
-  if (result.rows.length === 0) {
-    throw new AppError('Invalid or expired reset token', 400);
+  let resetRecord = null;
+  for (const row of result.rows) {
+    if (await bcrypt.compare(token, row.token_hash)) {
+      resetRecord = row;
+      break;
+    }
   }
 
-  const resetRecord = result.rows[0];
-
-  // Verify token
-  const isTokenValid = await bcrypt.compare(token, resetRecord.token_hash);
-  if (!isTokenValid) {
+  if (!resetRecord) {
     throw new AppError('Invalid or expired reset token', 400);
-  }
-
-  // Check if token is expired
-  if (new Date(resetRecord.expires_at) < new Date()) {
-    throw new AppError('Reset token has expired', 400);
   }
 
   // Hash new password

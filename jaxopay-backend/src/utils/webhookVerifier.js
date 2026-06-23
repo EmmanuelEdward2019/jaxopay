@@ -82,7 +82,9 @@ class WebhookVerifier {
             case 'smile-id':
                 return this._verifySmileIdentity(body);
             case 'korapay':
-                return this._verifyKorapay(headers, payload);
+                // Korapay signs JSON.stringify(body.data), so it needs the PARSED object,
+                // not the raw/stringified payload used by raw-byte HMAC providers.
+                return this._verifyKorapay(headers, typeof body === 'string' ? JSON.parse(body) : body);
             case 'quidax':
                 // Always pass raw body for Quidax — their HMAC is over raw HTTP bytes
                 return this._verifyQuidax(headers, rawBody || payload);
@@ -184,7 +186,7 @@ class WebhookVerifier {
         const secret = process.env.KORAPAY_SECRET_KEY;
         const signature = headers['x-korapay-signature'];
 
-        if (!secret) {
+        if (!secret || secret.includes('your_')) {
             logger.warn('[WEBHOOK] Korapay secret not configured');
             return process.env.NODE_ENV === 'development';
         }
@@ -194,7 +196,13 @@ class WebhookVerifier {
             return false;
         }
 
-        const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+        // Korapay computes the HMAC-SHA256 over the JSON-encoded `data` object
+        // (NOT the whole payload), using the secret key. Passing the parsed object
+        // straight to .update() stringifies it to "[object Object]" and never matches.
+        const data = payload && Object.prototype.hasOwnProperty.call(payload, 'data')
+            ? payload.data
+            : payload;
+        const hash = crypto.createHmac('sha256', secret).update(JSON.stringify(data)).digest('hex');
         return hash === signature;
     }
 
