@@ -257,11 +257,20 @@ export const templates = {
       <a href="${data.frontendUrl}/dashboard/support" class="button">Rate & Review</a>
     </div>
   `),
+  twoFactorCode: (data) => layout(`
+    <h1 style="margin-top: 0;">Your Login Code</h1>
+    <p>Use the code below to complete your sign-in to JAXOPAY:</p>
+    <div style="text-align: center;">
+      <div style="display: inline-block; font-size: 32px; font-weight: 700; letter-spacing: 8px; background: #f3f4f6; color: #111827; padding: 16px 28px; border-radius: 8px; font-family: 'Courier New', monospace;">${data.code}</div>
+    </div>
+    <p>This code expires shortly. If you didn't try to sign in, please secure your account immediately.</p>
+  `),
 };
 
-// Aliases for backward compatibility
+// Aliases for backward compatibility (controllers reference kebab-case names)
 templates['email-verification'] = templates.signup;
 templates['password-reset'] = templates.forgotPassword;
 templates['transaction-receipt'] = templates.transaction;
+templates['2fa-code'] = templates.twoFactorCode;
 
 export default templates;
