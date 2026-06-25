@@ -128,94 +128,76 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
         ...getMetadataFields(transaction.metadata),
     ].filter(Boolean);
 
+    const statusKey = (transaction.status || '').toLowerCase();
+    const statusColor = statusKey === 'completed' ? '#16a34a'
+        : (statusKey === 'pending' || statusKey === 'processing') ? '#d97706'
+            : '#dc2626';
+    const statusBg = statusKey === 'completed' ? '#dcfce7'
+        : (statusKey === 'pending' || statusKey === 'processing') ? '#fef3c7'
+            : '#fee2e2';
+
     return (
         <div
             ref={receiptRef}
-            style={{ fontFamily: 'system-ui, -apple-system, sans-serif', backgroundColor: '#0f1117' }}
+            style={{ fontFamily: "'Segoe UI', Roboto, system-ui, -apple-system, sans-serif", backgroundColor: '#ffffff' }}
             className="w-[420px] rounded-3xl overflow-hidden"
         >
-            {/* Header gradient */}
-            <div style={{
-                background: 'linear-gradient(135deg, #6d28d9 0%, #4f46e5 50%, #7c3aed 100%)',
-                padding: '32px 32px 40px',
-                textAlign: 'center',
-            }}>
-                {/* Logo */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 24 }}>
-                    <img src="/logo-white.png" alt="Jaxopay" style={{ height: 28, width: 'auto' }} />
-                </div>
-                <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, marginBottom: 16, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            {/* Green brand accent bar */}
+            <div style={{ height: 6, background: 'linear-gradient(90deg, #15803d 0%, #16a34a 50%, #22c55e 100%)' }} />
+
+            {/* Header */}
+            <div style={{ padding: '30px 32px 24px', textAlign: 'center', backgroundColor: '#ffffff' }}>
+                <img src="/logo.png" alt="JAXOPAY" style={{ height: 42, width: 'auto', display: 'block', margin: '0 auto 18px' }} />
+                <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 14, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>
                     Proof of Transaction
                 </p>
                 <p style={{
-                    color: isCredit ? '#4ade80' : '#fff',
-                    fontSize: 40,
-                    fontWeight: 700,
-                    marginBottom: 8,
+                    color: isCredit ? '#16a34a' : '#0f172a',
+                    fontSize: 38,
+                    fontWeight: 800,
+                    marginBottom: 12,
                     letterSpacing: '-0.02em',
                 }}>
                     {isCredit ? '+' : '-'}{formatCurrency(displayAmount, displayCurrency)}
                 </p>
                 <div style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '4px 14px', borderRadius: 999,
-                    backgroundColor: transaction.status === 'completed' ? 'rgba(74,222,128,0.2)' :
-                        transaction.status === 'pending' ? 'rgba(251,191,36,0.2)' : 'rgba(248,113,113,0.2)',
-                    border: `1px solid ${transaction.status === 'completed' ? 'rgba(74,222,128,0.4)' :
-                        transaction.status === 'pending' ? 'rgba(251,191,36,0.4)' : 'rgba(248,113,113,0.4)'}`,
+                    padding: '5px 16px', borderRadius: 999, backgroundColor: statusBg,
                 }}>
-                    <span style={{
-                        color: transaction.status === 'completed' ? '#4ade80' :
-                            transaction.status === 'pending' ? '#fbbf24' : '#f87171',
-                        fontSize: 13, fontWeight: 600,
-                    }}>
+                    <span style={{ color: statusColor, fontSize: 12.5, fontWeight: 700, letterSpacing: '0.03em' }}>
                         {transaction.status?.toUpperCase()}
                     </span>
                 </div>
             </div>
 
-            {/* Wave divider */}
-            <div style={{ height: 20, backgroundColor: '#0f1117', marginTop: -1 }} />
-
             {/* Details */}
-            <div style={{ padding: '0 32px 32px', backgroundColor: '#0f1117' }}>
-                <div style={{
-                    backgroundColor: '#1a1d27',
-                    borderRadius: 16,
-                    overflow: 'hidden',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                }}>
-                    {fields.map((field, i) => (
-                        <div key={i} style={{
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                            padding: '14px 20px',
-                            borderBottom: i < fields.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                        }}>
-                            <span style={{ color: '#6b7280', fontSize: 13 }}>{field.label}</span>
-                            <span style={{
-                                color: field.label === 'Status'
-                                    ? (transaction.status === 'completed' ? '#4ade80' :
-                                        transaction.status === 'pending' ? '#fbbf24' : '#f87171')
-                                    : '#e5e7eb',
-                                fontSize: 13, fontWeight: 500,
-                                maxWidth: '55%', textAlign: 'right',
-                                wordBreak: 'break-all',
-                            }}>
-                                {field.value}
-                            </span>
-                        </div>
-                    ))}
-                </div>
+            <div style={{ padding: '0 24px 6px', backgroundColor: '#ffffff' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', background: '#f8fafc', borderRadius: 14, overflow: 'hidden', border: '1px solid #eef2f6' }}>
+                    <tbody>
+                        {fields.map((field, i) => (
+                            <tr key={i} style={{ borderBottom: i < fields.length - 1 ? '1px solid #eef2f6' : 'none' }}>
+                                <td style={{ color: '#64748b', fontSize: 13, padding: '13px 18px', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{field.label}</td>
+                                <td style={{
+                                    color: field.label === 'Status' ? statusColor : '#0f172a',
+                                    fontSize: 13, fontWeight: 600, padding: '13px 18px',
+                                    textAlign: 'right', wordBreak: 'break-word', overflowWrap: 'anywhere',
+                                }}>
+                                    {field.value}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
 
-                {/* Footer */}
-                <div style={{ textAlign: 'center', marginTop: 24 }}>
-                    <p style={{ color: '#374151', fontSize: 11, letterSpacing: '0.05em' }}>
-                        POWERED BY JAXOPAY · jaxopay.com
-                    </p>
-                    <p style={{ color: '#374151', fontSize: 10, marginTop: 4 }}>
-                        Transaction ID: {transaction.id?.slice(0, 8).toUpperCase()}
-                    </p>
-                </div>
+            {/* Footer */}
+            <div style={{ textAlign: 'center', padding: '20px 32px 28px', backgroundColor: '#ffffff' }}>
+                <p style={{ color: '#16a34a', fontSize: 11.5, letterSpacing: '0.05em', fontWeight: 700 }}>
+                    POWERED BY JAXOPAY · jaxopay.com
+                </p>
+                <p style={{ color: '#94a3b8', fontSize: 10.5, marginTop: 5 }}>
+                    Transaction ID: {transaction.id?.slice(0, 8).toUpperCase()}
+                </p>
             </div>
         </div>
     );
@@ -265,28 +247,33 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
         if (!receiptRef.current) return;
         setSharing(true);
         try {
-            // Generate image blob for sharing
+            // Render the receipt to a PNG file
             const dataUrl = await toPng(receiptRef.current, { cacheBust: true, quality: 1, pixelRatio: 2 });
+            const fileName = `jaxopay-receipt-${transaction.reference || transaction.id?.slice(0, 8)}.png`;
             const blob = await (await fetch(dataUrl)).blob();
-            const file = new File([blob], `jaxopay-receipt-${transaction.reference || transaction.id?.slice(0, 8)}.png`, { type: 'image/png' });
+            const file = new File([blob], fileName, { type: 'image/png' });
 
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            // Mobile / browsers that support sharing files → open the native share sheet WITH the image
+            if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({
-                    title: 'Transaction Receipt',
+                    files: [file],
+                    title: 'JAXOPAY Transaction Receipt',
                     text: `${isCredit ? '+' : '-'}${formatCurrency(displayAmount, displayCurrency)} · ${transaction.status}`,
-                    url: window.location.href,
                 });
-            } else if (navigator.clipboard) {
-                await navigator.clipboard.writeText(
-                    `Transaction Receipt\n${isCredit ? '+' : '-'}${formatCurrency(displayAmount, displayCurrency)} · Ref: ${transaction.reference || transaction.id?.slice(0, 8)} · ${transaction.status}`
-                );
             } else {
-                // Fallback: copy reference
-                await copyReference();
+                // Desktop / unsupported → download the receipt image (always a visible result)
+                const link = document.createElement('a');
+                link.download = fileName;
+                link.href = dataUrl;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
             }
         } catch (err) {
-            if (err.name !== 'AbortError') {
-                await copyReference(); // Fallback
+            // User cancelled the share sheet → not an error
+            if (err?.name !== 'AbortError') {
+                console.error('Share failed:', err);
+                try { await copyReference(); } catch { /* clipboard unavailable */ }
             }
         } finally {
             setSharing(false);
