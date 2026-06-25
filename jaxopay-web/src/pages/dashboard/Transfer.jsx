@@ -162,12 +162,42 @@ const Transfer = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [result, setResult] = useState(null);
+    const [verifying, setVerifying] = useState(false);
 
     useEffect(() => {
         fetchBanks();
         fetchWallets();
         fetchHistory();
     }, []);
+
+    // Manually re-check a payout's status against the provider.
+    const checkStatus = async () => {
+        if (!result?.reference) return;
+        setVerifying(true);
+        try {
+            const body = await apiClient.post('/transfers/verify', { reference: result.reference });
+            if (body?.data?.status) setResult((prev) => (prev ? { ...prev, status: body.data.status } : prev));
+        } catch { /* ignore */ }
+        setVerifying(false);
+    };
+
+    // Auto-reconcile a "processing" transfer (the webhook can be delayed / unreachable locally).
+    useEffect(() => {
+        if (step !== 4 || !result?.reference) return;
+        const st = (result.status || '').toLowerCase();
+        if (st === 'completed' || st === 'failed') return;
+        let attempts = 0;
+        const id = setInterval(async () => {
+            attempts += 1;
+            try {
+                const body = await apiClient.post('/transfers/verify', { reference: result.reference });
+                const newSt = body?.data?.status;
+                if (newSt) setResult((prev) => (prev ? { ...prev, status: newSt } : prev));
+                if (newSt === 'completed' || newSt === 'failed' || attempts >= 6) clearInterval(id);
+            } catch { if (attempts >= 6) clearInterval(id); }
+        }, 5000);
+        return () => clearInterval(id);
+    }, [step, result?.reference, result?.status]);
 
     // Auto-resolve when bank + 10-digit account are ready
     useEffect(() => {
@@ -665,13 +695,30 @@ const Transfer = () => {
                         {/* ── Step 4: Success ── */}
                         {step === 4 && result && (
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8">
-                                <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <CheckCircle className="w-10 h-10 text-success" />
-                                </div>
-                                <h2 className="text-xl font-bold text-foreground mb-2">Transfer Initiated!</h2>
-                                <p className="text-muted-foreground mb-6">
-                                    {formatCurrency(result.amount, 'NGN')} is being sent to <strong>{result.recipient?.account_name}</strong>
-                                </p>
+                                {(() => {
+                                    const st = (result.status || '').toLowerCase();
+                                    const done = st === 'completed';
+                                    const failed = st === 'failed';
+                                    return (
+                                        <>
+                                            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${done ? 'bg-success/10' : failed ? 'bg-rose-500/10' : 'bg-warning/10'}`}>
+                                                {done ? <CheckCircle className="w-10 h-10 text-success" />
+                                                    : failed ? <AlertCircle className="w-10 h-10 text-rose-500" />
+                                                        : <Clock className="w-10 h-10 text-warning" />}
+                                            </div>
+                                            <h2 className="text-xl font-bold text-foreground mb-2">
+                                                {done ? 'Transfer Successful!' : failed ? 'Transfer Failed' : 'Transfer Processing…'}
+                                            </h2>
+                                            <p className="text-muted-foreground mb-6">
+                                                {done
+                                                    ? <>{formatCurrency(result.amount, 'NGN')} has been sent to <strong>{result.recipient?.account_name}</strong>.</>
+                                                    : failed
+                                                        ? <>The transfer to <strong>{result.recipient?.account_name}</strong> could not be completed. Your funds have been returned.</>
+                                                        : <>{formatCurrency(result.amount, 'NGN')} is being sent to <strong>{result.recipient?.account_name}</strong>. We're confirming it with the bank…</>}
+                                            </p>
+                                        </>
+                                    );
+                                })()}
                                 <div className="bg-muted/50 rounded-xl p-4 mb-6 space-y-2 text-sm text-left">
                                     {[
                                         { label: 'Reference', value: result.reference, mono: true },
@@ -690,9 +737,17 @@ const Transfer = () => {
                                         </div>
                                     ))}
                                 </div>
-                                <button onClick={resetForm} className="px-6 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl transition-colors">
-                                    Make Another Transfer
-                                </button>
+                                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                                    {!['completed', 'failed'].includes((result.status || '').toLowerCase()) && (
+                                        <button onClick={checkStatus} disabled={verifying}
+                                            className="px-6 py-3 bg-muted hover:bg-muted/70 text-foreground font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60">
+                                            <RefreshCw className={`w-4 h-4 ${verifying ? 'animate-spin' : ''}`} /> {verifying ? 'Checking…' : 'Check status'}
+                                        </button>
+                                    )}
+                                    <button onClick={resetForm} className="px-6 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl transition-colors">
+                                        Make Another Transfer
+                                    </button>
+                                </div>
                             </motion.div>
                         )}
                     </div>

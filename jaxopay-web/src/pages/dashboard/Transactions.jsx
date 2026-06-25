@@ -26,6 +26,10 @@ import {
     Globe,
     ChevronLeft,
     ChevronRight,
+    MessageCircle,
+    Facebook,
+    Mail,
+    Send,
 } from 'lucide-react';
 import transactionService from '../../services/transactionService';
 import { formatCurrency, formatDateTime, formatTransactionType, getStatusColor } from '../../utils/formatters';
@@ -209,6 +213,7 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
     const [copied, setCopied] = useState(false);
     const [downloading, setDownloading] = useState(false);
     const [sharing, setSharing] = useState(false);
+    const [showShareMenu, setShowShareMenu] = useState(false);
 
     const isCredit = transaction.direction === 'credit' || transaction.transaction_type === 'deposit';
     const colors = getTransactionColors(transaction.transaction_type, transaction.direction);
@@ -243,40 +248,46 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
         }
     };
 
-    const shareReceipt = async () => {
+    // Text summary used for social / email sharing
+    const shareUrl = typeof window !== 'undefined' ? window.location.origin : 'https://jaxopay.com';
+    const shareText = `JAXOPAY receipt — ${isCredit ? '+' : '-'}${formatCurrency(displayAmount, displayCurrency)} · ${formatTransactionType(transaction.transaction_type)} · ${transaction.status?.toUpperCase()} · Ref: ${transaction.reference || transaction.id?.slice(0, 8)}`;
+    const canNativeShare = typeof navigator !== 'undefined' && !!navigator.share;
+
+    // Open a specific social/email channel with the receipt summary
+    const shareTo = (channel) => {
+        const text = encodeURIComponent(shareText);
+        const url = encodeURIComponent(shareUrl);
+        const links = {
+            whatsapp: `https://wa.me/?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`,
+            facebook: `https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`,
+            twitter: `https://twitter.com/intent/tweet?text=${text}&url=${url}`,
+            telegram: `https://t.me/share/url?url=${url}&text=${text}`,
+            email: `mailto:?subject=${encodeURIComponent('JAXOPAY Transaction Receipt')}&body=${encodeURIComponent(`${shareText}\n\n${shareUrl}`)}`,
+        };
+        setShowShareMenu(false);
+        if (channel === 'copy') { copyReference(); return; }
+        if (channel === 'email') { window.location.href = links.email; return; }
+        window.open(links[channel], '_blank', 'noopener,noreferrer');
+    };
+
+    // Native share sheet (mobile) — shares the actual receipt image
+    const shareReceiptImage = async () => {
         if (!receiptRef.current) return;
         setSharing(true);
         try {
-            // Render the receipt to a PNG file
             const dataUrl = await toPng(receiptRef.current, { cacheBust: true, quality: 1, pixelRatio: 2 });
-            const fileName = `jaxopay-receipt-${transaction.reference || transaction.id?.slice(0, 8)}.png`;
             const blob = await (await fetch(dataUrl)).blob();
-            const file = new File([blob], fileName, { type: 'image/png' });
-
-            // Mobile / browsers that support sharing files → open the native share sheet WITH the image
-            if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                await navigator.share({
-                    files: [file],
-                    title: 'JAXOPAY Transaction Receipt',
-                    text: `${isCredit ? '+' : '-'}${formatCurrency(displayAmount, displayCurrency)} · ${transaction.status}`,
-                });
+            const file = new File([blob], `jaxopay-receipt-${transaction.reference || transaction.id?.slice(0, 8)}.png`, { type: 'image/png' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({ files: [file], title: 'JAXOPAY Transaction Receipt', text: shareText });
             } else {
-                // Desktop / unsupported → download the receipt image (always a visible result)
-                const link = document.createElement('a');
-                link.download = fileName;
-                link.href = dataUrl;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
+                await navigator.share({ title: 'JAXOPAY Transaction Receipt', text: `${shareText} ${shareUrl}` });
             }
         } catch (err) {
-            // User cancelled the share sheet → not an error
-            if (err?.name !== 'AbortError') {
-                console.error('Share failed:', err);
-                try { await copyReference(); } catch { /* clipboard unavailable */ }
-            }
+            if (err?.name !== 'AbortError') console.error('Share failed:', err);
         } finally {
             setSharing(false);
+            setShowShareMenu(false);
         }
     };
 
@@ -430,17 +441,47 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
                             {downloading ? 'Saving…' : 'Save Receipt'}
                         </button>
 
-                        <button
-                            onClick={shareReceipt}
-                            disabled={sharing}
-                            className="flex items-center justify-center gap-2 py-3 px-4 bg-primary text-white font-semibold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20 disabled:opacity-60"
-                        >
-                            {sharing
-                                ? <RefreshCw className="w-4 h-4 animate-spin" />
-                                : <Share2 className="w-4 h-4" />
-                            }
-                            {sharing ? 'Sharing…' : 'Share'}
-                        </button>
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowShareMenu((s) => !s)}
+                                disabled={sharing}
+                                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-primary text-white font-semibold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20 disabled:opacity-60"
+                            >
+                                {sharing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                                Share
+                            </button>
+
+                            {showShareMenu && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setShowShareMenu(false)} />
+                                    <div className="absolute bottom-full right-0 mb-2 z-50 w-56 bg-card border border-border rounded-xl shadow-2xl overflow-hidden py-1">
+                                        {canNativeShare && (
+                                            <button onClick={shareReceiptImage} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
+                                                <Share2 className="w-4 h-4 text-primary" /> Share receipt image…
+                                            </button>
+                                        )}
+                                        <button onClick={() => shareTo('whatsapp')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
+                                            <MessageCircle className="w-4 h-4 text-emerald-500" /> WhatsApp
+                                        </button>
+                                        <button onClick={() => shareTo('facebook')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
+                                            <Facebook className="w-4 h-4 text-blue-600" /> Facebook
+                                        </button>
+                                        <button onClick={() => shareTo('twitter')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
+                                            <X className="w-4 h-4" /> X (Twitter)
+                                        </button>
+                                        <button onClick={() => shareTo('telegram')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
+                                            <Send className="w-4 h-4 text-sky-500" /> Telegram
+                                        </button>
+                                        <button onClick={() => shareTo('email')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
+                                            <Mail className="w-4 h-4 text-amber-500" /> Email
+                                        </button>
+                                        <button onClick={() => shareTo('copy')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors border-t border-border">
+                                            <Copy className="w-4 h-4 text-muted-foreground" /> Copy details
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </motion.div>
             </motion.div>

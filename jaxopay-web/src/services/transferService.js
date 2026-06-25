@@ -35,6 +35,16 @@ const transferService = {
         }
     },
 
+    // Poll Korapay to reconcile a processing transfer's status
+    verifyTransfer: async (reference) => {
+        try {
+            const response = await apiClient.post('/transfers/verify', { reference });
+            return { success: true, data: response.data ?? response };
+        } catch (error) {
+            return { success: false, error: error.message || 'Could not check transfer status' };
+        }
+    },
+
     // Get transfer history
     getHistory: async (params = {}) => {
         try {

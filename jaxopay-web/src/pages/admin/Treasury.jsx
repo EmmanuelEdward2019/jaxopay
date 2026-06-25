@@ -231,32 +231,36 @@ const Treasury = () => {
                     <div>
                         <div className="flex items-center gap-2 mb-1">
                             <ListTree className="w-4 h-4 text-gray-400" />
-                            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Recent fund movements</h2>
+                            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Recent transactions</h2>
                         </div>
-                        <p className="text-xs text-gray-400 mb-3">Every recorded debit/credit in the internal ledger, newest first. Each transfer of funds appears as a matching debit and credit.</p>
+                        <p className="text-xs text-gray-400 mb-3">Latest fund activity across the platform, newest first. "Money in" = deposits into float; "Money out" = withdrawals, transfers, bills and swaps.</p>
                         <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                             <div className="overflow-x-auto">
-                                <table className="w-full text-sm min-w-[640px]">
+                                <table className="w-full text-sm min-w-[680px]">
                                     <thead>
                                         <tr className="text-left text-gray-400 bg-gray-50 dark:bg-gray-900/40">
                                             <th className="font-medium px-5 py-3">Date</th>
                                             <th className="font-medium px-5 py-3">Account</th>
                                             <th className="font-medium px-5 py-3">Movement</th>
                                             <th className="font-medium px-5 py-3 text-right">Amount</th>
-                                            <th className="font-medium px-5 py-3 text-right">Balance after</th>
-                                            <th className="font-medium px-5 py-3">Description</th>
+                                            <th className="font-medium px-5 py-3">Status</th>
+                                            <th className="font-medium px-5 py-3">Reference</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {movements.length === 0 ? (
-                                            <tr><td colSpan={6} className="px-5 py-6 text-center text-gray-400">No fund movements recorded yet.</td></tr>
+                                            <tr><td colSpan={6} className="px-5 py-6 text-center text-gray-400">No transactions recorded yet.</td></tr>
                                         ) : (
                                             movements.map((m) => {
                                                 const isCredit = m.type === 'credit';
+                                                const st = (m.status || '').toLowerCase();
+                                                const stCls = st === 'completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                    : (st === 'pending' || st === 'processing') ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
                                                 return (
                                                     <tr key={m.id} className="border-t border-gray-100 dark:border-gray-700">
                                                         <td className="px-5 py-3 text-gray-500 whitespace-nowrap">{new Date(m.date).toLocaleString()}</td>
-                                                        <td className="px-5 py-3 text-gray-900 dark:text-white">{m.account}</td>
+                                                        <td className="px-5 py-3 text-gray-900 dark:text-white max-w-[180px] truncate" title={m.account}>{m.account}</td>
                                                         <td className="px-5 py-3">
                                                             <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full ${isCredit ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
                                                                 {isCredit ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
@@ -266,8 +270,10 @@ const Treasury = () => {
                                                         <td className={`px-5 py-3 text-right font-medium ${isCredit ? 'text-emerald-600' : 'text-gray-900 dark:text-white'}`}>
                                                             {isCredit ? '+' : '−'}{Number(m.amount).toLocaleString(undefined, { maximumFractionDigits: 8 })} {m.currency}
                                                         </td>
-                                                        <td className="px-5 py-3 text-right text-gray-500">{Number(m.balanceAfter).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
-                                                        <td className="px-5 py-3 text-gray-500 max-w-[220px] truncate" title={m.description}>{m.description || '—'}</td>
+                                                        <td className="px-5 py-3">
+                                                            <span className={`text-xs font-semibold px-2 py-1 rounded-full capitalize ${stCls}`}>{m.status || '—'}</span>
+                                                        </td>
+                                                        <td className="px-5 py-3 text-gray-500 font-mono text-xs max-w-[200px] truncate" title={m.reference || ''}>{m.reference || '—'}</td>
                                                     </tr>
                                                 );
                                             })

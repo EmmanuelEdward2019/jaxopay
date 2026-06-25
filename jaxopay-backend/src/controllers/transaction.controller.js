@@ -198,10 +198,29 @@ export const getTransactionStats = catchAsync(async (req, res) => {
     [req.user.id]
   );
 
+  // Flat aggregates for the summary cards (the frontend reads these directly)
+  const summary = await query(
+    `WITH combined AS (${combinedQuery})
+     SELECT
+       COUNT(*)::int AS total_count,
+       COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_count,
+       COUNT(*) FILTER (WHERE status IN ('pending', 'processing'))::int AS pending_count,
+       COALESCE(SUM(amount) FILTER (WHERE status = 'completed'), 0) AS total_volume
+     FROM combined
+     WHERE user_id = $1
+       AND created_at >= NOW() - INTERVAL '${parseInt(period)} days'`,
+    [req.user.id]
+  );
+  const agg = summary.rows[0] || {};
+
   res.status(200).json({
     success: true,
     data: {
       period_days: parseInt(period),
+      total_count: agg.total_count || 0,
+      completed_count: agg.completed_count || 0,
+      pending_count: agg.pending_count || 0,
+      total_volume: parseFloat(agg.total_volume) || 0,
       volume_by_type: volumeByType.rows,
       daily_count: dailyCount.rows,
       status_breakdown: statusBreakdown.rows,

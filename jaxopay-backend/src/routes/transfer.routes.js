@@ -6,6 +6,7 @@ import {
     listBanks,
     resolveAccount,
     sendTransfer,
+    verifyTransfer,
     getTransferHistory,
     getMerchantBalances,
 } from '../controllers/transfer.controller.js';
@@ -20,6 +21,14 @@ router.get('/banks', listBanks);
 
 // GET /transfers/merchant-balances — Korapay merchant balances
 router.get('/merchant-balances', restrictTo('admin', 'super_admin'), getMerchantBalances);
+
+// POST /transfers/verify — poll Korapay and reconcile a processing payout
+router.post(
+    '/verify',
+    body('reference').isString().notEmpty(),
+    validate,
+    verifyTransfer
+);
 
 // GET /transfers/history — user's transfer history
 router.get(

@@ -161,35 +161,43 @@ export const getFundMovements = catchAsync(async (req, res) => {
   const limit = Math.min(100, parseInt(req.query.limit, 10) || 25);
   const offset = (page - 1) * limit;
 
+  // Transaction types that bring money INTO the platform float (vs. outflows like
+  // withdrawals, transfers, bill payments, crypto/fiat swaps-out).
+  const INFLOW_TYPES = new Set(['deposit', 'exchange_in', 'credit', 'refund']);
+
   const [rows, count] = await Promise.all([
     query(
-      `SELECT l.id, l.entry_type, l.amount::numeric AS amount, l.balance_after::numeric AS balance_after,
-              l.description, l.transaction_id, l.created_at,
-              UPPER(w.currency::text) AS currency,
-              COALESCE(w.wallet_type::text, 'fiat') AS wallet_type,
+      `SELECT t.id, t.transaction_type::varchar AS type, t.from_amount::numeric AS amount,
+              t.from_currency::varchar AS currency, t.status::varchar AS status,
+              t.reference, t.description, t.created_at,
+              t.metadata->>'provider_reference' AS provider_reference,
               u.email AS email
-       FROM wallet_ledger l
-       LEFT JOIN wallets w ON w.id = l.wallet_id
-       LEFT JOIN users u ON u.id = w.user_id
-       ORDER BY l.created_at DESC
+       FROM transactions t
+       LEFT JOIN users u ON u.id = t.user_id
+       ORDER BY t.created_at DESC
        LIMIT $1 OFFSET $2`,
       [limit, offset]
     ),
-    query(`SELECT COUNT(*)::int AS total FROM wallet_ledger`),
+    query(`SELECT COUNT(*)::int AS total FROM transactions`),
   ]);
 
-  const movements = rows.rows.map((r) => ({
-    id: r.id,
-    type: r.entry_type, // 'debit' | 'credit'
-    amount: num(r.amount),
-    currency: r.currency,
-    account: r.wallet_type === 'system' ? `System float (${r.currency})` : (r.email || 'Unknown account'),
-    isSystem: r.wallet_type === 'system',
-    balanceAfter: num(r.balance_after),
-    description: r.description || '',
-    reference: r.transaction_id || null,
-    date: r.created_at,
-  }));
+  const movements = rows.rows.map((r) => {
+    const txType = (r.type || '').toLowerCase();
+    const isInflow = INFLOW_TYPES.has(txType);
+    return {
+      id: r.id,
+      type: isInflow ? 'credit' : 'debit', // money in vs out
+      txType: r.type,
+      amount: num(r.amount),
+      currency: (r.currency || '').toUpperCase(),
+      status: r.status,
+      account: r.email || 'Unknown account',
+      description: r.description || '',
+      reference: r.reference || null,
+      providerReference: r.provider_reference || null,
+      date: r.created_at,
+    };
+  });
 
   const total = count.rows[0].total;
   res.status(200).json({

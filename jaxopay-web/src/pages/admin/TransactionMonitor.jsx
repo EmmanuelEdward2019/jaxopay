@@ -390,7 +390,16 @@ const TransactionMonitor = () => {
                                     {selectedTx.reference && (
                                         <div className="col-span-2">
                                             <span className="text-gray-500">Reference</span>
-                                            <p className="font-mono text-gray-900 dark:text-white">{selectedTx.reference}</p>
+                                            <p className="font-mono text-gray-900 dark:text-white break-all">{selectedTx.reference}</p>
+                                        </div>
+                                    )}
+                                    {(selectedTx.external_reference || selectedTx.metadata?.provider_reference) && (
+                                        <div className="col-span-2">
+                                            <span className="text-gray-500">Provider Reference</span>
+                                            <p className="font-mono text-gray-900 dark:text-white break-all">
+                                                {selectedTx.external_reference || selectedTx.metadata?.provider_reference}
+                                            </p>
+                                            <span className="text-[11px] text-gray-400">Use this to trace the payout/charge on the payment provider's dashboard when handling a customer complaint.</span>
                                         </div>
                                     )}
                                     {selectedTx.metadata && Object.keys(selectedTx.metadata).length > 0 && (

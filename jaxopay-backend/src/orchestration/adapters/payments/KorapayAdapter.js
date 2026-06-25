@@ -117,6 +117,21 @@ class KorapayAdapter extends BaseAdapter {
         };
     }
 
+    /* ─── Query a disbursement / payout status by reference ───── */
+    async getDisbursementStatus(reference) {
+        this._ensureKeys();
+        const res = await this.client.get(`/transactions/${encodeURIComponent(reference)}`);
+        const d = res.data?.data || {};
+        return {
+            status: d.status,                       // success | processing | pending | failed
+            reference: d.reference || reference,
+            providerReference: d.provider_reference || null,
+            amount: d.amount,
+            currency: d.currency,
+            raw: res.data,
+        };
+    }
+
     /* ─── List Banks ──────────────────────────────────────────── */
     async listBanks(currency = 'NGN') {
         this._ensureKeys();

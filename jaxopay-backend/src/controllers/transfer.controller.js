@@ -265,6 +265,75 @@ export const sendTransfer = catchAsync(async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// POST /transfers/verify  — poll Korapay for a payout's status and reconcile it
+// (lets a "Processing" transfer resolve itself without waiting on the webhook).
+// ─────────────────────────────────────────────
+export const verifyTransfer = catchAsync(async (req, res) => {
+    const reference = req.body.reference || req.params.reference;
+    if (!reference) throw new AppError('reference is required', 400);
+
+    const txRes = await query(
+        `SELECT id, user_id, from_wallet_id, from_amount, from_currency, status
+         FROM transactions
+         WHERE reference = $1 AND transaction_type = 'bank_transfer'`,
+        [reference]
+    );
+    if (txRes.rows.length === 0) throw new AppError('Transfer not found', 404);
+    const tx = txRes.rows[0];
+    if (tx.user_id !== req.user.id) throw new AppError('Unauthorized', 403);
+
+    // Already finalised — nothing to poll.
+    if (['completed', 'failed'].includes(tx.status)) {
+        return res.status(200).json({ success: true, data: { reference, status: tx.status } });
+    }
+
+    // Ask Korapay for the live disbursement status.
+    let providerStatus;
+    try {
+        const result = await korapay.getDisbursementStatus(reference);
+        providerStatus = (result.status || '').toLowerCase();
+        logger.info(`[Transfer] verify ${reference}: provider status = ${providerStatus || 'unknown'}`);
+    } catch (err) {
+        const { message } = getKorapayErrorDetails(err);
+        logger.warn(`[Transfer] verify ${reference} provider query failed: ${message}`);
+        // Couldn't reach the provider — leave the transaction as-is.
+        return res.status(200).json({ success: true, data: { reference, status: tx.status, pending: true } });
+    }
+
+    if (['success', 'successful', 'completed'].includes(providerStatus)) {
+        await transaction(async (client) => {
+            const cur = await client.query(`SELECT status FROM transactions WHERE reference = $1 FOR UPDATE`, [reference]);
+            if (['completed', 'failed'].includes(cur.rows[0]?.status)) return;
+            await client.query(
+                `UPDATE transactions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE reference = $1`,
+                [reference]
+            );
+        });
+        return res.status(200).json({ success: true, data: { reference, status: 'completed' } });
+    }
+
+    if (['failed', 'reversed', 'cancelled', 'declined'].includes(providerStatus)) {
+        // Reverse the reserved funds (idempotent — only if not already finalised).
+        await transaction(async (client) => {
+            const cur = await client.query(`SELECT status FROM transactions WHERE reference = $1 FOR UPDATE`, [reference]);
+            if (['completed', 'failed'].includes(cur.rows[0]?.status)) return;
+            await client.query(
+                `UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
+                [tx.from_amount, tx.from_wallet_id]
+            );
+            await client.query(
+                `UPDATE transactions SET status = 'failed', failure_reason = $2, updated_at = NOW() WHERE reference = $1`,
+                [reference, 'Payout failed at provider — funds returned']
+            );
+        });
+        return res.status(200).json({ success: true, data: { reference, status: 'failed' } });
+    }
+
+    // Still processing.
+    return res.status(200).json({ success: true, data: { reference, status: 'processing' } });
+});
+
+// ─────────────────────────────────────────────
 // GET /transfers/history  — transfer history for user
 // ─────────────────────────────────────────────
 export const getTransferHistory = catchAsync(async (req, res) => {
