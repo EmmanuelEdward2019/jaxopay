@@ -313,6 +313,26 @@ const adminService = {
         } catch (error) {
             return { success: false, error: error.message };
         }
+    },
+
+    // Treasury / reconciliation overview (provider floats vs user liabilities)
+    getTreasury: async () => {
+        try {
+            const response = await apiClient.get('/admin/treasury');
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
+    // Fund movements — internal double-entry ledger
+    getFundMovements: async (params = {}) => {
+        try {
+            const response = await apiClient.get('/admin/ledger', { params });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
     }
 };
 

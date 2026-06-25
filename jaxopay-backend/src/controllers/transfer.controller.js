@@ -202,7 +202,7 @@ export const sendTransfer = catchAsync(async (req, res) => {
 
         // Korapay returned an explicit failure synchronously — treat as failed and reverse.
         if (transferData?.success === false || transferStatus === 'failed') {
-            throw new AppError(transferData?.raw?.message || 'Korapay rejected the payout', 502);
+            throw new AppError(transferData?.raw?.message || 'The payout was rejected. Please try again or contact support.', 502);
         }
 
         // Persist the provider reference; mark completed only on immediate success.

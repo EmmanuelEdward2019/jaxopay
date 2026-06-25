@@ -60,6 +60,7 @@ import FeatureManagement from './pages/admin/FeatureManagement';
 import AuditLogs from './pages/admin/AuditLogs';
 import SystemManagement from './pages/admin/SystemManagement';
 import WalletManagement from './pages/admin/WalletManagement';
+import Treasury from './pages/admin/Treasury';
 import CardManagement from './pages/admin/CardManagement';
 import ProductManagement from './pages/admin/ProductManagement';
 import AMLCompliance from './pages/admin/AMLCompliance';
@@ -366,6 +367,11 @@ function App() {
             } />
 
             {/* Financial Products - Admin, Super Admin */}
+            <Route path="treasury" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                <Treasury />
+              </RoleProtectedRoute>
+            } />
             <Route path="wallets" element={
               <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
                 <WalletManagement />

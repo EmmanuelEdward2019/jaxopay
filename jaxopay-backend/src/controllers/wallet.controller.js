@@ -304,6 +304,14 @@ export const verifyDeposit = catchAsync(async (req, res) => {
 
       // Notify user + admin (only when this request actually credited the wallet)
       if (credited) {
+        // Record double-entry ledger movement + system float (non-fatal, after commit)
+        ledgerService.recordDepositEntries({
+          userWalletId: tx.to_wallet_id,
+          amount: credited.amount,
+          transactionId: reference,
+          description: 'Wallet Funding',
+        }).catch((e) => logger.error('[Wallet] deposit ledger error:', e.message));
+
         try {
           const userRes = await query(
             `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email

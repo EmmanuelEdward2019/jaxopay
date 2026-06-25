@@ -324,33 +324,9 @@ export const buyGiftCard = catchAsync(async (req, res) => {
 
     logger.info(`[GiftCards] ✅ Purchase successful: ref=${reference}, txnId=${providerTxnId}`);
 
-    // Fetch user profile for email
-    const userProfile = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
-    const firstName = userProfile.rows[0]?.first_name || 'User';
-    const fullName = [userProfile.rows[0]?.first_name, userProfile.rows[0]?.last_name].filter(Boolean).join(' ') || 'User';
-
-    // ── 3. Send Gift Card Delivery Email with redemption details ──
-    emailService.sendGiftCardDelivery({
-      recipientEmail: recipientEmail || req.user.email,
-      recipientName: fullName,
-      productName: reloadlyResult?.product?.productName || productId,
-      brandName: reloadlyResult?.product?.brand?.brandName || 'Gift Card',
-      amount: amount,
-      currency: cardCurrency,
-      quantity: quantity,
-      totalCost: totalCostInWalletCurrency,
-      costCurrency: currency.toUpperCase(),
-      reference: reference,
-      transactionId: providerTxnId,
-      redeemCode: reloadlyResult?.cardCode || reloadlyResult?.pinCode,
-      redeemPin: reloadlyResult?.pinCode,
-      redeemInstructions: reloadlyResult?.redemptionInstructions || 'Use the code at checkout',
-      redemptionUrl: reloadlyResult?.redemptionUrl,
-    }).catch(err => logger.error('[GiftCards] Failed to send delivery email:', err));
-
     res.status(201).json({
       success: true,
-      message: 'Gift card purchased successfully! Check your email for redemption details.',
+      message: 'Gift card purchased successfully!',
       data: {
         reference,
         providerTxnId,

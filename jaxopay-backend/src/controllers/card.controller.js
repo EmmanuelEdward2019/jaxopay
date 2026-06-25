@@ -12,8 +12,8 @@ function userFacingStrowalletError(rawMessage) {
   const s = String(rawMessage || '');
   if (/untrusted source ip|untrusted\s+source|ip\s+not\s+allowed|ip\s+whitelist|allowlist|not\s+in\s+the\s+allowed/i.test(s)) {
     return (
-      'The card provider rejected this request because your API server’s public (outbound) IP is not on their allow list. ' +
-      'In the Strowallet / BitVCard merchant dashboard, open API or security settings and add that IP to trusted IPs, then retry.'
+      'The card service is temporarily unavailable due to a server configuration issue on our end. ' +
+      'Please try again shortly or contact support if the problem persists.'
     );
   }
   return s;

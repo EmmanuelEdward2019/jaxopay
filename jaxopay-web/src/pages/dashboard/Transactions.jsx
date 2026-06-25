@@ -105,7 +105,6 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
         if (meta.bank_name) result.push({ label: 'Bank', value: meta.bank_name });
         if (meta.account_number) result.push({ label: 'Account', value: meta.account_number });
         if (meta.account_name) result.push({ label: 'Account Name', value: meta.account_name });
-        if (meta.provider) result.push({ label: 'Provider', value: meta.provider });
         if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
         if (meta.network) result.push({ label: 'Network', value: meta.network });
         if (meta.address) result.push({ label: 'Address', value: meta.address });
@@ -300,7 +299,6 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
         if (meta.bank_name) result.push({ label: 'Bank', value: meta.bank_name });
         if (meta.account_number) result.push({ label: 'Account', value: meta.account_number });
         if (meta.account_name) result.push({ label: 'Account Name', value: meta.account_name });
-        if (meta.provider) result.push({ label: 'Provider', value: meta.provider });
         if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
         if (meta.network) result.push({ label: 'Network', value: meta.network });
         if (meta.address) result.push({ label: 'Address', value: meta.address });

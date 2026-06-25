@@ -34,6 +34,7 @@ import {
   updateCardStatus,
 } from '../controllers/admin.controller.js';
 import { getHighRiskUsers, refreshUserRiskScore } from '../controllers/aml.controller.js';
+import { getTreasuryOverview, getFundMovements } from '../controllers/treasury.controller.js';
 
 const router = express.Router();
 
@@ -44,6 +45,11 @@ router.use(restrictTo('admin', 'super_admin', 'compliance_officer'));
 
 // Get system statistics - Available to all
 router.get('/stats', getSystemStats);
+
+// Treasury / reconciliation overview (financial — admin & super_admin only)
+router.get('/treasury', restrictTo('admin', 'super_admin'), getTreasuryOverview);
+// Fund movements — internal double-entry ledger (admin & super_admin only)
+router.get('/ledger', restrictTo('admin', 'super_admin'), getFundMovements);
 
 // Get pending KYC documents
 router.get(

@@ -206,7 +206,7 @@ async function creditUserWallet(reference, amount, currency) {
                     amount: amount,
                     currency: currency,
                     reference: reference,
-                    details: 'Wallet Funding via Checkout'
+                    details: 'Wallet Funding'
                 }, userRes.rows[0]);
             }
         } catch (emailErr) {
@@ -365,6 +365,14 @@ async function processKorapay(payload) {
             });
             logger.info(`[WEBHOOK] ✅ Korapay Checkout deposit complete: credited ${netAmount} ${currency} for ref ${merchantRef}`);
 
+            // Record double-entry ledger movement + system float (non-fatal)
+            ledgerService.recordDepositEntries({
+                userWalletId: tx.to_wallet_id,
+                amount: netAmount,
+                transactionId: merchantRef,
+                description: 'Wallet Funding',
+            }).catch(e => logger.error('[WEBHOOK] Checkout deposit ledger error:', e.message));
+
             // Send email notification to user + admin (Checkout flow)
             try {
                 const userRes = await query(
@@ -380,7 +388,7 @@ async function processKorapay(payload) {
                         amount: netAmount,
                         currency: currency,
                         reference: merchantRef,
-                        details: 'Wallet Funding via Checkout'
+                        details: 'Wallet Funding'
                     }, userRes.rows[0]).catch(e => logger.error('[WEBHOOK] Checkout deposit email error:', e));
                 }
             } catch (emailErr) {
@@ -448,6 +456,14 @@ async function applyKorapayDeposit(userId, walletId, amount, currency, fee, refe
         });
 
         logger.info(`[WEBHOOK] ✅ Korapay deposit complete: credited ${amount} ${currency} to user ${userId}`);
+
+        // Record double-entry ledger movement + system float (non-fatal)
+        ledgerService.recordDepositEntries({
+            userWalletId: walletId,
+            amount: Math.max(0, parseFloat(amount) - parseFloat(fee || 0)),
+            transactionId: reference,
+            description: 'Wallet Funding',
+        }).catch(e => logger.error('[WEBHOOK] VBA deposit ledger error:', e.message));
 
         // Notify user — names live in user_profiles, not users
         const userRes = await query(

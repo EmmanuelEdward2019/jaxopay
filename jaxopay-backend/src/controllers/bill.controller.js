@@ -216,7 +216,7 @@ export const getSmeTransactionStatus = catchAsync(async (req, res) => {
     throw new AppError('reference query parameter is required', 400);
   }
   if (vtpassBillsEnabled()) {
-    throw new AppError('SME query via Strowallet is only available when bills use Strowallet (VTPASS_BILLS_ENABLED is not true).', 400);
+    throw new AppError('SME data lookup is not available with the current bill payment configuration.', 400);
   }
   if (!strowalletBills.isConfigured()) {
     throw new AppError('Bill payment service is not configured.', 503);
@@ -368,7 +368,7 @@ export const getBillProviders = catchAsync(async (req, res) => {
 
     if (cat === 'internet') {
       throw new AppError(
-        'Internet / broadband is not available on Strowallet in this integration. Use mobile data or enable VTPASS_BILLS_ENABLED=true.',
+        'Internet / broadband bills are not available at the moment. Please use mobile data instead.',
         400
       );
     }
@@ -803,7 +803,7 @@ export const payBill = catchAsync(async (req, res) => {
       }
 
       await refundAndFail(
-        `This bill category is not supported on Strowallet (${cat || 'unknown'}). Your wallet has been refunded.`
+        `This bill category is not supported (${cat || 'unknown'}). Your wallet has been refunded.`
       );
     } catch (err) {
       if (err instanceof AppError) throw err;

@@ -728,10 +728,33 @@ async function ensureQuidaxSubUser(jaxopayUserId, userEmail, firstName, lastName
       lastName || userEmail.split('@')[0]
     );
   } catch (err) {
-    // Log the full error so we can diagnose auth/permission issues
-    logger.error(`[Quidax] ensureQuidaxSubUser FAILED for user ${jaxopayUserId} (${userEmail}): ${err.message}`);
-    logger.error(`[Quidax] ensureQuidaxSubUser stack: ${err.stack}`);
-    throw err; // propagate — caller will return 202 pending
+    // Quidax enforces GLOBAL email uniqueness for sub-accounts. If this email was
+    // registered on a different Quidax master account, createSubUser returns
+    // "already exists" but recovery-by-email can't find it under our master, so it
+    // throws. Retry once with a unique alias (name+jx<id>@domain) so the user still
+    // gets their own sub-account. We link by quidax_user_id (never by email), so the
+    // alias is invisible to the user. Only this previously-failing path is affected.
+    const alreadyExists = /already exist|already registered|taken|\b409\b/i.test(err.message || '');
+    if (alreadyExists) {
+      const idPart = String(jaxopayUserId).replace(/[^a-z0-9]/gi, '').slice(0, 8);
+      const aliasEmail = userEmail.replace(/@/, `+jx${idPart}@`);
+      logger.warn(`[Quidax] ${userEmail} already registered on another Quidax account — retrying with alias ${aliasEmail}`);
+      try {
+        subUser = await quidax.createSubUser(
+          aliasEmail,
+          firstName || 'User',
+          lastName || userEmail.split('@')[0]
+        );
+      } catch (aliasErr) {
+        logger.error(`[Quidax] ensureQuidaxSubUser alias retry FAILED for ${jaxopayUserId} (${aliasEmail}): ${aliasErr.message}`);
+        throw aliasErr;
+      }
+    } else {
+      // Log the full error so we can diagnose auth/permission issues
+      logger.error(`[Quidax] ensureQuidaxSubUser FAILED for user ${jaxopayUserId} (${userEmail}): ${err.message}`);
+      logger.error(`[Quidax] ensureQuidaxSubUser stack: ${err.stack}`);
+      throw err; // propagate — caller will return 202 pending
+    }
   }
 
   // Extract the numeric Quidax user ID — MUST be the numeric id (not sn) so

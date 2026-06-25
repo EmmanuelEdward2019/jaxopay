@@ -76,6 +76,56 @@ class LedgerService {
         }
         return res.rows[0];
     }
+
+    /**
+     * Record a completed fiat deposit as double-entry ledger rows AND bump the matching
+     * system float account. External money entering the platform increases both an asset
+     * (provider float) and a liability (the user's wallet), so both legs are credits.
+     *
+     * IMPORTANT: call this AFTER the user wallet has already been credited and the deposit
+     * transaction has committed — it runs in its own transaction and is meant to be invoked
+     * non-fatally (.catch). It only writes ledger rows + the system float balance; it never
+     * touches the user's wallet balance, so it can't double-credit or break a deposit.
+     */
+    async recordDepositEntries({ userWalletId, amount, transactionId = null, description = 'Deposit', metadata = {} }) {
+        const amt = parseFloat(amount);
+        if (!userWalletId || !Number.isFinite(amt) || amt <= 0) return null;
+
+        return await transaction(async (client) => {
+            // User wallet — balance already includes this deposit (credited by the caller).
+            const userWallet = await this._getAndLockWallet(client, userWalletId);
+            const userAfter = parseFloat(userWallet.balance);
+            const userBefore = userAfter - amt;
+
+            await client.query(
+                `INSERT INTO wallet_ledger (wallet_id, transaction_id, entry_type, amount, balance_before, balance_after, description, metadata)
+                 VALUES ($1, $2, 'credit', $3, $4, $5, $6, $7)`,
+                [userWalletId, transactionId, amt, userBefore, userAfter, description, JSON.stringify(metadata)]
+            );
+
+            // Matching system float account for the same currency (provider float increases).
+            const sys = await client.query(
+                `SELECT id, balance FROM wallets
+                 WHERE wallet_type::text = 'system' AND UPPER(currency::text) = UPPER($1)
+                 LIMIT 1 FOR UPDATE`,
+                [userWallet.currency]
+            );
+            if (sys.rows.length > 0) {
+                const floatBefore = parseFloat(sys.rows[0].balance);
+                const floatAfter = floatBefore + amt;
+                await client.query(
+                    'UPDATE wallets SET balance = $1, updated_at = NOW() WHERE id = $2',
+                    [floatAfter, sys.rows[0].id]
+                );
+                await client.query(
+                    `INSERT INTO wallet_ledger (wallet_id, transaction_id, entry_type, amount, balance_before, balance_after, description, metadata)
+                     VALUES ($1, $2, 'credit', $3, $4, $5, $6, $7)`,
+                    [sys.rows[0].id, transactionId, amt, floatBefore, floatAfter, `Float received — ${description}`, JSON.stringify(metadata)]
+                );
+            }
+            return { recorded: true, hasSystemLeg: sys.rows.length > 0 };
+        });
+    }
 }
 
 export default new LedgerService();
