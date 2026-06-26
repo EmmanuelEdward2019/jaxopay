@@ -19,18 +19,15 @@ export const getPinStatus = catchAsync(async (req, res) => {
   });
 });
 
-// POST /security/transaction-pin  — set PIN for the first time (requires account password)
+// POST /security/transaction-pin  — set PIN for the first time (authenticated user; no password needed)
 export const setTransactionPin = catchAsync(async (req, res) => {
-  const { pin, password } = req.body;
+  const { pin } = req.body;
   if (!isValidPinFormat(pin)) throw new AppError('PIN must be exactly 4 digits', 400, 'PIN_INVALID');
 
-  const r = await query('SELECT password_hash, transaction_pin FROM users WHERE id = $1', [req.user.id]);
+  const r = await query('SELECT transaction_pin FROM users WHERE id = $1', [req.user.id]);
   const user = r.rows[0];
   if (!user) throw new AppError('User not found', 404);
   if (user.transaction_pin) throw new AppError('A transaction PIN is already set. Use change PIN instead.', 400, 'PIN_EXISTS');
-  if (!password || !(await bcrypt.compare(password, user.password_hash))) {
-    throw new AppError('Your account password is required to set a transaction PIN', 403, 'PASSWORD_INVALID');
-  }
 
   const hashed = await hashPin(pin);
   await query(
@@ -41,25 +38,19 @@ export const setTransactionPin = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, message: 'Transaction PIN set successfully' });
 });
 
-// PATCH /security/transaction-pin  — change PIN (authorize with current PIN OR account password)
+// PATCH /security/transaction-pin  — change PIN (authorize with the current PIN)
 export const changeTransactionPin = catchAsync(async (req, res) => {
-  const { current_pin, new_pin, password } = req.body;
+  const { current_pin, new_pin } = req.body;
   if (!isValidPinFormat(new_pin)) throw new AppError('New PIN must be exactly 4 digits', 400, 'PIN_INVALID');
 
-  const r = await query('SELECT password_hash, transaction_pin FROM users WHERE id = $1', [req.user.id]);
+  const r = await query('SELECT transaction_pin FROM users WHERE id = $1', [req.user.id]);
   const user = r.rows[0];
   if (!user) throw new AppError('User not found', 404);
   if (!user.transaction_pin) throw new AppError('No transaction PIN set yet. Set one first.', 400, 'PIN_NOT_SET');
 
-  let authorized = false;
-  if (current_pin && isValidPinFormat(current_pin)) {
-    authorized = await bcrypt.compare(current_pin, user.transaction_pin);
-    if (!authorized) throw new AppError('Current PIN is incorrect', 403, 'PIN_INCORRECT');
-  } else if (password) {
-    authorized = await bcrypt.compare(password, user.password_hash);
-    if (!authorized) throw new AppError('Account password is incorrect', 403, 'PASSWORD_INVALID');
+  if (!isValidPinFormat(current_pin) || !(await bcrypt.compare(current_pin, user.transaction_pin))) {
+    throw new AppError('Current PIN is incorrect', 403, 'PIN_INCORRECT');
   }
-  if (!authorized) throw new AppError('Provide your current PIN or account password to change your PIN', 400);
 
   const hashed = await hashPin(new_pin);
   await query(

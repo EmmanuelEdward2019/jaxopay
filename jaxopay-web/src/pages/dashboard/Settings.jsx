@@ -558,28 +558,32 @@ const TransactionPinModal = ({ isSet, onClose, onSaved }) => {
     const [pin, setPin] = useState('');
     const [confirmPin, setConfirmPin] = useState('');
     const [currentPin, setCurrentPin] = useState('');
-    const [password, setPassword] = useState('');
-    const [useCurrentPin, setUseCurrentPin] = useState(true);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
     const onlyDigits = (v, n = 4) => v.replace(/\D/g, '').slice(0, n);
+
+    // Shared props that stop the browser from treating PIN boxes as a login form
+    // (no email autofill, no "save password / choose account" prompt).
+    const pinInputProps = {
+        type: 'password',
+        inputMode: 'numeric',
+        autoComplete: 'one-time-code',
+        maxLength: 4,
+        className: 'w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30 tracking-[0.5em] text-center',
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError(null);
         if (!/^\d{4}$/.test(pin)) return setError('PIN must be exactly 4 digits');
         if (pin !== confirmPin) return setError('PINs do not match');
+        if (isSet && !/^\d{4}$/.test(currentPin)) return setError('Enter your current 4-digit PIN');
 
         setLoading(true);
-        let result;
-        if (isSet) {
-            const payload = { new_pin: pin };
-            if (useCurrentPin) payload.current_pin = currentPin; else payload.password = password;
-            result = await pinService.changePin(payload);
-        } else {
-            result = await pinService.setPin(pin, password);
-        }
+        const result = isSet
+            ? await pinService.changePin({ current_pin: currentPin, new_pin: pin })
+            : await pinService.setPin(pin);
         setLoading(false);
         if (result.success) onSaved();
         else setError(result.error || 'Could not save your PIN');
@@ -590,37 +594,18 @@ const TransactionPinModal = ({ isSet, onClose, onSaved }) => {
             <div className="bg-card w-full max-w-sm rounded-3xl shadow-2xl border border-border p-6 relative">
                 <button onClick={onClose} className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
                 <h3 className="text-lg font-bold text-foreground mb-1">{isSet ? 'Change Transaction PIN' : 'Set Transaction PIN'}</h3>
-                <p className="text-sm text-muted-foreground mb-6">{isSet ? 'Verify your identity, then choose a new 4-digit PIN.' : 'Choose a 4-digit PIN to authorize payments and withdrawals.'}</p>
+                <p className="text-sm text-muted-foreground mb-6">{isSet ? 'Enter your current PIN, then choose a new 4-digit PIN.' : 'Choose a 4-digit PIN to authorize payments and withdrawals.'}</p>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {isSet ? (
-                        <>
-                            <div className="flex gap-2 text-xs font-bold">
-                                <button type="button" onClick={() => setUseCurrentPin(true)} className={`flex-1 py-2 rounded-lg ${useCurrentPin ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>Use current PIN</button>
-                                <button type="button" onClick={() => setUseCurrentPin(false)} className={`flex-1 py-2 rounded-lg ${!useCurrentPin ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>Use password</button>
-                            </div>
-                            {useCurrentPin ? (
-                                <input type="password" inputMode="numeric" placeholder="Current PIN" value={currentPin}
-                                    onChange={(e) => setCurrentPin(onlyDigits(e.target.value))}
-                                    className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30 tracking-[0.5em] text-center" />
-                            ) : (
-                                <input type="password" placeholder="Account password" value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30" />
-                            )}
-                        </>
-                    ) : (
-                        <input type="password" placeholder="Account password" value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30" />
+                <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+                    {isSet && (
+                        <input {...pinInputProps} name="current-transaction-pin" placeholder="Current PIN" value={currentPin}
+                            onChange={(e) => setCurrentPin(onlyDigits(e.target.value))} />
                     )}
 
-                    <input type="password" inputMode="numeric" placeholder={isSet ? 'New 4-digit PIN' : '4-digit PIN'} value={pin}
-                        onChange={(e) => setPin(onlyDigits(e.target.value))}
-                        className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30 tracking-[0.5em] text-center" />
-                    <input type="password" inputMode="numeric" placeholder="Confirm PIN" value={confirmPin}
-                        onChange={(e) => setConfirmPin(onlyDigits(e.target.value))}
-                        className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30 tracking-[0.5em] text-center" />
+                    <input {...pinInputProps} name="new-transaction-pin" placeholder={isSet ? 'New 4-digit PIN' : '4-digit PIN'} value={pin}
+                        onChange={(e) => setPin(onlyDigits(e.target.value))} />
+                    <input {...pinInputProps} name="confirm-transaction-pin" placeholder="Confirm PIN" value={confirmPin}
+                        onChange={(e) => setConfirmPin(onlyDigits(e.target.value))} />
 
                     {error && <p className="text-sm text-danger flex items-center gap-2"><AlertTriangle className="w-4 h-4 shrink-0" />{error}</p>}
 

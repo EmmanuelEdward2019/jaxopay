@@ -11,20 +11,20 @@ const pinService = {
         }
     },
 
-    // Set PIN for the first time (requires account password)
-    setPin: async (pin, password) => {
+    // Set PIN for the first time (just needs to be logged in)
+    setPin: async (pin) => {
         try {
-            const response = await apiClient.post('/security/transaction-pin', { pin, password });
+            const response = await apiClient.post('/security/transaction-pin', { pin });
             return { success: true, message: response.message };
         } catch (error) {
             return { success: false, error: error.message, code: error.code };
         }
     },
 
-    // Change PIN (authorize with current PIN or account password)
-    changePin: async ({ current_pin, new_pin, password }) => {
+    // Change PIN (authorize with the current PIN)
+    changePin: async ({ current_pin, new_pin }) => {
         try {
-            const response = await apiClient.patch('/security/transaction-pin', { current_pin, new_pin, password });
+            const response = await apiClient.patch('/security/transaction-pin', { current_pin, new_pin });
             return { success: true, message: response.message };
         } catch (error) {
             return { success: false, error: error.message, code: error.code };

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
     Zap, Wifi, Tv, Phone, GraduationCap, Search,
@@ -8,6 +8,7 @@ import billService from '../../services/billService';
 import walletService from '../../services/walletService';
 import beneficiaryService from '../../services/beneficiaryService';
 import PinModal from '../../components/common/PinModal';
+import ReceiptShareButton from '../../components/common/ReceiptShareButton';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import { useRecentInputs } from '../../hooks/useRecentInputs';
 
@@ -81,6 +82,7 @@ const Bills = () => {
     const [showPin, setShowPin] = useState(false);
     const [pinError, setPinError] = useState('');
     const [pinProcessing, setPinProcessing] = useState(false);
+    const receiptRef = useRef(null);
     const [dataPlanTab, setDataPlanTab] = useState('All'); // For categorizing data plans
     const { recentInputs, addRecentInput } = useRecentInputs(selectedCategory?.id);
 
@@ -685,27 +687,41 @@ const Bills = () => {
                         {/* Step 5: Success */}
                         {step === 5 && (
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8">
-                                <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <Check className="w-10 h-10 text-success" />
+                                <div ref={receiptRef} className="bg-card px-6 pt-6 pb-2 rounded-2xl">
+                                    <div className="flex items-center justify-center gap-2 mb-4">
+                                        <span className="text-lg font-extrabold tracking-tight text-primary">JAXO<span className="text-foreground">PAY</span></span>
+                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Payment Receipt</span>
+                                    </div>
+                                    <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <Check className="w-10 h-10 text-success" />
+                                    </div>
+                                    <h2 className="text-xl font-bold text-foreground mb-2">Payment Successful!</h2>
+                                    <p className="text-muted-foreground mb-6">Your {selectedCategory?.name} bill has been paid.</p>
+                                    {paymentResult?.token && (
+                                        <div className="bg-muted/50 rounded-lg p-4 mb-4">
+                                            <p className="text-sm text-muted-foreground mb-1">Token / Receipt</p>
+                                            <p className="font-mono text-lg font-bold text-foreground">{paymentResult.token}</p>
+                                            {paymentResult?.units && <p className="text-sm text-muted-foreground mt-1">{paymentResult.units}</p>}
+                                        </div>
+                                    )}
+                                    {paymentResult?.reference && (
+                                        <div className="bg-muted/50 rounded-lg p-3 mb-2">
+                                            <p className="text-xs text-muted-foreground mb-1">Transaction Reference</p>
+                                            <p className="font-mono text-sm text-foreground">{paymentResult.reference}</p>
+                                        </div>
+                                    )}
                                 </div>
-                                <h2 className="text-xl font-bold text-foreground mb-2">Payment Successful!</h2>
-                                <p className="text-muted-foreground  mb-6">Your {selectedCategory?.name} bill has been paid.</p>
-                                {paymentResult?.token && (
-                                    <div className="bg-muted/50 rounded-lg p-4 mb-4">
-                                        <p className="text-sm text-muted-foreground mb-1">Token / Receipt</p>
-                                        <p className="font-mono text-lg font-bold text-foreground">{paymentResult.token}</p>
-                                        {paymentResult?.units && <p className="text-sm text-muted-foreground mt-1">{paymentResult.units}</p>}
-                                    </div>
-                                )}
-                                {paymentResult?.reference && (
-                                    <div className="bg-muted/50 rounded-lg p-3 mb-6">
-                                        <p className="text-xs text-muted-foreground mb-1">Transaction Reference</p>
-                                        <p className="font-mono text-sm text-foreground">{paymentResult.reference}</p>
-                                    </div>
-                                )}
-                                <button onClick={resetFlow} className="px-6 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg transition-colors">
-                                    Make Another Payment
-                                </button>
+                                <div className="flex flex-col sm:flex-row gap-3 justify-center mt-6">
+                                    <ReceiptShareButton
+                                        targetRef={receiptRef}
+                                        baseName={`jaxopay-bill-${paymentResult?.reference || ''}`}
+                                        shareText={`JAXOPAY ${selectedCategory?.name || 'bill'} payment receipt · Ref: ${paymentResult?.reference || ''}`}
+                                        className="px-6 py-3 bg-muted hover:bg-muted/70 text-foreground font-semibold rounded-lg transition-colors inline-flex items-center justify-center gap-2"
+                                    />
+                                    <button onClick={resetFlow} className="px-6 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg transition-colors">
+                                        Make Another Payment
+                                    </button>
+                                </div>
                             </motion.div>
                         )}
                     </div>

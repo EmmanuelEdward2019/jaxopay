@@ -19,6 +19,7 @@
     "date-fns": "^4.1.0",
     "framer-motion": "^12.38.0",
     "html-to-image": "^1.11.13",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.563.0",
     "postcss": "^8.5.12",
     "react": "^19.2.5",

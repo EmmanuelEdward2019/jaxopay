@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { toPng } from 'html-to-image';
+import { toPng, toJpeg, toBlob } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 import {
     ArrowUpRight,
     ArrowDownLeft,
@@ -26,12 +27,14 @@ import {
     Globe,
     ChevronLeft,
     ChevronRight,
-    MessageCircle,
-    Facebook,
-    Mail,
+    FileText,
+    Image as ImageIcon,
+    Flag,
     Send,
 } from 'lucide-react';
 import transactionService from '../../services/transactionService';
+import ticketService from '../../services/ticketService';
+import ReceiptShareButton from '../../components/common/ReceiptShareButton';
 import { formatCurrency, formatDateTime, formatTransactionType, getStatusColor } from '../../utils/formatters';
 
 const TRANSACTION_TYPES = [
@@ -212,8 +215,11 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
     const receiptRef = useRef(null);
     const [copied, setCopied] = useState(false);
     const [downloading, setDownloading] = useState(false);
-    const [sharing, setSharing] = useState(false);
-    const [showShareMenu, setShowShareMenu] = useState(false);
+    const [showReport, setShowReport] = useState(false);
+    const [reportText, setReportText] = useState('');
+    const [reporting, setReporting] = useState(false);
+    const [reportDone, setReportDone] = useState(false);
+    const [reportErr, setReportErr] = useState('');
 
     const isCredit = transaction.direction === 'credit' || transaction.transaction_type === 'deposit';
     const colors = getTransactionColors(transaction.transaction_type, transaction.direction);
@@ -248,47 +254,30 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
         }
     };
 
-    // Text summary used for social / email sharing
-    const shareUrl = typeof window !== 'undefined' ? window.location.origin : 'https://jaxopay.com';
     const shareText = `JAXOPAY receipt — ${isCredit ? '+' : '-'}${formatCurrency(displayAmount, displayCurrency)} · ${formatTransactionType(transaction.transaction_type)} · ${transaction.status?.toUpperCase()} · Ref: ${transaction.reference || transaction.id?.slice(0, 8)}`;
-    const canNativeShare = typeof navigator !== 'undefined' && !!navigator.share;
+    const baseFileName = `jaxopay-receipt-${transaction.reference || transaction.id?.slice(0, 8)}`;
 
-    // Open a specific social/email channel with the receipt summary
-    const shareTo = (channel) => {
-        const text = encodeURIComponent(shareText);
-        const url = encodeURIComponent(shareUrl);
-        const links = {
-            whatsapp: `https://wa.me/?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`,
-            facebook: `https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`,
-            twitter: `https://twitter.com/intent/tweet?text=${text}&url=${url}`,
-            telegram: `https://t.me/share/url?url=${url}&text=${text}`,
-            email: `mailto:?subject=${encodeURIComponent('JAXOPAY Transaction Receipt')}&body=${encodeURIComponent(`${shareText}\n\n${shareUrl}`)}`,
-        };
-        setShowShareMenu(false);
-        if (channel === 'copy') { copyReference(); return; }
-        if (channel === 'email') { window.location.href = links.email; return; }
-        window.open(links[channel], '_blank', 'noopener,noreferrer');
-    };
-
-    // Native share sheet (mobile) — shares the actual receipt image
-    const shareReceiptImage = async () => {
-        if (!receiptRef.current) return;
-        setSharing(true);
-        try {
-            const dataUrl = await toPng(receiptRef.current, { cacheBust: true, quality: 1, pixelRatio: 2 });
-            const blob = await (await fetch(dataUrl)).blob();
-            const file = new File([blob], `jaxopay-receipt-${transaction.reference || transaction.id?.slice(0, 8)}.png`, { type: 'image/png' });
-            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                await navigator.share({ files: [file], title: 'JAXOPAY Transaction Receipt', text: shareText });
-            } else {
-                await navigator.share({ title: 'JAXOPAY Transaction Receipt', text: `${shareText} ${shareUrl}` });
-            }
-        } catch (err) {
-            if (err?.name !== 'AbortError') console.error('Share failed:', err);
-        } finally {
-            setSharing(false);
-            setShowShareMenu(false);
-        }
+    // Report an issue with this transaction → opens a support ticket pre-filled with its details.
+    const submitReport = async () => {
+        if (!reportText.trim()) { setReportErr('Please describe the issue.'); return; }
+        setReporting(true); setReportErr('');
+        const ref = transaction.reference || transaction.id;
+        const details = [
+            `Reference: ${ref}`,
+            `Type: ${formatTransactionType(transaction.transaction_type)}`,
+            `Amount: ${formatCurrency(displayAmount, displayCurrency)}`,
+            `Status: ${transaction.status}`,
+            `Date: ${formatDateTime(transaction.created_at)}`,
+        ].join('\n');
+        const res = await ticketService.createTicket({
+            subject: `Transaction issue – ${transaction.reference || transaction.id?.slice(0, 8)}`,
+            description: `${reportText.trim()}\n\n— Transaction details —\n${details}`,
+            category: 'transaction',
+            priority: 'high',
+        });
+        setReporting(false);
+        if (res.success) { setReportDone(true); setReportText(''); }
+        else setReportErr(res.error || 'Could not submit your report. Please try again.');
     };
 
     const getMetadataFields = (meta) => {
@@ -441,47 +430,72 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
                             {downloading ? 'Saving…' : 'Save Receipt'}
                         </button>
 
-                        <div className="relative">
-                            <button
-                                onClick={() => setShowShareMenu((s) => !s)}
-                                disabled={sharing}
-                                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-primary text-white font-semibold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20 disabled:opacity-60"
-                            >
-                                {sharing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
-                                Share
-                            </button>
+                        <ReceiptShareButton
+                            targetRef={receiptRef}
+                            baseName={baseFileName}
+                            shareText={shareText}
+                            label="Share"
+                            menuPosition="top"
+                            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-primary text-white font-semibold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20 disabled:opacity-60"
+                        />
+                    </div>
 
-                            {showShareMenu && (
-                                <>
-                                    <div className="fixed inset-0 z-40" onClick={() => setShowShareMenu(false)} />
-                                    <div className="absolute bottom-full right-0 mb-2 z-50 w-56 bg-card border border-border rounded-xl shadow-2xl overflow-hidden py-1">
-                                        {canNativeShare && (
-                                            <button onClick={shareReceiptImage} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
-                                                <Share2 className="w-4 h-4 text-primary" /> Share receipt image…
-                                            </button>
-                                        )}
-                                        <button onClick={() => shareTo('whatsapp')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
-                                            <MessageCircle className="w-4 h-4 text-emerald-500" /> WhatsApp
-                                        </button>
-                                        <button onClick={() => shareTo('facebook')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
-                                            <Facebook className="w-4 h-4 text-blue-600" /> Facebook
-                                        </button>
-                                        <button onClick={() => shareTo('twitter')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
-                                            <X className="w-4 h-4" /> X (Twitter)
-                                        </button>
-                                        <button onClick={() => shareTo('telegram')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
-                                            <Send className="w-4 h-4 text-sky-500" /> Telegram
-                                        </button>
-                                        <button onClick={() => shareTo('email')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
-                                            <Mail className="w-4 h-4 text-amber-500" /> Email
-                                        </button>
-                                        <button onClick={() => shareTo('copy')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors border-t border-border">
-                                            <Copy className="w-4 h-4 text-muted-foreground" /> Copy details
-                                        </button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                    {/* Report an issue */}
+                    <div className="px-6 pb-6 -mt-1">
+                        {!showReport && !reportDone && (
+                            <button
+                                onClick={() => setShowReport(true)}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium text-muted-foreground hover:text-rose-500 transition-colors"
+                            >
+                                <Flag className="w-4 h-4" /> Report an issue with this transaction
+                            </button>
+                        )}
+
+                        {showReport && !reportDone && (
+                            <div className="bg-muted/40 border border-border rounded-xl p-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <Flag className="w-4 h-4 text-rose-500" />
+                                    <p className="text-sm font-semibold text-foreground">Report a problem</p>
+                                </div>
+                                <textarea
+                                    value={reportText}
+                                    onChange={(e) => setReportText(e.target.value)}
+                                    rows={3}
+                                    autoFocus
+                                    placeholder="Tell us what went wrong (e.g. money debited but not received, wrong amount, failed but not refunded)…"
+                                    className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                                />
+                                {reportErr && <p className="text-xs text-rose-500">{reportErr}</p>}
+                                <p className="text-[11px] text-muted-foreground">This opens a support ticket with this transaction's reference attached.</p>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => { setShowReport(false); setReportErr(''); }}
+                                        disabled={reporting}
+                                        className="flex-1 py-2.5 bg-muted text-foreground text-sm font-semibold rounded-lg hover:bg-muted/70 transition-colors disabled:opacity-60"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={submitReport}
+                                        disabled={reporting}
+                                        className="flex-1 py-2.5 bg-rose-500 text-white text-sm font-semibold rounded-lg hover:bg-rose-600 transition-colors disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                                    >
+                                        {reporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                        {reporting ? 'Submitting…' : 'Submit report'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {reportDone && (
+                            <div className="bg-success/10 border border-success/20 rounded-xl p-4 flex items-start gap-3">
+                                <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="text-sm font-semibold text-foreground">Report submitted</p>
+                                    <p className="text-xs text-muted-foreground">Our support team will review it and reach out. You can track it under Support.</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </motion.div>
             </motion.div>

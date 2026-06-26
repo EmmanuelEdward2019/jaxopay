@@ -37,3 +37,4 @@ CREATE INDEX IF NOT EXISTS idx_saved_beneficiaries_user_type
 DROP TRIGGER IF EXISTS update_saved_beneficiaries_updated_at ON saved_beneficiaries;
 CREATE TRIGGER update_saved_beneficiaries_updated_at BEFORE UPDATE ON saved_beneficiaries
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+1

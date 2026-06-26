@@ -10,6 +10,7 @@ import apiClient from '../../lib/apiClient';
 import walletService from '../../services/walletService';
 import beneficiaryService from '../../services/beneficiaryService';
 import PinModal from '../../components/common/PinModal';
+import ReceiptShareButton from '../../components/common/ReceiptShareButton';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
 // Map a server saved_beneficiary (type=bank_account) to this page's local shape.
@@ -165,6 +166,7 @@ const Transfer = () => {
     const [error, setError] = useState(null);
     const [result, setResult] = useState(null);
     const [verifying, setVerifying] = useState(false);
+    const receiptRef = useRef(null);
     // Transaction PIN
     const [showPin, setShowPin] = useState(false);
     const [pinError, setPinError] = useState('');
@@ -714,55 +716,67 @@ const Transfer = () => {
                         {/* ── Step 4: Success ── */}
                         {step === 4 && result && (
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8">
-                                {(() => {
-                                    const st = (result.status || '').toLowerCase();
-                                    const done = st === 'completed';
-                                    const failed = st === 'failed';
-                                    return (
-                                        <>
-                                            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${done ? 'bg-success/10' : failed ? 'bg-rose-500/10' : 'bg-warning/10'}`}>
-                                                {done ? <CheckCircle className="w-10 h-10 text-success" />
-                                                    : failed ? <AlertCircle className="w-10 h-10 text-rose-500" />
-                                                        : <Clock className="w-10 h-10 text-warning" />}
+                                <div ref={receiptRef} className="bg-card px-6 pt-6 pb-2 rounded-2xl">
+                                    <div className="flex items-center justify-center gap-2 mb-4">
+                                        <span className="text-lg font-extrabold tracking-tight text-primary">JAXO<span className="text-foreground">PAY</span></span>
+                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Transfer Receipt</span>
+                                    </div>
+                                    {(() => {
+                                        const st = (result.status || '').toLowerCase();
+                                        const done = st === 'completed';
+                                        const failed = st === 'failed';
+                                        return (
+                                            <>
+                                                <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${done ? 'bg-success/10' : failed ? 'bg-rose-500/10' : 'bg-warning/10'}`}>
+                                                    {done ? <CheckCircle className="w-10 h-10 text-success" />
+                                                        : failed ? <AlertCircle className="w-10 h-10 text-rose-500" />
+                                                            : <Clock className="w-10 h-10 text-warning" />}
+                                                </div>
+                                                <h2 className="text-xl font-bold text-foreground mb-2">
+                                                    {done ? 'Transfer Successful!' : failed ? 'Transfer Failed' : 'Transfer Processing…'}
+                                                </h2>
+                                                <p className="text-muted-foreground mb-6">
+                                                    {done
+                                                        ? <>{formatCurrency(result.amount, 'NGN')} has been sent to <strong>{result.recipient?.account_name}</strong>.</>
+                                                        : failed
+                                                            ? <>The transfer to <strong>{result.recipient?.account_name}</strong> could not be completed. Your funds have been returned.</>
+                                                            : <>{formatCurrency(result.amount, 'NGN')} is being sent to <strong>{result.recipient?.account_name}</strong>. We're confirming it with the bank…</>}
+                                                </p>
+                                            </>
+                                        );
+                                    })()}
+                                    <div className="bg-muted/50 rounded-xl p-4 mb-2 space-y-2 text-sm text-left">
+                                        {[
+                                            { label: 'Reference', value: result.reference, mono: true },
+                                            { label: 'Recipient', value: result.recipient?.account_name },
+                                            { label: 'Account', value: result.recipient?.account_number },
+                                            { label: 'Bank', value: result.recipient?.bank_name },
+                                            { label: 'Status', value: result.status, badge: true },
+                                        ].map((row) => (
+                                            <div key={row.label} className="flex justify-between items-center">
+                                                <span className="text-muted-foreground">{row.label}</span>
+                                                {row.badge ? (
+                                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusStyle(row.value)}`}>{row.value}</span>
+                                                ) : (
+                                                    <span className={`font-medium text-foreground ${row.mono ? 'font-mono text-xs' : ''}`}>{row.value}</span>
+                                                )}
                                             </div>
-                                            <h2 className="text-xl font-bold text-foreground mb-2">
-                                                {done ? 'Transfer Successful!' : failed ? 'Transfer Failed' : 'Transfer Processing…'}
-                                            </h2>
-                                            <p className="text-muted-foreground mb-6">
-                                                {done
-                                                    ? <>{formatCurrency(result.amount, 'NGN')} has been sent to <strong>{result.recipient?.account_name}</strong>.</>
-                                                    : failed
-                                                        ? <>The transfer to <strong>{result.recipient?.account_name}</strong> could not be completed. Your funds have been returned.</>
-                                                        : <>{formatCurrency(result.amount, 'NGN')} is being sent to <strong>{result.recipient?.account_name}</strong>. We're confirming it with the bank…</>}
-                                            </p>
-                                        </>
-                                    );
-                                })()}
-                                <div className="bg-muted/50 rounded-xl p-4 mb-6 space-y-2 text-sm text-left">
-                                    {[
-                                        { label: 'Reference', value: result.reference, mono: true },
-                                        { label: 'Recipient', value: result.recipient?.account_name },
-                                        { label: 'Account', value: result.recipient?.account_number },
-                                        { label: 'Bank', value: result.recipient?.bank_name },
-                                        { label: 'Status', value: result.status, badge: true },
-                                    ].map((row) => (
-                                        <div key={row.label} className="flex justify-between items-center">
-                                            <span className="text-muted-foreground">{row.label}</span>
-                                            {row.badge ? (
-                                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusStyle(row.value)}`}>{row.value}</span>
-                                            ) : (
-                                                <span className={`font-medium text-foreground ${row.mono ? 'font-mono text-xs' : ''}`}>{row.value}</span>
-                                            )}
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
-                                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                                <div className="flex flex-col sm:flex-row gap-3 justify-center mt-6">
                                     {!['completed', 'failed'].includes((result.status || '').toLowerCase()) && (
                                         <button onClick={checkStatus} disabled={verifying}
                                             className="px-6 py-3 bg-muted hover:bg-muted/70 text-foreground font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60">
                                             <RefreshCw className={`w-4 h-4 ${verifying ? 'animate-spin' : ''}`} /> {verifying ? 'Checking…' : 'Check status'}
                                         </button>
                                     )}
+                                    <ReceiptShareButton
+                                        targetRef={receiptRef}
+                                        baseName={`jaxopay-transfer-${result.reference || ''}`}
+                                        shareText={`JAXOPAY transfer receipt · ${formatCurrency(result.amount, 'NGN')} · Ref: ${result.reference || ''}`}
+                                        className="px-6 py-3 bg-muted hover:bg-muted/70 text-foreground font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2"
+                                    />
                                     <button onClick={resetForm} className="px-6 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl transition-colors">
                                         Make Another Transfer
                                     </button>

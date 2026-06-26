@@ -5,7 +5,7 @@ import { sendEmail } from '../services/email.service.js';
 
 // Create a new support ticket
 export const createTicket = catchAsync(async (req, res) => {
-    if (req.user.role !== 'end_user') {
+    if (!['user', 'end_user'].includes(req.user.role)) {
         throw new AppError('Only customers can create support tickets.', 403);
     }
     const { subject, description, category, priority = 'medium' } = req.body;
