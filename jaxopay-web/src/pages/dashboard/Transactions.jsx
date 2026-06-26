@@ -502,6 +502,7 @@ const Transactions = () => {
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0 });
     const [stats, setStats] = useState(null);
     const [error, setError] = useState(null);
+    const [volumeCcy, setVolumeCcy] = useState('NGN'); // Total Volume display currency toggle
 
     useEffect(() => { fetchTransactions(); }, [typeFilter, statusFilter, dateRange, pagination.page]);
     useEffect(() => { fetchStats(); }, []);
@@ -587,8 +588,43 @@ const Transactions = () => {
             {/* Stats */}
             {stats && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* Total Volume — converted total with a NGN/USD switch + per-currency breakdown */}
+                    <div className="bg-card border border-border rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-1 gap-2">
+                            <p className="text-xs text-muted-foreground truncate">
+                                Total Volume{stats.volume_partial ? ' (approx)' : ''}
+                            </p>
+                            <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 shrink-0">
+                                {['NGN', 'USD'].map((c) => (
+                                    <button
+                                        key={c}
+                                        onClick={() => setVolumeCcy(c)}
+                                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors ${
+                                            volumeCcy === c ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                    >
+                                        {c === 'NGN' ? '₦' : '$'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <p className="text-xl font-bold text-foreground">
+                            {(() => {
+                                const val = volumeCcy === 'USD' ? stats.total_volume_usd : stats.total_volume_ngn;
+                                return val == null ? '—' : `≈ ${formatCurrency(val || 0, volumeCcy)}`;
+                            })()}
+                        </p>
+                        {Array.isArray(stats.volume_by_currency) && stats.volume_by_currency.length > 0 && (
+                            <p
+                                className="text-[11px] text-muted-foreground mt-1 truncate"
+                                title={stats.volume_by_currency.map((v) => formatCurrency(v.total, v.currency)).join(' · ')}
+                            >
+                                {stats.volume_by_currency.slice(0, 3).map((v) => formatCurrency(v.total, v.currency)).join(' · ')}
+                                {stats.volume_by_currency.length > 3 ? ` +${stats.volume_by_currency.length - 3}` : ''}
+                            </p>
+                        )}
+                    </div>
                     {[
-                        { label: 'Total Volume', value: formatCurrency(stats.total_volume || 0, 'USD'), color: 'text-foreground' },
                         { label: 'Total Count', value: stats.total_count || 0, color: 'text-foreground' },
                         { label: 'Completed', value: stats.completed_count || 0, color: 'text-emerald-500' },
                         { label: 'Pending', value: stats.pending_count || 0, color: 'text-amber-500' },

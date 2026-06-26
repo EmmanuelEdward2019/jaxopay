@@ -14,7 +14,8 @@ import {
     Paperclip,
     User,
     Shield,
-    RefreshCw
+    RefreshCw,
+    Star
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import ticketService from '../../services/ticketService';
@@ -42,6 +43,12 @@ const Support = () => {
     const [isReplying, setIsReplying] = useState(false);
     const [ticketMessages, setTicketMessages] = useState([]);
 
+    // Rating state (for closed tickets)
+    const [ratingValue, setRatingValue] = useState(0);
+    const [ratingHover, setRatingHover] = useState(0);
+    const [reviewComment, setReviewComment] = useState('');
+    const [isRating, setIsRating] = useState(false);
+
     useEffect(() => {
         fetchTickets();
     }, []);
@@ -49,6 +56,9 @@ const Support = () => {
     useEffect(() => {
         if (selectedTicket) {
             fetchTicketDetails(selectedTicket.id);
+            setRatingValue(0);
+            setRatingHover(0);
+            setReviewComment('');
         }
     }, [selectedTicket]);
 
@@ -97,6 +107,17 @@ const Support = () => {
             fetchTickets(); // Refresh the list to show updated timestamp/status
         }
         setIsReplying(false);
+    };
+
+    const handleRate = async () => {
+        if (!ratingValue) return;
+        setIsRating(true);
+        const result = await ticketService.rateTicket(selectedTicket.id, ratingValue, reviewComment);
+        if (result.success) {
+            setSelectedTicket({ ...selectedTicket, rating: ratingValue, review_comment: reviewComment });
+            fetchTickets();
+        }
+        setIsRating(false);
     };
 
     const handleCloseTicket = async (id) => {
@@ -292,9 +313,50 @@ const Support = () => {
                             {/* Reply Box */}
                             <div className="p-6 border-t border-border bg-card">
                                 {selectedTicket.status === 'closed' ? (
-                                    <div className="bg-muted/30 rounded-2xl p-4 text-center">
-                                        <p className="text-muted-foreground text-sm">This ticket is closed and cannot be replied to.</p>
-                                    </div>
+                                    selectedTicket.rating ? (
+                                        <div className="bg-muted/30 rounded-2xl p-4 text-center">
+                                            <p className="text-sm font-medium text-foreground mb-2">You rated our support</p>
+                                            <div className="flex items-center justify-center gap-1 mb-1">
+                                                {[1, 2, 3, 4, 5].map((n) => (
+                                                    <Star key={n} className={`w-5 h-5 ${n <= selectedTicket.rating ? 'text-amber-400 fill-amber-400' : 'text-muted-foreground/30'}`} />
+                                                ))}
+                                            </div>
+                                            {selectedTicket.review_comment && (
+                                                <p className="text-xs text-muted-foreground italic mt-1">&ldquo;{selectedTicket.review_comment}&rdquo;</p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="bg-muted/30 rounded-2xl p-4">
+                                            <p className="text-sm font-semibold text-foreground text-center mb-3">This ticket is closed. How was our support?</p>
+                                            <div className="flex items-center justify-center gap-1.5 mb-3">
+                                                {[1, 2, 3, 4, 5].map((n) => (
+                                                    <button
+                                                        key={n}
+                                                        type="button"
+                                                        onMouseEnter={() => setRatingHover(n)}
+                                                        onMouseLeave={() => setRatingHover(0)}
+                                                        onClick={() => setRatingValue(n)}
+                                                        className="p-0.5"
+                                                    >
+                                                        <Star className={`w-7 h-7 transition-colors ${n <= (ratingHover || ratingValue) ? 'text-amber-400 fill-amber-400' : 'text-muted-foreground/30'}`} />
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <textarea
+                                                value={reviewComment}
+                                                onChange={(e) => setReviewComment(e.target.value)}
+                                                placeholder="Leave a comment (optional)…"
+                                                className="w-full bg-background border border-border rounded-xl p-3 text-sm resize-none focus:ring-2 focus:ring-ring outline-none h-16 mb-3"
+                                            />
+                                            <button
+                                                onClick={handleRate}
+                                                disabled={!ratingValue || isRating}
+                                                className="w-full py-2.5 bg-primary hover:bg-primary/90 text-white font-semibold text-sm rounded-xl transition-all disabled:opacity-50"
+                                            >
+                                                {isRating ? 'Submitting…' : 'Submit Rating'}
+                                            </button>
+                                        </div>
+                                    )
                                 ) : (
                                     <form onSubmit={handleReply} className="relative">
                                         <textarea

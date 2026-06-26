@@ -11,6 +11,22 @@ function buildKycDocumentUrl(frontUrl, backUrl) {
   return JSON.stringify({ front: frontUrl, back: backUrl });
 }
 
+/**
+ * Build a public `${host}/api/v1/<path>` URL for provider callbacks, tolerant of how
+ * API_BASE_URL is set (with or without a trailing /api/v1, with or without scheme).
+ * Smile Identity POSTs its async result to this URL, so it MUST be publicly reachable.
+ */
+function buildCallbackUrl(path) {
+  const raw = (process.env.API_BASE_URL || 'http://localhost:3000').trim();
+  const base = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  const url = new URL(base);
+  const basePath = url.pathname.replace(/\/+$/, '').replace(/\/api\/v\d+$/i, '');
+  url.pathname = `${basePath}/api/v1/${String(path).replace(/^\/+/, '')}`.replace(/\/{2,}/g, '/');
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
 // Get KYC status
 export const getKYCStatus = catchAsync(async (req, res) => {
   const result = await query(
@@ -318,8 +334,7 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
     throw new AppError('Identity verification is not available', 503);
   }
 
-  const apiBase = (process.env.API_BASE_URL || '').replace(/\/$/, '');
-  if (!apiBase) {
+  if (!process.env.API_BASE_URL) {
     throw new AppError('Server callback URL is not configured. Please contact support.', 500);
   }
 
@@ -335,7 +350,7 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
     phone_number,
   } = req.body;
 
-  const callbackUrl = `${apiBase}/api/v1/webhooks/smile_identity`;
+  const callbackUrl = buildCallbackUrl('/webhooks/smile_identity');
 
   const { smileResponse, jobId } = await smileId.submitBasicKycAsync({
     userId: req.user.id,
@@ -400,8 +415,7 @@ export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
     throw new AppError('Identity verification is not available', 503);
   }
 
-  const apiBase = (process.env.API_BASE_URL || '').replace(/\/$/, '');
-  if (!apiBase) {
+  if (!process.env.API_BASE_URL) {
     throw new AppError('Server callback URL is not configured. Please contact support.', 500);
   }
 
@@ -421,7 +435,7 @@ export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
   }
 
   const jobId = crypto.randomUUID();
-  const callbackUrl = `${apiBase}/api/v1/webhooks/smile_identity`;
+  const callbackUrl = buildCallbackUrl('/webhooks/smile_identity');
 
   const idInfo = {
     first_name: String(first_name).trim(),

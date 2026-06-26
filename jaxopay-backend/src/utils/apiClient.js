@@ -55,7 +55,13 @@ export function createApiClient(config = {}) {
             const cfg = err.config || {};
             const duration = Date.now() - (cfg._startTime || Date.now());
             const status = err.response?.status;
-            const isRetryable = !status || status >= 500 || err.code === 'ECONNABORTED' || err.code === 'ECONNRESET';
+            // Only auto-retry IDEMPOTENT requests. Retrying a non-idempotent POST (e.g. a
+            // payout/disbursement) can duplicate the operation AND multiplies the timeout
+            // (2 retries × ~20s ≈ 60s), which trips the upstream gateway and returns a 502
+            // with no CORS headers — surfacing in the browser as a misleading CORS error.
+            const method = (cfg.method || 'get').toLowerCase();
+            const isIdempotent = method === 'get' || method === 'head' || method === 'options';
+            const isRetryable = isIdempotent && (!status || status >= 500 || err.code === 'ECONNABORTED' || err.code === 'ECONNRESET');
             const currentRetry = cfg._retryCount || 0;
 
             logger.error(`[${label}] ← ERROR ${status || err.code || 'NETWORK'} ${cfg.url} (${duration}ms): ${err.response?.data?.message || err.message}`);

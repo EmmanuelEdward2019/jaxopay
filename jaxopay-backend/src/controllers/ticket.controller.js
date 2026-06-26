@@ -259,6 +259,57 @@ export const closeTicket = catchAsync(async (req, res) => {
     });
 });
 
+// Admin: set a ticket's status (open / pending / in_progress / resolved / closed)
+const TICKET_STATUSES = ['open', 'pending', 'in_progress', 'resolved', 'closed'];
+
+export const updateTicketStatus = catchAsync(async (req, res) => {
+    const { id } = req.params;
+    const status = String(req.body.status || '').toLowerCase();
+
+    if (!TICKET_STATUSES.includes(status)) {
+        throw new AppError(`Invalid status. Allowed: ${TICKET_STATUSES.join(', ')}`, 400);
+    }
+
+    const ticketResult = await query('SELECT * FROM support_tickets WHERE id = $1', [id]);
+    if (ticketResult.rows.length === 0) {
+        throw new AppError('Ticket not found', 404);
+    }
+    const ticket = ticketResult.rows[0];
+
+    const updated = await query(
+        'UPDATE support_tickets SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, status',
+        [status, id]
+    );
+
+    // Notify the user when their ticket is resolved or closed.
+    if (status === 'resolved' || status === 'closed') {
+        const userResult = await query(
+            `SELECT u.email, up.first_name FROM users u
+             LEFT JOIN user_profiles up ON u.id = up.user_id WHERE u.id = $1`,
+            [ticket.user_id]
+        );
+        if (userResult.rows.length > 0) {
+            const user = userResult.rows[0];
+            sendEmail({
+                to: user.email,
+                subject: `Support Ticket ${status === 'resolved' ? 'Resolved' : 'Closed'}: ${ticket.subject}`,
+                template: 'ticketClosed',
+                data: {
+                    name: user.first_name || 'User',
+                    subject: ticket.subject,
+                    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+                },
+            }).catch((err) => logger.error('Error sending ticket status email:', err));
+        }
+    }
+
+    res.status(200).json({
+        success: true,
+        message: `Ticket marked as ${status.replace('_', ' ')}`,
+        data: updated.rows[0],
+    });
+});
+
 // Admin: Get all tickets
 export const getAllTickets = catchAsync(async (req, res) => {
     if (!['admin', 'super_admin', 'compliance_officer'].includes(req.user.role)) {

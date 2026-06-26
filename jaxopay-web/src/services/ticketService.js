@@ -46,6 +46,25 @@ const ticketService = {
         }
     },
 
+    rateTicket: async (id, rating, review_comment = '') => {
+        try {
+            const response = await apiClient.post(`/tickets/${id}/rate`, { rating, review_comment });
+            return { success: true, message: response.message };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
+    // Admin: set ticket status (open / pending / in_progress / resolved / closed)
+    updateStatus: async (id, status) => {
+        try {
+            const response = await apiClient.patch(`/tickets/${id}/status`, { status });
+            return { success: true, message: response.message, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
     // Admin
     getAllTickets: async (params = {}) => {
         try {

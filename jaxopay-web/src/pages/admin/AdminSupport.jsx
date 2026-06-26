@@ -76,6 +76,15 @@ const AdminSupport = () => {
         }
     };
 
+    const handleSetStatus = async (status) => {
+        if (!selectedTicket || status === selectedTicket.status) return;
+        const result = await ticketService.updateStatus(selectedTicket.id, status);
+        if (result.success) {
+            setSelectedTicket({ ...selectedTicket, status });
+            fetchTickets();
+        }
+    };
+
     const filteredTickets = tickets.filter(t => {
         const matchesSearch = t.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
             t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -88,6 +97,7 @@ const AdminSupport = () => {
         switch (status) {
             case 'open': return 'bg-success/10 text-success';
             case 'pending': return 'bg-primary/10 text-blue-700';
+            case 'in_progress': return 'bg-amber-100 text-amber-700';
             case 'resolved': return 'bg-purple-100 text-purple-700';
             case 'closed': return 'bg-muted text-foreground/30';
             default: return 'bg-muted text-foreground';
@@ -124,7 +134,7 @@ const AdminSupport = () => {
                         </div>
 
                         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                            {['all', 'open', 'pending', 'resolved', 'closed'].map(status => (
+                            {['all', 'open', 'pending', 'in_progress', 'resolved', 'closed'].map(status => (
                                 <button
                                     key={status}
                                     onClick={() => setStatusFilter(status)}
@@ -206,17 +216,21 @@ const AdminSupport = () => {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    {selectedTicket.status !== 'closed' && (
-                                        <button
-                                            onClick={() => handleCloseTicket(selectedTicket.id)}
-                                            className="px-4 py-2 bg-muted text-muted-foreground text-sm font-bold rounded-xl hover:bg-muted transition-colors"
+                                    <div className="flex flex-col">
+                                        <label className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Set status</label>
+                                        <select
+                                            value={selectedTicket.status}
+                                            onChange={(e) => handleSetStatus(e.target.value)}
+                                            className="px-3 py-2 bg-muted text-foreground text-sm font-semibold rounded-xl border border-border focus:ring-2 focus:ring-ring outline-none capitalize cursor-pointer"
                                         >
-                                            Close Ticket
-                                        </button>
-                                    )}
+                                            {['open', 'pending', 'in_progress', 'resolved', 'closed'].map((s) => (
+                                                <option key={s} value={s}>{s.replace('_', ' ')}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                     <button
                                         onClick={() => fetchTicketDetails(selectedTicket.id)}
-                                        className="p-2 text-muted-foreground hover:text-primary transition-colors"
+                                        className="p-2 mt-4 text-muted-foreground hover:text-primary transition-colors"
                                     >
                                         <RefreshCw className="w-5 h-5" />
                                     </button>

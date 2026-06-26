@@ -1,5 +1,44 @@
 import { query } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
+import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
+import logger from '../utils/logger.js';
+
+// Currency the "Total Volume" figure is displayed in.
+const DISPLAY_CURRENCY = 'NGN';
+
+/**
+ * Convert a per-currency volume map into a single total in DISPLAY_CURRENCY (NGN)
+ * using live Quidax rates. Resilient: any currency we can't price is left out of the
+ * total and flagged as partial, but still shown in the per-currency breakdown.
+ */
+async function convertVolumeToDisplay(rows) {
+  let total = 0;
+  let partial = false;
+  const breakdown = await Promise.all(
+    rows.map(async (r) => {
+      const currency = String(r.currency || '').toUpperCase();
+      const amount = parseFloat(r.total) || 0;
+      let baseValue = null;
+      if (currency === DISPLAY_CURRENCY) {
+        baseValue = amount;
+      } else if (amount > 0) {
+        try {
+          const rate = await quidax.getExchangeRate(currency, DISPLAY_CURRENCY);
+          if (rate && rate > 0) baseValue = amount * rate;
+        } catch (e) {
+          logger.warn(`[Stats] rate ${currency}->${DISPLAY_CURRENCY} failed: ${e.message}`);
+        }
+      } else {
+        baseValue = 0;
+      }
+      if (baseValue != null) total += baseValue;
+      else partial = true;
+      return { currency, total: amount, base_value: baseValue };
+    })
+  );
+  breakdown.sort((a, b) => (b.base_value || 0) - (a.base_value || 0));
+  return { total, partial, breakdown };
+}
 
 const combinedQuery = `
   SELECT 
@@ -213,6 +252,29 @@ export const getTransactionStats = catchAsync(async (req, res) => {
   );
   const agg = summary.rows[0] || {};
 
+  // Completed volume grouped by its OWN currency (can't sum currencies directly).
+  const byCurrency = await query(
+    `WITH combined AS (${combinedQuery})
+     SELECT currency, SUM(amount)::numeric AS total
+     FROM combined
+     WHERE user_id = $1
+       AND created_at >= NOW() - INTERVAL '${parseInt(period)} days'
+       AND status = 'completed'
+       AND amount > 0
+     GROUP BY currency`,
+    [req.user.id]
+  );
+
+  // Convert each currency to a single NGN figure via live Quidax rates (best-effort).
+  const { total, partial, breakdown } = await convertVolumeToDisplay(byCurrency.rows);
+
+  // Also provide a USD equivalent of the NGN total so the UI can offer a NGN/USD switch.
+  let totalUsd = null;
+  try {
+    const ngnToUsd = await quidax.getExchangeRate('NGN', 'USDT'); // USDT ≈ USD
+    if (ngnToUsd && ngnToUsd > 0) totalUsd = total * ngnToUsd;
+  } catch { /* leave USD null if unavailable */ }
+
   res.status(200).json({
     success: true,
     data: {
@@ -220,7 +282,13 @@ export const getTransactionStats = catchAsync(async (req, res) => {
       total_count: agg.total_count || 0,
       completed_count: agg.completed_count || 0,
       pending_count: agg.pending_count || 0,
-      total_volume: parseFloat(agg.total_volume) || 0,
+      // total_volume is the NGN-converted total (default display); both are provided for the toggle.
+      total_volume: total,
+      total_volume_ngn: total,
+      total_volume_usd: totalUsd,
+      base_currency: DISPLAY_CURRENCY,
+      volume_partial: partial,
+      volume_by_currency: breakdown,
       volume_by_type: volumeByType.rows,
       daily_count: dailyCount.rows,
       status_breakdown: statusBreakdown.rows,
