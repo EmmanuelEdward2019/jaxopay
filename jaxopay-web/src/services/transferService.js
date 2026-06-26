@@ -31,7 +31,7 @@ const transferService = {
             const response = await apiClient.post('/transfers/send', payload);
             return { success: true, data: response.data ?? response };
         } catch (error) {
-            return { success: false, error: error.message || 'Transfer failed' };
+            return { success: false, error: error.message || 'Transfer failed', code: error.code };
         }
     },
 

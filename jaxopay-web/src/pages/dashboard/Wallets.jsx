@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Wallet, ArrowUpRight, ArrowDownLeft, ArrowLeftRight,
     Eye, EyeOff, Search, X, ChevronDown, RefreshCw,
-    Copy, Check, Info, AlertCircle, ShieldCheck,
+    Copy, Check, Info, AlertCircle, ShieldCheck, CheckCircle,
     Star, TrendingUp, Plus, Building2, Users, Send
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
@@ -12,7 +12,24 @@ import QRCodeSVG from 'react-qr-code';
 import walletService from '../../services/walletService';
 import cryptoService from '../../services/cryptoService';
 import transferService from '../../services/transferService';
+import PinModal from '../../components/common/PinModal';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
+
+// Shared helper: did a service result fail because of the transaction PIN?
+const isPinError = (code) => ['PIN_INCORRECT', 'PIN_LOCKED', 'PIN_NOT_SET', 'PIN_REQUIRED'].includes(code);
+
+// Shared end-of-transaction status screen (so the user always sees an outcome).
+const TxResultScreen = ({ ok, title, message, reference, onClose }) => (
+    <div className="p-8 text-center">
+        <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${ok ? 'bg-success/10' : 'bg-danger/10'}`}>
+            {ok ? <CheckCircle className="w-10 h-10 text-success" /> : <AlertCircle className="w-10 h-10 text-danger" />}
+        </div>
+        <h3 className="text-xl font-bold text-foreground mb-2">{title}</h3>
+        <p className="text-sm text-muted-foreground mb-4">{message}</p>
+        {reference && <p className="text-xs text-muted-foreground mb-6">Reference: <span className="font-mono">{reference}</span></p>}
+        <button onClick={onClose} className="w-full py-3.5 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors">Done</button>
+    </div>
+);
 
 // ── Fiat currencies ──────────────────────────────────────────────────────
 const FIAT_CURRENCIES = [
@@ -1126,6 +1143,9 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
     const [description, setDescription] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [showPin, setShowPin] = useState(false);
+    const [pinError, setPinError] = useState('');
+    const [pinProcessing, setPinProcessing] = useState(false);
 
     // Bank transfer states (fiat)
     const [banks, setBanks] = useState([]);
@@ -1166,28 +1186,31 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
         resolve();
     }, [recipient, selectedBank, code, isCrypto]);
 
-    const handleWithdraw = async () => {
-        setLoading(true); setError(null);
-        try {
-            if (isCrypto) {
-                const res = await cryptoService.withdraw({
-                    coin: code, address: recipient, amount: parseFloat(amount), network, memo: description,
-                });
-                if (res.success) { onRefresh(); onClose(); }
-                else setError(res.error || 'Withdrawal failed');
-            } else {
-                const res = await transferService.sendTransfer({
-                    wallet_id: walletId, bank_code: selectedBank, account_number: recipient,
-                    account_name: accountName, amount: parseFloat(amount), narration: description, currency: code,
-                });
-                if (res.success) { onRefresh(); onClose(); }
-                else setError(res.error || 'Transfer failed');
-            }
-        } catch (e) {
-            setError(e.message || 'Something went wrong');
-        }
-        setLoading(false);
+    const [done, setDone] = useState(null);
+
+    const handleWithdraw = async (pin) => {
+        setPinProcessing(true); setPinError(''); setError(null);
+        const res = isCrypto
+            ? await cryptoService.withdraw({ coin: code, address: recipient, amount: parseFloat(amount), network, memo: description, pin })
+            : await transferService.sendTransfer({
+                wallet_id: walletId, bank_code: selectedBank, account_number: recipient,
+                account_name: accountName, amount: parseFloat(amount), narration: description, currency: code, pin,
+            });
+        if (res.success) {
+            setShowPin(false); onRefresh();
+            setDone({ ok: true, reference: res.data?.reference || res.data?.data?.reference });
+        } else if (isPinError(res.code)) { setPinError(res.error || 'Incorrect PIN. Please try again.'); }
+        else { setShowPin(false); setError(res.error || (isCrypto ? 'Withdrawal failed' : 'Transfer failed')); }
+        setPinProcessing(false);
     };
+
+    if (done) return (
+        <TxResultScreen ok={done.ok} reference={done.reference} onClose={onClose}
+            title={isCrypto ? 'Withdrawal Submitted' : 'Transfer Sent'}
+            message={isCrypto
+                ? `Your ${code} withdrawal is being processed. You'll be notified once it's confirmed on-chain.`
+                : `${amount} ${code} is on its way to the recipient.`} />
+    );
 
     if (!walletId || balance <= 0) {
         return (
@@ -1282,11 +1305,21 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                 </div>
             </div>
 
-            <button onClick={handleWithdraw}
+            <button onClick={() => { setPinError(''); setShowPin(true); }}
                 disabled={loading || !recipient || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > balance || (isCrypto && !network) || (!isCrypto && !selectedBank)}
                 className="w-full py-4 bg-danger hover:bg-danger/90 text-white font-bold rounded-xl shadow-lg shadow-danger/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : `Withdraw ${code}`}
+                {`Withdraw ${code}`}
             </button>
+
+            <PinModal
+                open={showPin}
+                onClose={() => setShowPin(false)}
+                onConfirm={handleWithdraw}
+                processing={pinProcessing}
+                errorMessage={pinError}
+                title={`Authorize ${code} Withdrawal`}
+                description={`Enter your 4-digit PIN to withdraw ${amount || ''} ${code}.`}
+            />
         </div>
     );
 };
@@ -1298,17 +1331,28 @@ const TransferForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
     const [description, setDescription] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [showPin, setShowPin] = useState(false);
+    const [pinError, setPinError] = useState('');
+    const [pinProcessing, setPinProcessing] = useState(false);
 
     const balance = balanceMap[code]?.balance || 0;
     const isCrypto = type === 'crypto';
 
-    const handleTransfer = async () => {
-        setLoading(true); setError(null);
-        const res = await walletService.transfer(recipient, parseFloat(amount), code, description);
-        if (res.success) { onRefresh(); onClose(); }
-        else setError(res.error || 'Transfer failed');
-        setLoading(false);
+    const [done, setDone] = useState(null);
+
+    const handleTransfer = async (pin) => {
+        setPinProcessing(true); setPinError(''); setError(null);
+        const res = await walletService.transfer(recipient, parseFloat(amount), code, description, pin);
+        if (res.success) { setShowPin(false); onRefresh(); setDone({ ok: true }); }
+        else if (isPinError(res.code)) { setPinError(res.error || 'Incorrect PIN. Please try again.'); }
+        else { setShowPin(false); setError(res.error || 'Transfer failed'); }
+        setPinProcessing(false);
     };
+
+    if (done) return (
+        <TxResultScreen ok onClose={onClose} title="Transfer Sent"
+            message={`${amount} ${code} has been sent to ${recipient}.`} />
+    );
 
     if (balance <= 0) {
         return (
@@ -1362,11 +1406,21 @@ const TransferForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                 </div>
             </div>
 
-            <button onClick={handleTransfer}
+            <button onClick={() => { setPinError(''); setShowPin(true); }}
                 disabled={loading || !recipient || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > balance}
                 className="w-full py-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : `Send ${code}`}
+                {`Send ${code}`}
             </button>
+
+            <PinModal
+                open={showPin}
+                onClose={() => setShowPin(false)}
+                onConfirm={handleTransfer}
+                processing={pinProcessing}
+                errorMessage={pinError}
+                title={`Authorize ${code} Transfer`}
+                description={`Enter your 4-digit PIN to send ${amount || ''} ${code}.`}
+            />
         </div>
     );
 };
@@ -1380,6 +1434,9 @@ const ExternalTransferForm = ({ code, type, balanceMap, onClose, onRefresh }) =>
     const [description, setDescription] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [showPin, setShowPin] = useState(false);
+    const [pinError, setPinError] = useState('');
+    const [pinProcessing, setPinProcessing] = useState(false);
 
     // Bank transfer states (fiat)
     const [banks, setBanks] = useState([]);
@@ -1420,28 +1477,31 @@ const ExternalTransferForm = ({ code, type, balanceMap, onClose, onRefresh }) =>
         resolve();
     }, [recipient, selectedBank, code, isCrypto]);
 
-    const handleExternalTransfer = async () => {
-        setLoading(true); setError(null);
-        try {
-            if (isCrypto) {
-                const res = await cryptoService.withdraw({
-                    coin: code, address: recipient, amount: parseFloat(amount), network, memo: description,
-                });
-                if (res.success) { onRefresh(); onClose(); }
-                else setError(res.error || 'Withdrawal failed');
-            } else {
-                const res = await transferService.sendTransfer({
-                    wallet_id: walletId, bank_code: selectedBank, account_number: recipient,
-                    account_name: accountName, amount: parseFloat(amount), narration: description, currency: code,
-                });
-                if (res.success) { onRefresh(); onClose(); }
-                else setError(res.error || 'Transfer failed');
-            }
-        } catch (e) {
-            setError(e.message || 'Something went wrong');
-        }
-        setLoading(false);
+    const [done, setDone] = useState(null);
+
+    const handleExternalTransfer = async (pin) => {
+        setPinProcessing(true); setPinError(''); setError(null);
+        const res = isCrypto
+            ? await cryptoService.withdraw({ coin: code, address: recipient, amount: parseFloat(amount), network, memo: description, pin })
+            : await transferService.sendTransfer({
+                wallet_id: walletId, bank_code: selectedBank, account_number: recipient,
+                account_name: accountName, amount: parseFloat(amount), narration: description, currency: code, pin,
+            });
+        if (res.success) {
+            setShowPin(false); onRefresh();
+            setDone({ ok: true, reference: res.data?.reference || res.data?.data?.reference });
+        } else if (isPinError(res.code)) { setPinError(res.error || 'Incorrect PIN. Please try again.'); }
+        else { setShowPin(false); setError(res.error || (isCrypto ? 'Withdrawal failed' : 'Transfer failed')); }
+        setPinProcessing(false);
     };
+
+    if (done) return (
+        <TxResultScreen ok={done.ok} reference={done.reference} onClose={onClose}
+            title={isCrypto ? 'Withdrawal Submitted' : 'Transfer Sent'}
+            message={isCrypto
+                ? `Your ${code} withdrawal is being processed. You'll be notified once it's confirmed on-chain.`
+                : `${amount} ${code} is on its way to the recipient.`} />
+    );
 
     if (balance <= 0) {
         return (
@@ -1541,11 +1601,21 @@ const ExternalTransferForm = ({ code, type, balanceMap, onClose, onRefresh }) =>
                 </div>
             </div>
 
-            <button onClick={handleExternalTransfer}
+            <button onClick={() => { setPinError(''); setShowPin(true); }}
                 disabled={loading || !recipient || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > balance || (isCrypto && !network) || (!isCrypto && !selectedBank)}
                 className="w-full py-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : `Transfer ${code}`}
+                {`Transfer ${code}`}
             </button>
+
+            <PinModal
+                open={showPin}
+                onClose={() => setShowPin(false)}
+                onConfirm={handleExternalTransfer}
+                processing={pinProcessing}
+                errorMessage={pinError}
+                title={`Authorize ${code} ${isCrypto ? 'Withdrawal' : 'Transfer'}`}
+                description={`Enter your 4-digit PIN to send ${amount || ''} ${code}.`}
+            />
         </div>
     );
 };

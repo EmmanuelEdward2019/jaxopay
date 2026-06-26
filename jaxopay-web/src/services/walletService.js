@@ -40,17 +40,18 @@ const walletService = {
   },
 
   // P2P transfer between users
-  transfer: async (recipientEmail, amount, currency, description = '') => {
+  transfer: async (recipientEmail, amount, currency, description = '', pin) => {
     try {
       const response = await apiClient.post('/wallets/transfer', {
         recipient_email: recipientEmail,
         amount,
         currency,
         description,
+        pin,
       });
       return { success: true, data: response.data ?? response };
     } catch (error) {
-      return { success: false, error: error.message || 'Transfer failed' };
+      return { success: false, error: error.message || 'Transfer failed', code: error.code };
     }
   },
 

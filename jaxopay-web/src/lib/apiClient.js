@@ -274,6 +274,7 @@ apiClient.interceptors.response.use(
     const errorData = {
       message: friendlyMessage,
       status: status,
+      code: error.response?.data?.code,
       data: error.response?.data,
     };
 

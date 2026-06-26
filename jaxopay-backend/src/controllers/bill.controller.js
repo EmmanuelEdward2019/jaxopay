@@ -5,6 +5,7 @@ import emailService from '../services/email.service.js';
 import VTpassAdapter from '../orchestration/adapters/utilities/VTpassAdapter.js';
 import StrowalletBillsAdapter from '../orchestration/adapters/utilities/StrowalletBillsAdapter.js';
 import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
+import { verifyTransactionPin } from '../services/transactionPin.service.js';
 
 const vtpass = new VTpassAdapter();
 const strowalletBills = new StrowalletBillsAdapter();
@@ -523,6 +524,9 @@ export const payBill = catchAsync(async (req, res) => {
   if (!amount || parseFloat(amount) <= 0) {
     throw new AppError('A valid amount is required', 400);
   }
+
+  // Require the transaction PIN as the final authorization step.
+  await verifyTransactionPin(req.user.id, req.body.pin);
 
   const reference = `JAXO-BILL-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   let billingAmountInNaira = parseFloat(amount);

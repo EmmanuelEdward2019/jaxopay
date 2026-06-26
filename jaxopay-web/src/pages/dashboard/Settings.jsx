@@ -23,10 +23,12 @@ import {
     Copy,
     RefreshCw
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
 import authService from '../../services/authService';
 import userService from '../../services/userService';
+import pinService from '../../services/pinService';
 
 const Settings = () => {
     const { user, logout, setUser } = useAuthStore();
@@ -37,6 +39,9 @@ const Settings = () => {
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [show2FAModal, setShow2FAModal] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [showPinModal, setShowPinModal] = useState(false);
+    const [pinIsSet, setPinIsSet] = useState(false);
+    const [searchParams] = useSearchParams();
 
     // Data
     const [sessions, setSessions] = useState([]);
@@ -60,6 +65,15 @@ const Settings = () => {
             fetchSessions();
         }
     }, [activeSection]);
+
+    // Deep-link: /dashboard/settings?tab=security opens the Security section.
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab) setActiveSection(tab);
+    }, [searchParams]);
+
+    const loadPinStatus = () => pinService.getStatus().then((r) => { if (r.success) setPinIsSet(r.data.is_set); });
+    useEffect(() => { loadPinStatus(); }, []);
 
     // Update local state when user updates
     useEffect(() => {
@@ -303,6 +317,28 @@ const Settings = () => {
                                 <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
                             </button>
 
+                            {/* Transaction PIN */}
+                            <button
+                                onClick={() => setShowPinModal(true)}
+                                className="w-full flex items-center justify-between py-4 border-b border-border group"
+                            >
+                                <div className="flex items-center gap-4">
+                                    <div className="p-2 bg-primary/10 rounded-lg">
+                                        <Lock className="w-5 h-5 text-primary" />
+                                    </div>
+                                    <div className="text-left">
+                                        <p className="font-semibold text-foreground group-hover:text-primary transition-colors">Transaction PIN</p>
+                                        <p className="text-sm text-muted-foreground">{pinIsSet ? 'Change your 4-digit transaction PIN' : 'Set a 4-digit PIN to authorize payments'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full uppercase tracking-wide ${pinIsSet ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
+                                        {pinIsSet ? 'Set' : 'Not set'}
+                                    </span>
+                                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
+                                </div>
+                            </button>
+
                             {/* 2FA */}
                             <button
                                 onClick={() => setShow2FAModal(true)}
@@ -506,6 +542,94 @@ const Settings = () => {
             {showPasswordModal && <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />}
             {show2FAModal && <TwoFactorModal onClose={() => setShow2FAModal(false)} user={user} setUser={setUser} />}
             {showDeleteModal && <DeleteAccountModal onClose={() => setShowDeleteModal(false)} />}
+            {showPinModal && (
+                <TransactionPinModal
+                    isSet={pinIsSet}
+                    onClose={() => setShowPinModal(false)}
+                    onSaved={() => { setShowPinModal(false); loadPinStatus(); }}
+                />
+            )}
+        </div>
+    );
+};
+
+// Set / Change Transaction PIN Modal
+const TransactionPinModal = ({ isSet, onClose, onSaved }) => {
+    const [pin, setPin] = useState('');
+    const [confirmPin, setConfirmPin] = useState('');
+    const [currentPin, setCurrentPin] = useState('');
+    const [password, setPassword] = useState('');
+    const [useCurrentPin, setUseCurrentPin] = useState(true);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    const onlyDigits = (v, n = 4) => v.replace(/\D/g, '').slice(0, n);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError(null);
+        if (!/^\d{4}$/.test(pin)) return setError('PIN must be exactly 4 digits');
+        if (pin !== confirmPin) return setError('PINs do not match');
+
+        setLoading(true);
+        let result;
+        if (isSet) {
+            const payload = { new_pin: pin };
+            if (useCurrentPin) payload.current_pin = currentPin; else payload.password = password;
+            result = await pinService.changePin(payload);
+        } else {
+            result = await pinService.setPin(pin, password);
+        }
+        setLoading(false);
+        if (result.success) onSaved();
+        else setError(result.error || 'Could not save your PIN');
+    };
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-card w-full max-w-sm rounded-3xl shadow-2xl border border-border p-6 relative">
+                <button onClick={onClose} className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+                <h3 className="text-lg font-bold text-foreground mb-1">{isSet ? 'Change Transaction PIN' : 'Set Transaction PIN'}</h3>
+                <p className="text-sm text-muted-foreground mb-6">{isSet ? 'Verify your identity, then choose a new 4-digit PIN.' : 'Choose a 4-digit PIN to authorize payments and withdrawals.'}</p>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    {isSet ? (
+                        <>
+                            <div className="flex gap-2 text-xs font-bold">
+                                <button type="button" onClick={() => setUseCurrentPin(true)} className={`flex-1 py-2 rounded-lg ${useCurrentPin ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>Use current PIN</button>
+                                <button type="button" onClick={() => setUseCurrentPin(false)} className={`flex-1 py-2 rounded-lg ${!useCurrentPin ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>Use password</button>
+                            </div>
+                            {useCurrentPin ? (
+                                <input type="password" inputMode="numeric" placeholder="Current PIN" value={currentPin}
+                                    onChange={(e) => setCurrentPin(onlyDigits(e.target.value))}
+                                    className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30 tracking-[0.5em] text-center" />
+                            ) : (
+                                <input type="password" placeholder="Account password" value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30" />
+                            )}
+                        </>
+                    ) : (
+                        <input type="password" placeholder="Account password" value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30" />
+                    )}
+
+                    <input type="password" inputMode="numeric" placeholder={isSet ? 'New 4-digit PIN' : '4-digit PIN'} value={pin}
+                        onChange={(e) => setPin(onlyDigits(e.target.value))}
+                        className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30 tracking-[0.5em] text-center" />
+                    <input type="password" inputMode="numeric" placeholder="Confirm PIN" value={confirmPin}
+                        onChange={(e) => setConfirmPin(onlyDigits(e.target.value))}
+                        className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30 tracking-[0.5em] text-center" />
+
+                    {error && <p className="text-sm text-danger flex items-center gap-2"><AlertTriangle className="w-4 h-4 shrink-0" />{error}</p>}
+
+                    <button type="submit" disabled={loading}
+                        className="w-full py-3.5 bg-primary text-white rounded-2xl font-bold hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                        {loading ? (<><RefreshCw className="w-5 h-5 animate-spin" /> Saving…</>) : (isSet ? 'Change PIN' : 'Set PIN')}
+                    </button>
+                </form>
+            </div>
         </div>
     );
 };

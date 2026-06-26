@@ -93,7 +93,7 @@ const cryptoService = {
       const response = await apiClient.post('/crypto/withdraw', payload);
       return { success: true, data: response.data };
     } catch (error) {
-      return { success: false, error: error.message };
+      return { success: false, error: error.message, code: error.code };
     }
   },
 

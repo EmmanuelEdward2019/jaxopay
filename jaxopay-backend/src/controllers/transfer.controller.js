@@ -4,6 +4,7 @@ import logger from '../utils/logger.js';
 import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js';
 import { getSpendableBalance } from '../utils/walletBalance.js';
 import { getKorapayErrorDetails, getKorapayTransferFailureMessage } from '../utils/korapay.js';
+import { verifyTransactionPin } from '../services/transactionPin.service.js';
 
 const korapay = new KorapayAdapter();
 
@@ -116,6 +117,9 @@ export const sendTransfer = catchAsync(async (req, res) => {
     if (!wallet_id || !bank_code || !account_number || !account_name || !Number.isFinite(amountValue) || amountValue <= 0) {
         throw new AppError('wallet_id, bank_code, account_number, account_name, and amount are required', 400);
     }
+
+    // Require the transaction PIN as the final authorization step.
+    await verifyTransactionPin(req.user.id, req.body.pin);
 
     // Supported fiat withdrawal currencies via Korapay disbursements
     const DISBURSE_SUPPORTED = new Set(['NGN', 'KES', 'GHS', 'ZAR']);

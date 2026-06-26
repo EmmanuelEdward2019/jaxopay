@@ -4,6 +4,7 @@ import logger from '../utils/logger.js';
 import cache, { CacheTTL } from '../utils/cache.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
+import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance, convertCurrency } from '../utils/financial.js';
 import { getSpendableBalance } from '../utils/walletBalance.js';
 import { getQuidaxErrorMessage } from '../utils/quidax.js';
@@ -893,6 +894,9 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
   if (!Number.isFinite(amountValue) || amountValue <= 0) {
     throw new AppError('Amount must be greater than zero', 400);
   }
+
+  // Require the transaction PIN as the final authorization step.
+  await verifyTransactionPin(req.user.id, req.body.pin);
 
   const coinUpper = coin.toUpperCase();
   const reference = createCryptoWithdrawalReference(req.user.id);

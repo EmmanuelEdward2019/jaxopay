@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import billService from '../../services/billService';
 import walletService from '../../services/walletService';
+import beneficiaryService from '../../services/beneficiaryService';
+import PinModal from '../../components/common/PinModal';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import { useRecentInputs } from '../../hooks/useRecentInputs';
 
@@ -76,6 +78,9 @@ const Bills = () => {
     const [paymentResult, setPaymentResult] = useState(null);
     const [meterType, setMeterType] = useState('prepaid'); // prepaid | postpaid (electricity)
     const [providerSearch, setProviderSearch] = useState('');
+    const [showPin, setShowPin] = useState(false);
+    const [pinError, setPinError] = useState('');
+    const [pinProcessing, setPinProcessing] = useState(false);
     const [dataPlanTab, setDataPlanTab] = useState('All'); // For categorizing data plans
     const { recentInputs, addRecentInput } = useRecentInputs(selectedCategory?.id);
 
@@ -183,10 +188,11 @@ const Bills = () => {
         setValidating(false);
     };
 
-    const handlePayBill = async () => {
+    const handlePayBill = async (pin) => {
         if (!amount || !selectedWallet) return;
         if (selectedCategory?.requiresValidation && !validatedAccount) return;
-        setLoading(true);
+        setPinProcessing(true);
+        setPinError('');
         setError(null);
 
         const wallet = wallets.find(w => w.id === selectedWallet);
@@ -204,6 +210,7 @@ const Bills = () => {
                 : (selectedVariation?.variation_code || ''),
             bill_type: selectedCategory?.id === 'electricity' ? meterType : undefined,
             phone: accountNumber,
+            pin,
             metadata: {
                 customer_name: validatedAccount?.customer_name,
                 meter_type: meterType,
@@ -213,14 +220,36 @@ const Bills = () => {
         });
 
         if (result.success) {
+            setShowPin(false);
             setPaymentResult(result.data?.data || result.data);
             addRecentInput(accountNumber);
+            // Save the biller account as a reusable beneficiary (best-effort).
+            saveBillBeneficiary();
             setStep(5);
             fetchHistory();
+        } else if (['PIN_INCORRECT', 'PIN_LOCKED', 'PIN_NOT_SET', 'PIN_REQUIRED'].includes(result.code)) {
+            setPinError(result.error || 'Incorrect PIN. Please try again.');
         } else {
+            setShowPin(false);
             setError(result.message || result.error || 'Payment failed. Please try again.');
         }
-        setLoading(false);
+        setPinProcessing(false);
+    };
+
+    // Map a bill category to a beneficiary type and persist it for reuse.
+    const saveBillBeneficiary = () => {
+        const typeMap = { airtime: 'airtime', data: 'data', cable: 'cable', electricity: 'electricity' };
+        const type = typeMap[selectedCategory?.id];
+        if (!type || !accountNumber) return;
+        beneficiaryService.create({
+            type,
+            label: validatedAccount?.customer_name || selectedProvider?.name || accountNumber,
+            value: accountNumber,
+            provider: selectedProvider?.name,
+            provider_code: selectedProvider?.id,
+            account_name: validatedAccount?.customer_name,
+            metadata: { meter_type: selectedCategory?.id === 'electricity' ? meterType : undefined },
+        });
     };
 
     const resetFlow = () => {
@@ -643,11 +672,11 @@ const Bills = () => {
                                         Back
                                     </button>
                                     <button
-                                        onClick={handlePayBill}
+                                        onClick={() => { setPinError(''); setShowPin(true); }}
                                         disabled={loading}
                                         className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
                                     >
-                                        {loading ? <><RefreshCw className="w-4 h-4 animate-spin" /> Processing...</> : 'Confirm & Pay'}
+                                        Confirm & Pay
                                     </button>
                                 </div>
                             </motion.div>
@@ -715,6 +744,16 @@ const Bills = () => {
                     </div>
                 </div>
             </div>
+
+            <PinModal
+                open={showPin}
+                onClose={() => setShowPin(false)}
+                onConfirm={handlePayBill}
+                processing={pinProcessing}
+                errorMessage={pinError}
+                title="Authorize Payment"
+                description={`Enter your 4-digit PIN to pay ${amount ? formatCurrency(parseFloat(amount), 'NGN') : ''}.`}
+            />
         </div >
     );
 };

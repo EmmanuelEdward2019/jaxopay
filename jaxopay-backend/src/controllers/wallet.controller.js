@@ -6,6 +6,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance } from '../utils/financial.js';
 import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
+import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import KorapayAdapter from '../orchestration/adapters/fiat/KorapayAdapter.js';
 
 const buildApiV1Url = (path) => {
@@ -364,6 +365,9 @@ export const transferBetweenWallets = catchAsync(async (req, res) => {
   // 1. Validate amount using decimal.js
   const amountDecimal = validateAmount(amount, 0.01, 10000000);
   const amountForDB = formatForDB(amountDecimal);
+
+  // Require the transaction PIN as the final authorization step.
+  await verifyTransactionPin(req.user.id, req.body.pin);
 
   // 2. Comprehensive Compliance Check
   await complianceEngine.validateTransaction(req.user.id, parseFloat(amountDecimal.toString()), 'INTERNAL_TRANSFER');

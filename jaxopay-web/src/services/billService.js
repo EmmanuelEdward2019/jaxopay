@@ -56,7 +56,7 @@ const billService = {
       const response = await apiClient.post('/bills/pay', billData, { timeout: 120000 });
       return { success: true, data: response.data ?? response };
     } catch (error) {
-      return { success: false, error: error.message || 'Bill payment failed' };
+      return { success: false, error: error.message || 'Bill payment failed', code: error.code };
     }
   },
 

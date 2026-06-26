@@ -48,6 +48,7 @@ import {
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import cryptoService from '../../services/cryptoService';
+import PinModal from '../../components/common/PinModal';
 import walletService from '../../services/walletService';
 import { formatCurrency } from '../../utils/formatters';
 import TradeDashboard from '../../components/crypto/TradeDashboard';
@@ -86,6 +87,9 @@ const Exchange = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
+    const [showPin, setShowPin] = useState(false);
+    const [pinError, setPinError] = useState('');
+    const [pinProcessing, setPinProcessing] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [history, setHistory] = useState([]);
     const [assets, setAssets] = useState({ fiat: [], crypto: [] });
@@ -561,12 +565,12 @@ const Exchange = () => {
         setFetchingDeposit(false);
     };
 
-    const handleWithdraw = async () => {
+    const handleWithdraw = async (pin) => {
         if (!withdrawAddress || !withdrawAmount || !withdrawNetwork) {
             setError('Please fill in all required fields');
             return;
         }
-        
+
         if (parseFloat(withdrawAmount) <= 0) {
             setError('Amount must be greater than 0');
             return;
@@ -577,33 +581,35 @@ const Exchange = () => {
             return;
         }
         
-        setLoading(true);
+        setPinProcessing(true);
+        setPinError('');
         setError(null);
         setSuccess(null);
 
-        try {
-            const result = await cryptoService.withdraw({
-                coin: withdrawCoin,
-                network: withdrawNetwork,
-                address: withdrawAddress,
-                amount: parseFloat(withdrawAmount),
-                memo: withdrawMemo
-            });
+        const result = await cryptoService.withdraw({
+            coin: withdrawCoin,
+            network: withdrawNetwork,
+            address: withdrawAddress,
+            amount: parseFloat(withdrawAmount),
+            memo: withdrawMemo,
+            pin,
+        });
 
-            if (result.success) {
-                setSuccess('Withdrawal request submitted successfully!');
-                setWithdrawAmount('');
-                setWithdrawAddress('');
-                setWithdrawMemo('');
-                setWithdrawReceiveAmount('');
-                fetchWallets();
-            } else {
-                setError(result.error);
-            }
-        } catch (err) {
-            setError('Withdrawal failed: ' + err.message);
+        if (result.success) {
+            setShowPin(false);
+            setSuccess('Withdrawal request submitted successfully!');
+            setWithdrawAmount('');
+            setWithdrawAddress('');
+            setWithdrawMemo('');
+            setWithdrawReceiveAmount('');
+            fetchWallets();
+        } else if (['PIN_INCORRECT', 'PIN_LOCKED', 'PIN_NOT_SET', 'PIN_REQUIRED'].includes(result.code)) {
+            setPinError(result.error || 'Incorrect PIN. Please try again.');
+        } else {
+            setShowPin(false);
+            setError(result.error || 'Withdrawal failed');
         }
-        setLoading(false);
+        setPinProcessing(false);
     };
 
     return (
@@ -1121,11 +1127,11 @@ const Exchange = () => {
                                 </div>
 
                                 <button
-                                    onClick={handleWithdraw}
+                                    onClick={() => { setPinError(''); setShowPin(true); }}
                                     disabled={loading || !withdrawAmount || !withdrawAddress || !withdrawNetwork}
                                     className="w-full py-6 bg-primary hover:bg-primary/90 text-white font-black text-lg rounded-3xl shadow-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-4"
                                 >
-                                    {loading ? <RefreshCw className="w-8 h-8 animate-spin" /> : 'Confirm Withdrawal'}
+                                    Confirm Withdrawal
                                 </button>
                             </div>
                         </motion.div>
@@ -1292,6 +1298,16 @@ const Exchange = () => {
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: #E5E7EB; border-radius: 20px; }
                 .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; }
             `}</style>
+
+            <PinModal
+                open={showPin}
+                onClose={() => setShowPin(false)}
+                onConfirm={handleWithdraw}
+                processing={pinProcessing}
+                errorMessage={pinError}
+                title="Authorize Withdrawal"
+                description={`Enter your 4-digit PIN to withdraw ${withdrawAmount || ''} ${withdrawCoin || ''}.`}
+            />
         </div>
     );
 };

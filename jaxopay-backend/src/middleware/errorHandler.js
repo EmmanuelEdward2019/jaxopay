@@ -2,9 +2,10 @@ import logger from '../utils/logger.js';
 
 // Custom error class
 export class AppError extends Error {
-  constructor(message, statusCode, isOperational = true) {
+  constructor(message, statusCode, code = null, isOperational = true) {
     super(message);
     this.statusCode = statusCode;
+    this.code = code; // optional machine-readable code (e.g. PIN_NOT_SET)
     this.isOperational = isOperational;
     this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
     Error.captureStackTrace(this, this.constructor);
@@ -73,6 +74,8 @@ export const errorHandler = (err, req, res, next) => {
     return res.status(err.statusCode).json({
       success: false,
       status: err.status,
+      message: err.message,
+      code: err.code || undefined,
       error: {
         message: err.message,
         stack: err.stack,
@@ -88,6 +91,7 @@ export const errorHandler = (err, req, res, next) => {
       success: false,
       status: err.status,
       message: err.message,
+      code: err.code || undefined,
     });
   }
 
@@ -115,8 +119,7 @@ export const handleValidationError = (errors) => {
   
   return new AppError(
     'Validation failed',
-    400,
-    true
+    400
   );
 };
 

@@ -8,17 +8,19 @@ import {
 } from 'lucide-react';
 import apiClient from '../../lib/apiClient';
 import walletService from '../../services/walletService';
+import beneficiaryService from '../../services/beneficiaryService';
+import PinModal from '../../components/common/PinModal';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
-const BENEFICIARY_KEY = 'jaxopay_beneficiaries';
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-const loadBeneficiaries = () => {
-    try { return JSON.parse(localStorage.getItem(BENEFICIARY_KEY) || '[]'); }
-    catch { return []; }
-};
-const saveBeneficiaries = (list) =>
-    localStorage.setItem(BENEFICIARY_KEY, JSON.stringify(list));
+// Map a server saved_beneficiary (type=bank_account) to this page's local shape.
+const mapBankBeneficiary = (r) => ({
+    id: r.id,
+    label: r.label || r.account_name,
+    account_name: r.account_name,
+    account_number: r.value,
+    bank_code: r.provider_code,
+    bank_name: r.provider,
+});
 
 const statusStyle = (status) => {
     const s = status?.toLowerCase();
@@ -154,7 +156,7 @@ const Transfer = () => {
     const [wallets, setWallets] = useState([]);
     const [selectedWallet, setSelectedWallet] = useState('');
     const [history, setHistory] = useState([]);
-    const [beneficiaries, setBeneficiaries] = useState(loadBeneficiaries());
+    const [beneficiaries, setBeneficiaries] = useState([]);
     const [addingBeneficiary, setAddingBeneficiary] = useState(false);
     const [beneficiaryLabel, setBeneficiaryLabel] = useState('');
     const [showBeneficiaries, setShowBeneficiaries] = useState(false);
@@ -163,12 +165,22 @@ const Transfer = () => {
     const [error, setError] = useState(null);
     const [result, setResult] = useState(null);
     const [verifying, setVerifying] = useState(false);
+    // Transaction PIN
+    const [showPin, setShowPin] = useState(false);
+    const [pinError, setPinError] = useState('');
+    const [pinProcessing, setPinProcessing] = useState(false);
 
     useEffect(() => {
         fetchBanks();
         fetchWallets();
         fetchHistory();
+        fetchBeneficiaries();
     }, []);
+
+    const fetchBeneficiaries = async () => {
+        const res = await beneficiaryService.list('bank_account');
+        if (res.success) setBeneficiaries((res.data || []).map(mapBankBeneficiary));
+    };
 
     // Manually re-check a payout's status against the provider.
     const checkStatus = async () => {
@@ -261,9 +273,10 @@ const Transfer = () => {
         setResolving(false);
     };
 
-    const handleSend = async () => {
+    const handleSend = async (pin) => {
         if (!selectedBank || !accountNumber || !accountName || !amount || !selectedWallet) return;
-        setLoading(true);
+        setPinProcessing(true);
+        setPinError('');
         setError(null);
         try {
             const body = await apiClient.post('/transfers/send', {
@@ -275,31 +288,37 @@ const Transfer = () => {
                 amount: parseFloat(amount),
                 currency: 'NGN',
                 narration: narration || `Transfer to ${accountName}`,
+                pin,
             });
+            setShowPin(false);
             setResult(body?.data);
             setStep(4);
             fetchHistory();
         } catch (e) {
-            setError(e.message || 'Transfer failed. Please try again.');
+            const code = e.code || '';
+            if (['PIN_INCORRECT', 'PIN_LOCKED', 'PIN_NOT_SET', 'PIN_REQUIRED'].includes(code)) {
+                setPinError(e.message || 'Incorrect PIN. Please try again.');
+            } else {
+                setShowPin(false);
+                setError(e.message || 'Transfer failed. Please try again.');
+            }
         }
-        setLoading(false);
+        setPinProcessing(false);
     };
 
-    const handleAddBeneficiary = () => {
+    const handleAddBeneficiary = async () => {
         if (!accountName || !selectedBank) return;
         const label = beneficiaryLabel.trim() || accountName;
-        const entry = {
-            id: `${Date.now()}`,
+        await beneficiaryService.create({
+            type: 'bank_account',
             label,
+            value: accountNumber,
+            provider: selectedBank.name,
+            provider_code: selectedBank.code,
             account_name: accountName,
-            account_number: accountNumber,
-            bank_code: selectedBank.code,
-            bank_name: selectedBank.name,
-            added_at: new Date().toISOString(),
-        };
-        const updated = [entry, ...beneficiaries.filter(b => b.account_number !== accountNumber)];
-        saveBeneficiaries(updated);
-        setBeneficiaries(updated);
+            currency: 'NGN',
+        });
+        await fetchBeneficiaries();
         setAddingBeneficiary(false);
         setBeneficiaryLabel('');
     };
@@ -314,10 +333,10 @@ const Transfer = () => {
         }
     };
 
-    const handleDeleteBeneficiary = (id) => {
-        const updated = beneficiaries.filter(b => b.id !== id);
-        saveBeneficiaries(updated);
-        setBeneficiaries(updated);
+    const handleDeleteBeneficiary = async (id) => {
+        setBeneficiaries((prev) => prev.filter(b => b.id !== id));
+        await beneficiaryService.remove(id);
+        fetchBeneficiaries();
     };
 
     // Recent banks from transfer history
@@ -682,11 +701,11 @@ const Transfer = () => {
                                         Back
                                     </button>
                                     <button
-                                        onClick={handleSend}
+                                        onClick={() => { setPinError(''); setShowPin(true); }}
                                         disabled={loading}
                                         className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
                                     >
-                                        {loading ? <><RefreshCw className="w-4 h-4 animate-spin" /> Sending...</> : <><Send className="w-4 h-4" /> Send Now</>}
+                                        <Send className="w-4 h-4" /> Send Now
                                     </button>
                                 </div>
                             </motion.div>
@@ -838,6 +857,16 @@ const Transfer = () => {
                     </div>
                 </div>
             </div>
+
+            <PinModal
+                open={showPin}
+                onClose={() => setShowPin(false)}
+                onConfirm={handleSend}
+                processing={pinProcessing}
+                errorMessage={pinError}
+                title="Authorize Transfer"
+                description={`Enter your 4-digit PIN to send ${amount ? formatCurrency(parseFloat(amount), 'NGN') : ''}.`}
+            />
         </div>
     );
 };
