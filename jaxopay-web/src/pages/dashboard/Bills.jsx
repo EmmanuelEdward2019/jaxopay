@@ -53,11 +53,11 @@ const BILL_CATEGORIES = [
     {
         id: 'education', name: 'Education', icon: GraduationCap,
         color: 'bg-cyan-100 text-cyan-600',
-        fieldLabel: 'Pin / Reg Number',
-        fieldPlaceholder: 'Enter your pin or reg number',
+        fieldLabel: 'Phone Number',
+        fieldPlaceholder: 'Phone to receive the PIN, e.g. 08012345678',
         fieldType: 'text',
         requiresValidation: false,
-        description: 'Pay WAEC, JAMB, and other educational fees',
+        description: 'Buy WAEC, NECO & JAMB result-checker / ePINs',
     },
 ];
 
@@ -286,6 +286,7 @@ const Bills = () => {
 
     // Helper to categorize data plans
     const getPlanCategory = (plan) => {
+        if (plan.sme) return 'SME';
         // Strip spaces and symbols to match variations like "1 day", "7days", "1-Day" easily
         const name = (plan.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         const price = parseFloat((plan.amount ?? plan.variation_amount ?? plan.price) || 0);
@@ -312,7 +313,7 @@ const Bills = () => {
         return acc;
     }, {}) : {};
 
-    const availableTabs = ['All', 'Daily', 'Weekly', 'Monthly', 'Yearly', 'Others'].filter(
+    const availableTabs = ['All', 'Daily', 'Weekly', 'Monthly', 'Yearly', 'SME', 'Others'].filter(
         tab => tab === 'All' || (categorizedPlans[tab] && categorizedPlans[tab].length > 0)
     );
 

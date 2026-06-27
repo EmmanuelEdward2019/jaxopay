@@ -405,9 +405,15 @@ class StrowalletBillsAdapter {
    * POST https://strowallet.com/api/educational/request/ (e.g. WAEC checker)
    */
   async buyEducational(p) {
+    const serviceName = String(p.service_name || p.service || 'waec').toLowerCase();
+    const variation = String(p.variation_code || p.variation || 'waecdirect');
     const data = await this._postForm('/api/educational/request/', {
-      service: p.service || p.service_type,
-      service_type: p.service_type || p.service,
+      // documented params
+      service_name: serviceName,
+      variation_code: variation,
+      // legacy aliases kept for safety
+      service: serviceName,
+      service_type: serviceName,
       quantity: p.quantity != null ? String(p.quantity) : '1',
       amount: p.amount != null ? String(p.amount) : undefined,
       phone: p.phone,

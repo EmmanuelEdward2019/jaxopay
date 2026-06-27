@@ -38,11 +38,13 @@ export function computeFee(cfg, amount) {
 
 /** Fetch the active fee config for a transaction type (currency-specific first, then global). */
 export async function getFeeConfig(transactionType, currency = 'USD') {
+  // currency is an enum (currency_code) — compare as text to avoid invalid-enum casts.
   const r = await query(
     `SELECT * FROM fee_configurations
      WHERE transaction_type = $1 AND is_active = true
-       AND (currency = $2 OR currency IS NULL OR currency = '')
-     ORDER BY (currency = $2) DESC, (country IS NULL OR country = '') DESC
+       AND (currency::text = $2 OR currency IS NULL)
+     ORDER BY (currency::text = $2) DESC NULLS LAST,
+              (country IS NULL OR country = '') DESC
      LIMIT 1`,
     [transactionType, currency]
   );

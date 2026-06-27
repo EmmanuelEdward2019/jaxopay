@@ -66,19 +66,34 @@ function staticEducationProviders() {
   return [
     {
       id: 'waec',
-      name: 'WAEC Result Checker',
+      name: 'WAEC',
       image_url: null,
       convinience_fee: null,
       fields: ['phone'],
-      variations: [],
+      variations: [
+        { variation_code: 'waecdirect', name: 'WAEC Result Checker PIN', amount: 3500 },
+      ],
+    },
+    {
+      id: 'neco',
+      name: 'NECO',
+      image_url: null,
+      convinience_fee: null,
+      fields: ['phone'],
+      variations: [
+        { variation_code: 'neco', name: 'NECO Result Token', amount: 1300 },
+      ],
     },
     {
       id: 'jamb',
-      name: 'JAMB ePIN',
+      name: 'JAMB',
       image_url: null,
       convinience_fee: null,
       fields: ['phone'],
-      variations: [],
+      variations: [
+        { variation_code: 'utme', name: 'JAMB UTME ePIN', amount: 7700 },
+        { variation_code: 'de', name: 'JAMB Direct Entry ePIN', amount: 7700 },
+      ],
     },
   ];
 }
@@ -160,6 +175,26 @@ function mapSmePlansToProvider(payload) {
       variations,
     },
   ];
+}
+
+// Map SME data plans into Data-category variations (filtered by network).
+// SME variation codes are prefixed "sme:" so payBill routes them to buySmeData.
+function mapSmePlansToDataVariations(payload, network) {
+  const net = String(network || '').toLowerCase();
+  const list = coercePlanArray(payload);
+  return list
+    .filter((row) => {
+      const n = String(row.network ?? row.networkname ?? row.service ?? row.plan_network ?? '').toLowerCase();
+      if (!n) return true; // no network field → keep (label still shows SME)
+      if (n === net) return true;
+      return net === 'etisalat' && (n === '9mobile' || n === 'etisalat');
+    })
+    .map((row, i) => ({
+      variation_code: `sme:${row.id ?? row.plan_id ?? row.dataplan ?? row.code ?? `sme-${i}`}`,
+      name: `SME · ${String(row.name ?? row.plan_name ?? row.title ?? 'SME data')}`,
+      amount: row.amount ?? row.price ?? row.variation_amount ?? null,
+      sme: true,
+    }));
 }
 
 function mergeStrowalletFields(metadata, fields) {
@@ -288,6 +323,16 @@ export const getBillProviders = catchAsync(async (req, res) => {
       const swNet = net === '9mobile' ? 'etisalat' : net;
       const raw = await strowalletBills.getDataPlans(swNet);
       const variations = mapDataPlansToVariations(raw, swNet);
+
+      // Also fold SME data plans for this network into the Data category.
+      let smeVariations = [];
+      try {
+        const smeRaw = await strowalletBills.getSmePlans();
+        smeVariations = mapSmePlansToDataVariations(smeRaw, swNet);
+      } catch (e) {
+        logger.warn('[Bills] SME plans fetch failed (showing regular data only):', e.message || e);
+      }
+
       const providerId = net === '9mobile' ? '9mobile' : swNet;
       return res.status(200).json({
         success: true,
@@ -298,7 +343,7 @@ export const getBillProviders = catchAsync(async (req, res) => {
             image_url: null,
             convinience_fee: null,
             fields: ['phone'],
-            variations,
+            variations: [...variations, ...smeVariations],
           },
         ],
         source: 'strowallet',
@@ -674,17 +719,24 @@ export const payBill = catchAsync(async (req, res) => {
         }
         const net = inferStrowalletNetwork(provider_id);
         const swNet = net === '9mobile' ? 'etisalat' : net;
+
+        // SME plans are surfaced inside the Data category with an "sme:" prefixed code.
+        const isSme = String(variation_code).startsWith('sme:');
+        const planCode = isSme ? String(variation_code).slice(4) : variation_code;
+
         const fields = merge({
           phone: ph,
           network: swNet,
-          dataplan: variation_code,
-          variation_code,
+          dataplan: planCode,
+          ...(isSme ? {} : { variation_code }),
           amount: amt,
         });
-        const st = await strowalletBills.buyData(fields);
+        const st = isSme
+          ? await strowalletBills.buySmeData(fields)
+          : await strowalletBills.buyData(fields);
         if (!st.success) {
           await refundAndFail(
-            st.raw?.message || 'Data purchase was not successful. Your wallet has been refunded.'
+            st.raw?.message || `${isSme ? 'SME data' : 'Data'} purchase was not successful. Your wallet has been refunded.`
           );
         }
         providerStatus = 'completed';
@@ -769,8 +821,8 @@ export const payBill = catchAsync(async (req, res) => {
 
       if (cat === 'education') {
         const fields = merge({
-          service: variation_code || provider_id,
-          service_type: variation_code || provider_id,
+          service_name: provider_id,                       // waec | neco | jamb
+          variation_code: variation_code || 'waecdirect',
           quantity: metadata.quantity != null ? String(metadata.quantity) : '1',
           amount: amt,
           phone: ph,

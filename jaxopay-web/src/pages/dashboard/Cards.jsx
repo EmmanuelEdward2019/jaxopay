@@ -249,7 +249,7 @@ const Cards = () => {
                 <div>
                     <p className="text-primary font-medium">USD Virtual Cards</p>
                     <p className="text-blue-700 text-sm">
-                        Create reloadable or single-use USD virtual cards accepted worldwide. Cards are linked to your USD wallet.
+                        Create reloadable USD virtual cards accepted worldwide for online payments. Each card is funded from and linked to your USD wallet.
                     </p>
                 </div>
             </div>
