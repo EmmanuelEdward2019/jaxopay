@@ -4,6 +4,8 @@ import logger from '../utils/logger.js';
 import { sendSMS } from '../services/sms.service.js';
 import bcrypt from 'bcryptjs';
 import { providerRegistry } from '../orchestration/index.js';
+import { circuitBreakers } from '../utils/circuitBreaker.js';
+import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import * as kycNotify from '../services/kycNotification.service.js';
 
 /** Split stored `document_url` (plain URL or JSON { front, back }) for admin review UI. */
@@ -885,11 +887,15 @@ export const createFeeConfig = catchAsync(async (req, res) => {
 // Update fee configuration (admin only)
 export const updateFeeConfig = catchAsync(async (req, res) => {
   const { feeId } = req.params;
-  const { fee_value, min_fee, max_fee, is_active } = req.body;
+  const { fee_value, min_fee, max_fee, is_active, fee_type } = req.body;
 
   const updates = [];
   const params = [feeId];
 
+  if (fee_type !== undefined) {
+    params.push(fee_type);
+    updates.push(`fee_type = $${params.length}`);
+  }
   if (fee_value !== undefined) {
     params.push(fee_value);
     updates.push(`fee_value = $${params.length}`);
@@ -1338,14 +1344,85 @@ export const updateUserFeatureAccess = catchAsync(async (req, res) => {
 
 // Get Orchestration Status (super_admin/admin)
 export const getOrchestrationStatus = catchAsync(async (req, res) => {
-  const allProviders = providerRegistry.getAll();
-  const status = Object.keys(allProviders).map(type => ({
-    type,
-    adapters: Object.keys(allProviders[type]).map(name => ({
-      name,
-      status: allProviders[type][name].status
-    }))
-  }));
+  const env = process.env;
+  // A key counts as configured only if it's set and not a placeholder.
+  const isSet = (v) => !!v && String(v).trim() !== '' && !/your_|_here|changeme|xxxx/i.test(String(v));
 
-  res.status(200).json({ success: true, data: status });
+  const breakerState = (name) => {
+    try {
+      if (name === 'quidax') return quidax.getCircuitBreakerState?.()?.state || null;
+      return circuitBreakers?.[name]?.getState?.()?.state || null;
+    } catch { return null; }
+  };
+  // 'active' (green), 'degraded' (breaker open), or 'inactive' (not configured)
+  const statusFor = (configured, breaker) => {
+    if (!configured) return 'inactive';
+    return breaker && breakerState(breaker) === 'OPEN' ? 'degraded' : 'active';
+  };
+
+  // Effective config (account for placeholder/disabled flags)
+  const korapay = isSet(env.KORAPAY_SECRET_KEY);
+  const quidaxOn = isSet(env.QUIDAX_SECRET_KEY) || isSet(env.QUIDAX_API_KEY);
+  const strowallet = isSet(env.STROWALLET_PUBLIC_KEY) && isSet(env.STROWALLET_SECRET_KEY);
+  const graphFx = isSet(env.GRAPH_API_KEY);
+  const smile = isSet(env.SMILE_ID_API_KEY) && isSet(env.SMILE_ID_PARTNER_ID);
+  const resend = isSet(env.RESEND_API_KEY);
+  const graphCardsFallback = env.GRAPH_CARDS_ENABLED === 'true' && isSet(env.GRAPH_API_KEY);
+  const vtpassFallback = env.VTPASS_BILLS_ENABLED === 'true' && isSet(env.VTPASS_SECRET_KEY);
+
+  const data = [
+    {
+      type: 'Fiat Payments & Transfers',
+      adapters: [
+        { name: 'Korapay', role: 'primary', status: statusFor(korapay, 'korapay'),
+          features: ['Bank payouts & transfers', 'Checkout deposits', 'Virtual accounts', 'Bank/account resolution'] },
+      ],
+    },
+    {
+      type: 'Crypto',
+      adapters: [
+        { name: 'Quidax', role: 'primary', status: statusFor(quidaxOn, 'quidax'),
+          features: ['Wallets & addresses', 'Deposits & withdrawals', 'Swaps', 'Market rates'] },
+      ],
+    },
+    {
+      type: 'Virtual Cards',
+      adapters: [
+        { name: 'Strowallet', role: 'primary', status: statusFor(strowallet, 'strowallet'),
+          features: ['USD virtual (NFC) cards', 'Fund / withdraw', 'Freeze / activate'] },
+        ...(graphCardsFallback ? [{ name: 'Graph', role: 'fallback', status: 'active', features: ['Card fallback'] }] : []),
+      ],
+    },
+    {
+      type: 'Bill Payments',
+      adapters: [
+        { name: 'Strowallet', role: 'primary', status: statusFor(strowallet, 'strowallet'),
+          features: ['Airtime', 'Data', 'Cable TV', 'Electricity'] },
+        ...(vtpassFallback ? [{ name: 'VTpass', role: 'fallback', status: 'active', features: ['Bills fallback'] }] : []),
+      ],
+    },
+    {
+      type: 'FX / Cross-border',
+      adapters: [
+        { name: 'Graph Finance', role: 'primary', status: graphFx ? 'active' : 'inactive',
+          features: ['FX rates', 'International payouts'] },
+      ],
+    },
+    {
+      type: 'KYC / Identity',
+      adapters: [
+        { name: 'Smile ID', role: 'primary', status: smile ? 'active' : 'inactive',
+          features: ['Document verification', 'Biometric KYC'] },
+      ],
+    },
+    {
+      type: 'Notifications',
+      adapters: [
+        { name: 'Resend', role: 'primary', status: resend ? 'active' : 'inactive',
+          features: ['Transactional email'] },
+      ],
+    },
+  ];
+
+  res.status(200).json({ success: true, data });
 });

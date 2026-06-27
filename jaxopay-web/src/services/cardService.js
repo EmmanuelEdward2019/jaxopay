@@ -33,17 +33,27 @@ const cardService = {
       return { success: true, data: response.data ?? response };
     } catch (error) {
       const msg = error.message || 'Failed to create card';
-      return { success: false, error: msg, message: msg };
+      return { success: false, error: msg, message: msg, code: error.code };
+    }
+  },
+
+  // Current card fees (creation/funding) for the UI breakdown
+  getFees: async () => {
+    try {
+      const response = await apiClient.get('/cards/fees');
+      return { success: true, data: response.data ?? response };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   },
 
   // Fund card from USD wallet
-  fundCard: async (cardId, amount) => {
+  fundCard: async (cardId, amount, pin) => {
     try {
-      const response = await apiClient.post(`/cards/${cardId}/fund`, { amount });
+      const response = await apiClient.post(`/cards/${cardId}/fund`, { amount, pin });
       return { success: true, data: response.data ?? response };
     } catch (error) {
-      return { success: false, error: error.message || 'Failed to fund card' };
+      return { success: false, error: error.message || 'Failed to fund card', code: error.code };
     }
   },
 

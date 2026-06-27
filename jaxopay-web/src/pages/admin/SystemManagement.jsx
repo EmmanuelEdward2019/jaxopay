@@ -257,12 +257,26 @@ const SystemManagement = () => {
                                     </h3>
                                     <div className="space-y-2">
                                         {domain.adapters.map(adapter => (
-                                            <div key={adapter.name} className="flex items-center justify-between p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-600 shadow-sm">
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">{adapter.name.replace(/_/g, ' ')}</span>
-                                                <div className="flex items-center gap-1.5">
-                                                    <div className={`w-1.5 h-1.5 rounded-full ${adapter.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                                                    <span className={`text-[10px] font-bold uppercase ${adapter.status === 'active' ? 'text-green-600' : 'text-red-600'}`}>Status: {adapter.status === 'active' ? 'OK' : 'INACTIVE'}</span>
+                                            <div key={adapter.name} className="p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-600 shadow-sm">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize truncate">{adapter.name.replace(/_/g, ' ')}</span>
+                                                        {adapter.role && (
+                                                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${adapter.role === 'primary' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700'}`}>{adapter.role}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <div className={`w-1.5 h-1.5 rounded-full ${adapter.status === 'active' ? 'bg-green-500 animate-pulse' : adapter.status === 'degraded' ? 'bg-amber-500' : 'bg-red-500'}`} />
+                                                        <span className={`text-[10px] font-bold uppercase ${adapter.status === 'active' ? 'text-green-600' : adapter.status === 'degraded' ? 'text-amber-600' : 'text-red-600'}`}>{adapter.status === 'active' ? 'OK' : adapter.status === 'degraded' ? 'DEGRADED' : 'INACTIVE'}</span>
+                                                    </div>
                                                 </div>
+                                                {adapter.features?.length > 0 && (
+                                                    <div className="mt-2 flex flex-wrap gap-1">
+                                                        {adapter.features.map(f => (
+                                                            <span key={f} className="text-[10px] text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/60 px-1.5 py-0.5 rounded">{f}</span>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -359,7 +373,10 @@ const SystemManagement = () => {
                             ) : feeConfigs.map(fee => (
                                 <div key={fee.id} className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
                                     <div className="flex items-center justify-between mb-3">
-                                        <span className="font-bold text-gray-900 dark:text-white uppercase truncate max-w-[150px]">{fee.transaction_type.replace(/_/g, ' ')}</span>
+                                        <div className="min-w-0">
+                                            <span className="font-bold text-gray-900 dark:text-white uppercase truncate max-w-[150px] block">{fee.transaction_type.replace(/_/g, ' ')}</span>
+                                            <span className="text-[10px] font-bold text-primary-500 uppercase">{(fee.fee_type || '').replace(/_/g, ' ') || 'fixed'}</span>
+                                        </div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-[10px] font-bold text-gray-400 uppercase">{fee.country || 'GLOBAL'} / {fee.currency || 'USD'}</span>
                                             <button
@@ -370,7 +387,7 @@ const SystemManagement = () => {
                                     </div>
                                     <div className="grid grid-cols-3 gap-2">
                                         <div className="relative">
-                                            <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Value</label>
+                                            <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">{fee.fee_type === 'fixed' ? 'Amount' : 'Percent %'}</label>
                                             <input
                                                 type="number"
                                                 defaultValue={fee.fee_value}
@@ -379,7 +396,7 @@ const SystemManagement = () => {
                                             />
                                         </div>
                                         <div className="relative">
-                                            <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Min</label>
+                                            <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">{fee.fee_type === 'flat_plus_percent' ? 'Flat $' : 'Min'}</label>
                                             <input
                                                 type="number"
                                                 defaultValue={fee.min_fee}
@@ -388,7 +405,7 @@ const SystemManagement = () => {
                                             />
                                         </div>
                                         <div className="relative">
-                                            <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Max</label>
+                                            <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">{fee.fee_type === 'flat_plus_percent' ? 'Cap' : 'Max'}</label>
                                             <input
                                                 type="number"
                                                 defaultValue={fee.max_fee}
@@ -475,7 +492,7 @@ const SystemManagement = () => {
                                     value={newFee.transaction_type}
                                     onChange={e => setNewFee({ ...newFee, transaction_type: e.target.value })}
                                 >
-                                    {['transfer', 'withdrawal', 'exchange', 'bill_payment', 'card_funding'].map(t => <option key={t} value={t}>{t.replace('_', ' ').toUpperCase()}</option>)}
+                                    {['transfer', 'withdrawal', 'exchange', 'bill_payment', 'card_creation', 'card_funding'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
@@ -488,10 +505,11 @@ const SystemManagement = () => {
                                     >
                                         <option value="fixed">Fixed</option>
                                         <option value="percentage">Percentage</option>
+                                        <option value="flat_plus_percent">Flat + Percentage</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">Value</label>
+                                    <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">{newFee.fee_type === 'fixed' ? 'Amount ($)' : 'Percentage (%)'}</label>
                                     <input
                                         type="number"
                                         className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2.5 text-gray-900 dark:text-white"
@@ -502,7 +520,7 @@ const SystemManagement = () => {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">Min Fee</label>
+                                    <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">{newFee.fee_type === 'flat_plus_percent' ? 'Flat fee ($)' : 'Min Fee'}</label>
                                     <input
                                         type="number"
                                         className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2.5 text-gray-900 dark:text-white"
@@ -511,7 +529,7 @@ const SystemManagement = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">Max Fee</label>
+                                    <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">{newFee.fee_type === 'flat_plus_percent' ? 'Cap ($, 0 = none)' : 'Max Fee'}</label>
                                     <input
                                         type="number"
                                         className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2.5 text-gray-900 dark:text-white"

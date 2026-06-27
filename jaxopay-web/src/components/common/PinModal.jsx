@@ -123,13 +123,18 @@ const PinModal = ({ open, onClose, onConfirm, title = 'Enter Transaction PIN', d
                                 <input
                                     key={i}
                                     ref={(el) => (inputs.current[i] = el)}
-                                    type="password"
+                                    type="text"
                                     inputMode="numeric"
-                                    autoComplete="one-time-code"
+                                    pattern="[0-9]*"
+                                    autoComplete="off"
+                                    name={`jaxo-pin-${i}`}
+                                    data-1p-ignore
+                                    data-lpignore="true"
                                     value={d}
                                     disabled={processing}
                                     onChange={(e) => handleChange(i, e.target.value)}
                                     onKeyDown={(e) => handleKeyDown(i, e)}
+                                    style={{ WebkitTextSecurity: 'disc', textSecurity: 'disc' }}
                                     className="w-12 h-14 text-center text-2xl font-bold bg-muted/50 border border-border rounded-2xl outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:opacity-50"
                                     maxLength={1}
                                 />

@@ -48,6 +48,11 @@ class StrowalletAdapter extends BaseAdapter {
     return !!(this.publicKey && this.secretKey);
   }
 
+  // Strowallet card environment — 'live' or 'sandbox' (their endpoints default to sandbox).
+  get _mode() {
+    return String(process.env.STROWALLET_CARD_MODE || 'sandbox').toLowerCase() === 'live' ? 'live' : 'sandbox';
+  }
+
   _ensure() {
     if (!this._configured()) {
       throw { message: 'Virtual card service is not configured', statusCode: 503 };
@@ -331,6 +336,116 @@ class StrowalletAdapter extends BaseAdapter {
       },
       raw: d,
     };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // NFC card (Strowallet's current "Virtual Card" product — USD).
+  // Docs: https://strowallet.readme.io/reference/create-nfc-card
+  // ───────────────────────────────────────────────────────────────────────────
+
+  async _get(path, params = {}) {
+    this._ensure();
+    const url = `${this.base}${path.startsWith('/') ? path : `/${path}`}`;
+    try {
+      const res = await axios.get(url, {
+        params: { public_key: this.publicKey, ...params },
+        timeout: 45000,
+        validateStatus: (s) => s < 500,
+      });
+      const data = res.data;
+      if (typeof data === 'string' && (data.includes('<!DOCTYPE') || data.includes('<html'))) {
+        throw { message: 'Virtual card service returned an invalid response. Please try again later.', statusCode: 502 };
+      }
+      if (res.status >= 400 && typeof data === 'object' && data !== null) {
+        throw { message: formatStrowalletApiMessage(data), statusCode: res.status, raw: data };
+      }
+      return data;
+    } catch (err) {
+      const data = err.response?.data;
+      const msg = data && typeof data === 'object' ? formatStrowalletApiMessage(data) : (typeof data === 'string' ? data : err.message);
+      logger.error(`[Strowallet] GET ${path} failed:`, data || err.message);
+      throw { message: msg || 'Virtual card request failed', statusCode: err.response?.status || 502, raw: data };
+    }
+  }
+
+  /**
+   * Create a USD NFC virtual card. Requires the cardholder's KYC.
+   * @param {object} p name, firstName, lastName, dob (mm/dd/yyyy), idType, idNumber,
+   *   email, line1, city, state, postalCode, country (3-letter), phone, amountUsd
+   */
+  async createNfcCard(p) {
+    this._ensure();
+    const fields = {
+      name: (p.name || `${p.firstName || ''} ${p.lastName || ''}`).trim().slice(0, 120),
+      first_name: String(p.firstName || '').trim().slice(0, 60),
+      last_name: String(p.lastName || '').trim().slice(0, 60),
+      dob: String(p.dob || '').trim(),
+      id_type: String(p.idType || '').trim(),
+      id_number: String(p.idNumber || '').trim(),
+      email: String(p.email || '').trim().slice(0, 120),
+      line1: String(p.line1 || '').trim().slice(0, 120),
+      city: String(p.city || '').trim().slice(0, 80),
+      state: String(p.state || '').trim().slice(0, 60),
+      postal_code: String(p.postalCode || '').trim().slice(0, 20),
+      country: String(p.country || '').trim().toUpperCase().slice(0, 3),
+      amount_usd: String(Math.max(1, Number(p.amountUsd) || 0)),
+      phone: String(p.phone || '').replace(/\s+/g, '').slice(0, 24),
+      mode: this._mode,
+    };
+    const data = await this._postForm('/api/bitvcard/create-nfc-card/', fields);
+    return this._normalizeCreateResponse(data);
+  }
+
+  async getNfcCardDetail(cardId) {
+    const data = await this._get('/api/bitvcard/fetch-nfccard-detail/', { card_id: cardId, mode: this._mode });
+    return this._unwrap(data);
+  }
+
+  /** type: 'fund' | 'withdraw' */
+  async fundWithdrawNfc(cardId, amount, type = 'fund') {
+    const data = await this._postForm('/api/bitvcard/fund-withdraw-nfccard/', {
+      card_id: cardId,
+      amount: String(amount),
+      type,
+      mode: this._mode,
+    });
+    return { success: true, raw: this._unwrapSafe(data) };
+  }
+
+  async getNfcCardTransactions(cardId) {
+    const data = await this._get('/api/bitvcard/nfc-card-transactions/', { card_id: cardId, mode: this._mode });
+    return this._unwrap(data);
+  }
+
+  /** Freeze (true) or activate (false). Path is best-effort; DB state is the source of truth. */
+  async freezeNfcCard(cardId, freeze = true) {
+    try {
+      const data = await this._postForm('/api/bitvcard/freeze-and-activate-nfccard/', {
+        card_id: cardId,
+        action: freeze ? 'freeze' : 'activate',
+        status: freeze ? 'freeze' : 'activate',
+        mode: this._mode,
+      });
+      return { success: true, raw: this._unwrapSafe(data) };
+    } catch (e) {
+      logger.warn('[Strowallet] freeze/activate NFC remote call failed (DB state still applied):', e.message);
+      return { success: true, remote: false };
+    }
+  }
+
+  async getSecureNfcCardData(cardId) {
+    try {
+      const d = await this.getNfcCardDetail(cardId);
+      return {
+        pan: d.card_number || d.pan || d.card || null,
+        cvv: d.cvv || d.cvv2 || null,
+        expiry: d.expiry || (d.expiry_month && d.expiry_year ? `${d.expiry_month}/${d.expiry_year}` : null),
+        billing_address: d.billing_address || null,
+      };
+    } catch (e) {
+      logger.warn('[Strowallet] getSecureNfcCardData failed:', e.message);
+      return null;
+    }
   }
 }
 

@@ -6,6 +6,7 @@ import { useIdempotency } from '../middleware/idempotency.js';
 import { body, param, query } from 'express-validator';
 import {
   getCards,
+  getCardFees,
   getCard,
   getCardSecureData,
   createCard,
@@ -25,6 +26,9 @@ router.use(requireFeature('virtual_cards'));
 
 // Get all user cards
 router.get('/', getCards);
+
+// Current card fees (creation/funding) for the UI breakdown
+router.get('/fees', getCardFees);
 
 // Get single card
 router.get(
@@ -56,10 +60,9 @@ router.get(
 router.post(
   '/',
   ...(process.env.NODE_ENV === 'production' ? [requireKYCTier(2)] : []),
-  body('card_type').isIn(['single_use', 'multi_use']),
-  body('currency').isString().isLength({ min: 3, max: 3 }),
+  body('card_type').optional().isIn(['single_use', 'multi_use']),
+  body('amount_usd').isFloat({ min: 1 }),
   body('spending_limit').optional().isFloat({ min: 1 }),
-  body('billing_address').optional().isObject(),
   validate,
   createCard
 );

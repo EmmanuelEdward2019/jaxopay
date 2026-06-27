@@ -566,10 +566,14 @@ const TransactionPinModal = ({ isSet, onClose, onSaved }) => {
     // Shared props that stop the browser from treating PIN boxes as a login form
     // (no email autofill, no "save password / choose account" prompt).
     const pinInputProps = {
-        type: 'password',
+        type: 'text',
         inputMode: 'numeric',
-        autoComplete: 'one-time-code',
+        pattern: '[0-9]*',
+        autoComplete: 'off',
+        'data-1p-ignore': true,
+        'data-lpignore': 'true',
         maxLength: 4,
+        style: { WebkitTextSecurity: 'disc', textSecurity: 'disc' },
         className: 'w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30 tracking-[0.5em] text-center',
     };
 

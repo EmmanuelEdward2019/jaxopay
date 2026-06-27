@@ -4,6 +4,8 @@ import logger from '../utils/logger.js';
 import emailService from '../services/email.service.js';
 import GraphAdapter from '../orchestration/adapters/cards/GraphAdapter.js';
 import StrowalletAdapter from '../orchestration/adapters/cards/StrowalletAdapter.js';
+import { verifyTransactionPin } from '../services/transactionPin.service.js';
+import { getCardFee, getFeeConfig } from '../services/feeConfig.service.js';
 const graph = new GraphAdapter();
 const strowallet = new StrowalletAdapter();
 
@@ -31,6 +33,103 @@ function graphCardsFallbackEnabled() {
     !String(process.env.GRAPH_API_KEY).includes('your_')
   );
 }
+
+const COUNTRY_ISO3 = {
+  NG: 'NGA', NGA: 'NGA', NIGERIA: 'NGA', GH: 'GHA', GHA: 'GHA', GHANA: 'GHA',
+  KE: 'KEN', KEN: 'KEN', KENYA: 'KEN', ZA: 'ZAF', ZAF: 'ZAF', US: 'USA', USA: 'USA',
+  GB: 'GBR', GBR: 'GBR', UK: 'GBR', CA: 'CAN', CAN: 'CAN', HT: 'HTI', HTI: 'HTI',
+};
+function toIso3(c) {
+  if (!c) return '';
+  const k = String(c).trim().toUpperCase();
+  if (COUNTRY_ISO3[k]) return COUNTRY_ISO3[k];
+  return k.length === 3 ? k : '';
+}
+function mapIdType(t) {
+  const s = String(t || '').toLowerCase();
+  if (s.includes('passport')) return 'passport';
+  if (s.includes('driver') || s.includes('licence') || s.includes('license')) return 'drivers_license';
+  return 'national_id';
+}
+function formatDobMMDDYYYY(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '';
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  return `${mm}/${dd}/${dt.getFullYear()}`;
+}
+
+/**
+ * Build (and validate) the cardholder KYC payload required by create-nfc-card.
+ * Throws a clear AppError listing what the user still needs to provide.
+ */
+async function gatherCardholderKyc(userId) {
+  const prof = (await query(
+    `SELECT first_name, last_name, date_of_birth, address_line1, city, state, postal_code, country
+     FROM user_profiles WHERE user_id = $1`,
+    [userId]
+  )).rows[0] || {};
+  const kycDoc = (await query(
+    `SELECT document_type, document_number FROM kyc_documents
+     WHERE user_id = $1 AND document_number IS NOT NULL
+     ORDER BY reviewed_at DESC NULLS LAST, created_at DESC LIMIT 1`,
+    [userId]
+  )).rows[0] || {};
+  const userRow = (await query('SELECT email, phone FROM users WHERE id = $1', [userId])).rows[0] || {};
+
+  const kyc = {
+    firstName: prof.first_name || '',
+    lastName: prof.last_name || '',
+    name: `${prof.first_name || ''} ${prof.last_name || ''}`.trim(),
+    dob: formatDobMMDDYYYY(prof.date_of_birth),
+    idType: mapIdType(kycDoc.document_type),
+    idNumber: kycDoc.document_number || '',
+    email: userRow.email || '',
+    phone: userRow.phone || '',
+    line1: prof.address_line1 || '',
+    city: prof.city || '',
+    state: prof.state || '',
+    postalCode: prof.postal_code || '',
+    country: toIso3(prof.country),
+  };
+
+  const missing = [];
+  if (!kyc.firstName || !kyc.lastName) missing.push('your full name');
+  if (!kyc.dob) missing.push('date of birth');
+  if (!kyc.idNumber) missing.push('a verified government ID (complete KYC)');
+  if (!kyc.line1 || !kyc.city || !kyc.state || !kyc.country) missing.push('your billing address');
+  if (!kyc.phone) missing.push('a phone number');
+  if (!kyc.email) missing.push('an email address');
+  if (missing.length) {
+    throw new AppError(
+      `Please complete your profile and KYC before creating a card. We still need: ${missing.join(', ')}.`,
+      400,
+      'CARD_KYC_INCOMPLETE'
+    );
+  }
+  return kyc;
+}
+
+// ─────────────────────────────────────────────
+// GET /cards/fees  — current card creation/funding fees (for the UI breakdown)
+// ─────────────────────────────────────────────
+export const getCardFees = catchAsync(async (req, res) => {
+  const [creation, funding] = await Promise.all([
+    getFeeConfig('card_creation', 'USD'),
+    getFeeConfig('card_funding', 'USD'),
+  ]);
+  const shape = (c) => ({
+    fee_type: c?.fee_type || 'flat_plus_percent',
+    flat: Number(c?.min_fee) || 0,       // flat component for flat_plus_percent
+    percent: Number(c?.fee_value) || 0,  // percentage component
+    cap: Number(c?.max_fee) || 0,
+  });
+  res.status(200).json({
+    success: true,
+    data: { card_creation: shape(creation), card_funding: shape(funding) },
+  });
+});
 
 // ─────────────────────────────────────────────
 // GET /cards
@@ -99,11 +198,11 @@ export const getCard = catchAsync(async (req, res) => {
   if (c.provider_card_id) {
     try {
       if (c.provider === 'strowallet') {
-        const live = await strowallet.getCard(c.provider_card_id);
-        const bal = live?.details?.balance ?? live?.raw?.balance;
-        if (bal !== undefined) {
-          card.balance = bal;
-          await query('UPDATE virtual_cards SET balance = $1 WHERE id = $2', [bal, cardId]);
+        const live = await strowallet.getNfcCardDetail(c.provider_card_id);
+        const bal = live?.balance ?? live?.card_balance ?? live?.available_balance;
+        if (bal !== undefined && bal !== null) {
+          card.balance = parseFloat(bal);
+          await query('UPDATE virtual_cards SET balance = $1 WHERE id = $2', [parseFloat(bal), cardId]);
         }
       } else {
         const live = await graph.getCard(c.provider_card_id);
@@ -147,7 +246,7 @@ export const getCardSecureData = catchAsync(async (req, res) => {
     try {
       const liveSecure =
         c.provider === 'strowallet'
-          ? await strowallet.getSecureCardData(c.provider_card_id)
+          ? await strowallet.getSecureNfcCardData(c.provider_card_id)
           : await graph.getSecureCardData(c.provider_card_id);
       if (liveSecure) {
         if (liveSecure.pan && !liveSecure.pan.includes('*')) securePAN = liveSecure.pan;
@@ -180,15 +279,22 @@ export const getCardSecureData = catchAsync(async (req, res) => {
 // POST /cards
 // ─────────────────────────────────────────────
 export const createCard = catchAsync(async (req, res) => {
-  const { card_type = 'virtual', currency = 'USD', spending_limit, billing_address } = req.body;
+  const { card_type = 'multi_use', spending_limit } = req.body;
+  const amountUsd = Number(req.body.amount_usd ?? req.body.initial_amount ?? 0);
 
-  // In production, enforce KYC tier 2. In development, allow any tier for testing.
-  if (process.env.NODE_ENV === 'production') {
-    if ((req.user.kyc_tier || 0) < 2) {
-      throw new AppError('KYC Tier 2 or higher required to create virtual cards', 403);
-    }
+  if (process.env.NODE_ENV === 'production' && (req.user.kyc_tier || 0) < 2) {
+    throw new AppError('KYC Tier 2 or higher required to create virtual cards', 403);
+  }
+  if (!Number.isFinite(amountUsd) || amountUsd < 1) {
+    throw new AppError('An initial funding amount of at least $1 is required', 400);
   }
 
+  // Require the transaction PIN — creating a card debits the USD wallet.
+  await verifyTransactionPin(req.user.id, req.body.pin);
+
+  if (!strowalletCardsEnabled()) {
+    throw new AppError('Virtual cards are not available right now. Please try again later or contact support.', 503);
+  }
 
   const cardCount = await query(
     `SELECT COUNT(*) as count FROM virtual_cards WHERE user_id = $1 AND status != 'terminated'`,
@@ -199,137 +305,112 @@ export const createCard = catchAsync(async (req, res) => {
     throw new AppError(`Maximum ${maxCards} active cards allowed for your KYC tier`, 400);
   }
 
-  const userProfile = await query(
-    'SELECT first_name, last_name FROM user_profiles WHERE user_id = $1',
-    [req.user.id]
-  );
-  const profile = userProfile.rows[0] || {};
-  const cardholderName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'JAXOPAY USER';
+  // Gather the cardholder KYC required by Strowallet's create-nfc-card endpoint.
+  const kyc = await gatherCardholderKyc(req.user.id);
 
-  const userRow = await query('SELECT email, phone FROM users WHERE id = $1', [req.user.id]);
-  const userEmail = userRow.rows[0]?.email || 'noreply@jaxopay.com';
-  const userPhone = userRow.rows[0]?.phone || '';
+  // Card creation fee (editable in admin Rates & Fees). User pays amount + fee.
+  const { fee: creationFee } = await getCardFee('card_creation', amountUsd);
+  const totalDebit = Math.round((amountUsd + creationFee + Number.EPSILON) * 100) / 100;
 
-  let cardResult;
-  let providerUsed;
+  // Atomic: lock + debit USD wallet, call provider, persist the card.
+  const created = await transaction(async (client) => {
+    const wallet = await client.query(
+      `SELECT id, balance FROM wallets WHERE user_id = $1 AND currency = 'USD' AND is_active = true FOR UPDATE`,
+      [req.user.id]
+    );
+    if (wallet.rows.length === 0) throw new AppError('You need a USD wallet to create a card. Create one first.', 404);
+    if (parseFloat(wallet.rows[0].balance) < totalDebit) {
+      throw new AppError(`Insufficient USD balance. You need $${totalDebit.toFixed(2)} ($${amountUsd.toFixed(2)} + $${creationFee.toFixed(2)} fee).`, 400);
+    }
 
-  if (strowalletCardsEnabled()) {
+    let cardResult;
     try {
-      cardResult = await strowallet.createCard({
-        customerId: req.user.id,
-        cardholderName,
-        email: userEmail,
-        phone: userPhone,
-        currency: currency.toUpperCase(),
-        amount: spending_limit || 1000,
-        billingAddress: billing_address,
-        cardType: card_type,
-      });
-      providerUsed = 'strowallet';
-      logger.info(`[Cards] Created via Strowallet for user ${req.user.id}`);
+      cardResult = await strowallet.createNfcCard({ ...kyc, amountUsd });
     } catch (swErr) {
-      const rawMsg =
-        swErr?.message ||
-        (typeof swErr === 'string' ? swErr : 'Virtual card creation failed');
-      logger.error('[Cards] Strowallet create failed (full detail):', {
-        message: rawMsg,
-        raw: swErr?.raw,
-        statusCode: swErr?.statusCode,
-      });
+      const rawMsg = swErr?.message || 'Virtual card creation failed';
+      logger.error('[Cards] Strowallet NFC create failed:', { message: rawMsg, raw: swErr?.raw, statusCode: swErr?.statusCode });
       const friendly = userFacingStrowalletError(rawMsg);
-      const userMessage =
-        friendly !== rawMsg
-          ? `We could not create your virtual card: ${friendly}`
-          : `We could not create your virtual card: ${rawMsg}. Please try again or contact support.`;
       throw new AppError(
-        userMessage,
+        friendly !== rawMsg ? `We could not create your card: ${friendly}` : `We could not create your card: ${rawMsg}.`,
         swErr?.statusCode && swErr.statusCode >= 400 && swErr.statusCode < 600 ? swErr.statusCode : 502
       );
     }
-  } else if (graphCardsFallbackEnabled()) {
-    cardResult = await graph.createCard({
-      customerId: req.user.id,
-      type: 'VIRTUAL',
-      brand: 'VISA',
-      currency: currency.toUpperCase(),
-      amount: spending_limit || 1000,
-      billingAddress: billing_address,
-    });
-    providerUsed = 'graph';
-    logger.info(`[Cards] Created via Graph (GRAPH_CARDS_ENABLED) for user ${req.user.id}`);
-  } else {
-    throw new AppError(
-      'Virtual cards are not available right now. Please try again later or contact support.',
-      503
+
+    // Charge the user (initial funding + creation fee) only after the provider accepted the card.
+    await client.query('UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2', [totalDebit, wallet.rows[0].id]);
+
+    const providerCardId = cardResult?.cardId || null;
+    const d = cardResult?.details || {};
+    const raw = cardResult?.raw || {};
+    const cardPAN = d.pan || raw.card_number || raw.pan || generateCardNumber();
+    const cvv = d.cvv || raw.cvv || generateCVV();
+    const expiryRaw = d.expiry || '12/29';
+    const [em, ey] = String(expiryRaw).split('/');
+    const expiryMonth = parseInt(em) || 12;
+    const expiryYear = parseInt(ey) || ((new Date().getFullYear() + 4) % 100);
+
+    const dbResult = await client.query(
+      `INSERT INTO virtual_cards
+         (user_id, card_type, card_number_encrypted, cvv_encrypted, card_last_four,
+          cardholder_name, status, balance, spending_limit_daily,
+          expiry_month, expiry_year, provider, provider_card_id, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8, $9, $10, 'strowallet', $11, $12)
+       RETURNING id, card_type, card_last_four, cardholder_name, status,
+                 balance, spending_limit_daily, expiry_month, expiry_year,
+                 provider, provider_card_id, metadata, created_at`,
+      [
+        req.user.id,
+        card_type || 'multi_use',
+        cardPAN,
+        cvv,
+        String(cardPAN).slice(-4),
+        kyc.name || 'JAXOPAY USER',
+        amountUsd,
+        spending_limit || amountUsd,
+        expiryMonth,
+        expiryYear,
+        providerCardId,
+        JSON.stringify({
+          currency: 'USD',
+          card_brand: 'visa',
+          billing_address: { line1: kyc.line1, city: kyc.city, state: kyc.state, postal_code: kyc.postalCode, country: kyc.country },
+          spending_limit: spending_limit || amountUsd,
+          provider_response: raw || null,
+        }),
+      ]
     );
-  }
 
-  // Get card details from provider response
-  const providerCardId = cardResult?.cardId || null;
-  const providerDetails = cardResult?.details || {};
-  const raw = cardResult?.raw || {};
+    // Record the initial funding so it shows in card history immediately.
+    await client.query(
+      `INSERT INTO card_transactions (card_id, provider_reference, merchant_name, amount, currency, status, metadata)
+       VALUES ($1, $2, 'Initial card funding', $3, 'USD', 'completed', $4)`,
+      [dbResult.rows[0].id, `CARDFUND-${Date.now()}`, amountUsd, JSON.stringify({ type: 'funding', source: 'usd_wallet', fee: creationFee })]
+    );
 
-  // Full PAN: prefer pan from provider, fall back to generating one for internal use
-  const cardPAN = providerDetails.pan || raw.pan || raw.card_number || generateCardNumber();
-  const cvv = providerDetails.cvv || raw.cvv || generateCVV();
-  const expiryRaw = providerDetails.expiry || '12/27';
-  const [expiryMonthRaw, expiryYearRaw] = expiryRaw.split('/');
-  const expiryMonth = parseInt(expiryMonthRaw) || 12;
-  const expiryYear = parseInt(expiryYearRaw) || 27;
+    return { card: dbResult.rows[0], cardPAN, cvv, expiryMonth, expiryYear };
+  });
 
-
-
-  const dbResult = await query(
-    `INSERT INTO virtual_cards
-       (user_id, card_type, card_number_encrypted, cvv_encrypted, card_last_four,
-        cardholder_name, status, balance, spending_limit_daily,
-        expiry_month, expiry_year, provider, provider_card_id, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, 'active', 0, $7, $8, $9, $10, $11, $12)
-     RETURNING id, card_type, card_last_four, cardholder_name, status,
-               balance, spending_limit_daily, expiry_month, expiry_year,
-               provider, provider_card_id, metadata, created_at`,
-    [
-      req.user.id,
-      card_type || 'multi_use',
-      cardPAN,          // full PAN stored in card_number_encrypted
-      cvv,              // CVV stored in cvv_encrypted
-      cardPAN.slice(-4),
-      cardholderName,
-      spending_limit || 1000,
-      expiryMonth,
-      expiryYear,
-      providerUsed,
-      providerCardId,
-      JSON.stringify({
-        currency: currency.toUpperCase(),
-        card_brand: 'visa',
-        billing_address: billing_address || {},
-        spending_limit: spending_limit || 1000,
-        provider_response: cardResult?.raw || null,
-      }),
-    ]
-  );
-
-  const card = dbResult.rows[0];
-  logger.info(`[Cards] Created via ${providerUsed} for user ${req.user.id}: ${card.id}`);
+  const card = created.card;
+  logger.info(`[Cards] Created NFC card via Strowallet for user ${req.user.id}: ${card.id}`);
 
   res.status(201).json({
     success: true,
     message: 'Virtual card created successfully',
     data: {
       ...card,
-      currency: currency.toUpperCase(),
+      fee: creationFee,
+      total_charged: totalDebit,
+      currency: 'USD',
       card_brand: 'visa',
       last_four: card.card_last_four,
       card_status: 'active',
-      card_number: cardPAN,
-      cvv,
-      expiry_date: `${String(expiryMonth).padStart(2, '0')}/${expiryYear}`,
-      billing_address: billing_address || {},
-      provider: providerUsed,
-    }
+      card_number: created.cardPAN,
+      cvv: created.cvv,
+      expiry_date: `${String(created.expiryMonth).padStart(2, '0')}/${created.expiryYear}`,
+      billing_address: card.metadata?.billing_address || {},
+      provider: 'strowallet',
+    },
   });
-
 });
 
 // ─────────────────────────────────────────────
@@ -340,6 +421,13 @@ export const fundCard = catchAsync(async (req, res) => {
   const { amount } = req.body;
 
   if (!amount || amount <= 0) throw new AppError('Amount must be greater than 0', 400);
+
+  // Require the transaction PIN — funding moves money out of the USD wallet.
+  await verifyTransactionPin(req.user.id, req.body.pin);
+
+  // Card funding fee (editable in admin Rates & Fees). User pays amount + fee.
+  const { fee: fundingFee } = await getCardFee('card_funding', amount);
+  const totalDebit = Math.round((parseFloat(amount) + fundingFee + Number.EPSILON) * 100) / 100;
 
   const result = await transaction(async (client) => {
     const card = await client.query(
@@ -362,16 +450,18 @@ export const fundCard = catchAsync(async (req, res) => {
     );
 
     if (wallet.rows.length === 0) throw new AppError('No USD wallet found. Create one first.', 404);
-    if (parseFloat(wallet.rows[0].balance) < amount) throw new AppError('Insufficient USD wallet balance', 400);
+    if (parseFloat(wallet.rows[0].balance) < totalDebit) {
+      throw new AppError(`Insufficient USD balance. You need $${totalDebit.toFixed(2)} ($${parseFloat(amount).toFixed(2)} + $${fundingFee.toFixed(2)} fee).`, 400);
+    }
 
-    // Deduct from wallet
-    await client.query('UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2', [amount, wallet.rows[0].id]);
+    // Deduct amount + fee from wallet (only `amount` is loaded onto the card)
+    await client.query('UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2', [totalDebit, wallet.rows[0].id]);
 
     // If live provider card exists, fund at provider
     if (card.rows[0].provider_card_id) {
       try {
         if (card.rows[0].provider === 'strowallet') {
-          await strowallet.fundCard(card.rows[0].provider_card_id, amount);
+          await strowallet.fundWithdrawNfc(card.rows[0].provider_card_id, amount, 'fund');
         } else {
           await graph.fundCard(card.rows[0].provider_card_id, amount);
         }
@@ -383,21 +473,30 @@ export const fundCard = catchAsync(async (req, res) => {
     // Credit card balance in DB
     await client.query('UPDATE virtual_cards SET balance = balance + $1, updated_at = NOW() WHERE id = $2', [amount, cardId]);
 
-    // Record transaction using actual schema columns
+    const reference = `CARD-FUND-${Date.now()}`;
+
+    // Record in the user's main transaction ledger
     await client.query(
       `INSERT INTO transactions
          (user_id, from_wallet_id, transaction_type, from_amount, from_currency, net_amount, fee_amount, status, description, reference)
-       VALUES ($1, $2, 'card_funding', $3, 'USD', $3, 0, 'completed', 'Virtual card funding', $4)`,
-      [req.user.id, wallet.rows[0].id, amount, `CARD-FUND-${Date.now()}`]
+       VALUES ($1, $2, 'card_funding', $3, 'USD', $3, $4, 'completed', 'Virtual card funding', $5)`,
+      [req.user.id, wallet.rows[0].id, amount, fundingFee, reference]
     );
 
-    return { newBalance };
+    // Record in the card's own history so it shows immediately under this card.
+    await client.query(
+      `INSERT INTO card_transactions (card_id, provider_reference, merchant_name, amount, currency, status, metadata)
+       VALUES ($1, $2, 'Card funding', $3, 'USD', 'completed', $4)`,
+      [cardId, reference, amount, JSON.stringify({ type: 'funding', source: 'usd_wallet', fee: fundingFee })]
+    );
+
+    return { newBalance, fee: fundingFee, totalDebit };
   });
 
   res.status(200).json({
     success: true,
     message: 'Card funded successfully',
-    data: { new_balance: result.newBalance }
+    data: { new_balance: result.newBalance, fee: result.fee, total_charged: result.totalDebit }
   });
 });
 
@@ -415,7 +514,7 @@ export const freezeCard = catchAsync(async (req, res) => {
   if (card.rows[0].provider_card_id) {
     try {
       if (card.rows[0].provider === 'strowallet') {
-        await strowallet.freezeCard(card.rows[0].provider_card_id);
+        await strowallet.freezeNfcCard(card.rows[0].provider_card_id, true);
       } else {
         await graph.freezeCard(card.rows[0].provider_card_id);
       }
@@ -440,12 +539,24 @@ export const unfreezeCard = catchAsync(async (req, res) => {
   const { cardId } = req.params;
   const result = await query(
     `UPDATE virtual_cards SET status = 'active', frozen_at = NULL, updated_at = NOW()
-     WHERE id = $1 AND user_id = $2 AND status = 'frozen' RETURNING id, status`,
+     WHERE id = $1 AND user_id = $2 AND status = 'frozen'
+     RETURNING id, status, provider, provider_card_id`,
     [cardId, req.user.id]
   );
 
   if (result.rows.length === 0) throw new AppError('Card not found or not frozen', 404);
-  res.status(200).json({ success: true, message: 'Card unfrozen', data: { ...result.rows[0], card_status: 'active' } });
+
+  const c = result.rows[0];
+  if (c.provider_card_id) {
+    try {
+      if (c.provider === 'strowallet') await strowallet.freezeNfcCard(c.provider_card_id, false);
+      else await graph.unfreezeCard(c.provider_card_id);
+    } catch (e) {
+      logger.warn('[Cards] Provider unfreeze/activate failed (DB state applied):', e.message);
+    }
+  }
+
+  res.status(200).json({ success: true, message: 'Card unfrozen', data: { id: c.id, status: c.status, card_status: 'active' } });
 });
 
 // ─────────────────────────────────────────────
@@ -483,32 +594,81 @@ export const terminateCard = catchAsync(async (req, res) => {
 // ─────────────────────────────────────────────
 // GET /cards/:cardId/transactions
 // ─────────────────────────────────────────────
+// Normalize Strowallet's NFC transaction payload (shape varies) into our card-txn shape.
+function normalizeNfcTransactions(raw) {
+  let arr = [];
+  if (Array.isArray(raw)) arr = raw;
+  else if (Array.isArray(raw?.transactions)) arr = raw.transactions;
+  else if (Array.isArray(raw?.data)) arr = raw.data;
+  else if (Array.isArray(raw?.data?.transactions)) arr = raw.data.transactions;
+  else if (Array.isArray(raw?.response)) arr = raw.response;
+  return arr.map((t, i) => ({
+    id: t.id || t.reference || t.txn_id || t.transaction_id || `nfc-${i}-${t.created_at || t.date || ''}`,
+    transaction_type: t.type || t.transaction_type || t.category || 'card',
+    amount: parseFloat(t.amount ?? t.amount_usd ?? t.value ?? 0) || 0,
+    currency: t.currency || 'USD',
+    merchant_name: t.merchant || t.merchant_name || t.narration || t.description || t.title || null,
+    merchant_category: t.merchant_category || t.category || null,
+    status: t.status || 'completed',
+    created_at: t.created_at || t.date || t.time || t.transaction_date || new Date().toISOString(),
+    source: 'provider',
+  }));
+}
+
 export const getCardTransactions = catchAsync(async (req, res) => {
   const { cardId } = req.params;
-  const { page = 1, limit = 20 } = req.query;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
   const offset = (page - 1) * limit;
 
-  const cardCheck = await query('SELECT id FROM virtual_cards WHERE id = $1 AND user_id = $2', [cardId, req.user.id]);
+  const cardCheck = await query(
+    'SELECT id, provider, provider_card_id FROM virtual_cards WHERE id = $1 AND user_id = $2',
+    [cardId, req.user.id]
+  );
   if (cardCheck.rows.length === 0) throw new AppError('Card not found', 404);
+  const card = cardCheck.rows[0];
 
+  // Prefer live transactions from the provider (authoritative card spend).
+  if (card.provider === 'strowallet' && card.provider_card_id) {
+    try {
+      const raw = await strowallet.getNfcCardTransactions(card.provider_card_id);
+      const all = normalizeNfcTransactions(raw);
+      if (all.length) {
+        all.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        return res.status(200).json({
+          success: true,
+          data: {
+            transactions: all.slice(offset, offset + limit),
+            source: 'provider',
+            pagination: { page, limit, total: all.length, pages: Math.ceil(all.length / limit) },
+          },
+        });
+      }
+    } catch (e) {
+      logger.warn('[Cards] Live NFC transactions fetch failed, falling back to local:', e.message);
+    }
+  }
+
+  // Fallback: locally recorded transactions (funding, etc.)
   const result = await query(
-    `SELECT id, transaction_type, amount, currency, merchant_name, merchant_category, status, created_at
+    `SELECT id, COALESCE(metadata->>'type', 'card') AS transaction_type,
+            amount, currency, merchant_name, merchant_category, status, created_at
      FROM card_transactions WHERE card_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
     [cardId, limit, offset]
   );
-
   const countResult = await query('SELECT COUNT(*) as total FROM card_transactions WHERE card_id = $1', [cardId]);
 
   res.status(200).json({
     success: true,
     data: {
       transactions: result.rows,
+      source: 'local',
       pagination: {
-        page: parseInt(page), limit: parseInt(limit),
+        page, limit,
         total: parseInt(countResult.rows[0].total),
-        pages: Math.ceil(countResult.rows[0].total / limit)
-      }
-    }
+        pages: Math.ceil(countResult.rows[0].total / limit),
+      },
+    },
   });
 });
 
