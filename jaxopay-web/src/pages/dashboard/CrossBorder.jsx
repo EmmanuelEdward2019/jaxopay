@@ -15,6 +15,7 @@ import {
     ArrowRight,
     Search
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import fxService from '../../services/fxService';
 import walletService from '../../services/walletService';
 import PinModal from '../../components/common/PinModal';
@@ -38,6 +39,7 @@ const CrossBorder = () => {
     const [liveRates, setLiveRates] = useState([]);
     const [ratesError, setRatesError] = useState(null);
     const [error, setError] = useState(null);
+    const [needsProfile, setNeedsProfile] = useState(false); // show a Profile link on incomplete-profile errors
     const [step, setStep] = useState(1);
 
     const { recentInputs: recentAccounts, addRecentInput: addRecentAccount } = useRecentInputs('cross_border_accounts');
@@ -215,6 +217,7 @@ const CrossBorder = () => {
         setPinProcessing(true);
         setPinError('');
         setError(null);
+        setNeedsProfile(false);
         try {
             const res = await fxService.sendInternationalPayment({ ...transferData, pin });
             if (res.success) {
@@ -231,6 +234,7 @@ const CrossBorder = () => {
                 setPinError(err.message || 'Incorrect PIN. Please try again.');
             } else {
                 setShowPin(false);
+                if (err.code === 'PROFILE_INCOMPLETE') setNeedsProfile(true);
                 setError(err.message || 'Transfer failed.');
             }
         } finally {
@@ -627,9 +631,19 @@ const CrossBorder = () => {
                                 </div>
 
                                 {error && (
-                                    <div className="mb-6 p-4 bg-danger/10 border border-red-100 rounded-2xl flex items-center gap-3 text-danger">
-                                        <AlertCircle className="w-5 h-5 shrink-0" />
-                                        <p className="text-sm font-medium">{error}</p>
+                                    <div className="mb-6 p-4 bg-danger/10 border border-red-100 rounded-2xl flex items-start gap-3 text-danger">
+                                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                                        <div className="text-sm font-medium">
+                                            <p>{error}</p>
+                                            {needsProfile && (
+                                                <Link
+                                                    to="/dashboard/profile"
+                                                    className="inline-flex items-center gap-1 mt-2 font-bold underline hover:no-underline"
+                                                >
+                                                    Update your profile <ArrowRight className="w-3.5 h-3.5" />
+                                                </Link>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
 

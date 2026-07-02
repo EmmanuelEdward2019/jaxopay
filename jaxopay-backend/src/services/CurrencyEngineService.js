@@ -267,7 +267,7 @@ class CurrencyEngineService {
         const first = String(prof.first_name || '').trim();
         const last = String(prof.last_name || '').trim();
         if (!first || !last) {
-            throw new AppError('Please add your full legal name (first and last) in your profile before sending an international transfer.', 400);
+            throw new AppError('Please add your full legal name (first and last) in your profile before sending an international transfer.', 400, 'PROFILE_INCOMPLETE');
         }
 
         let dob = '01/01/1990';
