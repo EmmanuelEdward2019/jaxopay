@@ -148,6 +148,11 @@ const CrossBorder = () => {
             { from: 'EUR', to: 'NGN' },
             { from: 'USD', to: 'GHS' },
             { from: 'USD', to: 'KES' },
+            { from: 'USD', to: 'ZAR' },
+            { from: 'USD', to: 'UGX' },
+            { from: 'USD', to: 'TZS' },
+            { from: 'CAD', to: 'NGN' },
+            { from: 'NGN', to: 'GHS' },
         ];
 
         setRatesLoading(true);
@@ -287,6 +292,38 @@ const CrossBorder = () => {
                 {/* Decorative Elements */}
                 <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-card/10 rounded-full blur-3xl"></div>
                 <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-64 h-64 bg-primary/20 rounded-full blur-3xl"></div>
+            </div>
+
+            {/* Live rates — horizontal scroll strip (keeps the page from getting too tall) */}
+            <div className="bg-card rounded-2xl border border-border shadow-sm px-4 py-3">
+                <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-primary" /> Live Rates
+                    </h3>
+                    {ratesLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+                </div>
+                {ratesError ? (
+                    <p className="text-xs text-danger">{ratesError}</p>
+                ) : (
+                    <div className="flex gap-3 overflow-x-auto pb-1 px-0.5 [scrollbar-width:thin]">
+                        {liveRates.length === 0 && !ratesLoading && (
+                            <span className="text-xs text-muted-foreground">No rates available.</span>
+                        )}
+                        {liveRates.map((item) => (
+                            <div key={item.pair} className="shrink-0 min-w-[128px] bg-muted/40 rounded-xl px-3 py-2 border border-border/60">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-bold text-foreground">{item.pair}</span>
+                                    <span className={`text-[10px] font-bold ${item.trend === 'up' ? 'text-success' : item.trend === 'down' ? 'text-danger' : 'text-muted-foreground'}`}>
+                                        {item.trend === 'up' ? '▲' : item.trend === 'down' ? '▼' : '•'}
+                                    </span>
+                                </div>
+                                <p className="text-sm font-bold mt-0.5 text-foreground">
+                                    {item.rate ? Number(item.rate).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -646,41 +683,8 @@ const CrossBorder = () => {
                     </div>
                 </div>
 
-                {/* Right Column: Information & Rates */}
+                {/* Right Column: Information */}
                 <div className="lg:col-span-4 space-y-6">
-                    <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
-                        <h3 className="font-bold text-foreground mb-6 flex items-center gap-2">
-                            <TrendingUp className="w-5 h-5 text-primary" />
-                            Live Exchange Rates
-                        </h3>
-                        <div className="space-y-4">
-                            {ratesError && (
-                                <div className="text-xs text-danger">{ratesError}</div>
-                            )}
-                            {ratesLoading && liveRates.length === 0 && (
-                                <div className="text-xs text-muted-foreground">Loading live rates...</div>
-                            )}
-                            {(ratesLoading || liveRates.length > 0) && (
-                                liveRates.map((item) => (
-                                    <div key={item.pair} className="flex justify-between items-center p-3 hover:bg-muted/50 rounded-2xl transition-all group">
-                                        <span className="font-bold text-sm text-foreground group-hover:text-primary">{item.pair}</span>
-                                        <div className="text-right">
-                                            <p className="font-bold">
-                                                {item.rate ? Number(item.rate).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}
-                                            </p>
-                                            <span className={`text-[10px] font-bold uppercase ${item.trend === 'up' ? 'text-success' : item.trend === 'down' ? 'text-danger' : 'text-muted-foreground'}`}>
-                                                {item.trend === 'up' ? '▲' : item.trend === 'down' ? '▼' : '•'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                            {!ratesLoading && liveRates.length === 0 && !ratesError && (
-                                <div className="text-xs text-muted-foreground">No rates available.</div>
-                            )}
-                        </div>
-                    </div>
-
                     <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-5 text-white shadow-lg relative overflow-hidden">
                         <Globe className="absolute -right-8 -bottom-8 w-28 h-28 text-white/10" />
                         <h3 className="font-bold text-base mb-2 flex items-center gap-2">
