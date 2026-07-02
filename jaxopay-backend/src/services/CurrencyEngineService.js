@@ -262,6 +262,14 @@ class CurrencyEngineService {
             [userId]
         )).rows[0] || {};
 
+        // Yellow Card requires a real sender identity. A proper first + last name is
+        // mandatory (it rejects email fallbacks with "bad sender name").
+        const first = String(prof.first_name || '').trim();
+        const last = String(prof.last_name || '').trim();
+        if (!first || !last) {
+            throw new AppError('Please add your full legal name (first and last) in your profile before sending an international transfer.', 400);
+        }
+
         let dob = '01/01/1990';
         const d = prof.date_of_birth ? new Date(prof.date_of_birth) : null;
         if (d && !isNaN(d.getTime())) {
@@ -271,13 +279,13 @@ class CurrencyEngineService {
         const idType = idt.includes('passport') ? 'passport' : (idt.includes('driver') || idt.includes('licen')) ? 'license' : 'passport';
 
         return {
-            name: `${prof.first_name || ''} ${prof.last_name || ''}`.trim() || prof.email || 'Jaxopay User',
+            name: `${first} ${last}`,
             country: String(prof.country || 'NG').toUpperCase().slice(0, 2),
             phone: prof.phone || '',
             address: prof.address_line1 || prof.city || 'N/A',
             dob,
             email: prof.email || '',
-            idNumber: kyc.document_number || '',
+            idNumber: kyc.document_number || 'N0000000',
             idType,
         };
     }

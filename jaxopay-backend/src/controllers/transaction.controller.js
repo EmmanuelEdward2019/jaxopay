@@ -92,6 +92,25 @@ const combinedQuery = `
     WHERE (wtx.metadata->>'quidax_tx_id') IS NOT NULL
       AND (t.metadata->>'quidax_tx_id') = (wtx.metadata->>'quidax_tx_id')
   )
+
+  UNION ALL
+
+  SELECT
+    fx.id,
+    NULL::uuid as wallet_id,
+    (CASE fx.type WHEN 'swap' THEN 'exchange' WHEN 'international_payment' THEN 'transfer' ELSE fx.type END)::varchar as transaction_type,
+    fx.amount::numeric,
+    fx.from_currency::varchar as currency,
+    (CASE UPPER(fx.status) WHEN 'SUCCESS' THEN 'completed' WHEN 'PROCESSING' THEN 'pending' WHEN 'FAILED' THEN 'failed' ELSE LOWER(fx.status) END)::varchar as status,
+    (CASE fx.type
+       WHEN 'swap' THEN 'Currency Swap: ' || fx.from_currency || ' → ' || fx.to_currency
+       ELSE 'International Transfer to ' || COALESCE(fx.recipient_details->>'name', fx.to_currency)
+     END)::text as description,
+    fx.recipient_details as metadata,
+    fx.created_at,
+    fx.provider_txn_id::varchar as reference,
+    fx.user_id
+  FROM fx_transactions fx
 `;
 
 // Get all user transactions

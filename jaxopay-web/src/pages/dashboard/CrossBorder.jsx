@@ -141,31 +141,41 @@ const CrossBorder = () => {
     };
 
     const fetchLiveRates = async () => {
+        // Pairs Yellow Card supports (Africa-focused + majors). CNY is not supported.
         const pairs = [
-            { from: 'NGN', to: 'USD' },
+            { from: 'USD', to: 'NGN' },
             { from: 'GBP', to: 'NGN' },
             { from: 'EUR', to: 'NGN' },
-            { from: 'USD', to: 'CNY' },
+            { from: 'USD', to: 'GHS' },
+            { from: 'USD', to: 'KES' },
         ];
 
         setRatesLoading(true);
         setRatesError(null);
         try {
-            const results = await Promise.all(
+            // allSettled → one unsupported pair can't blank the whole panel.
+            const settled = await Promise.allSettled(
                 pairs.map(async ({ from, to }) => {
                     const res = await fxService.getRates(from, to);
                     return { pair: `${from}/${to}`, rate: res.data?.rate };
                 })
             );
+            const results = settled
+                .filter((s) => s.status === 'fulfilled' && s.value?.rate)
+                .map((s) => s.value);
 
-            setLiveRates((prev) => results.map((item) => {
-                const prevItem = prev.find(p => p.pair === item.pair);
-                let trend = 'flat';
-                if (prevItem?.rate && item.rate) {
-                    trend = item.rate > prevItem.rate ? 'up' : item.rate < prevItem.rate ? 'down' : 'flat';
-                }
-                return { ...item, trend };
-            }));
+            if (results.length === 0) {
+                setRatesError('Live rates are temporarily unavailable.');
+            } else {
+                setLiveRates((prev) => results.map((item) => {
+                    const prevItem = prev.find(p => p.pair === item.pair);
+                    let trend = 'flat';
+                    if (prevItem?.rate && item.rate) {
+                        trend = item.rate > prevItem.rate ? 'up' : item.rate < prevItem.rate ? 'down' : 'flat';
+                    }
+                    return { ...item, trend };
+                }));
+            }
         } catch (err) {
             setRatesError(err.message || 'Unable to load live rates');
         } finally {
