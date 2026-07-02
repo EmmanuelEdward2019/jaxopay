@@ -141,9 +141,10 @@ export const signup = catchAsync(async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Create user profile (Always create one, even if empty)
-    const firstName = metadata?.first_name || 'User';
-    const lastName = metadata?.last_name || user.id.substring(0, 8);
+    // Create user profile (Always create one, even if empty).
+    // Frontend sends first_name/last_name at the top level; older clients nest them under metadata.
+    const firstName = metadata?.first_name || req.body.first_name || 'User';
+    const lastName = metadata?.last_name || req.body.last_name || user.id.substring(0, 8);
 
     await client.query(
       `INSERT INTO user_profiles (user_id, first_name, last_name, country)

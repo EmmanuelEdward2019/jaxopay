@@ -77,7 +77,14 @@ export const updateProfile = catchAsync(async (req, res) => {
     postal_code,
   } = req.body;
 
-  const result = await query(
+  // Empty strings → null so COALESCE preserves existing values instead of blanking them.
+  const nz = (v) => (v === '' || v === undefined ? null : v);
+  const params = [
+    nz(first_name), nz(last_name), nz(date_of_birth), nz(gender),
+    nz(country), nz(city), nz(address), nz(postal_code), req.user.id,
+  ];
+
+  let result = await query(
     `UPDATE user_profiles
      SET first_name = COALESCE($1, first_name),
          last_name = COALESCE($2, last_name),
@@ -90,18 +97,18 @@ export const updateProfile = catchAsync(async (req, res) => {
          updated_at = NOW()
      WHERE user_id = $9
      RETURNING *`,
-    [
-      first_name,
-      last_name,
-      date_of_birth || null,
-      gender,
-      country,
-      city,
-      address,
-      postal_code,
-      req.user.id,
-    ]
+    params
   );
+
+  // No profile row yet (older accounts) → create one.
+  if (result.rows.length === 0) {
+    result = await query(
+      `INSERT INTO user_profiles (user_id, first_name, last_name, date_of_birth, gender, country, city, address_line1, postal_code)
+       VALUES ($9, $1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      params
+    );
+  }
 
   logger.info('Profile updated:', { userId: req.user.id });
 

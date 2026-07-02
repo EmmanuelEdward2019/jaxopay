@@ -58,15 +58,16 @@ router.get(
 // Update profile
 router.patch(
   '/profile',
-  body('first_name').optional().isString().trim(),
-  body('last_name').optional().isString().trim(),
-  body('date_of_birth').optional().isISO8601(),
-  body('gender').optional().isIn(['male', 'female', 'other']),
-  body('country').optional().isString(),
-  body('city').optional().isString(),
-  body('address').optional().isString(),
-  body('postal_code').optional().isString(),
-  body('bio').optional().isString().isLength({ max: 500 }),
+  // checkFalsy: '' / null are treated as "not provided" so partial updates don't 400.
+  body('first_name').optional({ checkFalsy: true }).isString().trim(),
+  body('last_name').optional({ checkFalsy: true }).isString().trim(),
+  body('date_of_birth').optional({ checkFalsy: true }).isISO8601(),
+  body('gender').optional({ checkFalsy: true }).isIn(['male', 'female', 'other']),
+  body('country').optional({ checkFalsy: true }).isString(),
+  body('city').optional({ checkFalsy: true }).isString(),
+  body('address').optional({ checkFalsy: true }).isString(),
+  body('postal_code').optional({ checkFalsy: true }).isString(),
+  body('bio').optional({ checkFalsy: true }).isString().isLength({ max: 500 }),
   validate,
   updateProfile
 );

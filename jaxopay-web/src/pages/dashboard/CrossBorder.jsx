@@ -681,18 +681,15 @@ const CrossBorder = () => {
                         </div>
                     </div>
 
-                    <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden group">
-                        <Globe className="absolute -right-10 -bottom-10 w-40 h-40 text-white/10 group-hover:scale-110 transition-transform duration-700" />
-                        <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                            <CheckCircle2 className="w-5 h-5" />
+                    <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-5 text-white shadow-lg relative overflow-hidden">
+                        <Globe className="absolute -right-8 -bottom-8 w-28 h-28 text-white/10" />
+                        <h3 className="font-bold text-base mb-2 flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4" />
                             Jaxopay Safeguard
                         </h3>
-                        <p className="text-sm text-white/80 leading-relaxed mb-6">
-                            All international transactions are fully protected and processed through licensed partners. We guarantee zero hidden fees.
+                        <p className="text-xs text-white/80 leading-relaxed">
+                            International transfers are processed through licensed partners. You'll always see the exchange rate and any fee before you confirm — no hidden charges.
                         </p>
-                        <button className="text-xs font-bold bg-card/20 hover:bg-card/30 px-3 py-2 rounded-lg transition-all flex items-center gap-2">
-                            Security Protocol <ArrowRight className="w-3 h-3" />
-                        </button>
                     </div>
 
                     <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">

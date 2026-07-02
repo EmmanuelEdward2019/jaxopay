@@ -41,6 +41,18 @@ export const getDashboardSummary = catchAsync(async (req, res) => {
                  WHERE (wtx.metadata->>'quidax_tx_id') IS NOT NULL
                    AND (t.metadata->>'quidax_tx_id') = (wtx.metadata->>'quidax_tx_id')
                )
+
+               UNION ALL
+
+               SELECT fx.id::uuid,
+                      (CASE fx.type WHEN 'swap' THEN 'exchange' WHEN 'international_payment' THEN 'transfer' ELSE fx.type END)::varchar as transaction_type,
+                      fx.amount::numeric, fx.from_currency::varchar as currency,
+                      (CASE UPPER(fx.status) WHEN 'SUCCESS' THEN 'completed' WHEN 'PROCESSING' THEN 'pending' WHEN 'FAILED' THEN 'failed' ELSE LOWER(fx.status) END)::varchar as status,
+                      (CASE fx.type WHEN 'swap' THEN 'Currency Swap: ' || fx.from_currency || ' → ' || fx.to_currency
+                            ELSE 'International Transfer to ' || COALESCE(fx.recipient_details->>'name', fx.to_currency) END)::text as description,
+                      fx.created_at::timestamp, fx.recipient_details::jsonb as metadata, fx.provider_txn_id::varchar as reference
+               FROM fx_transactions fx
+               WHERE fx.user_id = $1
              )
              SELECT * FROM combined
              ORDER BY created_at DESC
