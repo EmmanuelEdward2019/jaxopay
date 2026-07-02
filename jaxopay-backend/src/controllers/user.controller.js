@@ -79,9 +79,11 @@ export const updateProfile = catchAsync(async (req, res) => {
 
   // Empty strings → null so COALESCE preserves existing values instead of blanking them.
   const nz = (v) => (v === '' || v === undefined ? null : v);
+  // country is stored as a 2-letter ISO code (varchar(2)) — guard against overflow.
+  const country2 = nz(country) ? String(country).trim().toUpperCase().slice(0, 2) : null;
   const params = [
     nz(first_name), nz(last_name), nz(date_of_birth), nz(gender),
-    nz(country), nz(city), nz(address), nz(postal_code), req.user.id,
+    country2, nz(city), nz(address), nz(postal_code), req.user.id,
   ];
 
   let result = await query(

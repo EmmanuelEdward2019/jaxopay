@@ -20,6 +20,15 @@ import { useAuthStore } from '../../store/authStore';
 import userService from '../../services/userService';
 import { formatDateTime } from '../../utils/formatters';
 
+// Country is stored as a 2-letter ISO code (varchar(2)) — offer a code-based picker.
+const COUNTRIES = [
+    { code: 'NG', name: 'Nigeria' }, { code: 'GH', name: 'Ghana' }, { code: 'KE', name: 'Kenya' },
+    { code: 'ZA', name: 'South Africa' }, { code: 'UG', name: 'Uganda' }, { code: 'TZ', name: 'Tanzania' },
+    { code: 'CM', name: 'Cameroon' }, { code: 'CI', name: "Côte d'Ivoire" }, { code: 'SN', name: 'Senegal' },
+    { code: 'RW', name: 'Rwanda' }, { code: 'ZM', name: 'Zambia' }, { code: 'US', name: 'United States' },
+    { code: 'GB', name: 'United Kingdom' }, { code: 'CA', name: 'Canada' }, { code: 'FR', name: 'France' },
+];
+
 const Profile = () => {
     const { user, refreshSession } = useAuthStore();
     const [profile, setProfile] = useState(null);
@@ -312,15 +321,19 @@ const Profile = () => {
                                 <div>
                                     <label className="block text-sm font-medium text-muted-foreground mb-1">Country</label>
                                     {editing ? (
-                                        <input
-                                            type="text"
-                                            value={editForm.country}
+                                        <select
+                                            value={(editForm.country || '').toUpperCase().slice(0, 2)}
                                             onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
                                             className="w-full px-3 py-2 bg-card border border-border rounded-lg"
-                                        />
+                                        >
+                                            <option value="">Select country…</option>
+                                            {COUNTRIES.map((c) => (
+                                                <option key={c.code} value={c.code}>{c.name}</option>
+                                            ))}
+                                        </select>
                                     ) : (
                                         <p className="text-foreground font-medium">
-                                            {profile?.country || '—'}
+                                            {COUNTRIES.find(c => c.code === (profile?.country || '').toUpperCase())?.name || profile?.country || '—'}
                                         </p>
                                     )}
                                 </div>
