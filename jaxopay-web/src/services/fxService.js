@@ -31,6 +31,26 @@ const fxService = {
         }
     },
 
+    /** Supported payout countries (Yellow Card active withdraw channels) */
+    getPayoutCountries: async () => {
+        try {
+            return await apiClient.get('/fx/countries');
+        } catch (error) {
+            console.error('Error fetching payout countries:', error);
+            throw error;
+        }
+    },
+
+    /** Banks / mobile-money networks for a destination country */
+    getPayoutNetworks: async (country) => {
+        try {
+            return await apiClient.get(`/fx/networks?country=${encodeURIComponent(country)}`);
+        } catch (error) {
+            console.error('Error fetching payout networks:', error);
+            throw error;
+        }
+    },
+
     /**
      * Send an international payment
      */

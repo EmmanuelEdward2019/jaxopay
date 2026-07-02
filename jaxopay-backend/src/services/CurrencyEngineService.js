@@ -2,6 +2,11 @@ import { query, transaction } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import graphFinance from '../orchestration/adapters/fx/GraphFinanceService.js';
+import yellowCard from '../orchestration/adapters/fx/YellowCardService.js';
+
+// Cross-border FX/payments provider. Yellow Card by default; set FX_PROVIDER=graph to fall back.
+const FX_PROVIDER_NAME = (process.env.FX_PROVIDER || 'yellowcard').toLowerCase() === 'graph' ? 'graph' : 'yellowcard';
+const fx = FX_PROVIDER_NAME === 'graph' ? graphFinance : yellowCard;
 
 class CurrencyEngineService {
     async getRate(fromCurrency, toCurrency) {
@@ -9,8 +14,8 @@ class CurrencyEngineService {
         toCurrency = toCurrency.toUpperCase();
 
         try {
-            // 1. Fetch from Graph Finance
-            const rateData = await graphFinance.getExchangeRate(fromCurrency, toCurrency);
+            // 1. Fetch from the active FX provider (Yellow Card / Graph)
+            const rateData = await fx.getExchangeRate(fromCurrency, toCurrency);
 
             if (!rateData || !rateData.rate) {
                 throw new AppError('RATE_UNAVAILABLE', 400);
@@ -64,9 +69,9 @@ class CurrencyEngineService {
 
             // 4. Create FX Transaction DB record
             const fxTxn = await client.query(
-                `INSERT INTO fx_transactions 
+                `INSERT INTO fx_transactions
          (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, status)
-         VALUES ($1, 'graph', 'swap', $2, $3, $4, $5, $6, 'PROCESSING')
+         VALUES ($1, '${FX_PROVIDER_NAME}', 'swap', $2, $3, $4, $5, $6, 'PROCESSING')
          RETURNING id`,
                 [userId, fromCurrency, toCurrency, amount, convertedAmount, rate]
             );
@@ -84,7 +89,7 @@ class CurrencyEngineService {
 
                 while (attempts < 3 && !success) {
                     try {
-                        graphRes = await graphFinance.swapCurrency({
+                        graphRes = await fx.swapCurrency({
                             fromCurrency,
                             toCurrency,
                             amount,
@@ -125,7 +130,13 @@ class CurrencyEngineService {
     }
 
     async sendInternationalPayment(userId, payload) {
-        const { fromCurrency, amount, targetCurrency, recipientName, recipientBank, accountNumber, recipientCountry } = payload;
+        const {
+            fromCurrency, amount, targetCurrency, recipientName, recipientBank, accountNumber, recipientCountry,
+            networkId, networkName, networkAccountType, networkChannelIds,
+        } = payload;
+
+        // Remitter (sender) details required by Yellow Card, from the user's profile + KYC.
+        const sender = await this._buildSender(userId);
 
         return await transaction(async (client) => {
             const userWalletRes = await client.query(
@@ -157,12 +168,12 @@ class CurrencyEngineService {
 
             // Record Transaction
             const fxTxn = await client.query(
-                `INSERT INTO fx_transactions 
+                `INSERT INTO fx_transactions
           (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, recipient_details, status)
-          VALUES ($1, 'graph', 'international_payment', $2, $3, $4, $5, $6, $7, 'PROCESSING')
+          VALUES ($1, '${FX_PROVIDER_NAME}', 'international_payment', $2, $3, $4, $5, $6, $7, 'PROCESSING')
           RETURNING id`,
                 [userId, fromCurrency, targetCurrency, amount, convertedAmount, rate, JSON.stringify({
-                    name: recipientName, bank: recipientBank, account: accountNumber, country: recipientCountry
+                    name: recipientName, bank: networkName || recipientBank, account: accountNumber, country: recipientCountry, networkId
                 })]
             );
 
@@ -170,21 +181,28 @@ class CurrencyEngineService {
             let providerStatus = 'PROCESSING';
             let providerTxnId = null;
 
-            // Call Graph transfers
+            // Call the provider (Yellow Card): payout is in the DESTINATION currency.
+            let providerError = null;
             try {
-                const graphRes = await graphFinance.sendInternationalPayment({
-                    amount,
-                    currency: fromCurrency,
+                const graphRes = await fx.sendInternationalPayment({
+                    amount: convertedAmount,          // in targetCurrency (destination local currency)
+                    currency: targetCurrency,
                     destinationCountry: recipientCountry,
                     recipientName,
-                    recipientBank,
-                    accountNumber
+                    accountNumber,
+                    networkId,
+                    networkName,
+                    networkAccountType,
+                    networkChannelIds,
+                    sender,
+                    reason: 'other',
                 });
 
                 providerStatus = graphRes.status || 'SUCCESS';
                 providerTxnId = graphRes.id || `MOCK-${Date.now()}`;
             } catch (error) {
-                logger.error('[CurrencyEngine] Transfer Failed:', error.message);
+                logger.error('[CurrencyEngine] Transfer Failed:', error.message || error);
+                providerError = error.message || 'Transfer failed at provider';
                 providerStatus = 'FAILED';
             }
 
@@ -199,7 +217,7 @@ class CurrencyEngineService {
                     `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`,
                     [amount, wallet.id]
                 );
-                throw new AppError('TRANSFER_FAILED', 500);
+                throw new AppError(providerError || 'International transfer failed. Your wallet has been refunded.', 502);
             }
 
             return {
@@ -212,11 +230,56 @@ class CurrencyEngineService {
     }
 
     async getWalletBalances() {
-        return await graphFinance.getWalletBalances();
+        return await fx.getWalletBalances();
     }
 
     async checkStatus(providerTxnId) {
-        return await graphFinance.checkTransactionStatus(providerTxnId);
+        return await fx.checkTransactionStatus(providerTxnId);
+    }
+
+    // ── Payout destination metadata (Yellow Card) ───────────────────────────────
+    async getPayoutCountries() {
+        if (FX_PROVIDER_NAME !== 'yellowcard' || typeof fx.getPayoutCountries !== 'function') return [];
+        return await fx.getPayoutCountries();
+    }
+
+    async getPayoutNetworks(country) {
+        if (!country) throw new AppError('country is required', 400);
+        if (FX_PROVIDER_NAME !== 'yellowcard' || typeof fx.getPayoutNetworks !== 'function') return [];
+        return await fx.getPayoutNetworks(country);
+    }
+
+    /** Build the Yellow Card `sender` (remitter) object from the user's profile + KYC. */
+    async _buildSender(userId) {
+        const prof = (await query(
+            `SELECT p.first_name, p.last_name, p.date_of_birth, p.address_line1, p.city, p.country, u.email, u.phone
+             FROM users u LEFT JOIN user_profiles p ON p.user_id = u.id WHERE u.id = $1`,
+            [userId]
+        )).rows[0] || {};
+        const kyc = (await query(
+            `SELECT document_type, document_number FROM kyc_documents
+             WHERE user_id = $1 AND document_number IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
+            [userId]
+        )).rows[0] || {};
+
+        let dob = '01/01/1990';
+        const d = prof.date_of_birth ? new Date(prof.date_of_birth) : null;
+        if (d && !isNaN(d.getTime())) {
+            dob = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
+        }
+        const idt = String(kyc.document_type || '').toLowerCase();
+        const idType = idt.includes('passport') ? 'passport' : (idt.includes('driver') || idt.includes('licen')) ? 'license' : 'passport';
+
+        return {
+            name: `${prof.first_name || ''} ${prof.last_name || ''}`.trim() || prof.email || 'Jaxopay User',
+            country: String(prof.country || 'NG').toUpperCase().slice(0, 2),
+            phone: prof.phone || '',
+            address: prof.address_line1 || prof.city || 'N/A',
+            dob,
+            email: prof.email || '',
+            idNumber: kyc.document_number || '',
+            idType,
+        };
     }
 }
 

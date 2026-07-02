@@ -1,5 +1,6 @@
 import { AppError, catchAsync } from '../middleware/errorHandler.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
+import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import logger from '../utils/logger.js';
 
 export const getExchangeRate = catchAsync(async (req, res) => {
@@ -21,25 +22,44 @@ export const swapCurrency = catchAsync(async (req, res) => {
 });
 
 export const sendInternationalPayment = catchAsync(async (req, res) => {
-    const payload = req.body;
+    const b = req.body;
 
-    if (!payload.amount || !payload.currency || !payload.destinationCountry || !payload.recipientName || !payload.recipientBank || !payload.accountNumber) {
-        throw new AppError('Missing required transfer parameters', 400);
+    if (!b.amount || !b.currency || !b.recipientCountry || !b.recipientName || !b.accountNumber || !b.networkId) {
+        throw new AppError('Missing required transfer parameters (amount, currency, recipientCountry, recipientName, accountNumber, networkId)', 400);
     }
 
-    // Format payload properties mapping
+    // Require the transaction PIN — this moves money out of the user's wallet.
+    await verifyTransactionPin(req.user.id, b.pin);
+
     const mappedPayload = {
-        fromCurrency: payload.currency,
-        targetCurrency: payload.targetCurrency || payload.currency,
-        amount: parseFloat(payload.amount),
-        recipientName: payload.recipientName,
-        recipientBank: payload.recipientBank,
-        accountNumber: payload.accountNumber,
-        recipientCountry: payload.destinationCountry
+        fromCurrency: b.currency,                          // user's wallet currency
+        targetCurrency: b.targetCurrency || b.currency,     // destination local currency
+        amount: parseFloat(b.amount),
+        recipientName: b.recipientName,
+        accountNumber: b.accountNumber,
+        recipientCountry: b.recipientCountry,               // ISO2, e.g. NG
+        networkId: b.networkId,
+        networkName: b.networkName,
+        networkAccountType: b.networkAccountType,           // 'bank' | 'phone'
+        networkChannelIds: b.networkChannelIds,
     };
 
     const result = await currencyEngine.sendInternationalPayment(req.user.id, mappedPayload);
     res.status(200).json({ success: true, data: result });
+});
+
+// Supported payout countries (from active Yellow Card withdraw channels)
+export const getPayoutCountries = catchAsync(async (req, res) => {
+    const data = await currencyEngine.getPayoutCountries();
+    res.status(200).json({ success: true, data });
+});
+
+// Banks / mobile-money networks for a destination country (recipient picker)
+export const getPayoutNetworks = catchAsync(async (req, res) => {
+    const { country } = req.query;
+    if (!country) throw new AppError('country query parameter is required', 400);
+    const data = await currencyEngine.getPayoutNetworks(country);
+    res.status(200).json({ success: true, data });
 });
 
 export const getGraphWalletBalances = catchAsync(async (req, res) => {

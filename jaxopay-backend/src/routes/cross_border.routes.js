@@ -12,6 +12,10 @@ router.get('/rates', crossBorderController.getExchangeRate);
 // Currency Swap
 router.post('/swap', crossBorderController.swapCurrency);
 
+// Payout destination metadata (Yellow Card)
+router.get('/countries', crossBorderController.getPayoutCountries);
+router.get('/networks', crossBorderController.getPayoutNetworks);
+
 // International Payments
 router.post('/transfers/international', crossBorderController.sendInternationalPayment);
 

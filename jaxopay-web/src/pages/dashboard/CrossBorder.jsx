@@ -17,8 +17,18 @@ import {
 } from 'lucide-react';
 import fxService from '../../services/fxService';
 import walletService from '../../services/walletService';
+import PinModal from '../../components/common/PinModal';
 import { formatCurrency } from '../../utils/formatters';
 import { useRecentInputs } from '../../hooks/useRecentInputs';
+
+// Friendly names for Yellow Card payout country codes (falls back to the code).
+const COUNTRY_NAMES = {
+    NG: 'Nigeria', GH: 'Ghana', KE: 'Kenya', ZA: 'South Africa', UG: 'Uganda', TZ: 'Tanzania',
+    CM: 'Cameroon', CI: "Côte d'Ivoire", SN: 'Senegal', ZM: 'Zambia', RW: 'Rwanda', BF: 'Burkina Faso',
+    TG: 'Togo', BJ: 'Benin', MW: 'Malawi', BW: 'Botswana', GA: 'Gabon', CD: 'DR Congo', CG: 'Congo',
+    US: 'United States', GB: 'United Kingdom', FR: 'France', BR: 'Brazil', MX: 'Mexico', AR: 'Argentina',
+    PE: 'Peru', CO: 'Colombia', EC: 'Ecuador', LK: 'Sri Lanka', KH: 'Cambodia',
+};
 
 const CrossBorder = () => {
     const [activeTab, setActiveTab] = useState('swap'); // 'swap' | 'transfer'
@@ -44,14 +54,26 @@ const CrossBorder = () => {
     // Transfer State
     const [transferData, setTransferData] = useState({
         amount: '',
-        currency: 'NGN',
-        targetCurrency: 'USD',
+        currency: 'NGN',              // wallet the user pays FROM
+        targetCurrency: 'NGN',        // destination local currency (set from country)
         recipientName: '',
-        recipientBank: '',
         accountNumber: '',
-        destinationCountry: 'United States',
-        purpose: 'Settlement'
+        recipientCountry: '',         // ISO2, e.g. NG
+        networkId: '',
+        networkName: '',
+        networkAccountType: '',
+        networkChannelIds: [],
     });
+
+    // Yellow Card payout destinations
+    const [payoutCountries, setPayoutCountries] = useState([]);
+    const [payoutNetworks, setPayoutNetworks] = useState([]);
+    const [networksLoading, setNetworksLoading] = useState(false);
+
+    // Transaction PIN flow (international transfer)
+    const [showPin, setShowPin] = useState(false);
+    const [pinError, setPinError] = useState('');
+    const [pinProcessing, setPinProcessing] = useState(false);
 
     useEffect(() => {
         fetchWallets();
@@ -72,6 +94,31 @@ const CrossBorder = () => {
         }
         return () => clearInterval(timer);
     }, [quoteExpiry]);
+
+    // Load Yellow Card payout countries once, and networks whenever the country changes.
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fxService.getPayoutCountries();
+                if (res.success) setPayoutCountries(res.data || []);
+            } catch { /* non-fatal */ }
+        })();
+    }, []);
+
+    useEffect(() => {
+        const country = transferData.recipientCountry;
+        if (!country) { setPayoutNetworks([]); return; }
+        let active = true;
+        setNetworksLoading(true);
+        (async () => {
+            try {
+                const res = await fxService.getPayoutNetworks(country);
+                if (active) setPayoutNetworks(res.success ? (res.data || []) : []);
+            } catch { if (active) setPayoutNetworks([]); }
+            finally { if (active) setNetworksLoading(false); }
+        })();
+        return () => { active = false; };
+    }, [transferData.recipientCountry]);
 
     // Debounce FX rate fetching
     useEffect(() => {
@@ -142,20 +189,37 @@ const CrossBorder = () => {
         }
     };
 
-    const handleTransfer = async () => {
-        setLoading(true);
+    // Money-out → require the transaction PIN as the final step.
+    const handleTransfer = () => {
+        setError(null);
+        setPinError('');
+        setShowPin(true);
+    };
+
+    const runTransfer = async (pin) => {
+        setPinProcessing(true);
+        setPinError('');
         setError(null);
         try {
-            const res = await fxService.sendInternationalPayment(transferData);
+            const res = await fxService.sendInternationalPayment({ ...transferData, pin });
             if (res.success) {
+                setShowPin(false);
                 addRecentAccount(transferData.accountNumber);
                 setStep(3);
                 fetchWallets();
+            } else {
+                setShowPin(false);
+                setError(res.message || res.error || 'Transfer failed.');
             }
         } catch (err) {
-            setError(err.message || 'Transfer failed.');
+            if (['PIN_INCORRECT', 'PIN_LOCKED', 'PIN_NOT_SET', 'PIN_REQUIRED'].includes(err.code)) {
+                setPinError(err.message || 'Incorrect PIN. Please try again.');
+            } else {
+                setShowPin(false);
+                setError(err.message || 'Transfer failed.');
+            }
         } finally {
-            setLoading(false);
+            setPinProcessing(false);
         }
     };
 
@@ -355,34 +419,58 @@ const CrossBorder = () => {
                                                 <div className="relative">
                                                     <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                                                     <select
-                                                        value={transferData.destinationCountry}
-                                                        onChange={(e) => setTransferData(prev => ({ ...prev, destinationCountry: e.target.value }))}
+                                                        value={transferData.recipientCountry}
+                                                        onChange={(e) => {
+                                                            const code = e.target.value;
+                                                            const c = payoutCountries.find(x => x.country === code);
+                                                            setTransferData(prev => ({
+                                                                ...prev,
+                                                                recipientCountry: code,
+                                                                targetCurrency: c?.currencies?.[0] || prev.targetCurrency,
+                                                                networkId: '', networkName: '', networkAccountType: '', networkChannelIds: [],
+                                                            }));
+                                                        }}
                                                         className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
                                                     >
-                                                        <option value="United States">United States (USD)</option>
-                                                        <option value="United Kingdom">United Kingdom (GBP)</option>
-                                                        <option value="European Union">European Union (EUR)</option>
-                                                        <option value="China">China (CNY)</option>
-                                                        <option value="Canada">Canada (CAD)</option>
-                                                        <option value="Ghana">Ghana (GHS)</option>
-                                                        <option value="Kenya">Kenya (KES)</option>
-                                                        <option value="South Africa">South Africa (ZAR)</option>
-                                                        <option value="Australia">Australia (AUD)</option>
-                                                        <option value="Japan">Japan (JPY)</option>
+                                                        <option value="">Select country…</option>
+                                                        {payoutCountries.map((c) => (
+                                                            <option key={c.country} value={c.country}>
+                                                                {(COUNTRY_NAMES[c.country] || c.country)} ({c.currencies.join('/')})
+                                                            </option>
+                                                        ))}
                                                     </select>
                                                 </div>
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-sm font-bold text-foreground">Recipient Bank</label>
+                                                <label className="text-sm font-bold text-foreground">Recipient Bank / Network</label>
                                                 <div className="relative">
                                                     <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                                    <input
-                                                        type="text"
-                                                        value={transferData.recipientBank}
-                                                        onChange={(e) => setTransferData(prev => ({ ...prev, recipientBank: e.target.value }))}
-                                                        placeholder="Bank Name"
-                                                        className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
-                                                    />
+                                                    <select
+                                                        value={transferData.networkId}
+                                                        disabled={!transferData.recipientCountry || networksLoading}
+                                                        onChange={(e) => {
+                                                            const n = payoutNetworks.find(x => x.id === e.target.value);
+                                                            setTransferData(prev => ({
+                                                                ...prev,
+                                                                networkId: n?.id || '',
+                                                                networkName: n?.name || '',
+                                                                networkAccountType: n?.accountNumberType || '',
+                                                                networkChannelIds: n?.channelIds || [],
+                                                            }));
+                                                        }}
+                                                        className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all disabled:opacity-50"
+                                                    >
+                                                        <option value="">
+                                                            {!transferData.recipientCountry ? 'Select a country first'
+                                                                : networksLoading ? 'Loading banks…'
+                                                                    : `Select bank / network (${payoutNetworks.length})`}
+                                                        </option>
+                                                        {payoutNetworks.map((n) => (
+                                                            <option key={n.id} value={n.id}>
+                                                                {n.name}{n.accountNumberType === 'phone' ? ' (Mobile Money)' : ''}
+                                                            </option>
+                                                        ))}
+                                                    </select>
                                                 </div>
                                             </div>
                                             <div className="space-y-2">
@@ -430,7 +518,7 @@ const CrossBorder = () => {
 
                                         <button
                                             onClick={() => setStep(2)}
-                                            disabled={!transferData.amount || !transferData.recipientName || !transferData.accountNumber}
+                                            disabled={!transferData.amount || !transferData.recipientName || !transferData.accountNumber || !transferData.recipientCountry || !transferData.networkId}
                                             className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50"
                                         >
                                             Next Step
@@ -477,7 +565,11 @@ const CrossBorder = () => {
                                             </div>
                                             <div className="flex justify-between items-center text-sm">
                                                 <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Destination</span>
-                                                <span className="font-medium">{transferData.destinationCountry}</span>
+                                                <span className="font-medium text-right">{transferData.networkName}, {COUNTRY_NAMES[transferData.recipientCountry] || transferData.recipientCountry}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Account</span>
+                                                <span className="font-medium">{transferData.accountNumber}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-sm">
                                                 <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Transfer Fee</span>
@@ -616,6 +708,16 @@ const CrossBorder = () => {
                     </div>
                 </div>
             </div>
+
+            <PinModal
+                open={showPin}
+                onClose={() => { setShowPin(false); setPinError(''); }}
+                onConfirm={runTransfer}
+                processing={pinProcessing}
+                errorMessage={pinError}
+                title="Authorize International Transfer"
+                description={`Enter your 4-digit PIN to send ${transferData.amount || ''} ${transferData.currency} to ${transferData.recipientName || 'the recipient'}.`}
+            />
         </div>
     );
 };
