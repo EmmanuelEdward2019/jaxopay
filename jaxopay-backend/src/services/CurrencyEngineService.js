@@ -138,35 +138,30 @@ class CurrencyEngineService {
         // Remitter (sender) details required by Yellow Card, from the user's profile + KYC.
         const sender = await this._buildSender(userId);
 
-        return await transaction(async (client) => {
-            const userWalletRes = await client.query(
+        // Convert BEFORE opening a DB transaction — never hold a pooled connection
+        // during external API calls (that caused 502s on the server).
+        let convertedAmount = amount;
+        let rate = 1;
+        if (fromCurrency !== targetCurrency) {
+            const rateData = await this.getRate(fromCurrency, targetCurrency);
+            rate = parseFloat(rateData.rate);
+            convertedAmount = amount * rate;
+        }
+
+        // 1) Short transaction: lock + debit the wallet, record a PROCESSING fx tx. No external calls.
+        const record = await transaction(async (client) => {
+            const w = await client.query(
                 `SELECT id, balance FROM wallets WHERE user_id = $1 AND currency = $2 AND is_active = true FOR UPDATE`,
                 [userId, fromCurrency]
             );
+            if (w.rows.length === 0) throw new AppError(`No active ${fromCurrency} wallet found`, 404);
+            if (parseFloat(w.rows[0].balance) < amount) throw new AppError('Insufficient funds for this transfer.', 400);
 
-            if (userWalletRes.rows.length === 0) throw new AppError(`No active ${fromCurrency} wallet found`, 404);
-            const wallet = userWalletRes.rows[0];
-
-            if (parseFloat(wallet.balance) < amount) {
-                throw new AppError('INSUFFICIENT_FUNDS', 400);
-            }
-
-            // Calculate conversion if target is different
-            let convertedAmount = amount;
-            let rate = 1;
-            if (fromCurrency !== targetCurrency) {
-                const rateData = await this.getRate(fromCurrency, targetCurrency);
-                rate = parseFloat(rateData.rate);
-                convertedAmount = amount * rate;
-            }
-
-            // Lock Funds
             await client.query(
                 `UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2`,
-                [amount, wallet.id]
+                [amount, w.rows[0].id]
             );
 
-            // Record Transaction
             const fxTxn = await client.query(
                 `INSERT INTO fx_transactions
           (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, recipient_details, status)
@@ -176,57 +171,50 @@ class CurrencyEngineService {
                     name: recipientName, bank: networkName || recipientBank, account: accountNumber, country: recipientCountry, networkId
                 })]
             );
-
-            const txnId = fxTxn.rows[0].id;
-            let providerStatus = 'PROCESSING';
-            let providerTxnId = null;
-
-            // Call the provider (Yellow Card): payout is in the DESTINATION currency.
-            let providerError = null;
-            try {
-                const graphRes = await fx.sendInternationalPayment({
-                    amount: convertedAmount,          // in targetCurrency (destination local currency)
-                    currency: targetCurrency,
-                    destinationCountry: recipientCountry,
-                    recipientName,
-                    accountNumber,
-                    networkId,
-                    networkName,
-                    networkAccountType,
-                    networkChannelIds,
-                    sender,
-                    reason: 'other',
-                });
-
-                providerStatus = graphRes.status || 'SUCCESS';
-                providerTxnId = graphRes.id || `MOCK-${Date.now()}`;
-            } catch (error) {
-                logger.error('[CurrencyEngine] Transfer Failed:', error.message || error);
-                providerError = error.message || 'Transfer failed at provider';
-                providerStatus = 'FAILED';
-            }
-
-            await client.query(
-                `UPDATE fx_transactions SET status = $1, provider_txn_id = $2 WHERE id = $3`,
-                [providerStatus, providerTxnId, txnId]
-            );
-
-            // Revert funds if failed
-            if (providerStatus === 'FAILED') {
-                await client.query(
-                    `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`,
-                    [amount, wallet.id]
-                );
-                throw new AppError(providerError || 'International transfer failed. Your wallet has been refunded.', 502);
-            }
-
-            return {
-                transactionId: txnId,
-                status: providerStatus,
-                amount,
-                convertedAmount
-            };
+            return { txnId: fxTxn.rows[0].id, walletId: w.rows[0].id };
         });
+
+        // 2) Call the provider (Yellow Card) OUTSIDE any DB transaction. Payout is in the DESTINATION currency.
+        let providerStatus = 'PROCESSING';
+        let providerTxnId = null;
+        let providerError = null;
+        try {
+            const res = await fx.sendInternationalPayment({
+                amount: convertedAmount,
+                currency: targetCurrency,
+                destinationCountry: recipientCountry,
+                recipientName,
+                accountNumber,
+                networkId,
+                networkName,
+                networkAccountType,
+                networkChannelIds,
+                sender,
+                reason: 'other',
+            });
+            providerStatus = res.status || 'SUCCESS';
+            providerTxnId = res.id || null;
+        } catch (error) {
+            logger.error('[CurrencyEngine] Transfer failed at provider:', error.message || error);
+            providerError = error.message || 'Transfer failed at provider';
+            providerStatus = 'FAILED';
+        }
+
+        // 3) Reconcile (short queries). Refund on failure.
+        if (providerStatus === 'FAILED') {
+            await transaction(async (client) => {
+                await client.query(`UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`, [amount, record.walletId]);
+                await client.query(`UPDATE fx_transactions SET status = 'FAILED' WHERE id = $1`, [record.txnId]);
+            });
+            throw new AppError(providerError || 'International transfer failed. Your wallet has been refunded.', 400);
+        }
+
+        await query(
+            `UPDATE fx_transactions SET status = $1, provider_txn_id = $2 WHERE id = $3`,
+            [providerStatus, providerTxnId, record.txnId]
+        );
+
+        return { transactionId: record.txnId, status: providerStatus, amount, convertedAmount };
     }
 
     async getWalletBalances() {
