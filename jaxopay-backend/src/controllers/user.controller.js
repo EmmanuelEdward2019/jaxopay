@@ -2,6 +2,7 @@ import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import bcrypt from 'bcryptjs';
+import { auditFromReq } from '../services/audit.service.js';
 
 // Get current user profile
 export const getProfile = catchAsync(async (req, res) => {
@@ -113,6 +114,7 @@ export const updateProfile = catchAsync(async (req, res) => {
   }
 
   logger.info('Profile updated:', { userId: req.user.id });
+  auditFromReq(req, { action: 'profile_updated', entityType: 'user_profile', entityId: req.user.id });
 
   res.status(200).json({
     success: true,

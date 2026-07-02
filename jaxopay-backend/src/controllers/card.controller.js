@@ -6,6 +6,7 @@ import GraphAdapter from '../orchestration/adapters/cards/GraphAdapter.js';
 import StrowalletAdapter from '../orchestration/adapters/cards/StrowalletAdapter.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { getCardFee, getFeeConfig } from '../services/feeConfig.service.js';
+import { auditFromReq } from '../services/audit.service.js';
 const graph = new GraphAdapter();
 const strowallet = new StrowalletAdapter();
 
@@ -392,6 +393,7 @@ export const createCard = catchAsync(async (req, res) => {
 
   const card = created.card;
   logger.info(`[Cards] Created NFC card via Strowallet for user ${req.user.id}: ${card.id}`);
+  auditFromReq(req, { action: 'card_created', entityType: 'virtual_card', entityId: card.id, newValues: { amount_usd: amountUsd, card_type } });
 
   res.status(201).json({
     success: true,
@@ -492,6 +494,8 @@ export const fundCard = catchAsync(async (req, res) => {
 
     return { newBalance, fee: fundingFee, totalDebit };
   });
+
+  auditFromReq(req, { action: 'card_funded', entityType: 'virtual_card', entityId: cardId, newValues: { amount, fee: result.fee, total_charged: result.totalDebit } });
 
   res.status(200).json({
     success: true,

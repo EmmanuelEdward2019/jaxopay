@@ -4,6 +4,7 @@ import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import * as smileId from '../services/smileId.service.js';
 import * as kycNotify from '../services/kycNotification.service.js';
+import { auditFromReq } from '../services/audit.service.js';
 
 /** DB column is `document_url` (not document_front_url). Optional back image stored as JSON in same column. */
 function buildKycDocumentUrl(frontUrl, backUrl) {
@@ -124,6 +125,8 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
       documentId: result.rows[0].id,
     })
     .catch((err) => logger.error('[KYC] notifyManualKycSubmitted:', err?.message || err));
+
+  auditFromReq(req, { action: 'kyc_submitted', entityType: 'kyc_document', entityId: result.rows[0]?.id, newValues: { document_type: result.rows[0]?.document_type, method: 'manual' } });
 
   res.status(201).json({
     success: true,
@@ -376,6 +379,7 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
   await query(`UPDATE users SET kyc_status = 'pending', updated_at = NOW() WHERE id = $1`, [req.user.id]);
 
   logger.info('[KYC] Smile Basic KYC submitted', { userId: req.user.id, jobId });
+  auditFromReq(req, { action: 'kyc_submitted', entityType: 'kyc_document', newValues: { method: 'smile_basic', job_id: jobId } });
 
   kycNotify
     .notifySmileBasicSubmitted({ userId: req.user.id, jobId })
@@ -473,6 +477,8 @@ export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
   kycNotify
     .notifySmileBiometricSubmitted({ userId: req.user.id, jobId })
     .catch((err) => logger.error('[KYC] notifySmileBiometricSubmitted:', err?.message || err));
+
+  auditFromReq(req, { action: 'kyc_submitted', entityType: 'kyc_document', newValues: { method: 'smile_biometric', job_id: jobId } });
 
   res.status(202).json({
     success: true,

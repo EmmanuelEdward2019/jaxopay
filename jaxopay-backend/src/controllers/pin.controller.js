@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../config/database.js';
 import { AppError, catchAsync } from '../middleware/errorHandler.js';
 import { hashPin, isValidPinFormat } from '../services/transactionPin.service.js';
+import { auditFromReq } from '../services/audit.service.js';
 
 // GET /security/transaction-pin  — whether a PIN is set + lock state
 export const getPinStatus = catchAsync(async (req, res) => {
@@ -35,6 +36,7 @@ export const setTransactionPin = catchAsync(async (req, res) => {
        transaction_pin_failed_attempts = 0, transaction_pin_locked_until = NULL WHERE id = $1`,
     [req.user.id, hashed]
   );
+  auditFromReq(req, { action: 'transaction_pin_set', entityType: 'user', entityId: req.user.id });
   res.status(201).json({ success: true, message: 'Transaction PIN set successfully' });
 });
 
@@ -58,5 +60,6 @@ export const changeTransactionPin = catchAsync(async (req, res) => {
        transaction_pin_failed_attempts = 0, transaction_pin_locked_until = NULL WHERE id = $1`,
     [req.user.id, hashed]
   );
+  auditFromReq(req, { action: 'transaction_pin_changed', entityType: 'user', entityId: req.user.id });
   res.status(200).json({ success: true, message: 'Transaction PIN changed successfully' });
 });

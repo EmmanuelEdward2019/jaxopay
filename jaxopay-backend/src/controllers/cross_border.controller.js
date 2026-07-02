@@ -1,6 +1,7 @@
 import { AppError, catchAsync } from '../middleware/errorHandler.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
+import { auditFromReq } from '../services/audit.service.js';
 import logger from '../utils/logger.js';
 
 export const getExchangeRate = catchAsync(async (req, res) => {
@@ -18,6 +19,7 @@ export const swapCurrency = catchAsync(async (req, res) => {
     }
 
     const result = await currencyEngine.swapCurrency(req.user.id, fromCurrency, toCurrency, amount);
+    auditFromReq(req, { action: 'currency_swap', entityType: 'fx_transaction', entityId: result?.transactionId || null, newValues: { fromCurrency, toCurrency, amount } });
     res.status(200).json({ success: true, data: result });
 });
 
@@ -45,6 +47,7 @@ export const sendInternationalPayment = catchAsync(async (req, res) => {
     };
 
     const result = await currencyEngine.sendInternationalPayment(req.user.id, mappedPayload);
+    auditFromReq(req, { action: 'international_transfer', entityType: 'fx_transaction', entityId: result?.transactionId || null, newValues: { amount: mappedPayload.amount, currency: mappedPayload.fromCurrency, country: mappedPayload.recipientCountry, recipient: mappedPayload.recipientName } });
     res.status(200).json({ success: true, data: result });
 });
 

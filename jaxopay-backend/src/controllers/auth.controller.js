@@ -10,6 +10,7 @@ import { sendSMS } from '../services/sms.service.js';
 import { parseUserAgent, getDeviceInfo } from '../utils/deviceParser.js';
 import logger from '../utils/logger.js';
 import { supabaseAdmin } from '../config/supabase.js';
+import { auditFromReq } from '../services/audit.service.js';
 
 // Generate JWT token
 const generateToken = (userId, expiresIn = process.env.JWT_EXPIRES_IN || '15m') => {
@@ -271,6 +272,7 @@ export const login = catchAsync(async (req, res) => {
   const isPasswordValid = await bcrypt.compare(password, user.password_hash);
   if (!isPasswordValid) {
     logger.warn('Login failed: Invalid password', { email, userId: user.id });
+    auditFromReq(req, { userId: user.id, action: 'login_failed', entityType: 'user', entityId: user.id, newValues: { email, reason: 'invalid_password' } });
     throw new AppError('Invalid email or password', 401);
   }
 
@@ -342,6 +344,7 @@ export const login = catchAsync(async (req, res) => {
   await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
 
   logger.info('User logged in successfully:', { userId: user.id, email });
+  auditFromReq(req, { userId: user.id, action: 'login', entityType: 'user', entityId: user.id });
 
   res.status(200).json({
     success: true,
@@ -518,6 +521,7 @@ export const verifyOTP = catchAsync(async (req, res) => {
   }
 
   logger.info('User logged in via 2FA/OTP:', { userId: user.id });
+  auditFromReq(req, { userId: user.id, action: 'login', entityType: 'user', entityId: user.id, newValues: { method: '2fa' } });
 
   res.status(200).json({
     success: true,
@@ -550,6 +554,7 @@ export const logout = catchAsync(async (req, res) => {
   );
 
   logger.info('User logged out:', { userId: req.user.id });
+  auditFromReq(req, { action: 'logout', entityType: 'user', entityId: req.user.id });
 
   res.status(200).json({
     success: true,
@@ -715,6 +720,7 @@ export const resetPassword = catchAsync(async (req, res) => {
   );
 
   logger.info('Password reset successful:', { userId: resetRecord.user_id });
+  auditFromReq(req, { userId: resetRecord.user_id, action: 'password_reset', entityType: 'user', entityId: resetRecord.user_id });
 
   res.status(200).json({
     success: true,
@@ -750,6 +756,7 @@ export const changePassword = catchAsync(async (req, res) => {
   );
 
   logger.info('Password changed:', { userId: req.user.id });
+  auditFromReq(req, { action: 'password_changed', entityType: 'user', entityId: req.user.id });
 
   res.status(200).json({
     success: true,
@@ -905,6 +912,7 @@ export const verify2FA = catchAsync(async (req, res) => {
     [req.user.id]
   );
 
+  auditFromReq(req, { action: '2fa_enabled', entityType: 'user', entityId: req.user.id });
   res.status(200).json({
     success: true,
     message: 'Two-factor authentication enabled successfully',
@@ -933,6 +941,7 @@ export const disable2FA = catchAsync(async (req, res) => {
     [req.user.id]
   );
 
+  auditFromReq(req, { action: '2fa_disabled', entityType: 'user', entityId: req.user.id });
   res.status(200).json({
     success: true,
     message: 'Two-factor authentication disabled',
@@ -973,6 +982,7 @@ export const terminateSession = catchAsync(async (req, res) => {
 
 export const terminateAllSessions = catchAsync(async (req, res) => {
   await query('UPDATE user_sessions SET is_active = false WHERE user_id = $1 AND id != $2', [req.user.id, req.sessionId]);
+  auditFromReq(req, { action: 'logout_all_devices', entityType: 'user', entityId: req.user.id });
   res.status(200).json({ success: true, message: 'All other sessions terminated' });
 });
 

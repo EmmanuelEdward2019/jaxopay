@@ -1,6 +1,7 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { auditFromReq } from '../services/audit.service.js';
 import emailService from '../services/email.service.js';
 import VTpassAdapter from '../orchestration/adapters/utilities/VTpassAdapter.js';
 import StrowalletBillsAdapter from '../orchestration/adapters/utilities/StrowalletBillsAdapter.js';
@@ -914,6 +915,8 @@ export const payBill = catchAsync(async (req, res) => {
       }
     )
     .catch((e) => logger.error('Email send error:', e));
+
+  auditFromReq(req, { action: 'bill_payment', entityType: 'bill_payment', entityId: result.billPaymentId, newValues: { category: metadata?.category, provider: provider_id, amount, currency, reference: result.reference } });
 
   res.status(201).json({
     success: true,

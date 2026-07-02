@@ -1,6 +1,7 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { auditFromReq } from '../services/audit.service.js';
 import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js';
 import { getSpendableBalance } from '../utils/walletBalance.js';
 import { getKorapayErrorDetails, getKorapayTransferFailureMessage } from '../utils/korapay.js';
@@ -228,6 +229,8 @@ export const sendTransfer = catchAsync(async (req, res) => {
                 ]
             );
         });
+
+        auditFromReq(req, { action: 'bank_transfer', entityType: 'transaction', newValues: { amount: amountValue, currency: transferCurrency, reference, recipient: account_name, bank: bank_name } });
 
         res.status(200).json({
             success: true,

@@ -1,6 +1,7 @@
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { auditFromReq } from '../services/audit.service.js';
 import cache, { CacheTTL } from '../utils/cache.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
@@ -1028,6 +1029,8 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
 
     throw new AppError(`External withdrawal failed: ${providerMessage}`, 502);
   }
+
+  auditFromReq(req, { action: 'crypto_withdrawal', entityType: 'wallet_transaction', entityId: withdrawal.txId, newValues: { coin: coinUpper, amount: amountValue, address, network, reference } });
 
   res.status(200).json({
     success: true,
