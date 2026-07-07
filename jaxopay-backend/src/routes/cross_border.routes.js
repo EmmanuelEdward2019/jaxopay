@@ -4,6 +4,9 @@ import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
+// Public webhook (no auth) — must be registered before verifyToken.
+router.post('/webhook', crossBorderController.handleYellowCardWebhook);
+
 router.use(verifyToken);
 
 // Currency Rates

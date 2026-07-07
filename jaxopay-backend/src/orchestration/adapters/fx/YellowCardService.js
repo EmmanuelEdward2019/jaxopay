@@ -115,7 +115,7 @@ class YellowCardService {
     return this._request('GET', '/business/account');
   }
 
-  /** Countries we can pay out to — derived from active 'withdraw' channels. */
+  /** Countries we can pay out to — derived from active 'withdraw' channels, with currency + min. */
   async getPayoutCountries() {
     const channels = await this.getChannels();
     const map = {};
@@ -123,10 +123,21 @@ class YellowCardService {
       if (String(c.rampType || '').toLowerCase() !== 'withdraw') continue;
       if (c.status !== 'active' && c.apiStatus !== 'active') continue;
       if (!c.country) continue;
-      (map[c.country] ||= new Set()).add(String(c.currency || '').toUpperCase());
+      const cur = String(c.currency || '').toUpperCase();
+      const m = (map[c.country] ||= { currencies: new Set(), currency: cur, min: c.min ?? 0, max: c.max ?? 0 });
+      if (cur) m.currencies.add(cur);
+      // lowest min / highest max across the country's withdraw channels
+      if (c.min != null) m.min = m.min ? Math.min(m.min, c.min) : c.min;
+      if (c.max != null) m.max = Math.max(m.max || 0, c.max);
     }
     return Object.entries(map)
-      .map(([country, curs]) => ({ country, currencies: [...curs].filter(Boolean) }))
+      .map(([country, m]) => ({
+        country,
+        currencies: [...m.currencies].filter(Boolean),
+        currency: m.currency,
+        min: m.min || 0,
+        max: m.max || 0,
+      }))
       .sort((a, b) => a.country.localeCompare(b.country));
   }
 

@@ -42,13 +42,27 @@ class CurrencyEngineService {
             );
 
             const fromWallet = wallets.rows.find(w => w.currency === fromCurrency);
-            const toWallet = wallets.rows.find(w => w.currency === toCurrency);
+            let toWallet = wallets.rows.find(w => w.currency === toCurrency);
 
-            if (!fromWallet) throw new AppError(`No active ${fromCurrency} wallet found`, 404);
-            if (!toWallet) throw new AppError(`No active ${toCurrency} wallet found`, 404);
+            if (!fromWallet) throw new AppError(`No active ${fromCurrency} wallet found. Fund it first.`, 404);
 
             if (parseFloat(fromWallet.balance) < amount) {
-                throw new AppError('INSUFFICIENT_FUNDS', 400);
+                throw new AppError('Insufficient funds for this swap.', 400);
+            }
+
+            // Auto-create the destination wallet if the user doesn't have one yet
+            // (so USDT/USDC ↔ fiat swaps work without pre-provisioning wallets).
+            if (!toWallet) {
+                const CRYPTO = ['USDT', 'USDC', 'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'TRX', 'LTC', 'DOGE', 'ADA', 'DOT'];
+                const walletType = CRYPTO.includes(toCurrency) ? 'crypto' : 'fiat';
+                const created = await client.query(
+                    `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, is_active)
+                     VALUES ($1, $2, $3, 0, 0, true)
+                     ON CONFLICT (user_id, currency) DO UPDATE SET is_active = true
+                     RETURNING id, currency, balance`,
+                    [userId, toCurrency, walletType]
+                );
+                toWallet = created.rows[0];
             }
 
             // 2. Get Exchange Rate
@@ -221,8 +235,66 @@ class CurrencyEngineService {
         return await fx.getWalletBalances();
     }
 
-    async checkStatus(providerTxnId) {
-        return await fx.checkTransactionStatus(providerTxnId);
+    async checkStatus(idOrRef) {
+        // Checking status also reconciles: refund on failure, mark completed on success.
+        const status = await this.reconcileYcPayment(idOrRef).catch(() => null);
+        return { id: idOrRef, status: status || 'PROCESSING' };
+    }
+
+    /**
+     * Reconcile a Yellow Card payout against its authoritative status:
+     *  - failed/cancelled/reversed  → refund the sender's wallet + mark FAILED
+     *  - completed/success          → mark COMPLETED
+     * Accepts either the fx_transaction id OR the YC provider payment id.
+     * Idempotent (only acts while the fx row is still non-terminal). Safe to call
+     * from a webhook, a status poll, or a scheduled reconciler.
+     */
+    async reconcileYcPayment(idOrRef) {
+        if (!idOrRef) return null;
+        const row = (await query(
+            `SELECT id, user_id, from_currency, amount, status, provider_txn_id FROM fx_transactions
+             WHERE provider_txn_id = $1 OR id::text = $1 ORDER BY created_at DESC LIMIT 1`,
+            [String(idOrRef)]
+        )).rows[0];
+        if (!row) return null;
+
+        const TERMINAL = ['FAILED', 'COMPLETED', 'SUCCESS', 'REVERSED'];
+        if (TERMINAL.includes(String(row.status).toUpperCase())) return row.status;
+        if (!row.provider_txn_id) return row.status; // never reached the provider — nothing to reconcile
+
+        let ycStatus;
+        try {
+            const s = await fx.checkTransactionStatus(row.provider_txn_id);
+            ycStatus = String(s?.status || '').toUpperCase();
+        } catch (e) {
+            logger.warn('[YC reconcile] status fetch failed:', e.message);
+            return null;
+        }
+
+        const FAILED = ['FAILED', 'CANCELLED', 'CANCELED', 'REJECTED', 'DECLINED', 'EXPIRED', 'REVERSED'];
+        const DONE = ['COMPLETE', 'COMPLETED', 'SUCCESS', 'SUCCESSFUL', 'PAID', 'PROCESSED', 'SETTLED'];
+
+        if (FAILED.includes(ycStatus)) {
+            await transaction(async (client) => {
+                // Lock + re-check so a concurrent webhook/poll can't double-refund.
+                const cur = (await client.query('SELECT status FROM fx_transactions WHERE id = $1 FOR UPDATE', [row.id])).rows[0];
+                if (TERMINAL.includes(String(cur?.status).toUpperCase())) return;
+                await client.query(
+                    `UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance,0) + $1, updated_at = NOW()
+                     WHERE user_id = $2 AND currency = $3`,
+                    [row.amount, row.user_id, row.from_currency]
+                );
+                await client.query(`UPDATE fx_transactions SET status = 'FAILED' WHERE id = $1`, [row.id]);
+            });
+            logger.info(`[YC reconcile] payout ${row.provider_txn_id} FAILED → refunded ${row.amount} ${row.from_currency} to user ${row.user_id}`);
+            return 'FAILED';
+        }
+
+        if (DONE.includes(ycStatus)) {
+            await query(`UPDATE fx_transactions SET status = 'COMPLETED' WHERE id = $1 AND status NOT IN ('FAILED','REVERSED')`, [row.id]);
+            return 'COMPLETED';
+        }
+        return ycStatus || row.status; // still pending
     }
 
     // ── Payout destination metadata (Yellow Card) ───────────────────────────────

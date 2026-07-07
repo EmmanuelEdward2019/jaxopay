@@ -31,6 +31,9 @@ const COUNTRY_NAMES = {
     PE: 'Peru', CO: 'Colombia', EC: 'Ecuador', LK: 'Sri Lanka', KH: 'Cambodia',
 };
 
+// Currencies Yellow Card supports for swaps (incl. USDT/USDC stablecoins). CNY/AUD/JPY are not supported.
+const SWAP_CURRENCIES = ['NGN', 'USDT', 'USDC', 'USD', 'GHS', 'KES', 'ZAR', 'GBP', 'EUR', 'CAD'];
+
 const CrossBorder = () => {
     const [activeTab, setActiveTab] = useState('swap'); // 'swap' | 'transfer'
     const [wallets, setWallets] = useState([]);
@@ -40,6 +43,7 @@ const CrossBorder = () => {
     const [ratesError, setRatesError] = useState(null);
     const [error, setError] = useState(null);
     const [needsProfile, setNeedsProfile] = useState(false); // show a Profile link on incomplete-profile errors
+    const [transferStatus, setTransferStatus] = useState(null); // { id, status } for the success screen poll
     const [step, setStep] = useState(1);
 
     const { recentInputs: recentAccounts, addRecentInput: addRecentAccount } = useRecentInputs('cross_border_accounts');
@@ -213,6 +217,19 @@ const CrossBorder = () => {
         setShowPin(true);
     };
 
+    // Poll the payout status a few times so async failures reconcile (and refund) without waiting on a webhook.
+    const pollTransferStatus = async (txId) => {
+        for (let i = 0; i < 5; i++) {
+            await new Promise(r => setTimeout(r, 3500));
+            try {
+                const s = await fxService.checkStatus(txId);
+                const st = String(s.data?.status || '').toUpperCase();
+                if (st) setTransferStatus(prev => ({ ...(prev || {}), status: st }));
+                if (['FAILED', 'COMPLETED', 'SUCCESS', 'REVERSED'].includes(st)) { fetchWallets(); break; }
+            } catch { /* keep polling */ }
+        }
+    };
+
     const runTransfer = async (pin) => {
         setPinProcessing(true);
         setPinError('');
@@ -223,8 +240,11 @@ const CrossBorder = () => {
             if (res.success) {
                 setShowPin(false);
                 addRecentAccount(transferData.accountNumber);
+                const txId = res.data?.transactionId;
+                setTransferStatus({ id: txId, status: (res.data?.status || 'PROCESSING').toUpperCase() });
                 setStep(3);
                 fetchWallets();
+                if (txId) pollTransferStatus(txId);
             } else {
                 setShowPin(false);
                 setError(res.message || res.error || 'Transfer failed.');
@@ -363,7 +383,7 @@ const CrossBorder = () => {
                                                         onChange={(e) => setSwapData(prev => ({ ...prev, fromCurrency: e.target.value }))}
                                                         className="bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
                                                     >
-                                                        {['NGN', 'USD', 'GBP', 'EUR', 'CAD', 'GHS', 'KES', 'ZAR', 'CNY', 'AUD', 'JPY'].map(c => <option key={c} value={c}>{c}</option>)}
+                                                        {SWAP_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
                                                     </select>
                                                 </div>
                                             </div>
@@ -406,7 +426,7 @@ const CrossBorder = () => {
                                                         onChange={(e) => setSwapData(prev => ({ ...prev, toCurrency: e.target.value }))}
                                                         className="bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
                                                     >
-                                                        {['USD', 'GBP', 'EUR', 'NGN', 'CAD', 'GHS', 'KES', 'ZAR', 'CNY', 'AUD', 'JPY'].map(c => <option key={c} value={c}>{c}</option>)}
+                                                        {SWAP_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
                                                     </select>
                                                 </div>
                                             </div>
@@ -474,10 +494,12 @@ const CrossBorder = () => {
                                                         onChange={(e) => {
                                                             const code = e.target.value;
                                                             const c = payoutCountries.find(x => x.country === code);
+                                                            const destCur = c?.currency || c?.currencies?.[0];
                                                             setTransferData(prev => ({
                                                                 ...prev,
                                                                 recipientCountry: code,
-                                                                targetCurrency: c?.currencies?.[0] || prev.targetCurrency,
+                                                                targetCurrency: destCur || prev.targetCurrency,
+                                                                currency: destCur || prev.currency,   // auto-select the destination currency
                                                                 networkId: '', networkName: '', networkAccountType: '', networkChannelIds: [],
                                                             }));
                                                         }}
@@ -562,9 +584,25 @@ const CrossBorder = () => {
                                                     onChange={(e) => setTransferData(prev => ({ ...prev, currency: e.target.value }))}
                                                     className="bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
                                                 >
-                                                    {['NGN', 'USD', 'GBP', 'EUR', 'CAD', 'GHS', 'KES', 'ZAR', 'CNY'].map(c => <option key={c} value={c}>{c}</option>)}
+                                                    {/* Auto-set to the destination currency; includes every payout currency + your pay wallets */}
+                                                    {[...new Set([transferData.currency, 'NGN', 'USD', ...payoutCountries.flatMap(c => c.currencies || [])].filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
                                                 </select>
                                             </div>
+                                            {transferData.recipientCountry && (() => {
+                                                const sc = payoutCountries.find(c => c.country === transferData.recipientCountry);
+                                                const localCur = sc?.currency;
+                                                return (
+                                                    <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                                                        <p>
+                                                            Auto-set to <span className="font-semibold text-foreground">{localCur}</span> — you can change the send currency above.
+                                                            {transferData.currency !== localCur && ` Your ${transferData.currency} is converted to ${localCur} at the live rate.`}
+                                                        </p>
+                                                        {sc?.min > 0 && transferData.currency === localCur && (
+                                                            <p>Minimum payout to {COUNTRY_NAMES[sc.country] || sc.country}: <span className="font-semibold text-foreground">{sc.min.toLocaleString()} {localCur}</span></p>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
 
                                         <button
@@ -667,16 +705,31 @@ const CrossBorder = () => {
                             </div>
                         )}
 
-                        {step === 3 && (
+                        {step === 3 && (() => {
+                            const st = (transferStatus?.status || '').toUpperCase();
+                            const failed = activeTab === 'transfer' && ['FAILED', 'REVERSED'].includes(st);
+                            const done = activeTab === 'transfer' && ['COMPLETED', 'SUCCESS'].includes(st);
+                            const pending = activeTab === 'transfer' && !failed && !done;
+                            return (
                             <div className="text-center py-12 animate-in fade-in zoom-in-95 duration-500">
-                                <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                                    <CheckCircle2 className="w-10 h-10 text-success" />
+                                <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${failed ? 'bg-danger/10' : 'bg-success/10'}`}>
+                                    {failed
+                                        ? <AlertCircle className="w-10 h-10 text-danger" />
+                                        : pending
+                                            ? <RefreshCw className="w-10 h-10 text-primary animate-spin" />
+                                            : <CheckCircle2 className="w-10 h-10 text-success" />}
                                 </div>
-                                <h2 className="text-3xl font-bold mb-2">Transaction Successful!</h2>
+                                <h2 className="text-3xl font-bold mb-2">
+                                    {failed ? 'Transfer Failed' : pending ? 'Transfer Submitted' : 'Transaction Successful!'}
+                                </h2>
                                 <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
                                     {activeTab === 'swap'
                                         ? `You successfully swapped currencies. Your reflected balance has been updated.`
-                                        : `Your international transfer to ${transferData.recipientName} has been initiated and is processing.`}
+                                        : failed
+                                            ? `The transfer to ${transferData.recipientName} could not be completed and your wallet has been refunded.`
+                                            : done
+                                                ? `Your transfer to ${transferData.recipientName} has been delivered.`
+                                                : `Your transfer to ${transferData.recipientName} has been submitted and is processing. We'll refund your wallet automatically if it fails.`}
                                 </p>
                                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                                     <button
@@ -693,7 +746,8 @@ const CrossBorder = () => {
                                     </button>
                                 </div>
                             </div>
-                        )}
+                            );
+                        })()}
                     </div>
                 </div>
 

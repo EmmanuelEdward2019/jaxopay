@@ -75,3 +75,15 @@ export const checkTransactionStatus = catchAsync(async (req, res) => {
     const status = await currencyEngine.checkStatus(transactionId);
     res.status(200).json({ success: true, data: status });
 });
+
+// Public Yellow Card webhook — reconciles payout status (refund on async failure).
+// We re-fetch the authoritative status from YC, so an unsigned/forged call can't cause harm.
+export const handleYellowCardWebhook = catchAsync(async (req, res) => {
+    const b = req.body || {};
+    const paymentId = b.id || b.paymentId || b.data?.id || b.payment?.id || b.data?.paymentId;
+    logger.info('[YC webhook] received', { paymentId, event: b.event || b.type });
+    if (paymentId) {
+        await currencyEngine.reconcileYcPayment(paymentId).catch((e) => logger.error('[YC webhook] reconcile error:', e.message));
+    }
+    res.status(200).json({ success: true });
+});
