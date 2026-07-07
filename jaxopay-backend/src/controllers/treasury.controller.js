@@ -5,7 +5,7 @@ import logger from '../utils/logger.js';
 import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js'; // exported instance
 import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js'; // class
 import ReloadlyAdapter from '../orchestration/adapters/digital/ReloadlyAdapter.js'; // class
-import graphFx from '../orchestration/adapters/fx/GraphFinanceService.js'; // exported instance
+import yellowCard from '../orchestration/adapters/fx/YellowCardService.js'; // exported instance (replaces Graph)
 
 const korapay = new KorapayAdapter();
 const reloadly = new ReloadlyAdapter();
@@ -57,10 +57,10 @@ export const getTreasuryOverview = catchAsync(async (req, res) => {
       },
     },
     {
-      key: 'graph',
-      label: 'Graph Finance (FX)',
+      key: 'yellowcard',
+      label: 'Yellow Card (FX / Payouts)',
       run: async () => {
-        const raw = await graphFx.getWalletBalances();
+        const raw = await yellowCard.getWalletBalances(); // { USD: { balance }, ... }
         return Object.entries(raw || {}).map(([currency, v]) => ({
           currency: currency.toUpperCase(),
           available: num(typeof v === 'object' ? (v.balance ?? v.available) : v),

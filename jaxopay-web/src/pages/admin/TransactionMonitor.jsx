@@ -241,8 +241,11 @@ const TransactionMonitor = () => {
                                             </td>
                                             <td className="px-6 py-4">
                                                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                                    {tx.user_email || 'System/Unknown'}
+                                                    {tx.user_name || tx.user_email || 'System/Unknown'}
                                                 </span>
+                                                {tx.user_name && tx.user_email && tx.user_name !== tx.user_email && (
+                                                    <span className="block text-xs text-gray-400">{tx.user_email}</span>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4">
                                                 <span className={`font-semibold ${displayType === 'credit' ? 'text-primary-600' :

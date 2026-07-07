@@ -109,7 +109,7 @@ const AuditLogs = () => {
                             <thead className="bg-gray-50 dark:bg-gray-700/50">
                                 <tr>
                                     <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Timestamp</th>
-                                    <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Administrator</th>
+                                    <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">User</th>
                                     <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Action</th>
                                     <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Target</th>
                                     <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">IP Address</th>
@@ -127,7 +127,10 @@ const AuditLogs = () => {
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="font-medium text-gray-900 dark:text-white">{log.admin_email}</div>
+                                                <div className="font-medium text-gray-900 dark:text-white">{log.user_name || log.user_email || 'System'}</div>
+                                                {log.user_email && log.user_name !== log.user_email && (
+                                                    <div className="text-xs text-gray-400">{log.user_email}</div>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center gap-2">
@@ -139,8 +142,8 @@ const AuditLogs = () => {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex flex-col">
-                                                    <span className="font-medium text-gray-700 dark:text-gray-300">{log.target_type}</span>
-                                                    <span className="text-[10px] font-mono text-gray-400">{log.target_id}</span>
+                                                    <span className="font-medium text-gray-700 dark:text-gray-300 capitalize">{(log.entity_type || '—').replace(/_/g, ' ')}</span>
+                                                    <span className="text-[10px] font-mono text-gray-400">{log.entity_id || ''}</span>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-gray-500">

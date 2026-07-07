@@ -730,7 +730,7 @@ export const getAuditLogs = catchAsync(async (req, res) => {
 
   if (adminId) {
     params.push(adminId);
-    conditions += ` AND al.admin_id = $${params.length}`;
+    conditions += ` AND al.user_id = $${params.length}`;
   }
 
   if (action) {
@@ -740,13 +740,17 @@ export const getAuditLogs = catchAsync(async (req, res) => {
 
   if (targetType) {
     params.push(targetType);
-    conditions += ` AND al.target_type = $${params.length}`;
+    conditions += ` AND al.entity_type = $${params.length}`;
   }
 
   const result = await query(
-    `SELECT al.*, u.email as admin_email
+    `SELECT al.*,
+            u.email AS user_email,
+            u.role AS user_role,
+            COALESCE(NULLIF(TRIM(COALESCE(up.first_name,'') || ' ' || COALESCE(up.last_name,'')), ''), u.email, 'System') AS user_name
      FROM audit_logs al
      LEFT JOIN users u ON al.user_id = u.id
+     LEFT JOIN user_profiles up ON up.user_id = al.user_id
      ${conditions}
      ORDER BY al.created_at DESC
      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -1112,40 +1116,57 @@ export const getAllWallets = catchAsync(async (req, res) => {
 });
 
 // Get all transactions across the system (admin only)
+// Combined view of ALL money movement: fiat transactions + bill payments + wallet (crypto) + fx (swaps/transfers).
+const ADMIN_TX_COMBINED = `
+  WITH combined AS (
+    SELECT t.id, t.user_id, t.transaction_type::varchar AS transaction_type, t.from_amount::numeric AS amount,
+           t.from_currency::varchar AS currency, t.status::varchar AS status, t.description::text AS description,
+           t.reference::varchar AS reference, t.created_at
+    FROM transactions t
+    UNION ALL
+    SELECT bp.id, bp.user_id, 'bill_payment'::varchar, bp.amount::numeric, bp.currency::varchar, bp.status::varchar,
+           ('Bill Payment: ' || bp.service_type)::text, bp.reference::varchar, bp.created_at
+    FROM bill_payments bp
+    UNION ALL
+    SELECT wtx.id, w.user_id, wtx.transaction_type::varchar, wtx.amount::numeric, wtx.currency::varchar, wtx.status::varchar,
+           wtx.description::text, (wtx.metadata->>'quidax_tx_id')::varchar, wtx.created_at
+    FROM wallet_transactions wtx JOIN wallets w ON w.id = wtx.wallet_id
+    WHERE NOT EXISTS (SELECT 1 FROM transactions t WHERE (wtx.metadata->>'quidax_tx_id') IS NOT NULL AND (t.metadata->>'quidax_tx_id') = (wtx.metadata->>'quidax_tx_id'))
+    UNION ALL
+    SELECT fx.id, fx.user_id,
+           (CASE fx.type WHEN 'swap' THEN 'exchange' WHEN 'international_payment' THEN 'transfer' ELSE fx.type END)::varchar,
+           fx.amount::numeric, fx.from_currency::varchar,
+           (CASE UPPER(fx.status) WHEN 'SUCCESS' THEN 'completed' WHEN 'PROCESSING' THEN 'pending' WHEN 'FAILED' THEN 'failed' ELSE LOWER(fx.status) END)::varchar,
+           (CASE fx.type WHEN 'swap' THEN 'Currency Swap: '||fx.from_currency||' → '||fx.to_currency ELSE 'International Transfer to '||COALESCE(fx.recipient_details->>'name', fx.to_currency) END)::text,
+           fx.provider_txn_id::varchar, fx.created_at
+    FROM fx_transactions fx
+  )`;
+
 export const getAllTransactions = catchAsync(async (req, res) => {
   const { page = 1, limit = 20, type, status, user_id } = req.query;
   const offset = (page - 1) * limit;
 
   let conditions = 'WHERE 1=1';
   const params = [];
-
-  if (type) {
-    params.push(type);
-    conditions += ` AND wt.transaction_type = $${params.length}`;
-  }
-  if (status) {
-    params.push(status);
-    conditions += ` AND wt.status = $${params.length}`;
-  }
-  if (user_id) {
-    params.push(user_id);
-    conditions += ` AND w.user_id = $${params.length}`;
-  }
+  if (type) { params.push(type); conditions += ` AND c.transaction_type = $${params.length}`; }
+  if (status) { params.push(status); conditions += ` AND c.status = $${params.length}`; }
+  if (user_id) { params.push(user_id); conditions += ` AND c.user_id = $${params.length}`; }
 
   const result = await query(
-    `SELECT wt.*, u.email as user_email 
-     FROM transactions wt 
-     JOIN users u ON wt.user_id = u.id 
-     ${conditions.replace('wt.transaction_type', 'wt.transaction_type::text').replace('w.user_id', 'wt.user_id')} 
-     ORDER BY wt.created_at DESC 
+    `${ADMIN_TX_COMBINED}
+     SELECT c.*, u.email AS user_email,
+            COALESCE(NULLIF(TRIM(COALESCE(up.first_name,'') || ' ' || COALESCE(up.last_name,'')), ''), u.email) AS user_name
+     FROM combined c
+     LEFT JOIN users u ON u.id = c.user_id
+     LEFT JOIN user_profiles up ON up.user_id = c.user_id
+     ${conditions}
+     ORDER BY c.created_at DESC
      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
     [...params, limit, offset]
   );
 
   const countResult = await query(
-    `SELECT COUNT(*) as total 
-     FROM transactions wt 
-     ${conditions.replace('wt.transaction_type', 'wt.transaction_type::text').replace('w.user_id', 'wt.user_id')}`,
+    `${ADMIN_TX_COMBINED} SELECT COUNT(*) AS total FROM combined c ${conditions}`,
     params
   );
 
