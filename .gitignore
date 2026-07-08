@@ -39,3 +39,11 @@ coverage/
 *.pem
 *.key
 .cache/
+
+# Media / screen recordings (not part of the codebase)
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+WhatsApp Video*

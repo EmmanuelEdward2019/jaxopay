@@ -814,7 +814,9 @@ class QuidaxAdapter {
         let allData = this._getFromCache(cacheKey, this._cacheTTL.ticker);
 
         if (!allData) {
-            const response = await this.publicClient.get('/markets/tickers');
+            // Shorter timeout than the 10s default: this feeds a display ticker, so failing fast and
+            // serving the last snapshot beats holding the request (and a pooled connection) for 10s.
+            const response = await this.publicClient.get('/markets/tickers', { timeout: 6000 });
             allData = response.data?.data || response.data;
             this._setCache(cacheKey, allData);
         }

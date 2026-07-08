@@ -169,26 +169,32 @@ function App() {
 
   useEffect(() => {
     // Initialize app
-    const initApp = async () => {
-      setLoading(true);
+    const initApp = () => {
+      // Apply saved theme immediately (local, synchronous — never blocks on the network).
+      try {
+        const savedTheme = localStorage.getItem('jaxopay-app-settings');
+        if (savedTheme) {
+          const { theme } = JSON.parse(savedTheme);
+          setTheme(theme || 'light');
+        }
+      } catch { /* ignore malformed settings */ }
 
-      // Only initialize if Supabase is configured
-      if (hasValidCredentials) {
-        // Check for existing session
-        await refreshSession();
-
-        // Fetch feature toggles
-        await fetchFeatureToggles();
+      if (!hasValidCredentials) {
+        setLoading(false);
+        return;
       }
 
-      // Set initial theme
-      const savedTheme = localStorage.getItem('jaxopay-app-settings');
-      if (savedTheme) {
-        const { theme } = JSON.parse(savedTheme);
-        setTheme(theme || 'light');
-      }
-
+      // IMPORTANT: never gate the whole UI behind a network round-trip. If a session is already
+      // persisted, render the app immediately and validate/renew it in the background (the API
+      // layer refreshes the token on demand). On a slow/flaky connection this avoids the long
+      // full-page spinner + reload loop. If there's no session, ProtectedRoute sends to login.
+      const hasSession = !!useAuthStore.getState().session?.access_token;
       setLoading(false);
+
+      if (hasSession) {
+        Promise.resolve(refreshSession()).catch(() => { /* keep session on transient failure */ });
+      }
+      Promise.resolve(fetchFeatureToggles()).catch(() => { /* non-critical, must not block login */ });
     };
 
     initApp();

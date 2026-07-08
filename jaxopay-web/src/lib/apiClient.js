@@ -112,6 +112,20 @@ const getErrorMessage = (status, serverMessage) => {
 let isRefreshing = false;
 let failedQueue = [];
 
+// Guard so a burst of 401s (common on flaky mobile) can't trigger repeated hard redirects — the
+// root cause of the "screen keeps reloading and won't stabilize" behavior. We clear auth and go to
+// login at most once per page life; after the reload the app rehydrates with no session and stays.
+let hasRedirectedToLogin = false;
+const forceLogin = () => {
+  try { localStorage.removeItem('jaxopay-auth'); } catch { /* ignore */ }
+  if (hasRedirectedToLogin) return;
+  hasRedirectedToLogin = true;
+  const path = window.location?.pathname || '';
+  if (!/^\/(login|signup|auth|reset-password|verify)/.test(path)) {
+    window.location.href = '/login';
+  }
+};
+
 const processQueue = (error, token = null) => {
   failedQueue.forEach((prom) => {
     if (error) {
@@ -200,7 +214,10 @@ apiClient.interceptors.response.use(
             const response = await axios.post(
               `${API_BASE_URL}/auth/refresh-token`,
               { refresh_token: session.refresh_token },
-              { headers: { 'X-Device-Fingerprint': localStorage.getItem('device-fingerprint') || '' } }
+              {
+                timeout: 20000,
+                headers: { 'X-Device-Fingerprint': localStorage.getItem('device-fingerprint') || '' },
+              }
             );
 
             if (response.data.success) {
@@ -240,11 +257,8 @@ apiClient.interceptors.response.use(
         processQueue(new Error('Refresh failed'), null);
         isRefreshing = false;
 
-        // No valid refresh token - redirect to login
-        localStorage.removeItem('jaxopay-auth');
-        if (!window.location.pathname.startsWith('/login')) {
-          window.location.href = '/login';
-        }
+        // No usable refresh token — the session is genuinely gone.
+        forceLogin();
         return Promise.reject({ message: 'Your session has expired. Please log in again.' });
       } catch (refreshError) {
         console.error('❌ Error during token refresh:', refreshError);
@@ -252,17 +266,16 @@ apiClient.interceptors.response.use(
         isRefreshing = false;
 
         const refreshStatus = refreshError?.response?.status;
-        // 503 = DB/service down, NOT an invalid token — preserve session
-        if (refreshStatus === 503 || refreshStatus === 500) {
-          console.warn('⚠️ Refresh service unavailable, preserving session');
-          return Promise.reject({ message: 'Service temporarily unavailable. Please try again.' });
+        // No response at all = network error / timeout (common on weak mobile signal), or a transient
+        // server issue (503/500/429). This is NOT an invalid token — preserve the session so we don't
+        // log the user out and hard-reload in a loop. They can retry once the connection recovers.
+        if (!refreshError?.response || refreshStatus === 503 || refreshStatus === 500 || refreshStatus === 429) {
+          console.warn('⚠️ Refresh could not complete (network/service). Preserving session.');
+          return Promise.reject({ message: 'Connection issue — please check your network and try again.', status: refreshStatus || 0, silent: true });
         }
 
-        // True auth failure (401, 403, etc.) — clear auth and redirect to login
-        localStorage.removeItem('jaxopay-auth');
-        if (!window.location.pathname.startsWith('/login')) {
-          window.location.href = '/login';
-        }
+        // Genuine auth failure (401/403) — the refresh token itself is invalid/expired. Clear + login.
+        forceLogin();
         return Promise.reject({ message: 'Your session has expired. Please log in again.' });
       }
     }

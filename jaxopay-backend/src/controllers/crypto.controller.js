@@ -38,9 +38,16 @@ async function refreshTickerCache() {
 }
 
 async function getAllTickers() {
-  if (Date.now() - _tickerSnapshotTime < TICKER_TTL_MS && Object.keys(_tickerSnapshot).length > 0) {
+  const hasData = Object.keys(_tickerSnapshot).length > 0;
+  const fresh = Date.now() - _tickerSnapshotTime < TICKER_TTL_MS;
+  if (hasData) {
+    // Always serve the in-memory snapshot instantly. If it's stale, refresh in the BACKGROUND
+    // (never await) so a slow/timing-out Quidax can't block the request — display prices being a
+    // few seconds old is fine, and this stops the dashboard ticker from hanging the page.
+    if (!fresh) refreshTickerCache().catch(() => {});
     return _tickerSnapshot;
   }
+  // Cold start only (no snapshot yet): wait for the first fetch.
   await refreshTickerCache();
   return _tickerSnapshot;
 }
@@ -1331,10 +1338,13 @@ export const getMarkets = catchAsync(async (req, res) => {
 export const get24hTickers = catchAsync(async (req, res) => {
   const { market } = req.query;
   try {
-    const data = await quidax.getTicker24h(market);
+    // Serve the always-warm in-memory snapshot (non-blocking) rather than a live Quidax fetch, so
+    // the dashboard's 15s ticker poll can never hang the page when the exchange is slow.
+    const all = await getAllTickers();
+    const data = market ? (all?.[String(market).toLowerCase()] || null) : all;
     res.status(200).json({ success: true, data });
   } catch (err) {
-    logger.warn('[24hTickers] Quidax failed:', err.message);
+    logger.warn('[24hTickers] ticker unavailable:', err.message);
     res.status(200).json({ success: true, data: null, message: 'Ticker data temporarily unavailable' });
   }
 });
