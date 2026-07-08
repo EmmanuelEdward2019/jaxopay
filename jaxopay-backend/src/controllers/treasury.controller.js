@@ -4,11 +4,9 @@ import logger from '../utils/logger.js';
 
 import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js'; // exported instance
 import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js'; // class
-import ReloadlyAdapter from '../orchestration/adapters/digital/ReloadlyAdapter.js'; // class
 import yellowCard from '../orchestration/adapters/fx/YellowCardService.js'; // exported instance (replaces Graph)
 
 const korapay = new KorapayAdapter();
-const reloadly = new ReloadlyAdapter();
 
 const num = (v) => {
   const n = parseFloat(v);
@@ -66,18 +64,6 @@ export const getTreasuryOverview = catchAsync(async (req, res) => {
           available: num(typeof v === 'object' ? (v.balance ?? v.available) : v),
           pending: 0,
         }));
-      },
-    },
-    {
-      key: 'reloadly',
-      label: 'Reloadly (Top-ups)',
-      run: async () => {
-        const raw = await reloadly.getBalance();
-        return [{
-          currency: (raw?.currencyCode || 'USD').toUpperCase(),
-          available: num(raw?.balance),
-          pending: 0,
-        }];
       },
     },
   ];
