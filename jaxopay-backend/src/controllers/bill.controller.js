@@ -5,7 +5,7 @@ import { auditFromReq } from '../services/audit.service.js';
 import emailService from '../services/email.service.js';
 import VTpassAdapter from '../orchestration/adapters/utilities/VTpassAdapter.js';
 import StrowalletBillsAdapter from '../orchestration/adapters/utilities/StrowalletBillsAdapter.js';
-import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
+import fxService from '../orchestration/adapters/fx/YellowCardService.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 
 const vtpass = new VTpassAdapter();
@@ -581,7 +581,13 @@ export const payBill = catchAsync(async (req, res) => {
 
   if (targetCurrency !== 'NGN') {
     logger.info(`[Bills] FX required: NGN -> ${targetCurrency}`);
-    const rateData = await fxService.getExchangeRate('NGN', targetCurrency);
+    let rateData;
+    try {
+      rateData = await fxService.getExchangeRate('NGN', targetCurrency);
+    } catch (e) {
+      throw new AppError(`Currency conversion to ${targetCurrency} is unavailable right now. Please try again later.`, 503);
+    }
+    if (!(rateData?.rate > 0)) throw new AppError(`Currency conversion to ${targetCurrency} is unavailable right now.`, 503);
     totalDebitInWalletCurrency = billingAmountInNaira * rateData.rate;
     logger.info(`[Bills] Converted: ${billingAmountInNaira} NGN = ${totalDebitInWalletCurrency} ${targetCurrency} (rate: ${rateData.rate})`);
   }

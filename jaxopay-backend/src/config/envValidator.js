@@ -100,7 +100,7 @@ export function validateEnvironment() {
 
   // Check webhook secrets in production
   if (nodeEnv === 'production') {
-    const webhookSecrets = ['GRAPH_WEBHOOK_SECRET', 'KORAPAY_SECRET_KEY'];
+    const webhookSecrets = ['KORAPAY_SECRET_KEY'];
     webhookSecrets.forEach(secret => {
       if (!process.env[secret] || isPlaceholder(process.env[secret])) {
         warnings.push(`${secret} not set - webhook verification will fail`);

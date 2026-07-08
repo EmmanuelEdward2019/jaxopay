@@ -1,12 +1,11 @@
 import { query, transaction } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
-import graphFinance from '../orchestration/adapters/fx/GraphFinanceService.js';
 import yellowCard from '../orchestration/adapters/fx/YellowCardService.js';
 
-// Cross-border FX/payments provider. Yellow Card by default; set FX_PROVIDER=graph to fall back.
-const FX_PROVIDER_NAME = (process.env.FX_PROVIDER || 'yellowcard').toLowerCase() === 'graph' ? 'graph' : 'yellowcard';
-const fx = FX_PROVIDER_NAME === 'graph' ? graphFinance : yellowCard;
+// Cross-border FX/payments provider — Yellow Card.
+const FX_PROVIDER_NAME = 'yellowcard';
+const fx = yellowCard;
 
 class CurrencyEngineService {
     async getRate(fromCurrency, toCurrency) {
@@ -14,7 +13,7 @@ class CurrencyEngineService {
         toCurrency = toCurrency.toUpperCase();
 
         try {
-            // 1. Fetch from the active FX provider (Yellow Card / Graph)
+            // 1. Fetch from the active FX provider (Yellow Card)
             const rateData = await fx.getExchangeRate(fromCurrency, toCurrency);
 
             if (!rateData || !rateData.rate) {
@@ -95,15 +94,15 @@ class CurrencyEngineService {
             let providerStatus = 'SUCCESS';
             let providerTxnId = null;
 
-            // 5. Call Graph Finance (Failover & Retry handling)
+            // 5. Call the FX provider (Failover & Retry handling)
             try {
                 let attempts = 0;
                 let success = false;
-                let graphRes;
+                let providerRes;
 
                 while (attempts < 3 && !success) {
                     try {
-                        graphRes = await fx.swapCurrency({
+                        providerRes = await fx.swapCurrency({
                             fromCurrency,
                             toCurrency,
                             amount,
@@ -117,9 +116,9 @@ class CurrencyEngineService {
                     }
                 }
 
-                providerTxnId = graphRes.id || `MOCK-${Date.now()}`;
-            } catch (graphError) {
-                logger.error('[CurrencyEngine] Swap Failed at Provider', graphError.message);
+                providerTxnId = providerRes.id || `MOCK-${Date.now()}`;
+            } catch (providerError) {
+                logger.error('[CurrencyEngine] Swap Failed at Provider', providerError.message);
                 providerStatus = 'FAILED';
                 // A full implementation might queue for reconciliation or reverse internally 
                 // For simplicity, we flag as FAILED but keep internal swap valid (pretending Jaxopay absorbed risk)
@@ -372,6 +371,31 @@ class CurrencyEngineService {
         return sender;
     }
 
+    /**
+     * JAXOPAY's own crypto receiving address for an internal on-ramp (buy), by network. Configure
+     * real custody addresses via env for production:
+     *   YELLOWCARD_TREASURY_WALLET_<NETWORK>  (e.g. _POLYGON, _TRC20, _ERC20)
+     *   YELLOWCARD_TREASURY_EVM               (shared address for all EVM chains)
+     *   YELLOWCARD_TREASURY_WALLET            (single fallback)
+     * In sandbox, valid-format placeholders are used so buying works out of the box for testing.
+     */
+    _treasuryWalletFor(network) {
+        const net = String(network || '').toUpperCase();
+        const EVM = ['POLYGON', 'ERC20', 'BSC', 'BEP20', 'CELO', 'ARBITRUM', 'OPTIMISM', 'BASE', 'AVAXC', 'MATIC'];
+        const specific = process.env[`YELLOWCARD_TREASURY_WALLET_${net}`];
+        if (specific) return specific.trim();
+        if (EVM.includes(net) && process.env.YELLOWCARD_TREASURY_EVM) return process.env.YELLOWCARD_TREASURY_EVM.trim();
+        if (process.env.YELLOWCARD_TREASURY_WALLET) return process.env.YELLOWCARD_TREASURY_WALLET.trim();
+        // Sandbox-only fallbacks — never used against production Yellow Card.
+        if (/sandbox/i.test(process.env.YELLOWCARD_BASE_URL || '')) {
+            if (EVM.includes(net)) return '0x742d35Cc6634C0532925a3b844Bc454e4438f44e';
+            if (net === 'TRC20' || net === 'TRON') return 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE';
+            if (net === 'SOL' || net === 'SOLANA') return '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
+            return '0x742d35Cc6634C0532925a3b844Bc454e4438f44e';
+        }
+        return null;
+    }
+
     /** Normalize a local phone to E.164 (Yellow Card requires international format). */
     _toE164(phone, country) {
         const CODES = { NG: '234', GH: '233', KE: '254', ZA: '27', UG: '256', TZ: '255', RW: '250', ZM: '260', MW: '265', BW: '267', CM: '237', CI: '225', SN: '221', TG: '228', BF: '226', CD: '243', CG: '242', GB: '44', US: '1' };
@@ -504,9 +528,21 @@ class CurrencyEngineService {
         const fiatCurrency = String(p.fiatCurrency || 'NGN').toUpperCase();
         const country = String(p.country || 'NG').toUpperCase().slice(0, 2);
         const fiatAmount = Number(p.fiatAmount);
-        const walletAddress = mode === 'external' ? p.walletAddress : (process.env.YELLOWCARD_TREASURY_WALLET || p.walletAddress);
         if (!cryptoCurrency || !p.cryptoNetwork || !(fiatAmount > 0)) throw new AppError('Invalid crypto deposit request', 400);
-        if (!walletAddress) throw new AppError('A destination wallet address is required', 400);
+
+        // Internal buy → crypto is delivered to JAXOPAY's own treasury wallet (then we credit the
+        // user's in-app balance). External buy → the user supplies their own wallet address.
+        let walletAddress;
+        if (mode === 'external') {
+            walletAddress = String(p.walletAddress || '').trim();
+            if (!walletAddress) throw new AppError('Please enter the destination wallet address.', 400);
+        } else {
+            walletAddress = this._treasuryWalletFor(p.cryptoNetwork);
+            if (!walletAddress) {
+                logger.error(`[ramp] No treasury wallet configured for network ${p.cryptoNetwork} — set YELLOWCARD_TREASURY_WALLET_${String(p.cryptoNetwork).toUpperCase()} (or _EVM).`);
+                throw new AppError('Buying crypto is temporarily unavailable. Please try again shortly.', 503, 'RAMP_TREASURY_UNCONFIGURED');
+            }
+        }
 
         await this.assertRampKyc(userId);
         const recipient = await this._buildSender(userId); // recipient KYC (same shape)

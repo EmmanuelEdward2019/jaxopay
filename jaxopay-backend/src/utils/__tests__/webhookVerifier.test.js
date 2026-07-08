@@ -60,24 +60,6 @@ describe('WebhookVerifier', () => {
     });
   });
 
-  describe('Graph Finance Verification', () => {
-    test('should verify valid Graph Finance signature', () => {
-      const secret = 'test_secret_key';
-      const payload = JSON.stringify({ event: 'card.transaction' });
-      const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-
-      process.env.GRAPH_WEBHOOK_SECRET = secret;
-
-      const result = verifier.verify('graph', {
-        'x-graph-signature': signature
-      }, payload);
-
-      expect(result).toBe(true);
-    });
-  });
-
-
-
   describe('Replay Attack Prevention', () => {
     test('should prevent duplicate webhook processing', () => {
       const webhookId = 'unique-webhook-123';

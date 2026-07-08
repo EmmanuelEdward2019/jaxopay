@@ -120,7 +120,7 @@ export const getRampTransactionStatus = catchAsync(async (req, res) => {
     res.status(200).json({ success: true, data: result });
 });
 
-export const getGraphWalletBalances = catchAsync(async (req, res) => {
+export const getFxWalletBalances = catchAsync(async (req, res) => {
     const balances = await currencyEngine.getWalletBalances();
     res.status(200).json({ success: true, data: balances });
 });

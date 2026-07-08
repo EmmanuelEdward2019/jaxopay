@@ -38,7 +38,7 @@ export const handleWebhook = catchAsync(async (req, res) => {
                 'Verify QUIDAX_WEBHOOK_SECRET matches the "Signature Secret" in the Quidax dashboard.'
             );
             // continue to processing below
-        } else if (!['vtpass', 'graph', 'smile_identity', 'smile', 'smile-id'].includes(provider.toLowerCase())) {
+        } else if (!['vtpass', 'smile_identity', 'smile', 'smile-id'].includes(provider.toLowerCase())) {
             return res.status(401).json({ success: false, message: 'Invalid signature' });
         }
     }
@@ -48,10 +48,6 @@ export const handleWebhook = catchAsync(async (req, res) => {
         switch (provider.toLowerCase()) {
             case 'vtpass':
                 await processVTpass(body);
-                break;
-            case 'graph':
-            case 'graph_finance':
-                await processGraph(body);
                 break;
             case 'smile-id':
                 await processSmileIdentity(body);
@@ -108,49 +104,6 @@ async function processVTpass(payload) {
     }
 
     logger.info(`[WEBHOOK] VTpass ${requestId} → ${vtStatus}`);
-}
-
-// ─────────────────────────────────────────────
-// Graph Finance
-// ─────────────────────────────────────────────
-async function processGraph(payload) {
-    const { type, data } = payload;
-
-    switch (type) {
-        case 'card.transaction': {
-            // Record card spend
-            const card = await query('SELECT id FROM virtual_cards WHERE provider_card_id = $1', [data.card_id]);
-            if (card.rows.length > 0) {
-                await query(
-                    `INSERT INTO card_transactions
-                       (card_id, transaction_type, amount, currency, merchant_name, merchant_category, status)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7)
-                     ON CONFLICT DO NOTHING`,
-                    [card.rows[0].id, data.type || 'purchase', data.amount,
-                    data.currency || 'USD', data.merchant_name || '',
-                    data.merchant_category || '', data.status || 'completed']
-                );
-                // Deduct from card balance
-                await query(
-                    'UPDATE virtual_cards SET balance = GREATEST(0, balance - $1), updated_at = NOW() WHERE id = $2',
-                    [data.amount, card.rows[0].id]
-                );
-                logger.info(`[WEBHOOK] Graph card spend: ${data.amount} USD on ${data.merchant_name}`);
-            }
-            break;
-        }
-        case 'card.frozen':
-        case 'card.unfrozen': {
-            const newStatus = type === 'card.frozen' ? 'frozen' : 'active';
-            await query(
-                'UPDATE virtual_cards SET status = $1, updated_at = NOW() WHERE provider_card_id = $2',
-                [newStatus, data.card_id]
-            );
-            break;
-        }
-        default:
-            logger.info(`[WEBHOOK] Graph unhandled event: ${type}`);
-    }
 }
 
 

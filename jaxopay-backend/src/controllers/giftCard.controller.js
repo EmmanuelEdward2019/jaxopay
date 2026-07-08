@@ -2,7 +2,7 @@ import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import ReloadlyAdapter from '../orchestration/adapters/digital/ReloadlyAdapter.js';
-import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
+import fxService from '../orchestration/adapters/fx/YellowCardService.js';
 
 const reloadly = new ReloadlyAdapter();
 
@@ -226,7 +226,13 @@ export const buyGiftCard = catchAsync(async (req, res) => {
   // 0. Handle Currency Conversion if needed
   if (cardCurrency.toUpperCase() !== currency.toUpperCase()) {
     logger.info(`[GiftCards] FX required: ${cardCurrency} -> ${currency}`);
-    const rateData = await fxService.getExchangeRate(cardCurrency, currency);
+    let rateData;
+    try {
+      rateData = await fxService.getExchangeRate(cardCurrency, currency);
+    } catch (e) {
+      throw new AppError(`Currency conversion ${cardCurrency}→${currency} is unavailable right now. Please try again later.`, 503);
+    }
+    if (!(rateData?.rate > 0)) throw new AppError(`Currency conversion ${cardCurrency}→${currency} is unavailable right now.`, 503);
     exchangeRate = rateData.rate;
     totalCostInWalletCurrency = totalCostInCardCurrency * exchangeRate;
     logger.info(`[GiftCards] Converted: ${totalCostInCardCurrency} ${cardCurrency} = ${totalCostInWalletCurrency} ${currency} (rate: ${exchangeRate})`);

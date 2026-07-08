@@ -1,6 +1,5 @@
 import logger from '../../utils/logger.js';
 import KorapayAdapter from '../adapters/payments/KorapayAdapter.js';
-import GraphAdapter from '../adapters/cards/GraphAdapter.js';
 import VTpassAdapter from '../adapters/utilities/VTpassAdapter.js';
 
 /**
@@ -18,13 +17,10 @@ import VTpassAdapter from '../adapters/utilities/VTpassAdapter.js';
  */
 
 const korapay = new KorapayAdapter();
-const graph = new GraphAdapter();
 const vtpass = new VTpassAdapter();
 
 const adapters = {
     korapay,
-    graph,
-    graphfinance: graph,
     vtpass,
 };
 

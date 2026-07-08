@@ -1387,13 +1387,9 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
   const korapay = isSet(env.KORAPAY_SECRET_KEY);
   const quidaxOn = isSet(env.QUIDAX_SECRET_KEY) || isSet(env.QUIDAX_API_KEY);
   const strowallet = isSet(env.STROWALLET_PUBLIC_KEY) && isSet(env.STROWALLET_SECRET_KEY);
-  const graphFx = isSet(env.GRAPH_API_KEY);
-  // FX/cross-border provider is selected by FX_PROVIDER (yellowcard default). Autodetect which is live.
-  const fxProviderName = String(env.FX_PROVIDER || 'yellowcard').toLowerCase() === 'graph' ? 'graph' : 'yellowcard';
   const yellowcardFx = isSet(env.YELLOWCARD_API_KEY) && isSet(env.YELLOWCARD_SECRET_KEY);
   const smile = isSet(env.SMILE_ID_API_KEY) && isSet(env.SMILE_ID_PARTNER_ID);
   const resend = isSet(env.RESEND_API_KEY);
-  const graphCardsFallback = env.GRAPH_CARDS_ENABLED === 'true' && isSet(env.GRAPH_API_KEY);
   const vtpassFallback = env.VTPASS_BILLS_ENABLED === 'true' && isSet(env.VTPASS_SECRET_KEY);
 
   const data = [
@@ -1416,7 +1412,6 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
       adapters: [
         { name: 'Strowallet', role: 'primary', status: statusFor(strowallet, 'strowallet'),
           features: ['USD virtual (NFC) cards', 'Fund / withdraw', 'Freeze / activate'] },
-        ...(graphCardsFallback ? [{ name: 'Graph', role: 'fallback', status: 'active', features: ['Card fallback'] }] : []),
       ],
     },
     {
@@ -1430,16 +1425,8 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
     {
       type: 'FX / Cross-border',
       adapters: [
-        fxProviderName === 'yellowcard'
-          ? { name: 'Yellow Card', role: 'primary', status: statusFor(yellowcardFx),
-              features: ['FX rates', 'International payouts', 'USDT/USDC on/off-ramp'] }
-          : { name: 'Graph Finance', role: 'primary', status: graphFx ? 'active' : 'inactive',
-              features: ['FX rates', 'International payouts'] },
-        // Show the non-active provider as a configured standby only if its keys exist.
-        ...(fxProviderName === 'yellowcard' && graphFx
-          ? [{ name: 'Graph Finance', role: 'fallback', status: 'active', features: ['FX fallback'] }] : []),
-        ...(fxProviderName === 'graph' && yellowcardFx
-          ? [{ name: 'Yellow Card', role: 'fallback', status: 'active', features: ['FX fallback', 'USDT/USDC on/off-ramp'] }] : []),
+        { name: 'Yellow Card', role: 'primary', status: statusFor(yellowcardFx),
+          features: ['FX rates', 'International payouts', 'USDT/USDC on/off-ramp'] },
       ],
     },
     {

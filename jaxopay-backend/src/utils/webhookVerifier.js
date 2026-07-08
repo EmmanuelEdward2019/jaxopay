@@ -74,9 +74,6 @@ class WebhookVerifier {
                 return this._verifySudo(headers, payload);
             case 'vtpass':
                 return this._verifyVTpass(headers, payload);
-            case 'graph':
-            case 'graph_finance':
-                return this._verifyGraph(headers, payload);
             case 'smile_identity':
             case 'smile':
             case 'smile-id':
@@ -151,17 +148,6 @@ class WebhookVerifier {
         const incoming = headers['x-vtpass-secret'];
         if (!secret) return process.env.NODE_ENV === 'development';
         return incoming === secret;
-    }
-
-    _verifyGraph(headers, payload) {
-        // Graph Finance sends HMAC-SHA256 in 'x-graph-signature'
-        const secret = process.env.GRAPH_WEBHOOK_SECRET || process.env.GRAPH_API_KEY;
-        const signature = headers['x-graph-signature'];
-        if (!secret) return process.env.NODE_ENV === 'development';
-        if (!signature) return false;
-
-        const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-        return hash === signature;
     }
 
     /** Smile ID — signature on JSON body (parsed object or string) */

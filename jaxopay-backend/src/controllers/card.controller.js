@@ -2,12 +2,10 @@ import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import emailService from '../services/email.service.js';
-import GraphAdapter from '../orchestration/adapters/cards/GraphAdapter.js';
 import StrowalletAdapter from '../orchestration/adapters/cards/StrowalletAdapter.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { getCardFee, getFeeConfig } from '../services/feeConfig.service.js';
 import { auditFromReq } from '../services/audit.service.js';
-const graph = new GraphAdapter();
 const strowallet = new StrowalletAdapter();
 
 /** Strowallet blocks unknown outbound IPs — map to actionable text; log raw for ops. */
@@ -24,15 +22,6 @@ function userFacingStrowalletError(rawMessage) {
 
 function strowalletCardsEnabled() {
   return !!(process.env.STROWALLET_PUBLIC_KEY && process.env.STROWALLET_SECRET_KEY);
-}
-
-/** Legacy Graph path — opt-in only when Strowallet is not configured */
-function graphCardsFallbackEnabled() {
-  return (
-    process.env.GRAPH_CARDS_ENABLED === 'true' &&
-    !!process.env.GRAPH_API_KEY &&
-    !String(process.env.GRAPH_API_KEY).includes('your_')
-  );
 }
 
 const COUNTRY_ISO3 = {
@@ -205,12 +194,6 @@ export const getCard = catchAsync(async (req, res) => {
           card.balance = parseFloat(bal);
           await query('UPDATE virtual_cards SET balance = $1 WHERE id = $2', [parseFloat(bal), cardId]);
         }
-      } else {
-        const live = await graph.getCard(c.provider_card_id);
-        if (live?.details?.balance !== undefined) {
-          card.balance = live.details.balance;
-          await query('UPDATE virtual_cards SET balance = $1 WHERE id = $2', [live.details.balance, cardId]);
-        }
       }
     } catch (e) {
       logger.warn('[Cards] Could not refresh live balance from provider:', e.message);
@@ -248,7 +231,7 @@ export const getCardSecureData = catchAsync(async (req, res) => {
       const liveSecure =
         c.provider === 'strowallet'
           ? await strowallet.getSecureNfcCardData(c.provider_card_id)
-          : await graph.getSecureCardData(c.provider_card_id);
+          : null;
       if (liveSecure) {
         if (liveSecure.pan && !liveSecure.pan.includes('*')) securePAN = liveSecure.pan;
         if (liveSecure.cvv && !liveSecure.cvv.includes('*')) secureCVV = liveSecure.cvv;
@@ -464,8 +447,6 @@ export const fundCard = catchAsync(async (req, res) => {
       try {
         if (card.rows[0].provider === 'strowallet') {
           await strowallet.fundWithdrawNfc(card.rows[0].provider_card_id, amount, 'fund');
-        } else {
-          await graph.fundCard(card.rows[0].provider_card_id, amount);
         }
       } catch (e) {
         logger.warn('[Cards] Provider fund call failed, internal balance applied:', e.message);
@@ -519,8 +500,6 @@ export const freezeCard = catchAsync(async (req, res) => {
     try {
       if (card.rows[0].provider === 'strowallet') {
         await strowallet.freezeNfcCard(card.rows[0].provider_card_id, true);
-      } else {
-        await graph.freezeCard(card.rows[0].provider_card_id);
       }
     } catch (e) {
       logger.warn('[Cards] Provider freeze failed:', e.message);
@@ -554,7 +533,6 @@ export const unfreezeCard = catchAsync(async (req, res) => {
   if (c.provider_card_id) {
     try {
       if (c.provider === 'strowallet') await strowallet.freezeNfcCard(c.provider_card_id, false);
-      else await graph.unfreezeCard(c.provider_card_id);
     } catch (e) {
       logger.warn('[Cards] Provider unfreeze/activate failed (DB state applied):', e.message);
     }

@@ -4,7 +4,7 @@ import logger from '../utils/logger.js';
 import { auditFromReq } from '../services/audit.service.js';
 import cache, { CacheTTL } from '../utils/cache.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
-import fxService from '../orchestration/adapters/fx/GraphFinanceService.js';
+import fxService from '../orchestration/adapters/fx/YellowCardService.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance, convertCurrency } from '../utils/financial.js';
 import { getSpendableBalance } from '../utils/walletBalance.js';
