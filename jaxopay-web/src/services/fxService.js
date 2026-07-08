@@ -127,6 +127,16 @@ const fxService = {
             console.error('Error creating crypto withdrawal:', error);
             throw error;
         }
+    },
+
+    /** Live status of a ramp (auto-reconciles against Yellow Card). */
+    getRampTransactionStatus: async (id) => {
+        try {
+            return await apiClient.get(`/fx/ramp/${id}/status`);
+        } catch (error) {
+            console.error('Error checking ramp status:', error);
+            throw error;
+        }
     }
 };
 

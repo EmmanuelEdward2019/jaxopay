@@ -569,51 +569,130 @@ class CurrencyEngineService {
         };
     }
 
-    /** Ops confirms the manual settlement leg completed → credit the destination (internal) + mark COMPLETED. */
+    // Shared credit/refund bodies (used by manual admin actions AND automatic reconciliation).
+    async _creditRampDestination(client, r) {
+        const details = r.recipient_details || {};
+        const credit = Number(r.converted_amount) || 0;
+        if (details.mode === 'internal' && credit > 0) {
+            const walletType = r.type === 'crypto_onramp' ? 'crypto' : 'fiat';
+            await client.query(
+                `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, is_active)
+                 VALUES ($1,$2,$3,$4,$4,true)
+                 ON CONFLICT (user_id,currency) DO UPDATE SET balance=wallets.balance+$4, available_balance=COALESCE(wallets.available_balance,0)+$4, is_active=true, updated_at=NOW()`,
+                [r.user_id, r.to_currency, walletType, credit]
+            );
+        }
+        await client.query(`UPDATE fx_transactions SET status='COMPLETED' WHERE id=$1`, [r.id]);
+        return { credited: details.mode === 'internal' ? credit : 0, toCurrency: r.to_currency };
+    }
+
+    async _refundRampSource(client, r, reason) {
+        const refund = Number(r.amount) || 0;
+        const walletType = r.type === 'crypto_onramp' ? 'fiat' : 'crypto'; // source that was debited
+        if (refund > 0) {
+            await client.query(
+                `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, is_active)
+                 VALUES ($1,$2,$3,$4,$4,true)
+                 ON CONFLICT (user_id,currency) DO UPDATE SET balance=wallets.balance+$4, available_balance=COALESCE(wallets.available_balance,0)+$4, is_active=true, updated_at=NOW()`,
+                [r.user_id, r.from_currency, walletType, refund]
+            );
+        }
+        await client.query(
+            `UPDATE fx_transactions SET status='FAILED', recipient_details = COALESCE(recipient_details,'{}'::jsonb) || $2::jsonb WHERE id=$1`,
+            [r.id, JSON.stringify({ fail_reason: reason })]
+        );
+        return { refunded: refund, currency: r.from_currency };
+    }
+
+    /** Ops manually confirms the settlement leg → credit the destination (internal) + mark COMPLETED. */
     async confirmRampSettlement(rampId) {
         return await transaction(async (client) => {
             const r = (await client.query(`SELECT * FROM fx_transactions WHERE id=$1 FOR UPDATE`, [rampId])).rows[0];
             if (!r) throw new AppError('Ramp not found', 404);
             if (String(r.status).toUpperCase() !== 'PENDING') throw new AppError(`Ramp is ${r.status}, not pending`, 400);
-            const details = r.recipient_details || {};
-            const credit = Number(r.converted_amount) || 0;
-
-            if (details.mode === 'internal' && credit > 0) {
-                const walletType = r.type === 'crypto_onramp' ? 'crypto' : 'fiat';
-                await client.query(
-                    `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, is_active)
-                     VALUES ($1,$2,$3,$4,$4,true)
-                     ON CONFLICT (user_id,currency) DO UPDATE SET balance=wallets.balance+$4, available_balance=COALESCE(wallets.available_balance,0)+$4, is_active=true, updated_at=NOW()`,
-                    [r.user_id, r.to_currency, walletType, credit]
-                );
-            }
-            await client.query(`UPDATE fx_transactions SET status='COMPLETED' WHERE id=$1`, [rampId]);
-            return { rampId, status: 'COMPLETED', credited: details.mode === 'internal' ? credit : 0, toCurrency: r.to_currency };
+            const out = await this._creditRampDestination(client, r);
+            return { rampId, status: 'COMPLETED', ...out };
         });
     }
 
-    /** Ops rejects a pending ramp (settlement failed) → refund the user's source wallet + mark FAILED. */
+    /** Ops manually rejects a pending ramp → refund the user's source wallet + mark FAILED. */
     async failRampSettlement(rampId, reason = 'settlement_failed') {
         return await transaction(async (client) => {
             const r = (await client.query(`SELECT * FROM fx_transactions WHERE id=$1 FOR UPDATE`, [rampId])).rows[0];
             if (!r) throw new AppError('Ramp not found', 404);
             if (String(r.status).toUpperCase() !== 'PENDING') throw new AppError(`Ramp is ${r.status}, not pending`, 400);
-            const refund = Number(r.amount) || 0;
-            const walletType = r.type === 'crypto_onramp' ? 'fiat' : 'crypto'; // source that was debited
-            if (refund > 0) {
-                await client.query(
-                    `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, is_active)
-                     VALUES ($1,$2,$3,$4,$4,true)
-                     ON CONFLICT (user_id,currency) DO UPDATE SET balance=wallets.balance+$4, available_balance=COALESCE(wallets.available_balance,0)+$4, is_active=true, updated_at=NOW()`,
-                    [r.user_id, r.from_currency, walletType, refund]
-                );
-            }
-            await client.query(
-                `UPDATE fx_transactions SET status='FAILED', recipient_details = COALESCE(recipient_details,'{}'::jsonb) || $2::jsonb WHERE id=$1`,
-                [rampId, JSON.stringify({ fail_reason: reason })]
-            );
-            return { rampId, status: 'FAILED', refunded: refund, currency: r.from_currency };
+            const out = await this._refundRampSource(client, r, reason);
+            return { rampId, status: 'FAILED', ...out };
         });
+    }
+
+    /**
+     * Automatically reconcile a ramp against Yellow Card's real transaction status (no admin click):
+     * YC settled → auto-credit; YC expired/failed/refund → auto-refund. Idempotent. Returns the
+     * ramp's current status. Optionally scoped to a userId (returns null if it isn't theirs).
+     */
+    async reconcileRamp(idOrRef, userId = null) {
+        if (!idOrRef) return null;
+        const row = (await query(
+            `SELECT id, user_id, type, from_currency, to_currency, amount, converted_amount, status, provider_txn_id, recipient_details
+             FROM fx_transactions
+             WHERE (id::text = $1 OR provider_txn_id = $1) AND type IN ('crypto_onramp','crypto_offramp')
+             ORDER BY created_at DESC LIMIT 1`,
+            [String(idOrRef)]
+        )).rows[0];
+        if (!row) return null;
+        if (userId && String(row.user_id) !== String(userId)) return null;
+
+        const TERMINAL = ['FAILED', 'COMPLETED', 'SUCCESS', 'REVERSED'];
+        if (TERMINAL.includes(String(row.status).toUpperCase())) return { rampId: row.id, status: String(row.status).toUpperCase() };
+        if (!row.provider_txn_id || typeof fx.checkRampStatus !== 'function') return { rampId: row.id, status: String(row.status).toUpperCase() };
+
+        let ycStatus;
+        try {
+            const s = await fx.checkRampStatus(row.provider_txn_id, row.type);
+            ycStatus = String(s?.status || '').toUpperCase();
+        } catch (e) {
+            logger.warn(`[ramp reconcile] status fetch failed for ${row.provider_txn_id}: ${e.message}`);
+            return { rampId: row.id, status: String(row.status).toUpperCase() };
+        }
+
+        const FAILED = ['EXPIRED', 'FAILED', 'CANCELLED', 'CANCELED', 'REJECTED', 'DECLINED', 'REVERSED', 'PENDING_REFUND', 'REFUNDED', 'REFUND'];
+        const DONE = ['COMPLETE', 'COMPLETED', 'SUCCESS', 'SUCCESSFUL', 'PAID', 'PROCESSED', 'SETTLED'];
+
+        if (DONE.includes(ycStatus) || FAILED.includes(ycStatus)) {
+            const result = await transaction(async (client) => {
+                const cur = (await client.query(`SELECT * FROM fx_transactions WHERE id=$1 FOR UPDATE`, [row.id])).rows[0];
+                if (TERMINAL.includes(String(cur.status).toUpperCase())) return { rampId: row.id, status: String(cur.status).toUpperCase() };
+                if (DONE.includes(ycStatus)) {
+                    const out = await this._creditRampDestination(client, cur);
+                    logger.info(`[ramp reconcile] ${row.provider_txn_id} → COMPLETED (auto), credited ${out.credited} ${out.toCurrency}`);
+                    return { rampId: row.id, status: 'COMPLETED', ...out };
+                }
+                const out = await this._refundRampSource(client, cur, `yc_${ycStatus.toLowerCase()}`);
+                logger.info(`[ramp reconcile] ${row.provider_txn_id} → FAILED (auto: ${ycStatus}), refunded ${out.refunded} ${out.currency}`);
+                return { rampId: row.id, status: 'FAILED', ...out };
+            });
+            return result;
+        }
+        return { rampId: row.id, status: 'PENDING', ycStatus };
+    }
+
+    /** Sweep stale PENDING ramps and reconcile them against Yellow Card (safety net for closed screens). */
+    async sweepPendingRamps(maxAgeMinutes = 2, limit = 50) {
+        const rows = (await query(
+            `SELECT id FROM fx_transactions
+             WHERE type IN ('crypto_onramp','crypto_offramp') AND status='PENDING' AND provider_txn_id IS NOT NULL
+               AND created_at < NOW() - ($1 || ' minutes')::interval
+             ORDER BY created_at ASC LIMIT $2`,
+            [String(maxAgeMinutes), limit]
+        )).rows;
+        let changed = 0;
+        for (const r of rows) {
+            const res = await this.reconcileRamp(r.id).catch(() => null);
+            if (res && res.status !== 'PENDING') changed++;
+        }
+        if (rows.length) logger.info(`[ramp sweep] checked ${rows.length}, resolved ${changed}`);
+        return { checked: rows.length, resolved: changed };
     }
 }
 

@@ -429,6 +429,22 @@ class YellowCardService {
       raw: data,
     };
   }
+
+  /**
+   * Status of a crypto ramp transaction. On-ramps (collections) and off-ramps (sends) live under
+   * different endpoints. `type` is 'crypto_onramp' | 'crypto_offramp'.
+   */
+  async checkRampStatus(transactionId, type) {
+    const path = type === 'crypto_onramp'
+      ? `/business/collections/${encodeURIComponent(transactionId)}`
+      : `/business/send/${encodeURIComponent(transactionId)}`;
+    const data = await this._request('GET', path);
+    return {
+      id: transactionId,
+      status: (data?.status || 'UNKNOWN').toString().toUpperCase(),
+      raw: data,
+    };
+  }
 }
 
 export default new YellowCardService();

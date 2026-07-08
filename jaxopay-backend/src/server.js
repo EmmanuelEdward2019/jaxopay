@@ -164,7 +164,16 @@ const startServer = async () => {
 
     // Try to connect to database (asynchronous)
     connectDatabase()
-      .then(() => logger.info('✅ Database connected successfully'))
+      .then(() => {
+        logger.info('✅ Database connected successfully');
+        // Auto-reconcile crypto ramps against Yellow Card (no admin click needed).
+        const RAMP_SWEEP_MS = Number(process.env.RAMP_SWEEP_MS) || 60000;
+        setInterval(() => {
+          import('./services/CurrencyEngineService.js')
+            .then((m) => m.default.sweepPendingRamps())
+            .catch((e) => logger.warn('[ramp sweep] error:', e.message));
+        }, RAMP_SWEEP_MS).unref();
+      })
       .catch((dbError) => {
         logger.warn('⚠️  Database connection failed - server running without database');
         logger.warn('Database error:', dbError.message);

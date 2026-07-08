@@ -113,6 +113,13 @@ export const cryptoRampWithdraw = catchAsync(async (req, res) => {
     res.status(200).json({ success: true, data: result });
 });
 
+// Live status of a ramp — reconciles against Yellow Card, so no admin click is needed.
+export const getRampTransactionStatus = catchAsync(async (req, res) => {
+    const result = await currencyEngine.reconcileRamp(req.params.id, req.user.id);
+    if (!result) throw new AppError('Ramp not found', 404);
+    res.status(200).json({ success: true, data: result });
+});
+
 export const getGraphWalletBalances = catchAsync(async (req, res) => {
     const balances = await currencyEngine.getWalletBalances();
     res.status(200).json({ success: true, data: balances });
@@ -131,7 +138,9 @@ export const handleYellowCardWebhook = catchAsync(async (req, res) => {
     const paymentId = b.id || b.paymentId || b.data?.id || b.payment?.id || b.data?.paymentId;
     logger.info('[YC webhook] received', { paymentId, event: b.event || b.type });
     if (paymentId) {
-        await currencyEngine.reconcileYcPayment(paymentId).catch((e) => logger.error('[YC webhook] reconcile error:', e.message));
+        // A payout/transfer OR a crypto ramp — try both reconcilers (each no-ops if it isn't theirs).
+        await currencyEngine.reconcileYcPayment(paymentId).catch((e) => logger.error('[YC webhook] payout reconcile error:', e.message));
+        await currencyEngine.reconcileRamp(paymentId).catch((e) => logger.error('[YC webhook] ramp reconcile error:', e.message));
     }
     res.status(200).json({ success: true });
 });

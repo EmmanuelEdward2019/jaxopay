@@ -27,6 +27,7 @@ router.get('/ramp/status', crossBorderController.getRampStatus);
 router.get('/ramp/options', crossBorderController.getRampOptions);
 router.post('/ramp/deposit', crossBorderController.cryptoRampDeposit);
 router.post('/ramp/withdraw', crossBorderController.cryptoRampWithdraw);
+router.get('/ramp/:id/status', crossBorderController.getRampTransactionStatus);
 
 // Wallet Balances (Graph)
 router.get('/balances', crossBorderController.getGraphWalletBalances);

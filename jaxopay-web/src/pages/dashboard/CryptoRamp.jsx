@@ -328,17 +328,51 @@ const ModeToggle = ({ value, onChange, internalLabel, externalLabel }) => (
 const RampResult = ({ result, onDone }) => {
     const isBuy = result.kind === 'buy';
     const copy = (t) => navigator.clipboard?.writeText(t);
+    const [status, setStatus] = useState(result.status || 'PENDING');
+
+    // Poll the ramp status so the screen resolves itself (auto-confirmed via Yellow Card).
+    useEffect(() => {
+        if (!result.rampId) return;
+        if (['COMPLETED', 'FAILED', 'SUCCESS', 'REVERSED'].includes(String(status).toUpperCase())) return;
+        let stop = false;
+        const tick = async () => {
+            try {
+                const res = await fxService.getRampTransactionStatus(result.rampId);
+                const s = String(res?.data?.status || '').toUpperCase();
+                if (!stop && s) setStatus(s);
+                if (['COMPLETED', 'FAILED', 'SUCCESS', 'REVERSED'].includes(s)) { clearInterval(id); }
+            } catch { /* keep polling */ }
+        };
+        const id = setInterval(tick, 5000);
+        tick();
+        return () => { stop = true; clearInterval(id); };
+    }, [result.rampId, status]);
+
+    const done = ['COMPLETED', 'SUCCESS'].includes(String(status).toUpperCase());
+    const failed = ['FAILED', 'REVERSED'].includes(String(status).toUpperCase());
+    const pending = !done && !failed;
+
     return (
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 space-y-4">
             <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                {done ? <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                    : failed ? <AlertCircle className="w-8 h-8 text-red-500" />
+                        : <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />}
                 <div>
-                    <h2 className="font-semibold text-gray-900 dark:text-white">Request submitted</h2>
-                    <p className="text-sm text-gray-500">Status: {result.status} · awaiting settlement</p>
+                    <h2 className="font-semibold text-gray-900 dark:text-white">
+                        {done ? (isBuy ? 'Crypto purchased' : 'Sale completed')
+                            : failed ? 'Not completed — refunded'
+                                : 'Request submitted'}
+                    </h2>
+                    <p className="text-sm text-gray-500">
+                        {done ? 'Your wallet has been credited.'
+                            : failed ? 'Your balance was returned to your wallet.'
+                                : 'Status: awaiting settlement — this updates automatically.'}
+                    </p>
                 </div>
             </div>
 
-            {isBuy && result.bankInfo && (
+            {pending && isBuy && result.bankInfo && (
                 <div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 space-y-2">
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-200 flex items-center gap-2"><Building2 className="w-4 h-4" /> Pay {formatCurrency(result.fiatAmount, 'NGN')} NGN to:</p>
                     <Row label="Bank" value={result.bankInfo.name} />
@@ -348,7 +382,7 @@ const RampResult = ({ result, onDone }) => {
                 </div>
             )}
 
-            {!isBuy && result.walletAddress && (
+            {pending && !isBuy && result.walletAddress && (
                 <div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 space-y-2">
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Send {result.cryptoAmount} {result.cryptoCurrency} ({result.cryptoNetwork}) to:</p>
                     <Row label="Address" value={result.walletAddress} onCopy={() => copy(result.walletAddress)} />
