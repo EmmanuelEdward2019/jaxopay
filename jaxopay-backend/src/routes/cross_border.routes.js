@@ -22,6 +22,12 @@ router.get('/networks', crossBorderController.getPayoutNetworks);
 // International Payments
 router.post('/transfers/international', crossBorderController.sendInternationalPayment);
 
+// Crypto on/off-ramp (Yellow Card Direct Settlement)
+router.get('/ramp/status', crossBorderController.getRampStatus);
+router.get('/ramp/options', crossBorderController.getRampOptions);
+router.post('/ramp/deposit', crossBorderController.cryptoRampDeposit);
+router.post('/ramp/withdraw', crossBorderController.cryptoRampWithdraw);
+
 // Wallet Balances (Graph)
 router.get('/balances', crossBorderController.getGraphWalletBalances);
 

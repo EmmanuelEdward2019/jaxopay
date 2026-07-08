@@ -267,6 +267,19 @@ async function processSmileIdentity(body) {
         logger.warn(`[WEBHOOK] Smile ID: no kyc_documents row for job ${jobId} user ${userId}`);
     }
 
+    // Promote/reject a BVN/NIN captured for crypto-ramp verification (tied to this job via document_url).
+    await query(
+        `UPDATE kyc_documents
+         SET status = $1, rejection_reason = $2, reviewed_at = NOW(), updated_at = NOW()
+         WHERE user_id = $3::uuid AND document_url = $4 AND document_type IN ('bvn', 'nin')`,
+        [
+            approved ? 'approved' : 'rejected',
+            approved ? null : (b.ResultText || b.result_text || 'Verification did not pass'),
+            userId,
+            docNumber,
+        ]
+    ).catch((e) => logger.error('[WEBHOOK] Smile ID ramp BVN/NIN update:', e.message));
+
     const smileResultText = b.ResultText || b.result_text || '';
 
     if (approved) {

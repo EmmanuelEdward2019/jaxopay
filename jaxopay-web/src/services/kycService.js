@@ -94,6 +94,16 @@ const kycService = {
       return { success: false, error: error.message };
     }
   },
+
+  /** Verify a BVN or NIN (required before crypto on/off-ramp). */
+  verifyRampId: async (payload) => {
+    try {
+      const raw = await apiClient.post('/kyc/verify-id', payload);
+      return { success: raw?.success !== false, data: unwrapData(raw), message: raw?.message };
+    } catch (error) {
+      return { success: false, error: error?.response?.data?.message || error.message };
+    }
+  },
 };
 
 export default kycService;

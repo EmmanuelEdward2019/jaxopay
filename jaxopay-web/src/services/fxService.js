@@ -85,6 +85,48 @@ const fxService = {
             console.error('Error checking FX transaction status:', error);
             throw error;
         }
+    },
+
+    // ── Crypto on/off-ramp (Yellow Card) ──
+
+    /** Ramp eligibility for the current user (NG users need a verified BVN/NIN). */
+    getRampStatus: async () => {
+        try {
+            return await apiClient.get('/fx/ramp/status');
+        } catch (error) {
+            console.error('Error fetching ramp status:', error);
+            throw error;
+        }
+    },
+
+    /** Supported stablecoins + networks for on/off-ramp. */
+    getRampOptions: async (currency = 'NGN') => {
+        try {
+            return await apiClient.get(`/fx/ramp/options?currency=${encodeURIComponent(currency)}`);
+        } catch (error) {
+            console.error('Error fetching ramp options:', error);
+            throw error;
+        }
+    },
+
+    /** Buy USDT/USDC with fiat (on-ramp). */
+    rampDeposit: async (payload) => {
+        try {
+            return await apiClient.post('/fx/ramp/deposit', payload);
+        } catch (error) {
+            console.error('Error creating crypto deposit:', error);
+            throw error;
+        }
+    },
+
+    /** Sell USDT/USDC for fiat (off-ramp). */
+    rampWithdraw: async (payload) => {
+        try {
+            return await apiClient.post('/fx/ramp/withdraw', payload);
+        } catch (error) {
+            console.error('Error creating crypto withdrawal:', error);
+            throw error;
+        }
     }
 };
 

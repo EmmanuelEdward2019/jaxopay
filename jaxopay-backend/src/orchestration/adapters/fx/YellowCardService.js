@@ -199,6 +199,20 @@ class YellowCardService {
     return list[0] || null;
   }
 
+  /** Pick an active 'deposit' (collection) channel for a country — used for on-ramp (fiat→crypto). */
+  async getCollectionChannel(country, { currency } = {}) {
+    const channels = await this.getChannels(country);
+    let list = channels.filter(
+      (c) => String(c.rampType || '').toLowerCase() === 'deposit' && (c.status === 'active' || c.apiStatus === 'active')
+    );
+    if (currency) {
+      const cur = String(currency).toUpperCase();
+      const byCur = list.filter((c) => String(c.currency || '').toUpperCase() === cur);
+      if (byCur.length) list = byCur;
+    }
+    return list[0] || null;
+  }
+
   // ── CurrencyEngineService interface ─────────────────────────────────────────
   /**
    * Yellow Card rates are quoted per-currency against USD. Each entry looks like
@@ -298,6 +312,97 @@ class YellowCardService {
       id: data?.id || data?.paymentId || data?.data?.id || sequenceId,
       status: (data?.status || 'PROCESSING').toString().toUpperCase(),
       sequenceId,
+      raw: data,
+    };
+  }
+
+  // ── Crypto on/off-ramp (Direct Settlement / Convert Currency) ────────────────
+
+  /**
+   * OFF-RAMP: user sends USDT/USDC to the returned wallet address → recipient gets local fiat.
+   * POST /business/send with directSettlement. Response includes settlementInfo.walletAddress
+   * (where the user must send the crypto).
+   * @param {object} p destinationCountry, currency(fiat), recipientName, accountNumber, networkId,
+   *   networkAccountType, networkChannelIds, sender (KYC), customerUID, cryptoCurrency, cryptoNetwork,
+   *   cryptoAmount, refundAddress?, reason?
+   */
+  async submitCryptoWithdrawal(p) {
+    const channel = await this.getWithdrawChannel(p.destinationCountry, { currency: p.currency, networkChannelIds: p.networkChannelIds });
+    if (!channel) throw { message: `No active Yellow Card payout channel for ${p.destinationCountry}`, statusCode: 400 };
+    const sequenceId = crypto.randomUUID();
+    const body = {
+      channelId: channel.id,
+      sequenceId,
+      currency: channel.currency,
+      country: p.destinationCountry,
+      reason: p.reason || 'other',
+      customerUID: String(p.customerUID),
+      customerType: 'retail',
+      sender: p.sender,
+      destination: {
+        accountName: p.recipientName,
+        accountNumber: p.accountNumber,
+        accountType: p.networkAccountType === 'phone' ? 'momo' : 'bank',
+        networkId: p.networkId,
+      },
+      forceAccept: true,
+      directSettlement: true,
+      settlementInfo: {
+        cryptoCurrency: String(p.cryptoCurrency).toUpperCase(),
+        cryptoNetwork: String(p.cryptoNetwork).toUpperCase(),
+        cryptoAmount: Number(p.cryptoAmount),
+        ...(p.refundAddress ? { refundAddress: p.refundAddress } : {}),
+      },
+    };
+    const data = await this._request('POST', '/business/send', body);
+    return {
+      id: data?.id || sequenceId,
+      status: (data?.status || 'created').toString().toUpperCase(),
+      sequenceId,
+      walletAddress: data?.settlementInfo?.walletAddress || null,
+      cryptoAmount: data?.settlementInfo?.cryptoAmount ?? Number(p.cryptoAmount),
+      expiresAt: data?.settlementInfo?.expiresAt || data?.expiresAt || null,
+      raw: data,
+    };
+  }
+
+  /**
+   * ON-RAMP: user pays local fiat into the returned bank account → USDT/USDC sent to walletAddress.
+   * POST /business/collections with directSettlement. Response includes bankInfo (where the user pays).
+   * @param {object} p country, currency(fiat), amount(fiat/USD), recipient (KYC), customerUID,
+   *   walletAddress (crypto destination), cryptoCurrency, cryptoNetwork, walletTag?, reason?
+   */
+  async submitCryptoDeposit(p) {
+    const channel = await this.getCollectionChannel(p.country, { currency: p.currency });
+    if (!channel) throw { message: `No active Yellow Card collection channel for ${p.country}`, statusCode: 400 };
+    const sequenceId = crypto.randomUUID();
+    const body = {
+      channelId: channel.id,
+      sequenceId,
+      currency: p.currency,
+      country: p.country,
+      amount: Number(p.amount),
+      reason: p.reason || 'other',
+      forceAccept: true,
+      directSettlement: true,
+      recipient: p.recipient,
+      // In sandbox, accountNumber '1111111111' simulates a successful fiat deposit.
+      source: { accountType: 'bank', accountNumber: p.sourceAccountNumber || '1111111111' },
+      settlementInfo: {
+        walletAddress: p.walletAddress,
+        cryptoCurrency: String(p.cryptoCurrency).toUpperCase(),
+        cryptoNetwork: String(p.cryptoNetwork).toUpperCase(),
+        ...(p.walletTag ? { walletTag: p.walletTag } : {}),
+      },
+    };
+    const data = await this._request('POST', '/business/collections', body);
+    return {
+      id: data?.id || sequenceId,
+      status: (data?.status || 'created').toString().toUpperCase(),
+      sequenceId,
+      bankInfo: data?.bankInfo || null,
+      cryptoAmount: data?.settlementInfo?.cryptoAmount ?? null,
+      expiresAt: data?.expiresAt || null,
       raw: data,
     };
   }

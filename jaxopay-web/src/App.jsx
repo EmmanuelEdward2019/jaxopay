@@ -47,6 +47,7 @@ import InstantSwap from './pages/dashboard/InstantSwap';
 import DashboardHome from './pages/dashboard/DashboardHome';
 import KYC from './pages/dashboard/KYC';
 import CrossBorder from './pages/dashboard/CrossBorder';
+import CryptoRamp from './pages/dashboard/CryptoRamp';
 
 import Support from './pages/dashboard/Support';
 
@@ -294,6 +295,7 @@ function App() {
 
             <Route path="support" element={<Support />} />
             <Route path="cross-border" element={<CrossBorder />} />
+            <Route path="crypto-ramp" element={<CryptoRamp />} />
           </Route>
 
           {/* Admin Routes */}

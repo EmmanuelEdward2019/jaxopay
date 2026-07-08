@@ -309,6 +309,12 @@ class CurrencyEngineService {
         return await fx.getPayoutNetworks(country);
     }
 
+    /** Supported stablecoins + networks for on/off-ramp (from Yellow Card crypto channels). */
+    async getRampOptions(localCurrency = 'NGN') {
+        if (FX_PROVIDER_NAME !== 'yellowcard' || typeof fx.getStablecoinRampOptions !== 'function') return [];
+        return await fx.getStablecoinRampOptions(localCurrency);
+    }
+
     /** Build the Yellow Card `sender` (remitter) object from the user's profile + KYC. */
     async _buildSender(userId) {
         const prof = (await query(
@@ -316,11 +322,12 @@ class CurrencyEngineService {
              FROM users u LEFT JOIN user_profiles p ON p.user_id = u.id WHERE u.id = $1`,
             [userId]
         )).rows[0] || {};
-        const kyc = (await query(
+        const docs = (await query(
             `SELECT document_type, document_number FROM kyc_documents
-             WHERE user_id = $1 AND document_number IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
+             WHERE user_id = $1 AND document_number IS NOT NULL ORDER BY created_at DESC`,
             [userId]
-        )).rows[0] || {};
+        )).rows;
+        const kyc = docs[0] || {};
 
         // Yellow Card requires a real sender identity. A proper first + last name is
         // mandatory (it rejects email fallbacks with "bad sender name").
@@ -337,17 +344,276 @@ class CurrencyEngineService {
         }
         const idt = String(kyc.document_type || '').toLowerCase();
         const idType = idt.includes('passport') ? 'passport' : (idt.includes('driver') || idt.includes('licen')) ? 'license' : 'passport';
+        const country = String(prof.country || 'NG').toUpperCase().slice(0, 2);
 
-        return {
+        const sender = {
             name: `${first} ${last}`,
-            country: String(prof.country || 'NG').toUpperCase().slice(0, 2),
-            phone: prof.phone || '',
+            country,
+            phone: this._toE164(prof.phone, country),
             address: prof.address_line1 || prof.city || 'N/A',
             dob,
             email: prof.email || '',
             idNumber: kyc.document_number || 'N0000000',
             idType,
         };
+
+        // Nigerian senders require an additional ID (BVN/NIN) on the new /send + Direct Settlement endpoints.
+        if (country === 'NG') {
+            const extra = docs.find((x) => {
+                const t = String(x.document_type || '').toLowerCase();
+                return t.includes('bvn') || t.includes('nin') || t.includes('national');
+            });
+            if (extra) {
+                const t = String(extra.document_type).toLowerCase();
+                sender.additionalIdType = t.includes('bvn') ? 'bvn' : 'nin';
+                sender.additionalIdNumber = extra.document_number;
+            }
+        }
+        return sender;
+    }
+
+    /** Normalize a local phone to E.164 (Yellow Card requires international format). */
+    _toE164(phone, country) {
+        const CODES = { NG: '234', GH: '233', KE: '254', ZA: '27', UG: '256', TZ: '255', RW: '250', ZM: '260', MW: '265', BW: '267', CM: '237', CI: '225', SN: '221', TG: '228', BF: '226', CD: '243', CG: '242', GB: '44', US: '1' };
+        let p = String(phone || '').replace(/[^\d+]/g, '');
+        if (!p) return '';
+        if (p.startsWith('+')) return p;
+        const code = CODES[String(country || 'NG').toUpperCase()] || '234';
+        if (p.startsWith('00' + code)) return '+' + p.slice(2);
+        if (p.startsWith(code)) return '+' + p;
+        if (p.startsWith('0')) p = p.slice(1);
+        return '+' + code + p;
+    }
+
+    /**
+     * Whether a user can on/off-ramp crypto. Nigerian users must have a verified BVN or NIN
+     * (Yellow Card's Direct Settlement requires it). Returns { country, required, verified }.
+     */
+    async getRampKycStatus(userId) {
+        const prof = (await query('SELECT country FROM user_profiles WHERE user_id = $1', [userId])).rows[0] || {};
+        const country = String(prof.country || 'NG').toUpperCase().slice(0, 2);
+        if (country !== 'NG') return { country, required: false, verified: true };
+        const verified = (await query(
+            `SELECT 1 FROM kyc_documents
+             WHERE user_id = $1 AND document_number IS NOT NULL AND (status IS NULL OR status::text <> 'rejected')
+               AND (LOWER(document_type) LIKE '%bvn%' OR LOWER(document_type) LIKE '%nin%' OR LOWER(document_type) LIKE '%national%')
+             LIMIT 1`,
+            [userId]
+        )).rows.length > 0;
+        return { country, required: true, verified };
+    }
+
+    /** Throws BVN_NIN_REQUIRED (403) if the user isn't cleared to ramp. */
+    async assertRampKyc(userId) {
+        const s = await this.getRampKycStatus(userId);
+        if (s.required && !s.verified) {
+            throw new AppError('To buy or sell crypto, please verify your BVN or NIN first.', 403, 'BVN_NIN_REQUIRED');
+        }
+        return s;
+    }
+
+    // ── Crypto on/off-ramp (Yellow Card Direct Settlement, manual-ops settlement) ──
+
+    /**
+     * OFF-RAMP: sell USDT/USDC → fiat. Debits the user's crypto wallet now; on ops confirmation,
+     * internal mode credits the user's fiat wallet (external mode pays the recipient bank).
+     * @param {object} p cryptoCurrency, cryptoNetwork, cryptoAmount, mode('internal'|'external'),
+     *   destinationCountry='NG', fiatCurrency='NGN', recipientName, accountNumber, networkId,
+     *   networkName, networkAccountType, networkChannelIds, refundAddress?
+     */
+    async cryptoRampWithdraw(userId, p) {
+        const mode = p.mode === 'external' ? 'external' : 'internal';
+        const cryptoCurrency = String(p.cryptoCurrency || '').toUpperCase();
+        const fiatCurrency = String(p.fiatCurrency || 'NGN').toUpperCase();
+        const country = String(p.destinationCountry || 'NG').toUpperCase().slice(0, 2);
+        const cryptoAmount = Number(p.cryptoAmount);
+        if (!cryptoCurrency || !p.cryptoNetwork || !(cryptoAmount > 0)) throw new AppError('Invalid crypto withdrawal request', 400);
+        if (!p.networkId || !p.accountNumber || !p.recipientName) throw new AppError('Recipient bank details are required', 400);
+
+        await this.assertRampKyc(userId);
+        const sender = await this._buildSender(userId);
+
+        // 1) short tx: debit the user's crypto wallet + record a PENDING ramp
+        const rec = await transaction(async (client) => {
+            const w = await client.query(
+                `SELECT id, balance FROM wallets WHERE user_id=$1 AND currency=$2 AND is_active=true FOR UPDATE`,
+                [userId, cryptoCurrency]
+            );
+            if (!w.rows.length) throw new AppError(`No active ${cryptoCurrency} wallet found`, 404);
+            if (parseFloat(w.rows[0].balance) < cryptoAmount) throw new AppError(`Insufficient ${cryptoCurrency} balance`, 400);
+            await client.query(`UPDATE wallets SET balance=balance-$1, updated_at=NOW() WHERE id=$2`, [cryptoAmount, w.rows[0].id]);
+            const ins = await client.query(
+                `INSERT INTO fx_transactions (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, recipient_details, status)
+                 VALUES ($1,'yellowcard','crypto_offramp',$2,$3,$4,0,0,$5,'PENDING') RETURNING id`,
+                [userId, cryptoCurrency, fiatCurrency, cryptoAmount, JSON.stringify({ mode, cryptoNetwork: p.cryptoNetwork, recipientName: p.recipientName, accountNumber: p.accountNumber, networkName: p.networkName, country })]
+            );
+            return { id: ins.rows[0].id, walletId: w.rows[0].id };
+        });
+
+        // 2) submit YC off-ramp (outside the tx)
+        let res;
+        try {
+            res = await fx.submitCryptoWithdrawal({
+                destinationCountry: country, currency: fiatCurrency,
+                recipientName: p.recipientName, accountNumber: p.accountNumber, networkId: p.networkId,
+                networkAccountType: p.networkAccountType, networkChannelIds: p.networkChannelIds,
+                sender, customerUID: String(userId), cryptoCurrency, cryptoNetwork: p.cryptoNetwork,
+                cryptoAmount, refundAddress: p.refundAddress,
+            });
+        } catch (e) {
+            await transaction(async (client) => {
+                await client.query(`UPDATE wallets SET balance=balance+$1, updated_at=NOW() WHERE id=$2`, [cryptoAmount, rec.walletId]);
+                await client.query(`UPDATE fx_transactions SET status='FAILED' WHERE id=$1`, [rec.id]);
+            });
+            throw new AppError(e.message || 'Crypto withdrawal failed. Your balance was refunded.', e.statusCode || 400);
+        }
+
+        let convertedFiat = Number(res.raw?.convertedAmount ?? res.raw?.amount ?? 0);
+        let rate = Number(res.raw?.rate || 0);
+        if (!(convertedFiat > 0)) {
+            try {
+                const r = await fx.getExchangeRate(cryptoCurrency, fiatCurrency);
+                rate = Number(r?.rate) || rate;
+                convertedFiat = Number((cryptoAmount * rate).toFixed(2));
+            } catch (e) { logger.warn(`[ramp] withdraw rate lookup failed: ${e.message}`); }
+        }
+        await query(
+            `UPDATE fx_transactions SET provider_txn_id=$1, converted_amount=$2, exchange_rate=$3,
+             recipient_details = COALESCE(recipient_details,'{}'::jsonb) || $4::jsonb WHERE id=$5`,
+            [String(res.id), convertedFiat, rate, JSON.stringify({ walletAddress: res.walletAddress, yc_status: res.status }), rec.id]
+        );
+
+        return {
+            rampId: rec.id, providerId: res.id, status: 'PENDING', mode,
+            cryptoCurrency, cryptoNetwork: p.cryptoNetwork, cryptoAmount,
+            fiatCurrency, convertedFiat,
+            walletAddress: res.walletAddress, expiresAt: res.expiresAt,
+            instruction: `Send ${cryptoAmount} ${cryptoCurrency} on ${p.cryptoNetwork} to ${res.walletAddress}`,
+        };
+    }
+
+    /**
+     * ON-RAMP: buy USDT/USDC with fiat. Debits the user's fiat wallet now; on ops confirmation,
+     * internal mode credits the user's crypto wallet (external mode delivers to their wallet address).
+     * @param {object} p cryptoCurrency, cryptoNetwork, fiatAmount, mode, fiatCurrency='NGN',
+     *   country='NG', walletAddress (external destination; internal uses JAXOPAY's), walletTag?
+     */
+    async cryptoRampDeposit(userId, p) {
+        const mode = p.mode === 'external' ? 'external' : 'internal';
+        const cryptoCurrency = String(p.cryptoCurrency || '').toUpperCase();
+        const fiatCurrency = String(p.fiatCurrency || 'NGN').toUpperCase();
+        const country = String(p.country || 'NG').toUpperCase().slice(0, 2);
+        const fiatAmount = Number(p.fiatAmount);
+        const walletAddress = mode === 'external' ? p.walletAddress : (process.env.YELLOWCARD_TREASURY_WALLET || p.walletAddress);
+        if (!cryptoCurrency || !p.cryptoNetwork || !(fiatAmount > 0)) throw new AppError('Invalid crypto deposit request', 400);
+        if (!walletAddress) throw new AppError('A destination wallet address is required', 400);
+
+        await this.assertRampKyc(userId);
+        const recipient = await this._buildSender(userId); // recipient KYC (same shape)
+
+        // 1) short tx: debit the user's fiat wallet + record PENDING
+        const rec = await transaction(async (client) => {
+            const w = await client.query(
+                `SELECT id, balance FROM wallets WHERE user_id=$1 AND currency=$2 AND is_active=true FOR UPDATE`,
+                [userId, fiatCurrency]
+            );
+            if (!w.rows.length) throw new AppError(`No active ${fiatCurrency} wallet found`, 404);
+            if (parseFloat(w.rows[0].balance) < fiatAmount) throw new AppError(`Insufficient ${fiatCurrency} balance`, 400);
+            await client.query(`UPDATE wallets SET balance=balance-$1, updated_at=NOW() WHERE id=$2`, [fiatAmount, w.rows[0].id]);
+            const ins = await client.query(
+                `INSERT INTO fx_transactions (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, recipient_details, status)
+                 VALUES ($1,'yellowcard','crypto_onramp',$2,$3,$4,0,0,$5,'PENDING') RETURNING id`,
+                [userId, fiatCurrency, cryptoCurrency, fiatAmount, JSON.stringify({ mode, cryptoNetwork: p.cryptoNetwork, walletAddress, country })]
+            );
+            return { id: ins.rows[0].id, walletId: w.rows[0].id };
+        });
+
+        // 2) submit YC on-ramp
+        let res;
+        try {
+            res = await fx.submitCryptoDeposit({
+                country, currency: fiatCurrency, amount: fiatAmount, customerUID: String(userId),
+                walletAddress, cryptoCurrency, cryptoNetwork: p.cryptoNetwork, walletTag: p.walletTag,
+                recipient,
+            });
+        } catch (e) {
+            await transaction(async (client) => {
+                await client.query(`UPDATE wallets SET balance=balance+$1, updated_at=NOW() WHERE id=$2`, [fiatAmount, rec.walletId]);
+                await client.query(`UPDATE fx_transactions SET status='FAILED' WHERE id=$1`, [rec.id]);
+            });
+            throw new AppError(e.message || 'Crypto deposit failed. Your balance was refunded.', e.statusCode || 400);
+        }
+
+        // Yellow Card's collection response echoes a local (fee-adjusted fiat) figure for cryptoAmount
+        // in sandbox, so derive the crypto credit from the live rate — the authoritative amount.
+        let cryptoAmount = Number(res.cryptoAmount || 0);
+        let rate = 0;
+        try {
+            const r = await fx.getExchangeRate(fiatCurrency, cryptoCurrency);
+            rate = Number(r?.rate) || 0;
+            const computed = Number((fiatAmount * rate).toFixed(8));
+            if (computed > 0) cryptoAmount = computed;
+        } catch (e) { logger.warn(`[ramp] deposit rate lookup failed: ${e.message}`); }
+
+        await query(
+            `UPDATE fx_transactions SET provider_txn_id=$1, converted_amount=$2, exchange_rate=$3,
+             recipient_details = COALESCE(recipient_details,'{}'::jsonb) || $4::jsonb WHERE id=$5`,
+            [String(res.id), cryptoAmount, rate, JSON.stringify({ bankInfo: res.bankInfo, yc_status: res.status, yc_cryptoAmount: res.cryptoAmount }), rec.id]
+        );
+
+        return {
+            rampId: rec.id, providerId: res.id, status: 'PENDING', mode,
+            fiatCurrency, fiatAmount, cryptoCurrency, cryptoNetwork: p.cryptoNetwork, cryptoAmount,
+            bankInfo: res.bankInfo, walletAddress,
+            instruction: res.bankInfo ? `Pay ${fiatAmount} ${fiatCurrency} to ${res.bankInfo.accountName} · ${res.bankInfo.name} · ${res.bankInfo.accountNumber}` : null,
+        };
+    }
+
+    /** Ops confirms the manual settlement leg completed → credit the destination (internal) + mark COMPLETED. */
+    async confirmRampSettlement(rampId) {
+        return await transaction(async (client) => {
+            const r = (await client.query(`SELECT * FROM fx_transactions WHERE id=$1 FOR UPDATE`, [rampId])).rows[0];
+            if (!r) throw new AppError('Ramp not found', 404);
+            if (String(r.status).toUpperCase() !== 'PENDING') throw new AppError(`Ramp is ${r.status}, not pending`, 400);
+            const details = r.recipient_details || {};
+            const credit = Number(r.converted_amount) || 0;
+
+            if (details.mode === 'internal' && credit > 0) {
+                const walletType = r.type === 'crypto_onramp' ? 'crypto' : 'fiat';
+                await client.query(
+                    `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, is_active)
+                     VALUES ($1,$2,$3,$4,$4,true)
+                     ON CONFLICT (user_id,currency) DO UPDATE SET balance=wallets.balance+$4, available_balance=COALESCE(wallets.available_balance,0)+$4, is_active=true, updated_at=NOW()`,
+                    [r.user_id, r.to_currency, walletType, credit]
+                );
+            }
+            await client.query(`UPDATE fx_transactions SET status='COMPLETED' WHERE id=$1`, [rampId]);
+            return { rampId, status: 'COMPLETED', credited: details.mode === 'internal' ? credit : 0, toCurrency: r.to_currency };
+        });
+    }
+
+    /** Ops rejects a pending ramp (settlement failed) → refund the user's source wallet + mark FAILED. */
+    async failRampSettlement(rampId, reason = 'settlement_failed') {
+        return await transaction(async (client) => {
+            const r = (await client.query(`SELECT * FROM fx_transactions WHERE id=$1 FOR UPDATE`, [rampId])).rows[0];
+            if (!r) throw new AppError('Ramp not found', 404);
+            if (String(r.status).toUpperCase() !== 'PENDING') throw new AppError(`Ramp is ${r.status}, not pending`, 400);
+            const refund = Number(r.amount) || 0;
+            const walletType = r.type === 'crypto_onramp' ? 'fiat' : 'crypto'; // source that was debited
+            if (refund > 0) {
+                await client.query(
+                    `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, is_active)
+                     VALUES ($1,$2,$3,$4,$4,true)
+                     ON CONFLICT (user_id,currency) DO UPDATE SET balance=wallets.balance+$4, available_balance=COALESCE(wallets.available_balance,0)+$4, is_active=true, updated_at=NOW()`,
+                    [r.user_id, r.from_currency, walletType, refund]
+                );
+            }
+            await client.query(
+                `UPDATE fx_transactions SET status='FAILED', recipient_details = COALESCE(recipient_details,'{}'::jsonb) || $2::jsonb WHERE id=$1`,
+                [rampId, JSON.stringify({ fail_reason: reason })]
+            );
+            return { rampId, status: 'FAILED', refunded: refund, currency: r.from_currency };
+        });
     }
 }
 

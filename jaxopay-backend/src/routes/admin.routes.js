@@ -32,6 +32,9 @@ import {
   updateUserFeatureAccess,
   getOrchestrationStatus,
   updateCardStatus,
+  getPendingRamps,
+  confirmRamp,
+  failRamp,
 } from '../controllers/admin.controller.js';
 import { getHighRiskUsers, refreshUserRiskScore } from '../controllers/aml.controller.js';
 import { getTreasuryOverview, getFundMovements } from '../controllers/treasury.controller.js';
@@ -50,6 +53,11 @@ router.get('/stats', getSystemStats);
 router.get('/treasury', restrictTo('admin', 'super_admin'), getTreasuryOverview);
 // Fund movements — internal double-entry ledger (admin & super_admin only)
 router.get('/ledger', restrictTo('admin', 'super_admin'), getFundMovements);
+
+// Crypto ramp settlement queue (manual ops — admin & super_admin only)
+router.get('/ramps', restrictTo('admin', 'super_admin'), getPendingRamps);
+router.post('/ramps/:id/confirm', restrictTo('admin', 'super_admin'), confirmRamp);
+router.post('/ramps/:id/fail', restrictTo('admin', 'super_admin'), failRamp);
 
 // Get pending KYC documents
 router.get(

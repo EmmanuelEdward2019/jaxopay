@@ -12,6 +12,7 @@ import {
   postSmileAuthPackage,
   submitSmileBasicKyc,
   submitSmileBiometricKyc,
+  submitRampIdVerification,
 } from '../controllers/kyc.controller.js';
 
 const router = express.Router();
@@ -110,6 +111,19 @@ router.post(
   optionalImageDataOrUrl('selfie_url'),
   validate,
   submitKYCDocument
+);
+
+// Verify BVN/NIN for crypto on/off-ramp
+router.post(
+  '/verify-id',
+  body('id_type').notEmpty().trim(),
+  body('id_number').notEmpty().trim(),
+  body('first_name').optional().trim(),
+  body('last_name').optional().trim(),
+  body('dob').optional({ values: 'falsy' }).trim(),
+  body('gender').optional({ values: 'falsy' }).isIn(['M', 'F', 'm', 'f']),
+  validate,
+  submitRampIdVerification
 );
 
 // Request tier upgrade (schema supports tier_0 → tier_2)

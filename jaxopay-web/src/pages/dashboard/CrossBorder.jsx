@@ -311,6 +311,13 @@ const CrossBorder = () => {
                         <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                         <span className="truncate">Intl Transfer</span>
                     </button>
+                    <Link
+                        to="/dashboard/crypto-ramp"
+                        className="flex-1 sm:flex-none px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-white hover:bg-card/10"
+                    >
+                        <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                        <span className="truncate">Buy/Sell Crypto</span>
+                    </Link>
                 </div>
 
                 {/* Decorative Elements */}

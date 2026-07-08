@@ -394,6 +394,59 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * POST /kyc/verify-id — verify a Nigerian BVN or NIN (required before crypto on/off-ramp).
+ * Fires SmileID Basic KYC for verification AND stores the BVN/NIN so the ramp gate + the
+ * Yellow Card sender `additionalId` can use it. The Smile callback promotes/rejects it.
+ */
+export const submitRampIdVerification = catchAsync(async (req, res) => {
+  if (!smileId.isSmileConfigured()) throw new AppError('Identity verification is not available', 503);
+  if (!process.env.API_BASE_URL) throw new AppError('Server callback URL is not configured. Please contact support.', 500);
+
+  const { id_type, id_number, first_name, last_name, middle_name, dob, gender, phone_number } = req.body;
+  const t = String(id_type || '').toLowerCase();
+  const docType = t.includes('bvn') ? 'bvn' : 'nin';
+  const num = String(id_number || '').trim();
+  if (!num) throw new AppError('id_number is required', 400);
+  if (docType === 'bvn' && !/^\d{11}$/.test(num)) throw new AppError('BVN must be 11 digits', 400);
+  if (docType === 'nin' && !/^\d{11}$/.test(num)) throw new AppError('NIN must be 11 digits', 400);
+
+  // Fall back to profile names so Smile has a full identity to match.
+  const prof = (await query(
+    `SELECT first_name, last_name, date_of_birth, gender, phone FROM user_profiles WHERE user_id = $1`,
+    [req.user.id]
+  )).rows[0] || {};
+  const fn = first_name || prof.first_name;
+  const ln = last_name || prof.last_name;
+  if (!fn || !ln) throw new AppError('Please add your full legal name in your profile first.', 400, 'PROFILE_INCOMPLETE');
+
+  const callbackUrl = buildCallbackUrl('/webhooks/smile_identity');
+  const { jobId } = await smileId.submitBasicKycAsync({
+    userId: req.user.id, callbackUrl, country: 'NG',
+    id_type: id_type || docType.toUpperCase(), id_number: num,
+    first_name: fn, last_name: ln, middle_name,
+    dob: dob || prof.date_of_birth, gender: gender || prof.gender, phone_number: phone_number || prof.phone,
+  });
+
+  // Tracking row (reuses the existing Smile callback for tier bump).
+  await query(
+    `INSERT INTO kyc_documents (user_id, document_type, document_number, document_url, selfie_url, status, tier)
+     VALUES ($1, 'smile_basic_kyc', $2, $3, null, 'pending', 'tier_1')`,
+    [req.user.id, `SMILE:${jobId}`, 'https://jaxopay.com/kyc/smile-id-async']
+  );
+  // The actual BVN/NIN the ramp gate + sender additionalId read. document_url ties it to the Smile job.
+  await query(
+    `INSERT INTO kyc_documents (user_id, document_type, document_number, document_url, selfie_url, status, tier)
+     VALUES ($1, $2, $3, $4, null, 'pending', 'tier_1')`,
+    [req.user.id, docType, num, `SMILE:${jobId}`]
+  );
+
+  logger.info('[KYC] Ramp ID verification submitted', { userId: req.user.id, jobId, docType });
+  auditFromReq(req, { action: 'kyc_submitted', entityType: 'kyc_document', newValues: { method: 'ramp_id_verify', id_type: docType, job_id: jobId } });
+
+  res.status(202).json({ success: true, message: 'Verification submitted. You can proceed once it clears.', data: { job_id: jobId, id_type: docType } });
+});
+
 function validateSmileBiometricImages(images) {
   if (!Array.isArray(images) || images.length < 4) {
     return 'images must be a non-empty array (selfie, liveness, and ID captures required)';

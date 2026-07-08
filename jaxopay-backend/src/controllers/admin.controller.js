@@ -7,6 +7,8 @@ import { providerRegistry } from '../orchestration/index.js';
 import { circuitBreakers } from '../utils/circuitBreaker.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import * as kycNotify from '../services/kycNotification.service.js';
+import currencyEngine from '../services/CurrencyEngineService.js';
+import { auditFromReq } from '../services/audit.service.js';
 
 /** Split stored `document_url` (plain URL or JSON { front, back }) for admin review UI. */
 function parseKycDocumentUrls(documentUrl) {
@@ -1446,4 +1448,39 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
   ];
 
   res.status(200).json({ success: true, data });
+});
+
+// ── Crypto ramp settlement queue (manual ops) ──────────────────────────────────
+
+// Pending crypto on/off-ramps awaiting the ops settlement leg (send crypto / pay fiat).
+export const getPendingRamps = catchAsync(async (req, res) => {
+  const status = (req.query.status || 'PENDING').toUpperCase();
+  const rows = await query(
+    `SELECT f.id, f.user_id, f.type, f.from_currency, f.to_currency, f.amount, f.converted_amount,
+            f.exchange_rate, f.provider_txn_id, f.recipient_details, f.status, f.created_at,
+            COALESCE(NULLIF(TRIM(CONCAT_WS(' ', up.first_name, up.last_name)), ''), u.email) AS user_name,
+            u.email AS user_email
+     FROM fx_transactions f
+     LEFT JOIN users u ON u.id = f.user_id
+     LEFT JOIN user_profiles up ON up.user_id = f.user_id
+     WHERE f.type IN ('crypto_onramp','crypto_offramp') AND f.status = $1
+     ORDER BY f.created_at DESC
+     LIMIT 200`,
+    [status]
+  );
+  res.status(200).json({ success: true, data: rows.rows });
+});
+
+// Ops confirms the settlement leg completed → credit destination (internal) + mark COMPLETED.
+export const confirmRamp = catchAsync(async (req, res) => {
+  const result = await currencyEngine.confirmRampSettlement(req.params.id);
+  auditFromReq(req, { action: 'crypto_ramp_confirmed', entityType: 'fx_transaction', entityId: req.params.id, newValues: result });
+  res.status(200).json({ success: true, data: result });
+});
+
+// Ops rejects a pending ramp → refund the user's source wallet + mark FAILED.
+export const failRamp = catchAsync(async (req, res) => {
+  const result = await currencyEngine.failRampSettlement(req.params.id, req.body?.reason || 'rejected_by_admin');
+  auditFromReq(req, { action: 'crypto_ramp_failed', entityType: 'fx_transaction', entityId: req.params.id, newValues: result });
+  res.status(200).json({ success: true, data: result });
 });

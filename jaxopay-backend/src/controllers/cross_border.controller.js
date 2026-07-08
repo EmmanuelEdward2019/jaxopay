@@ -65,6 +65,54 @@ export const getPayoutNetworks = catchAsync(async (req, res) => {
     res.status(200).json({ success: true, data });
 });
 
+// ── Crypto on/off-ramp (Yellow Card Direct Settlement) ──────────────────────────
+
+// Ramp eligibility for the current user (NG users must have a verified BVN/NIN).
+export const getRampStatus = catchAsync(async (req, res) => {
+    const kyc = await currencyEngine.getRampKycStatus(req.user.id);
+    res.status(200).json({ success: true, data: kyc });
+});
+
+// Supported stablecoins + networks (catalog for the ramp UI).
+export const getRampOptions = catchAsync(async (req, res) => {
+    const data = await currencyEngine.getRampOptions(req.query.currency || 'NGN');
+    res.status(200).json({ success: true, data });
+});
+
+// Buy USDT/USDC with fiat (on-ramp). Debits the user's fiat wallet; ops settles, admin confirms.
+export const cryptoRampDeposit = catchAsync(async (req, res) => {
+    const b = req.body;
+    if (!b.cryptoCurrency || !b.cryptoNetwork || !b.fiatAmount) {
+        throw new AppError('Missing required parameters (cryptoCurrency, cryptoNetwork, fiatAmount)', 400);
+    }
+    await verifyTransactionPin(req.user.id, b.pin);
+    const result = await currencyEngine.cryptoRampDeposit(req.user.id, {
+        cryptoCurrency: b.cryptoCurrency, cryptoNetwork: b.cryptoNetwork, fiatAmount: parseFloat(b.fiatAmount),
+        mode: b.mode, fiatCurrency: b.fiatCurrency || 'NGN', country: b.country || 'NG',
+        walletAddress: b.walletAddress, walletTag: b.walletTag,
+    });
+    auditFromReq(req, { action: 'crypto_onramp', entityType: 'fx_transaction', entityId: result?.rampId || null, newValues: { fiatAmount: b.fiatAmount, cryptoCurrency: b.cryptoCurrency, mode: result?.mode } });
+    res.status(200).json({ success: true, data: result });
+});
+
+// Sell USDT/USDC for fiat (off-ramp). Debits the user's crypto wallet; ops settles, admin confirms.
+export const cryptoRampWithdraw = catchAsync(async (req, res) => {
+    const b = req.body;
+    if (!b.cryptoCurrency || !b.cryptoNetwork || !b.cryptoAmount || !b.networkId || !b.accountNumber || !b.recipientName) {
+        throw new AppError('Missing required parameters (cryptoCurrency, cryptoNetwork, cryptoAmount, networkId, accountNumber, recipientName)', 400);
+    }
+    await verifyTransactionPin(req.user.id, b.pin);
+    const result = await currencyEngine.cryptoRampWithdraw(req.user.id, {
+        cryptoCurrency: b.cryptoCurrency, cryptoNetwork: b.cryptoNetwork, cryptoAmount: parseFloat(b.cryptoAmount),
+        mode: b.mode, destinationCountry: b.destinationCountry || 'NG', fiatCurrency: b.fiatCurrency || 'NGN',
+        recipientName: b.recipientName, accountNumber: b.accountNumber, networkId: b.networkId,
+        networkName: b.networkName, networkAccountType: b.networkAccountType, networkChannelIds: b.networkChannelIds,
+        refundAddress: b.refundAddress,
+    });
+    auditFromReq(req, { action: 'crypto_offramp', entityType: 'fx_transaction', entityId: result?.rampId || null, newValues: { cryptoAmount: b.cryptoAmount, cryptoCurrency: b.cryptoCurrency, mode: result?.mode } });
+    res.status(200).json({ success: true, data: result });
+});
+
 export const getGraphWalletBalances = catchAsync(async (req, res) => {
     const balances = await currencyEngine.getWalletBalances();
     res.status(200).json({ success: true, data: balances });
