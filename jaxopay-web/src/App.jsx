@@ -62,6 +62,7 @@ import AuditLogs from './pages/admin/AuditLogs';
 import SystemManagement from './pages/admin/SystemManagement';
 import WalletManagement from './pages/admin/WalletManagement';
 import Treasury from './pages/admin/Treasury';
+import RampQueue from './pages/admin/RampQueue';
 import CardManagement from './pages/admin/CardManagement';
 import ProductManagement from './pages/admin/ProductManagement';
 import AMLCompliance from './pages/admin/AMLCompliance';
@@ -372,6 +373,11 @@ function App() {
             <Route path="treasury" element={
               <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
                 <Treasury />
+              </RoleProtectedRoute>
+            } />
+            <Route path="ramps" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                <RampQueue />
               </RoleProtectedRoute>
             } />
             <Route path="wallets" element={

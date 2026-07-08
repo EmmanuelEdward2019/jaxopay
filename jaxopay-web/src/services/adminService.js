@@ -333,6 +333,32 @@ const adminService = {
         } catch (error) {
             return { success: false, error: error.message };
         }
+    },
+
+    // Crypto ramp settlement queue (manual ops)
+    getRamps: async (status = 'PENDING') => {
+        try {
+            const response = await apiClient.get('/admin/ramps', { params: { status } });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+    confirmRamp: async (id) => {
+        try {
+            const response = await apiClient.post(`/admin/ramps/${id}/confirm`);
+            return { success: response?.success !== false, data: response.data, message: response?.message };
+        } catch (error) {
+            return { success: false, error: error?.response?.data?.message || error.message };
+        }
+    },
+    failRamp: async (id, reason) => {
+        try {
+            const response = await apiClient.post(`/admin/ramps/${id}/fail`, { reason });
+            return { success: response?.success !== false, data: response.data, message: response?.message };
+        } catch (error) {
+            return { success: false, error: error?.response?.data?.message || error.message };
+        }
     }
 };
 

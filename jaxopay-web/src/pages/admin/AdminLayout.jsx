@@ -19,7 +19,8 @@ import {
     TrendingUp,
     LifeBuoy,
     Megaphone,
-    Landmark
+    Landmark,
+    Coins
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import NotificationDropdown from '../../components/notifications/NotificationDropdown';
@@ -32,6 +33,7 @@ const navItems = [
     { path: '/admin/transactions', icon: Activity, label: 'Transactions', roles: ['admin', 'super_admin', 'compliance_officer'] },
     { path: '/admin/aml', icon: ShieldAlert, label: 'Compliance & AML', roles: ['super_admin', 'compliance_officer'] },
     { path: '/admin/treasury', icon: Landmark, label: 'Treasury', roles: ['admin', 'super_admin'] },
+    { path: '/admin/ramps', icon: Coins, label: 'Crypto Ramps', roles: ['admin', 'super_admin'] },
     { path: '/admin/wallets', icon: Wallet, label: 'Wallets', roles: ['admin', 'super_admin'] },
     { path: '/admin/cards', icon: CreditCard, label: 'Cards', roles: ['admin', 'super_admin'] },
     { path: '/admin/crypto', icon: TrendingUp, label: 'Crypto Assets', roles: ['admin', 'super_admin'] },
