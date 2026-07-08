@@ -104,6 +104,31 @@ class YellowCardService {
     return data?.networks || data?.data || data || [];
   }
 
+  /** Supported crypto currencies + networks (USDT/USDC on/off-ramp catalog). */
+  async getCryptoChannels() {
+    const data = await this._request('GET', '/business/channels/crypto');
+    return data?.channels || data || [];
+  }
+
+  /** Enabled stablecoins (USDT/USDC) with networks + buy/sell limits for a local currency. */
+  async getStablecoinRampOptions(localCurrency = 'NGN') {
+    const channels = await this.getCryptoChannels();
+    const cur = String(localCurrency).toUpperCase();
+    return channels
+      .filter((c) => ['USDT', 'USDC'].includes(String(c.code).toUpperCase()) && c.enabled)
+      .map((c) => ({
+        code: c.code,
+        defaultNetwork: c.defaultNetwork,
+        networks: Object.values(c.networks || {})
+          .filter((n) => n.enabled)
+          .map((n) => ({ network: n.network, name: n.name, requiresMemo: !!n.requiresMemo, addressRegex: n.addressRegex, activities: n.activities })),
+        buyMin: c.buyMinLocal?.[cur] ?? null,
+        buyMax: c.buyMaxLocal?.[cur] ?? null,
+        sellMin: c.sellMinLocal?.[cur] ?? null,
+        sellMax: c.sellMaxLocal?.[cur] ?? null,
+      }));
+  }
+
   /** Raw rate table (per-currency vs USD). */
   async getRates() {
     const data = await this._request('GET', '/business/rates');
