@@ -79,13 +79,17 @@ export const getTreasuryOverview = catchAsync(async (req, res) => {
     return { key, label, status: 'error', balances: [], error: 'Balance unavailable (provider not reachable or not configured)' };
   });
 
-  // Strowallet exposes only per-card balances, no merchant float endpoint.
+  // Strowallet is integrated & in use (card issuance/funding + bills) but exposes only per-card
+  // balances — there is no aggregate merchant-float endpoint to read here.
+  const strowalletConfigured = !!(process.env.STROWALLET_PUBLIC_KEY && process.env.STROWALLET_SECRET_KEY);
   providers.push({
     key: 'strowallet',
     label: 'Strowallet (Cards/Bills)',
-    status: 'unavailable',
+    status: strowalletConfigured ? 'in_use' : 'unavailable',
     balances: [],
-    note: 'No merchant float API — funded on demand',
+    note: strowalletConfigured
+      ? 'Live & in use for virtual cards and bill payments. Strowallet has no aggregate merchant-float endpoint, so no balance is shown; cards are funded on demand.'
+      : 'Not configured.',
   });
 
   // ── Liabilities: what we owe end-users (their wallet balances) ──

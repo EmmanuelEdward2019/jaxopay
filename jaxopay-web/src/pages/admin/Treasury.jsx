@@ -24,6 +24,7 @@ const fmt = (amount, currency) => {
 const StatusBadge = ({ status }) => {
     const map = {
         ok: { cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', label: 'Connected' },
+        in_use: { cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400', label: 'In Use' },
         error: { cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', label: 'Unavailable' },
         unavailable: { cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300', label: 'No API' },
     };
