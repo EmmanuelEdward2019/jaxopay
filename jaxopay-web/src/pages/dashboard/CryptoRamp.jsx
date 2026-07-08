@@ -143,7 +143,7 @@ const CryptoRamp = () => {
     };
 
     if (loading) {
-        return <div className="flex items-center justify-center h-64"><RefreshCw className="w-6 h-6 animate-spin text-indigo-500" /></div>;
+        return <div className="flex items-center justify-center h-64"><RefreshCw className="w-6 h-6 animate-spin text-green-500" /></div>;
     }
 
     // ── Block screen: BVN/NIN required ──
@@ -152,7 +152,7 @@ const CryptoRamp = () => {
     return (
         <div className="max-w-3xl mx-auto space-y-6">
             <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/40"><Coins className="w-6 h-6 text-indigo-600 dark:text-indigo-300" /></div>
+                <div className="p-2 rounded-xl bg-green-100 dark:bg-green-900/40"><Coins className="w-6 h-6 text-green-600 dark:text-green-300" /></div>
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Buy &amp; Sell Crypto</h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400">Buy &amp; sell USDT / USDC instantly</p>
@@ -180,11 +180,11 @@ const CryptoRamp = () => {
                     </div>
                     {verifyMsg && <p className="text-sm mt-3 text-gray-600 dark:text-gray-300">{verifyMsg}</p>}
                     <button onClick={handleVerifyId} disabled={verifying}
-                        className="mt-4 w-full sm:w-auto px-6 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm disabled:opacity-60 flex items-center justify-center gap-2">
+                        className="mt-4 w-full sm:w-auto px-6 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm disabled:opacity-60 flex items-center justify-center gap-2">
                         {verifying ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                         {verifying ? 'Verifying…' : 'Verify & Continue'}
                     </button>
-                    <p className="text-xs text-gray-400 mt-3">Missing your legal name? <Link to="/dashboard/profile" className="text-indigo-600 underline">Update your profile</Link> first.</p>
+                    <p className="text-xs text-gray-400 mt-3">Missing your legal name? <Link to="/dashboard/profile" className="text-green-600 underline">Update your profile</Link> first.</p>
                 </div>
             ) : result ? (
                 <RampResult result={result} onDone={() => setResult(null)} />
@@ -193,11 +193,11 @@ const CryptoRamp = () => {
                     {/* Tabs */}
                     <div className="flex border-b border-gray-200 dark:border-gray-700">
                         <button onClick={() => { setTab('buy'); setError(null); }}
-                            className={`flex-1 py-3.5 font-semibold text-sm flex items-center justify-center gap-2 ${tab === 'buy' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500'}`}>
+                            className={`flex-1 py-3.5 font-semibold text-sm flex items-center justify-center gap-2 ${tab === 'buy' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500'}`}>
                             <ArrowDownToLine className="w-4 h-4" /> Buy (Deposit)
                         </button>
                         <button onClick={() => { setTab('sell'); setError(null); }}
-                            className={`flex-1 py-3.5 font-semibold text-sm flex items-center justify-center gap-2 ${tab === 'sell' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500'}`}>
+                            className={`flex-1 py-3.5 font-semibold text-sm flex items-center justify-center gap-2 ${tab === 'sell' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500'}`}>
                             <ArrowUpFromLine className="w-4 h-4" /> Sell (Withdraw)
                         </button>
                     </div>
@@ -305,7 +305,7 @@ const CryptoRamp = () => {
 };
 
 const inputCls = 'w-full px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white';
-const primaryBtn = 'w-full py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm flex items-center justify-center gap-2';
+const primaryBtn = 'w-full py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm flex items-center justify-center gap-2';
 
 const Field = ({ label, children }) => (
     <div>
@@ -318,7 +318,7 @@ const ModeToggle = ({ value, onChange, internalLabel, externalLabel }) => (
     <div className="grid grid-cols-2 gap-2">
         {[['internal', internalLabel], ['external', externalLabel]].map(([m, label]) => (
             <button key={m} onClick={() => onChange(m)} type="button"
-                className={`py-2.5 rounded-lg text-sm font-medium border ${value === m ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'border-gray-200 dark:border-gray-600 text-gray-500'}`}>
+                className={`py-2.5 rounded-lg text-sm font-medium border ${value === m ? 'border-green-600 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'border-gray-200 dark:border-gray-600 text-gray-500'}`}>
                 {label}
             </button>
         ))}
@@ -357,7 +357,7 @@ const RampResult = ({ result, onDone }) => {
             <div className="flex items-center gap-3">
                 {done ? <CheckCircle2 className="w-8 h-8 text-emerald-500" />
                     : failed ? <AlertCircle className="w-8 h-8 text-red-500" />
-                        : <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />}
+                        : <RefreshCw className="w-8 h-8 text-green-500 animate-spin" />}
                 <div>
                     <h2 className="font-semibold text-gray-900 dark:text-white">
                         {done ? (isBuy ? 'Crypto purchased' : 'Sale completed')
@@ -373,7 +373,7 @@ const RampResult = ({ result, onDone }) => {
             </div>
 
             {pending && isBuy && result.bankInfo && (
-                <div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 space-y-2">
+                <div className="rounded-xl bg-green-50 dark:bg-green-900/20 p-4 space-y-2">
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-200 flex items-center gap-2"><Building2 className="w-4 h-4" /> Pay {formatCurrency(result.fiatAmount, 'NGN')} NGN to:</p>
                     <Row label="Bank" value={result.bankInfo.name} />
                     <Row label="Account" value={result.bankInfo.accountNumber} onCopy={() => copy(result.bankInfo.accountNumber)} />
@@ -383,7 +383,7 @@ const RampResult = ({ result, onDone }) => {
             )}
 
             {pending && !isBuy && result.walletAddress && (
-                <div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 space-y-2">
+                <div className="rounded-xl bg-green-50 dark:bg-green-900/20 p-4 space-y-2">
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Send {result.cryptoAmount} {result.cryptoCurrency} ({result.cryptoNetwork}) to:</p>
                     <Row label="Address" value={result.walletAddress} onCopy={() => copy(result.walletAddress)} />
                     <p className="text-xs text-gray-500 pt-1">You'll receive ≈ {formatCurrency(result.convertedFiat, 'NGN')} NGN{result.mode === 'internal' ? ' in your JAXOPAY wallet' : ' to the bank account'} once confirmed.</p>
@@ -400,7 +400,7 @@ const Row = ({ label, value, onCopy }) => (
         <span className="text-gray-500">{label}</span>
         <span className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
             {value}
-            {onCopy && <button onClick={onCopy}><Copy className="w-3.5 h-3.5 text-gray-400 hover:text-indigo-600" /></button>}
+            {onCopy && <button onClick={onCopy}><Copy className="w-3.5 h-3.5 text-gray-400 hover:text-green-600" /></button>}
         </span>
     </div>
 );
