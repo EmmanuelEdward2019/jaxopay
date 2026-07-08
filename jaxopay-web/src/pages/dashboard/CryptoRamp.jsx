@@ -155,7 +155,7 @@ const CryptoRamp = () => {
                 <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/40"><Coins className="w-6 h-6 text-indigo-600 dark:text-indigo-300" /></div>
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Buy &amp; Sell Crypto</h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">USDT / USDC on-ramp &amp; off-ramp via Yellow Card</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Buy &amp; sell USDT / USDC instantly</p>
                 </div>
             </div>
 
