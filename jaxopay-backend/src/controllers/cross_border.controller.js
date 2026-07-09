@@ -98,8 +98,12 @@ export const cryptoRampDeposit = catchAsync(async (req, res) => {
 // Sell USDT/USDC for fiat (off-ramp). Debits the user's crypto wallet; ops settles, admin confirms.
 export const cryptoRampWithdraw = catchAsync(async (req, res) => {
     const b = req.body;
-    if (!b.cryptoCurrency || !b.cryptoNetwork || !b.cryptoAmount || !b.networkId || !b.accountNumber || !b.recipientName) {
-        throw new AppError('Missing required parameters (cryptoCurrency, cryptoNetwork, cryptoAmount, networkId, accountNumber, recipientName)', 400);
+    if (!b.cryptoCurrency || !b.cryptoNetwork || !b.cryptoAmount) {
+        throw new AppError('Missing required parameters (cryptoCurrency, cryptoNetwork, cryptoAmount)', 400);
+    }
+    // Bank details are only needed when paying out to an external bank; internal credits the wallet.
+    if (b.mode === 'external' && (!b.networkId || !b.accountNumber || !b.recipientName)) {
+        throw new AppError('Recipient bank details are required (networkId, accountNumber, recipientName)', 400);
     }
     await verifyTransactionPin(req.user.id, b.pin);
     const result = await currencyEngine.cryptoRampWithdraw(req.user.id, {

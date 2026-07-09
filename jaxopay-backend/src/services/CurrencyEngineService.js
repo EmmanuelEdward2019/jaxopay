@@ -396,6 +396,34 @@ class CurrencyEngineService {
         return null;
     }
 
+    /**
+     * JAXOPAY's own settlement bank for an internal off-ramp (sell → user's wallet). Yellow Card pays
+     * the fiat here, then we credit the user's in-app balance. Configure for production via:
+     *   YELLOWCARD_SETTLEMENT_<COUNTRY>_NETWORK_ID / _ACCOUNT / _NAME  (e.g. _NG_NETWORK_ID)
+     * In sandbox, falls back to the first available bank payout network + a sandbox-success account.
+     */
+    async _settlementBankFor(country) {
+        const c = String(country || 'NG').toUpperCase();
+        const networkId = process.env[`YELLOWCARD_SETTLEMENT_${c}_NETWORK_ID`];
+        if (networkId) {
+            return {
+                networkId: networkId.trim(),
+                accountNumber: (process.env[`YELLOWCARD_SETTLEMENT_${c}_ACCOUNT`] || '').trim(),
+                recipientName: (process.env[`YELLOWCARD_SETTLEMENT_${c}_NAME`] || 'JAXOPAY').trim(),
+                networkName: (process.env[`YELLOWCARD_SETTLEMENT_${c}_BANK`] || '').trim(),
+                networkAccountType: 'bank',
+            };
+        }
+        if (/sandbox/i.test(process.env.YELLOWCARD_BASE_URL || '')) {
+            try {
+                const nets = await fx.getPayoutNetworks(c);
+                const bank = (nets || []).find((n) => n.accountType !== 'phone') || (nets || [])[0];
+                if (bank) return { networkId: bank.id || bank.code, accountNumber: '1111111111', recipientName: 'JAXOPAY Settlement', networkName: bank.name, networkAccountType: 'bank' };
+            } catch (e) { logger.warn(`[ramp] settlement bank resolve failed: ${e.message}`); }
+        }
+        return null;
+    }
+
     /** Normalize a local phone to E.164 (Yellow Card requires international format). */
     _toE164(phone, country) {
         const CODES = { NG: '234', GH: '233', KE: '254', ZA: '27', UG: '256', TZ: '255', RW: '250', ZM: '260', MW: '265', BW: '267', CM: '237', CI: '225', SN: '221', TG: '228', BF: '226', CD: '243', CG: '242', GB: '44', US: '1' };
@@ -452,7 +480,21 @@ class CurrencyEngineService {
         const country = String(p.destinationCountry || 'NG').toUpperCase().slice(0, 2);
         const cryptoAmount = Number(p.cryptoAmount);
         if (!cryptoCurrency || !p.cryptoNetwork || !(cryptoAmount > 0)) throw new AppError('Invalid crypto withdrawal request', 400);
-        if (!p.networkId || !p.accountNumber || !p.recipientName) throw new AppError('Recipient bank details are required', 400);
+
+        // Where the Naira lands: external → a recipient bank the user provides; internal → the user's
+        // own JAXOPAY wallet (Yellow Card settles the fiat into JAXOPAY's own account behind the scenes,
+        // so no user bank details are needed).
+        let dest;
+        if (mode === 'external') {
+            if (!p.networkId || !p.accountNumber || !p.recipientName) throw new AppError('Recipient bank details are required', 400);
+            dest = { recipientName: p.recipientName, accountNumber: p.accountNumber, networkId: p.networkId, networkAccountType: p.networkAccountType, networkChannelIds: p.networkChannelIds, networkName: p.networkName };
+        } else {
+            dest = await this._settlementBankFor(country);
+            if (!dest) {
+                logger.error(`[ramp] No JAXOPAY settlement bank configured for ${country} — set YELLOWCARD_SETTLEMENT_${country}_NETWORK_ID + _ACCOUNT.`);
+                throw new AppError('Selling crypto to your wallet is temporarily unavailable. Please try again shortly.', 503, 'RAMP_SETTLEMENT_UNCONFIGURED');
+            }
+        }
 
         await this.assertRampKyc(userId);
         const sender = await this._buildSender(userId);
@@ -469,7 +511,7 @@ class CurrencyEngineService {
             const ins = await client.query(
                 `INSERT INTO fx_transactions (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, recipient_details, status)
                  VALUES ($1,'yellowcard','crypto_offramp',$2,$3,$4,0,0,$5,'PENDING') RETURNING id`,
-                [userId, cryptoCurrency, fiatCurrency, cryptoAmount, JSON.stringify({ mode, cryptoNetwork: p.cryptoNetwork, recipientName: p.recipientName, accountNumber: p.accountNumber, networkName: p.networkName, country })]
+                [userId, cryptoCurrency, fiatCurrency, cryptoAmount, JSON.stringify({ mode, cryptoNetwork: p.cryptoNetwork, recipientName: dest.recipientName, accountNumber: dest.accountNumber, networkName: dest.networkName, country })]
             );
             return { id: ins.rows[0].id, walletId: w.rows[0].id };
         });
@@ -479,8 +521,8 @@ class CurrencyEngineService {
         try {
             res = await fx.submitCryptoWithdrawal({
                 destinationCountry: country, currency: fiatCurrency,
-                recipientName: p.recipientName, accountNumber: p.accountNumber, networkId: p.networkId,
-                networkAccountType: p.networkAccountType, networkChannelIds: p.networkChannelIds,
+                recipientName: dest.recipientName, accountNumber: dest.accountNumber, networkId: dest.networkId,
+                networkAccountType: dest.networkAccountType, networkChannelIds: dest.networkChannelIds,
                 sender, customerUID: String(userId), cryptoCurrency, cryptoNetwork: p.cryptoNetwork,
                 cryptoAmount, refundAddress: p.refundAddress,
             });

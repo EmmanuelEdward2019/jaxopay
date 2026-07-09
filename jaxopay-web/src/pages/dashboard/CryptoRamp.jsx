@@ -100,7 +100,7 @@ const CryptoRamp = () => {
         setError(null);
         if (!(parseFloat(sell.cryptoAmount) > 0)) { setError('Enter an amount of ' + sell.coin + '.'); return; }
         if (parseFloat(sell.cryptoAmount) > balanceOf(sell.coin)) { setError('Insufficient ' + sell.coin + ' balance.'); return; }
-        if (!sell.recipientName.trim() || !sell.accountNumber.trim() || !sell.networkId) { setError('Enter the recipient bank details.'); return; }
+        if (sell.mode === 'external' && (!sell.recipientName.trim() || !sell.accountNumber.trim() || !sell.networkId)) { setError('Enter the recipient bank details.'); return; }
         setPendingAction('sell'); setPinError(''); setShowPin(true);
     };
 
@@ -262,20 +262,26 @@ const CryptoRamp = () => {
                                 </div>
                                 <ModeToggle value={sell.mode} onChange={(m) => setSell({ ...sell, mode: m })}
                                     internalLabel="NGN to my wallet" externalLabel="NGN to a bank" />
-                                <Field label="Recipient bank">
-                                    <select value={sell.networkId} onChange={(e) => setSell({ ...sell, networkId: e.target.value })} className={inputCls}>
-                                        <option value="">Select bank…</option>
-                                        {payoutNetworks.map((n) => <option key={n.id || n.code} value={n.id || n.code}>{n.name}</option>)}
-                                    </select>
-                                </Field>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <Field label="Account number">
-                                        <input value={sell.accountNumber} onChange={(e) => setSell({ ...sell, accountNumber: e.target.value })} className={inputCls} />
-                                    </Field>
-                                    <Field label="Account name">
-                                        <input value={sell.recipientName} onChange={(e) => setSell({ ...sell, recipientName: e.target.value })} className={inputCls} />
-                                    </Field>
-                                </div>
+                                {sell.mode === 'external' ? (
+                                    <>
+                                        <Field label="Recipient bank">
+                                            <select value={sell.networkId} onChange={(e) => setSell({ ...sell, networkId: e.target.value })} className={inputCls}>
+                                                <option value="">Select bank…</option>
+                                                {payoutNetworks.map((n) => <option key={n.id || n.code} value={n.id || n.code}>{n.name}</option>)}
+                                            </select>
+                                        </Field>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <Field label="Account number">
+                                                <input value={sell.accountNumber} onChange={(e) => setSell({ ...sell, accountNumber: e.target.value })} className={inputCls} />
+                                            </Field>
+                                            <Field label="Account name">
+                                                <input value={sell.recipientName} onChange={(e) => setSell({ ...sell, recipientName: e.target.value })} className={inputCls} />
+                                            </Field>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">The Naira will be credited to your JAXOPAY wallet — no bank details needed.</p>
+                                )}
                                 <button onClick={startSell} className={primaryBtn}>
                                     Continue <ArrowRight className="w-4 h-4" />
                                 </button>
