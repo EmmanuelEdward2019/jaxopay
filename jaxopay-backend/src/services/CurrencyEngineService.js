@@ -7,6 +7,21 @@ import yellowCard from '../orchestration/adapters/fx/YellowCardService.js';
 const FX_PROVIDER_NAME = 'yellowcard';
 const fx = yellowCard;
 
+/**
+ * Turn Yellow Card's raw amount-cap error ("amount must be less than 3635 USD") into a clear
+ * message. In sandbox this cap is applied to the RAW amount (not the USD value), so a tiny NGN
+ * amount can trip it — we explain that and name the limit. Returns null if it doesn't match.
+ */
+function mapYcAmountError(rawMsg) {
+    const m = /amount must be less than\s+([\d,.]+)/i.exec(String(rawMsg || ''));
+    if (!m) return null;
+    const limit = m[1];
+    if (/sandbox/i.test(process.env.YELLOWCARD_BASE_URL || '')) {
+        return `Amount too high for the test environment. Yellow Card's sandbox caps each transaction at about ${limit} — applied to the raw amount, not the USD value — so please use a smaller amount (under ~3,600 NGN) while testing.`;
+    }
+    return `This amount exceeds the current per-transaction limit of ${limit}. Please enter a smaller amount.`;
+}
+
 class CurrencyEngineService {
     async getRate(fromCurrency, toCurrency) {
         fromCurrency = fromCurrency.toUpperCase();
@@ -531,7 +546,7 @@ class CurrencyEngineService {
                 await client.query(`UPDATE wallets SET balance=balance+$1, updated_at=NOW() WHERE id=$2`, [cryptoAmount, rec.walletId]);
                 await client.query(`UPDATE fx_transactions SET status='FAILED' WHERE id=$1`, [rec.id]);
             });
-            throw new AppError(e.message || 'Crypto withdrawal failed. Your balance was refunded.', e.statusCode || 400);
+            throw new AppError(mapYcAmountError(e.message) || e.message || 'Crypto withdrawal failed. Your balance was refunded.', e.statusCode || 400);
         }
 
         let convertedFiat = Number(res.raw?.convertedAmount ?? res.raw?.amount ?? 0);
@@ -619,7 +634,7 @@ class CurrencyEngineService {
                 await client.query(`UPDATE wallets SET balance=balance+$1, updated_at=NOW() WHERE id=$2`, [fiatAmount, rec.walletId]);
                 await client.query(`UPDATE fx_transactions SET status='FAILED' WHERE id=$1`, [rec.id]);
             });
-            throw new AppError(e.message || 'Crypto deposit failed. Your balance was refunded.', e.statusCode || 400);
+            throw new AppError(mapYcAmountError(e.message) || e.message || 'Crypto deposit failed. Your balance was refunded.', e.statusCode || 400);
         }
 
         // Yellow Card's collection response echoes a local (fee-adjusted fiat) figure for cryptoAmount
