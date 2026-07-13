@@ -400,9 +400,6 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
  * Yellow Card sender `additionalId` can use it. The Smile callback promotes/rejects it.
  */
 export const submitRampIdVerification = catchAsync(async (req, res) => {
-  if (!smileId.isSmileConfigured()) throw new AppError('Identity verification is not available', 503);
-  if (!process.env.API_BASE_URL) throw new AppError('Server callback URL is not configured. Please contact support.', 500);
-
   const { id_type, id_number, first_name, last_name, middle_name, dob, gender, phone_number } = req.body;
   const t = String(id_type || '').toLowerCase();
   const docType = t.includes('bvn') ? 'bvn' : 'nin';
@@ -411,40 +408,85 @@ export const submitRampIdVerification = catchAsync(async (req, res) => {
   if (docType === 'bvn' && !/^\d{11}$/.test(num)) throw new AppError('BVN must be 11 digits', 400);
   if (docType === 'nin' && !/^\d{11}$/.test(num)) throw new AppError('NIN must be 11 digits', 400);
 
-  // Fall back to profile names so Smile has a full identity to match.
+  // Profile fields live on user_profiles; phone lives on users — join like _buildSender does.
   const prof = (await query(
-    `SELECT first_name, last_name, date_of_birth, gender, phone FROM user_profiles WHERE user_id = $1`,
+    `SELECT p.first_name, p.last_name, p.date_of_birth, p.gender, u.phone
+     FROM users u LEFT JOIN user_profiles p ON p.user_id = u.id
+     WHERE u.id = $1`,
     [req.user.id]
   )).rows[0] || {};
   const fn = first_name || prof.first_name;
   const ln = last_name || prof.last_name;
   if (!fn || !ln) throw new AppError('Please add your full legal name in your profile first.', 400, 'PROFILE_INCOMPLETE');
 
-  const callbackUrl = buildCallbackUrl('/webhooks/smile_identity');
-  const { jobId } = await smileId.submitBasicKycAsync({
-    userId: req.user.id, callbackUrl, country: 'NG',
-    id_type: id_type || docType.toUpperCase(), id_number: num,
-    first_name: fn, last_name: ln, middle_name,
-    dob: dob || prof.date_of_birth, gender: gender || prof.gender, phone_number: phone_number || prof.phone,
-  });
+  // Idempotency: if this exact ID is already on file (pending/approved), don't duplicate it.
+  const existing = (await query(
+    `SELECT id, status::text AS status FROM kyc_documents
+     WHERE user_id = $1 AND document_type = $2 AND document_number = $3
+       AND (status IS NULL OR status::text <> 'rejected') LIMIT 1`,
+    [req.user.id, docType, num]
+  )).rows[0];
+  if (existing) {
+    return res.status(202).json({
+      success: true,
+      message: 'Your ID is already on file. You can proceed.',
+      data: { id_type: docType, status: existing.status || 'pending' },
+    });
+  }
 
-  // Tracking row (reuses the existing Smile callback for tier bump).
-  await query(
-    `INSERT INTO kyc_documents (user_id, document_type, document_number, document_url, selfie_url, status, tier)
-     VALUES ($1, 'smile_basic_kyc', $2, $3, null, 'pending', 'tier_1')`,
-    [req.user.id, `SMILE:${jobId}`, 'https://jaxopay.com/kyc/smile-id-async']
-  );
-  // The actual BVN/NIN the ramp gate + sender additionalId read. document_url ties it to the Smile job.
+  // Try SmileID verification. If Smile is unreachable / not enabled for this product, we DON'T
+  // dead-end the user: the ID is stored as pending (manual review) and the user may proceed —
+  // Yellow Card independently validates the BVN/NIN on every ramp transaction anyway.
+  let jobId = null;
+  let smileError = null;
+  if (smileId.isSmileConfigured() && process.env.API_BASE_URL) {
+    try {
+      const callbackUrl = buildCallbackUrl('/webhooks/smile_identity');
+      const out = await smileId.submitBasicKycAsync({
+        userId: req.user.id, callbackUrl, country: 'NG',
+        id_type: id_type || docType.toUpperCase(), id_number: num,
+        first_name: fn, last_name: ln, middle_name,
+        dob: dob || prof.date_of_birth, gender: gender || prof.gender, phone_number: phone_number || prof.phone,
+      });
+      jobId = out.jobId;
+    } catch (e) {
+      smileError = e.message || 'verification service error';
+      logger.error(`[KYC] Ramp ID Smile verification unavailable (falling back to manual review): ${smileError}`);
+    }
+  } else {
+    smileError = 'SmileID not configured';
+    logger.warn('[KYC] Ramp ID verification: SmileID not configured — storing for manual review');
+  }
+
+  if (jobId) {
+    // Tracking row (reuses the existing Smile callback for tier bump + promotes the ID row below).
+    await query(
+      `INSERT INTO kyc_documents (user_id, document_type, document_number, document_url, selfie_url, status, tier)
+       VALUES ($1, 'smile_basic_kyc', $2, $3, null, 'pending', 'tier_1')`,
+      [req.user.id, `SMILE:${jobId}`, 'https://jaxopay.com/kyc/smile-id-async']
+    );
+  }
+  // The actual BVN/NIN the ramp gate + Yellow Card sender additionalId read. document_url ties it
+  // to the Smile job when one exists, or marks it for manual compliance review when it doesn't.
   await query(
     `INSERT INTO kyc_documents (user_id, document_type, document_number, document_url, selfie_url, status, tier)
      VALUES ($1, $2, $3, $4, null, 'pending', 'tier_1')`,
-    [req.user.id, docType, num, `SMILE:${jobId}`]
+    [req.user.id, docType, num, jobId ? `SMILE:${jobId}` : 'MANUAL:pending-review']
   );
 
-  logger.info('[KYC] Ramp ID verification submitted', { userId: req.user.id, jobId, docType });
-  auditFromReq(req, { action: 'kyc_submitted', entityType: 'kyc_document', newValues: { method: 'ramp_id_verify', id_type: docType, job_id: jobId } });
+  logger.info('[KYC] Ramp ID verification submitted', { userId: req.user.id, jobId, docType, fallback: !jobId });
+  auditFromReq(req, {
+    action: 'kyc_submitted', entityType: 'kyc_document',
+    newValues: { method: 'ramp_id_verify', id_type: docType, job_id: jobId, manual_review: !jobId, ...(smileError ? { smile_error: smileError } : {}) },
+  });
 
-  res.status(202).json({ success: true, message: 'Verification submitted. You can proceed once it clears.', data: { job_id: jobId, id_type: docType } });
+  res.status(202).json({
+    success: true,
+    message: jobId
+      ? 'Verification submitted. You can proceed once it clears.'
+      : 'Your ID has been recorded — you can proceed. It will be verified with your first transaction.',
+    data: { job_id: jobId, id_type: docType },
+  });
 });
 
 function validateSmileBiometricImages(images) {

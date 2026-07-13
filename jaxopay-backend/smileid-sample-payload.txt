@@ -1,0 +1,23 @@
+POST https://api.smileidentity.com/v2/verify_async
+{
+  "callback_url": "https://console.jaxopay.com/api/v1/webhooks/smile_identity",
+  "country": "NG",
+  "id_type": "NIN",
+  "id_number": "12345678901",
+  "first_name": "Ada",
+  "last_name": "Obi",
+  "middle_name": "",
+  "dob": "1990-01-01",
+  "gender": "F",
+  "phone_number": "+2348012345678",
+  "partner_id": "8429",
+  "partner_params": {
+    "job_id": "1e650a66-6d89-4c3e-8665-b192795deeea",
+    "user_id": "user-uuid-here",
+    "job_type": 5
+  },
+  "signature": "hmnc7Yfm7+v29heV9j2NYpLNWD0gBqoNTQbBxp2A4Vs=",
+  "source_sdk": "rest_api",
+  "source_sdk_version": "jaxopay-backend-1.0",
+  "timestamp": "2026-07-13T03:49:59.052Z"
+}

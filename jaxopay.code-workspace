@@ -1,0 +1,13 @@
+{
+    // Double-click this file (or File → Open Workspace from File) to open VSCode
+    // at the repo root — Source Control / Git will always work from here.
+    "folders": [
+        {
+            "name": "JAXOPAY (repo root)",
+            "path": "."
+        }
+    ],
+    "settings": {
+        "git.openRepositoryInParentFolders": "always"
+    }
+}
