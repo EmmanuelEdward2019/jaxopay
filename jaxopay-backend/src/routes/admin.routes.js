@@ -35,6 +35,7 @@ import {
   getPendingRamps,
   confirmRamp,
   failRamp,
+  sendAdminMessage,
 } from '../controllers/admin.controller.js';
 import { getHighRiskUsers, refreshUserRiskScore } from '../controllers/aml.controller.js';
 import { getTreasuryOverview, getFundMovements } from '../controllers/treasury.controller.js';
@@ -53,6 +54,9 @@ router.get('/stats', getSystemStats);
 router.get('/treasury', restrictTo('admin', 'super_admin'), getTreasuryOverview);
 // Fund movements — internal double-entry ledger (admin & super_admin only)
 router.get('/ledger', restrictTo('admin', 'super_admin'), getFundMovements);
+
+// Send email / dashboard notification to selected users (admin & super_admin)
+router.post('/messages', restrictTo('admin', 'super_admin'), sendAdminMessage);
 
 // Crypto ramp settlement queue (manual ops — admin & super_admin only)
 router.get('/ramps', restrictTo('admin', 'super_admin'), getPendingRamps);

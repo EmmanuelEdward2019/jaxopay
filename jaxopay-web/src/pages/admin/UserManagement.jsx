@@ -47,6 +47,21 @@ const UserManagement = () => {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showSuspendModal, setShowSuspendModal] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
+    const [selectedRecipients, setSelectedRecipients] = useState([]); // [{id, email, name}] — survives page changes
+    const [showMessageModal, setShowMessageModal] = useState(false);
+
+    const isSelected = (id) => selectedRecipients.some((r) => r.id === id);
+    const toggleRecipient = (user) => {
+        setSelectedRecipients((prev) => isSelected(user.id)
+            ? prev.filter((r) => r.id !== user.id)
+            : [...prev, { id: user.id, email: user.email, name: user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email }]);
+    };
+    const togglePage = () => {
+        const allOnPage = users.length > 0 && users.every((u) => isSelected(u.id));
+        setSelectedRecipients((prev) => allOnPage
+            ? prev.filter((r) => !users.some((u) => u.id === r.id))
+            : [...prev, ...users.filter((u) => !prev.some((r) => r.id === u.id)).map((u) => ({ id: u.id, email: u.email, name: u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.email }))]);
+    };
 
     useEffect(() => {
         fetchUsers();
@@ -136,6 +151,13 @@ const UserManagement = () => {
                 </div>
                 <div className="flex gap-2">
                     <button
+                        onClick={() => setShowMessageModal(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg"
+                    >
+                        <Mail className="w-4 h-4" />
+                        Message{selectedRecipients.length > 0 ? ` (${selectedRecipients.length})` : ''}
+                    </button>
+                    <button
                         onClick={() => setShowCreateModal(true)}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 dark:bg-gray-700 text-white font-medium rounded-lg"
                     >
@@ -211,6 +233,15 @@ const UserManagement = () => {
                         <table className="w-full">
                             <thead className="bg-gray-50 dark:bg-gray-700/50">
                                 <tr>
+                                    <th className="px-4 py-4 w-10">
+                                        <input
+                                            type="checkbox"
+                                            aria-label="Select all on this page"
+                                            checked={users.length > 0 && users.every((u) => isSelected(u.id))}
+                                            onChange={togglePage}
+                                            className="w-4 h-4 accent-green-600 cursor-pointer"
+                                        />
+                                    </th>
                                     <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                         User
                                     </th>
@@ -233,7 +264,16 @@ const UserManagement = () => {
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                 {users.map((user) => (
-                                    <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                                    <tr key={user.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/30 ${isSelected(user.id) ? 'bg-green-50/60 dark:bg-green-900/10' : ''}`}>
+                                        <td className="px-4 py-4">
+                                            <input
+                                                type="checkbox"
+                                                aria-label={`Select ${user.email}`}
+                                                checked={isSelected(user.id)}
+                                                onChange={() => toggleRecipient(user)}
+                                                className="w-4 h-4 accent-green-600 cursor-pointer"
+                                            />
+                                        </td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center text-white font-medium">
@@ -335,8 +375,143 @@ const UserManagement = () => {
                         loading={actionLoading}
                     />
                 )}
+                {showMessageModal && (
+                    <MessageUsersModal
+                        recipients={selectedRecipients}
+                        onRemove={(id) => setSelectedRecipients((prev) => prev.filter((r) => r.id !== id))}
+                        onClose={() => setShowMessageModal(false)}
+                        onSent={() => { setShowMessageModal(false); setSelectedRecipients([]); }}
+                    />
+                )}
             </AnimatePresence>
         </div>
+    );
+};
+
+// Compose an email / dashboard notification to the selected users (or every user).
+const MessageUsersModal = ({ recipients, onRemove, onClose, onSent }) => {
+    const [allUsers, setAllUsers] = useState(recipients.length === 0);
+    const [channels, setChannels] = useState({ notification: true, email: false });
+    const [subject, setSubject] = useState('');
+    const [message, setMessage] = useState('');
+    const [sending, setSending] = useState(false);
+    const [feedback, setFeedback] = useState(null); // { ok, text }
+
+    const canSend = subject.trim() && message.trim() && (channels.notification || channels.email)
+        && (allUsers || recipients.length > 0);
+
+    const handleSend = async () => {
+        setSending(true); setFeedback(null);
+        const res = await adminService.sendMessage({
+            user_ids: allUsers ? undefined : recipients.map((r) => r.id),
+            all_users: allUsers || undefined,
+            channels: Object.keys(channels).filter((c) => channels[c]),
+            subject: subject.trim(),
+            message: message.trim(),
+        });
+        setSending(false);
+        if (res.success) {
+            setFeedback({ ok: true, text: res.message || 'Message sent.' });
+            setTimeout(onSent, 1200);
+        } else {
+            setFeedback({ ok: false, text: res.error || 'Failed to send message.' });
+        }
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            onClick={onClose}
+        >
+            <motion.div
+                initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden max-h-[90vh] flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            <Mail className="w-5 h-5 text-green-600" /> Message Users
+                        </h2>
+                        <p className="text-sm text-gray-500">Send an email and/or a dashboard notification</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                        <X className="w-5 h-5 text-gray-400" />
+                    </button>
+                </div>
+
+                <div className="p-6 space-y-5 overflow-y-auto">
+                    {/* Recipients */}
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Recipients</label>
+                        <div className="flex items-center gap-3 mb-2">
+                            <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                                <input type="checkbox" checked={allUsers} onChange={(e) => setAllUsers(e.target.checked)} className="w-4 h-4 accent-green-600" />
+                                Send to <strong>all users</strong>
+                            </label>
+                        </div>
+                        {!allUsers && (
+                            recipients.length === 0 ? (
+                                <p className="text-sm text-amber-600">No users selected — tick users in the table first, or choose “all users”.</p>
+                            ) : (
+                                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                    {recipients.map((r) => (
+                                        <span key={r.id} className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 rounded-full text-xs">
+                                            {r.name || r.email}
+                                            <button onClick={() => onRemove(r.id)} aria-label={`Remove ${r.email}`}><X className="w-3 h-3" /></button>
+                                        </span>
+                                    ))}
+                                </div>
+                            )
+                        )}
+                    </div>
+
+                    {/* Channels */}
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Send via</label>
+                        <div className="flex gap-4">
+                            <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                                <input type="checkbox" checked={channels.notification} onChange={(e) => setChannels({ ...channels, notification: e.target.checked })} className="w-4 h-4 accent-green-600" />
+                                Dashboard notification
+                            </label>
+                            <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                                <input type="checkbox" checked={channels.email} onChange={(e) => setChannels({ ...channels, email: e.target.checked })} className="w-4 h-4 accent-green-600" />
+                                Email
+                            </label>
+                        </div>
+                    </div>
+
+                    {/* Subject + message */}
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Subject</label>
+                        <input value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={200}
+                            placeholder="e.g. Scheduled maintenance this weekend"
+                            className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Message</label>
+                        <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={5} maxLength={5000}
+                            placeholder="Write your message…"
+                            className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm resize-y" />
+                        <p className="text-[11px] text-gray-400 mt-1">{message.length}/5000</p>
+                    </div>
+
+                    {feedback && (
+                        <p className={`text-sm ${feedback.ok ? 'text-green-600' : 'text-red-600'}`}>{feedback.text}</p>
+                    )}
+                </div>
+
+                <div className="flex gap-3 p-6 border-t border-gray-100 dark:border-gray-700">
+                    <button onClick={onClose} className="flex-1 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-semibold rounded-lg">Cancel</button>
+                    <button onClick={handleSend} disabled={!canSend || sending}
+                        className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2">
+                        {sending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                        {sending ? 'Sending…' : allUsers ? 'Send to all users' : `Send to ${recipients.length} user${recipients.length === 1 ? '' : 's'}`}
+                    </button>
+                </div>
+            </motion.div>
+        </motion.div>
     );
 };
 

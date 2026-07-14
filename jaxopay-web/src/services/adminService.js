@@ -335,6 +335,16 @@ const adminService = {
         }
     },
 
+    // Send email / dashboard notification to selected users
+    sendMessage: async ({ user_ids, all_users, channels, subject, message }) => {
+        try {
+            const response = await apiClient.post('/admin/messages', { user_ids, all_users, channels, subject, message });
+            return { success: response?.success !== false, data: response.data, message: response?.message };
+        } catch (error) {
+            return { success: false, error: error?.response?.data?.message || error.message };
+        }
+    },
+
     // Crypto ramp settlement queue (manual ops)
     getRamps: async (status = 'PENDING') => {
         try {

@@ -2,6 +2,7 @@ import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { sendSMS } from '../services/sms.service.js';
+import { sendEmail as sendEmailSvc } from '../services/email.service.js';
 import bcrypt from 'bcryptjs';
 import { providerRegistry } from '../orchestration/index.js';
 import { circuitBreakers } from '../utils/circuitBreaker.js';
@@ -1446,6 +1447,87 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
   ];
 
   res.status(200).json({ success: true, data });
+});
+
+// ── Admin messaging: email / dashboard notification to selected users ──────────
+
+/**
+ * POST /admin/messages — send a message to one, many, or all users via
+ * in-app dashboard notification and/or email. Body:
+ *   { user_ids: uuid[] , all_users?: boolean, channels: ['notification','email'], subject, message }
+ */
+export const sendAdminMessage = catchAsync(async (req, res) => {
+  const { user_ids, all_users, channels = ['notification'], subject, message } = req.body;
+
+  const subj = String(subject || '').trim();
+  const body = String(message || '').trim();
+  if (!subj || !body) throw new AppError('subject and message are required', 400);
+  if (subj.length > 200) throw new AppError('subject must be 200 characters or fewer', 400);
+  if (body.length > 5000) throw new AppError('message must be 5000 characters or fewer', 400);
+
+  const wantNotification = channels.includes('notification');
+  const wantEmail = channels.includes('email');
+  if (!wantNotification && !wantEmail) throw new AppError('Pick at least one channel (notification, email)', 400);
+
+  // Resolve recipients — explicit IDs, or every active user with all_users.
+  let recipients;
+  if (all_users === true) {
+    recipients = (await query(
+      `SELECT id, email FROM users WHERE is_active = true AND deleted_at IS NULL AND role = 'end_user'`
+    )).rows;
+  } else {
+    if (!Array.isArray(user_ids) || user_ids.length === 0) {
+      throw new AppError('user_ids array is required (or set all_users: true)', 400);
+    }
+    if (user_ids.length > 1000) throw new AppError('Too many recipients in one call (max 1000)', 400);
+    recipients = (await query(
+      `SELECT id, email FROM users WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
+      [user_ids]
+    )).rows;
+  }
+  if (recipients.length === 0) throw new AppError('No matching recipients found', 404);
+
+  // In-app notifications: one bulk insert.
+  if (wantNotification) {
+    await query(
+      `INSERT INTO notifications (user_id, title, message, type, metadata)
+       SELECT unnest($1::uuid[]), $2, $3, 'announcement', $4::jsonb`,
+      [recipients.map((r) => r.id), subj, body, JSON.stringify({ from: 'admin', sent_by: req.user.id })]
+    );
+  }
+
+  // Emails: fire-and-forget with small batches so a big blast can't hang the request.
+  if (wantEmail) {
+    const html = `
+      <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px">
+        <div style="background:#1FAD6B;color:#fff;border-radius:12px 12px 0 0;padding:18px 24px;font-size:18px;font-weight:700">JAXOPAY</div>
+        <div style="border:1px solid #e0e8e3;border-top:0;border-radius:0 0 12px 12px;padding:24px">
+          <h2 style="margin:0 0 12px;font-size:18px;color:#0f1c16">${subj.replace(/</g, '&lt;')}</h2>
+          <p style="margin:0;color:#374151;line-height:1.6;white-space:pre-wrap">${body.replace(/</g, '&lt;')}</p>
+          <p style="margin:24px 0 0;font-size:12px;color:#9ca3af">Sent by the JAXOPAY team · <a href="mailto:support@jaxopay.com" style="color:#1FAD6B">support@jaxopay.com</a></p>
+        </div>
+      </div>`;
+    setImmediate(async () => {
+      let sent = 0;
+      for (const r of recipients) {
+        if (!r.email) continue;
+        try { await sendEmailSvc({ to: r.email, subject: subj, html }); sent++; }
+        catch (e) { logger.warn(`[AdminMessage] email to ${r.email} failed: ${e.message}`); }
+      }
+      logger.info(`[AdminMessage] emails dispatched: ${sent}/${recipients.length}`);
+    });
+  }
+
+  auditFromReq(req, {
+    action: 'admin_message_sent', entityType: 'notification',
+    newValues: { recipients: recipients.length, all_users: all_users === true, channels, subject: subj },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Message queued for ${recipients.length} user${recipients.length === 1 ? '' : 's'}`,
+    data: { recipients: recipients.length, channels },
+  });
 });
 
 // ── Crypto ramp settlement queue (manual ops) ──────────────────────────────────
