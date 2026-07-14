@@ -459,21 +459,27 @@ class CurrencyEngineService {
     async getRampKycStatus(userId) {
         const prof = (await query('SELECT country FROM user_profiles WHERE user_id = $1', [userId])).rows[0] || {};
         const country = String(prof.country || 'NG').toUpperCase().slice(0, 2);
-        if (country !== 'NG') return { country, required: false, verified: true };
-        const verified = (await query(
-            `SELECT 1 FROM kyc_documents
+        if (country !== 'NG') return { country, required: false, verified: true, pending: false };
+        // Only an APPROVED BVN/NIN/national ID unlocks the ramp. A submitted-but-unreviewed ID
+        // shows as pending (blocked) until SmileID or compliance approves it.
+        const rows = (await query(
+            `SELECT status::text AS status FROM kyc_documents
              WHERE user_id = $1 AND document_number IS NOT NULL AND (status IS NULL OR status::text <> 'rejected')
-               AND (LOWER(document_type) LIKE '%bvn%' OR LOWER(document_type) LIKE '%nin%' OR LOWER(document_type) LIKE '%national%')
-             LIMIT 1`,
+               AND (LOWER(document_type) LIKE '%bvn%' OR LOWER(document_type) LIKE '%nin%' OR LOWER(document_type) LIKE '%national%')`,
             [userId]
-        )).rows.length > 0;
-        return { country, required: true, verified };
+        )).rows;
+        const verified = rows.some((r) => r.status === 'approved');
+        const pending = !verified && rows.length > 0;
+        return { country, required: true, verified, pending };
     }
 
-    /** Throws BVN_NIN_REQUIRED (403) if the user isn't cleared to ramp. */
+    /** Throws BVN_NIN_REQUIRED / BVN_NIN_PENDING (403) if the user isn't cleared to ramp. */
     async assertRampKyc(userId) {
         const s = await this.getRampKycStatus(userId);
         if (s.required && !s.verified) {
+            if (s.pending) {
+                throw new AppError('Your BVN/NIN is under review. You can buy or sell crypto once it is approved.', 403, 'BVN_NIN_PENDING');
+            }
             throw new AppError('To buy or sell crypto, please verify your BVN or NIN first.', 403, 'BVN_NIN_REQUIRED');
         }
         return s;

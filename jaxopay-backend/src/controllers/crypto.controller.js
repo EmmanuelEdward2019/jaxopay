@@ -6,6 +6,8 @@ import cache, { CacheTTL } from '../utils/cache.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import fxService from '../orchestration/adapters/fx/YellowCardService.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
+import { enforceTierLimit } from '../services/kycLimits.service.js';
+import { kycTierLevel } from '../middleware/auth.js';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance, convertCurrency } from '../utils/financial.js';
 import { getSpendableBalance } from '../utils/walletBalance.js';
 import { getQuidaxErrorMessage } from '../utils/quidax.js';
@@ -215,10 +217,10 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
   const to_fiat = fiat_currency || fiat;
   const qty = crypto_amount || amount;
 
-  // Check KYC tier (Tier 2+ required for crypto)
-  if (req.user.kyc_tier < 2) {
+  // Check KYC tier (verified users only)
+  if (kycTierLevel(req.user.kyc_tier) < 1) {
     throw new AppError(
-      'KYC Tier 2 or higher required for crypto exchange',
+      'Please verify your identity (KYC) to use crypto features.',
       403
     );
   }
@@ -378,10 +380,10 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
   const to_coin = crypto_currency || coin;
   const qty = fiat_amount || amount;
 
-  // Check KYC tier
-  if (req.user.kyc_tier < 2) {
+  // Check KYC tier (verified users only)
+  if (kycTierLevel(req.user.kyc_tier) < 1) {
     throw new AppError(
-      'KYC Tier 2 or higher required for crypto exchange',
+      'Please verify your identity (KYC) to use crypto features.',
       403
     );
   }
@@ -890,8 +892,8 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
 export const withdrawCrypto = catchAsync(async (req, res) => {
   const { coin, network, address, amount, memo } = req.body;
 
-  if (req.user.kyc_tier < 2) {
-    throw new AppError('KYC Tier 2 or higher required for crypto withdrawals', 403);
+  if (kycTierLevel(req.user.kyc_tier) < 1) {
+    throw new AppError('Please verify your identity (KYC) to withdraw crypto.', 403, 'KYC_TIER_REQUIRED');
   }
 
   if (!coin || !address || amount == null) {
@@ -905,6 +907,8 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
 
   // Require the transaction PIN as the final authorization step.
   await verifyTransactionPin(req.user.id, req.body.pin);
+  // KYC tier daily/monthly limit (stablecoins ≈ USD; other coins converted)
+  await enforceTierLimit(req.user.id, amountValue, coin.toUpperCase(), req.user.kyc_tier);
 
   const coinUpper = coin.toUpperCase();
   const reference = createCryptoWithdrawalReference(req.user.id);
@@ -1056,8 +1060,8 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
 export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
   const { from_coin, to_coin, amount } = req.body;
 
-  if (req.user.kyc_tier < 2) {
-    throw new AppError('KYC Tier 2 or higher required', 403);
+  if (kycTierLevel(req.user.kyc_tier) < 1) {
+    throw new AppError('Please verify your identity (KYC) to use crypto features.', 403, 'KYC_TIER_REQUIRED');
   }
 
   if (!from_coin || !to_coin || !amount || parseFloat(amount) <= 0) {
@@ -1397,7 +1401,7 @@ const getWalletType = (currency) => FIAT_CURRENCIES.has(currency.toUpperCase()) 
 export const createSwapQuotation = catchAsync(async (req, res) => {
   const { from_currency, to_currency, from_amount, to_amount } = req.body;
 
-  if (req.user.kyc_tier < 2) throw new AppError('KYC Tier 2+ required for swaps', 403);
+  if (kycTierLevel(req.user.kyc_tier) < 1) throw new AppError('Please verify your identity (KYC) to use swaps.', 403, 'KYC_TIER_REQUIRED');
   if (!from_currency || !to_currency) throw new AppError('from_currency and to_currency are required', 400);
   if (from_amount != null && to_amount != null) throw new AppError('Provide exactly one of from_amount or to_amount', 400);
   if (from_amount == null && to_amount == null) throw new AppError('Exactly one of from_amount or to_amount is required', 400);
@@ -1446,7 +1450,7 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { from_currency, from_amount } = req.body || {};
 
-  if (req.user.kyc_tier < 2) throw new AppError('KYC Tier 2+ required for swaps', 403);
+  if (kycTierLevel(req.user.kyc_tier) < 1) throw new AppError('Please verify your identity (KYC) to use swaps.', 403, 'KYC_TIER_REQUIRED');
   if (!id) throw new AppError('Quotation ID is required', 400);
 
   const quidaxUserId = await getQuidaxSubUserIdForRequest(req);

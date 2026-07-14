@@ -56,10 +56,10 @@ router.get(
   getCardSecureData
 );
 
-// Create virtual card (Requires KYC Tier 2 in production; skipped in dev for testing)
+// Create virtual card (requires verified KYC)
 router.post(
   '/',
-  ...(process.env.NODE_ENV === 'production' ? [requireKYCTier(2)] : []),
+  requireKYCTier(1),
   body('card_type').optional().isIn(['single_use', 'multi_use']),
   body('amount_usd').isFloat({ min: 1 }),
   body('spending_limit').optional().isFloat({ min: 1 }),

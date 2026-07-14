@@ -146,8 +146,9 @@ const CryptoRamp = () => {
         return <div className="flex items-center justify-center h-64"><RefreshCw className="w-6 h-6 animate-spin text-green-500" /></div>;
     }
 
-    // ── Block screen: BVN/NIN required ──
+    // ── Block screen: BVN/NIN required (pending = submitted, awaiting approval) ──
     const blocked = gate?.required && !gate?.verified;
+    const underReview = blocked && gate?.pending;
 
     return (
         <div className="max-w-3xl mx-auto space-y-6">
@@ -159,7 +160,24 @@ const CryptoRamp = () => {
                 </div>
             </div>
 
-            {blocked ? (
+            {underReview ? (
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-amber-200 dark:border-amber-800">
+                    <div className="flex items-start gap-3">
+                        <RefreshCw className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
+                        <div>
+                            <h2 className="font-semibold text-gray-900 dark:text-white">Your ID is under review</h2>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                Your BVN/NIN has been submitted and is being verified. You'll be able to buy and sell crypto
+                                as soon as it's approved — usually shortly. Check back soon.
+                            </p>
+                            <button onClick={loadAll}
+                                className="mt-4 px-5 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm inline-flex items-center gap-2">
+                                <RefreshCw className="w-4 h-4" /> Check status
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : blocked ? (
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-amber-200 dark:border-amber-800">
                     <div className="flex items-start gap-3 mb-4">
                         <ShieldCheck className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />

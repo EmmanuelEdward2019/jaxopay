@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyToken } from '../middleware/auth.js';
+import { verifyToken, requireKYCTier } from '../middleware/auth.js';
 import { validate, createWalletValidation } from '../middleware/validator.js';
 import { useIdempotency } from '../middleware/idempotency.js';
 import { body, param, query } from 'express-validator';
@@ -33,6 +33,7 @@ router.get('/balances', getAllBalances);
 // Get or create Virtual Bank Account (VBA) for receiving funds
 router.get(
   '/vba/:walletId',
+  requireKYCTier(1),
   param('walletId').isUUID(),
   validate,
   getOrCreateVBA
@@ -84,6 +85,7 @@ router.post(
 // Transfer between wallets
 router.post(
   '/transfer',
+  requireKYCTier(1),
   body('recipient_email').isEmail(),
   body('amount').isFloat({ min: 0.01 }),
   body('currency').isString().isLength({ min: 1, max: 10 }),
@@ -96,6 +98,7 @@ router.post(
 // Initialize Korapay deposit (returns checkout URL)
 router.post(
   '/deposit/initialize',
+  requireKYCTier(1),
   body('wallet_id').isUUID(),
   body('amount').isFloat({ min: 1 }),
   body('currency').optional().isString().isLength({ min: 1, max: 10 }),
@@ -114,6 +117,7 @@ router.post(
 // Add funds to wallet (for testing)
 router.post(
   '/:walletId/add-funds',
+  requireKYCTier(1),
   param('walletId').isUUID(),
   body('amount').isFloat({ min: 0.01 }),
   body('description').optional().isString(),

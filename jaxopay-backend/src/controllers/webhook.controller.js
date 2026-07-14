@@ -49,7 +49,10 @@ export const handleWebhook = catchAsync(async (req, res) => {
             case 'vtpass':
                 await processVTpass(body);
                 break;
+            // Smile posts to /webhooks/smile_identity (the URL we register); accept all aliases.
             case 'smile-id':
+            case 'smile_identity':
+            case 'smile':
                 await processSmileIdentity(body);
                 break;
             case 'quidax':

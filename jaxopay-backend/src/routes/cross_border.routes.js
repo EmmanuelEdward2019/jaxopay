@@ -1,6 +1,6 @@
 import express from 'express';
 import * as crossBorderController from '../controllers/cross_border.controller.js';
-import { verifyToken } from '../middleware/auth.js';
+import { verifyToken, requireKYCTier } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -13,20 +13,20 @@ router.use(verifyToken);
 router.get('/rates', crossBorderController.getExchangeRate);
 
 // Currency Swap
-router.post('/swap', crossBorderController.swapCurrency);
+router.post('/swap', requireKYCTier(1), crossBorderController.swapCurrency);
 
 // Payout destination metadata (Yellow Card)
 router.get('/countries', crossBorderController.getPayoutCountries);
 router.get('/networks', crossBorderController.getPayoutNetworks);
 
 // International Payments
-router.post('/transfers/international', crossBorderController.sendInternationalPayment);
+router.post('/transfers/international', requireKYCTier(1), crossBorderController.sendInternationalPayment);
 
 // Crypto on/off-ramp (Yellow Card Direct Settlement)
 router.get('/ramp/status', crossBorderController.getRampStatus);
 router.get('/ramp/options', crossBorderController.getRampOptions);
-router.post('/ramp/deposit', crossBorderController.cryptoRampDeposit);
-router.post('/ramp/withdraw', crossBorderController.cryptoRampWithdraw);
+router.post('/ramp/deposit', requireKYCTier(1), crossBorderController.cryptoRampDeposit);
+router.post('/ramp/withdraw', requireKYCTier(1), crossBorderController.cryptoRampWithdraw);
 router.get('/ramp/:id/status', crossBorderController.getRampTransactionStatus);
 
 // Provider wallet balances (Yellow Card)

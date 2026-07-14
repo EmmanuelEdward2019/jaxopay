@@ -6,6 +6,7 @@ import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js
 import { getSpendableBalance } from '../utils/walletBalance.js';
 import { getKorapayErrorDetails, getKorapayTransferFailureMessage } from '../utils/korapay.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
+import { enforceTierLimit } from '../services/kycLimits.service.js';
 
 const korapay = new KorapayAdapter();
 
@@ -121,6 +122,8 @@ export const sendTransfer = catchAsync(async (req, res) => {
 
     // Require the transaction PIN as the final authorization step.
     await verifyTransactionPin(req.user.id, req.body.pin);
+    // KYC tier daily/monthly limit
+    await enforceTierLimit(req.user.id, amountValue, transferCurrency, req.user.kyc_tier);
 
     // Supported fiat withdrawal currencies via Korapay disbursements
     const DISBURSE_SUPPORTED = new Set(['NGN', 'KES', 'GHS', 'ZAR']);

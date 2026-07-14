@@ -114,22 +114,27 @@ export const restrictTo = (...roles) => {
   };
 };
 
+/**
+ * Numeric level for a KYC tier. Accepts both forms — the enum string ('tier_2') and a plain
+ * number (2) — so a mismatched call style can never silently disable the gate again.
+ */
+export const kycTierLevel = (tier) => {
+  if (typeof tier === 'number' && Number.isFinite(tier)) return tier;
+  const m = /^tier_(\d+)$/.exec(String(tier || ''));
+  return m ? parseInt(m[1], 10) : 0;
+};
+
 // Check KYC tier
 export const requireKYCTier = (minTier) => {
-  const tierLevels = {
-    tier_0: 0,
-    tier_1: 1,
-    tier_2: 2,
-  };
-
   return (req, res, next) => {
-    const userTierLevel = tierLevels[req.user.kyc_tier] || 0;
-    const requiredTierLevel = tierLevels[minTier] || 0;
+    const userTierLevel = kycTierLevel(req.user?.kyc_tier);
+    const requiredTierLevel = kycTierLevel(minTier);
 
     if (userTierLevel < requiredTierLevel) {
       throw new AppError(
-        `This action requires ${minTier} verification. Please complete your KYC.`,
-        403
+        `Please verify your identity to use this feature. Complete KYC in your dashboard to continue.`,
+        403,
+        'KYC_TIER_REQUIRED'
       );
     }
     next();

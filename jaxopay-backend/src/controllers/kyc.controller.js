@@ -165,10 +165,10 @@ export const getKYCLimits = catchAsync(async (req, res) => {
       daily_limit: 1000,
       monthly_limit: 10000,
       features: [
-        'Send/Receive money',
-        'Basic wallet',
+        'Deposits & transfers',
         'Bill payments',
-        'Gift cards',
+        'Crypto buy/sell & swaps',
+        'Virtual cards',
       ],
       required_documents: ['ID Card or Passport'],
     },
@@ -178,27 +178,10 @@ export const getKYCLimits = catchAsync(async (req, res) => {
       monthly_limit: 50000,
       features: [
         'All Tier 1 features',
-        'Virtual cards',
-        'Crypto exchange',
-        'Flight booking',
-      ],
-      required_documents: ['ID Card or Passport', 'Proof of Address'],
-    },
-    tier_3: {
-      name: 'Advanced',
-      daily_limit: 50000,
-      monthly_limit: 500000,
-      features: [
-        'All Tier 2 features',
         'Higher limits',
         'Priority support',
-        'Business accounts',
       ],
-      required_documents: [
-        'ID Card or Passport',
-        'Proof of Address',
-        'Proof of Income',
-      ],
+      required_documents: ['ID Card or Passport', 'Proof of Address'],
     },
   };
 
@@ -429,7 +412,7 @@ export const submitRampIdVerification = catchAsync(async (req, res) => {
   if (existing) {
     return res.status(202).json({
       success: true,
-      message: 'Your ID is already on file. You can proceed.',
+      message: existing.status === 'approved' ? 'Your ID is verified. You can proceed.' : 'Your ID is already submitted and under review. You will be able to transact once it is approved.',
       data: { id_type: docType, status: existing.status || 'pending' },
     });
   }
@@ -483,8 +466,8 @@ export const submitRampIdVerification = catchAsync(async (req, res) => {
   res.status(202).json({
     success: true,
     message: jobId
-      ? 'Verification submitted. You can proceed once it clears.'
-      : 'Your ID has been recorded — you can proceed. It will be verified with your first transaction.',
+      ? 'Verification submitted. You can transact as soon as it clears (usually under a minute).'
+      : 'Your ID has been submitted for review. You will be able to transact once our compliance team approves it.',
     data: { job_id: jobId, id_type: docType },
   });
 });

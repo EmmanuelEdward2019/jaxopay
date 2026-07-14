@@ -4,8 +4,10 @@ import logger from '../utils/logger.js';
 import emailService from '../services/email.service.js';
 import StrowalletAdapter from '../orchestration/adapters/cards/StrowalletAdapter.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
+import { enforceTierLimit } from '../services/kycLimits.service.js';
 import { getCardFee, getFeeConfig } from '../services/feeConfig.service.js';
 import { auditFromReq } from '../services/audit.service.js';
+import { kycTierLevel } from '../middleware/auth.js';
 const strowallet = new StrowalletAdapter();
 
 /** Strowallet blocks unknown outbound IPs — map to actionable text; log raw for ops. */
@@ -266,8 +268,8 @@ export const createCard = catchAsync(async (req, res) => {
   const { card_type = 'multi_use', spending_limit } = req.body;
   const amountUsd = Number(req.body.amount_usd ?? req.body.initial_amount ?? 0);
 
-  if (process.env.NODE_ENV === 'production' && (req.user.kyc_tier || 0) < 2) {
-    throw new AppError('KYC Tier 2 or higher required to create virtual cards', 403);
+  if (kycTierLevel(req.user.kyc_tier) < 1) {
+    throw new AppError('Please verify your identity (KYC) to create a virtual card.', 403, 'KYC_TIER_REQUIRED');
   }
   if (!Number.isFinite(amountUsd) || amountUsd < 1) {
     throw new AppError('An initial funding amount of at least $1 is required', 400);
@@ -284,7 +286,7 @@ export const createCard = catchAsync(async (req, res) => {
     `SELECT COUNT(*) as count FROM virtual_cards WHERE user_id = $1 AND status != 'terminated'`,
     [req.user.id]
   );
-  const maxCards = req.user.kyc_tier === 2 ? 3 : 10;
+  const maxCards = kycTierLevel(req.user.kyc_tier) >= 2 ? 10 : 3;
   if (parseInt(cardCount.rows[0].count) >= maxCards) {
     throw new AppError(`Maximum ${maxCards} active cards allowed for your KYC tier`, 400);
   }
@@ -409,6 +411,8 @@ export const fundCard = catchAsync(async (req, res) => {
 
   // Require the transaction PIN — funding moves money out of the USD wallet.
   await verifyTransactionPin(req.user.id, req.body.pin);
+  // KYC tier daily/monthly limit
+  await enforceTierLimit(req.user.id, parseFloat(amount), 'USD', req.user.kyc_tier);
 
   // Card funding fee (editable in admin Rates & Fees). User pays amount + fee.
   const { fee: fundingFee } = await getCardFee('card_funding', amount);

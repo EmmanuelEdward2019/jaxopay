@@ -7,6 +7,7 @@ import VTpassAdapter from '../orchestration/adapters/utilities/VTpassAdapter.js'
 import StrowalletBillsAdapter from '../orchestration/adapters/utilities/StrowalletBillsAdapter.js';
 import fxService from '../orchestration/adapters/fx/YellowCardService.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
+import { enforceTierLimit } from '../services/kycLimits.service.js';
 
 const vtpass = new VTpassAdapter();
 const strowalletBills = new StrowalletBillsAdapter();
@@ -573,6 +574,8 @@ export const payBill = catchAsync(async (req, res) => {
 
   // Require the transaction PIN as the final authorization step.
   await verifyTransactionPin(req.user.id, req.body.pin);
+  // KYC tier daily/monthly limit (bill amounts are charged in NGN)
+  await enforceTierLimit(req.user.id, parseFloat(amount), 'NGN', req.user.kyc_tier);
 
   const reference = `JAXO-BILL-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   let billingAmountInNaira = parseFloat(amount);

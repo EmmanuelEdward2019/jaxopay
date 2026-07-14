@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance } from '../utils/financial.js';
 import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
+import { enforceTierLimit } from '../services/kycLimits.service.js';
 import KorapayAdapter from '../orchestration/adapters/fiat/KorapayAdapter.js';
 
 const buildApiV1Url = (path) => {
@@ -368,6 +369,8 @@ export const transferBetweenWallets = catchAsync(async (req, res) => {
 
   // Require the transaction PIN as the final authorization step.
   await verifyTransactionPin(req.user.id, req.body.pin);
+  // KYC tier daily/monthly limit
+  await enforceTierLimit(req.user.id, parseFloat(amountDecimal.toString()), currency, req.user.kyc_tier);
 
   // 2. Comprehensive Compliance Check
   await complianceEngine.validateTransaction(req.user.id, parseFloat(amountDecimal.toString()), 'INTERNAL_TRANSFER');
