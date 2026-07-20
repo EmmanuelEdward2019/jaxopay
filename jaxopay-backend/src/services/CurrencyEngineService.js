@@ -218,6 +218,7 @@ class CurrencyEngineService {
                 networkAccountType,
                 networkChannelIds,
                 sender,
+                customerUID: String(userId),
                 reason: 'other',
             });
             providerStatus = res.status || 'SUCCESS';
@@ -357,7 +358,12 @@ class CurrencyEngineService {
             dob = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
         }
         const idt = String(kyc.document_type || '').toLowerCase();
-        const idType = idt.includes('passport') ? 'passport' : (idt.includes('driver') || idt.includes('licen')) ? 'license' : 'passport';
+        // Yellow Card rejects 'passport' as the sender idType for NG Direct Settlement/crypto flows
+        // ("Passport is not an accepted form of identification in this case" — YC support, 2026-07-17).
+        // Only report passport when the doc genuinely is one; default to national_id otherwise.
+        const idType = idt.includes('passport') ? 'passport'
+            : (idt.includes('driver') || idt.includes('licen')) ? 'license'
+                : 'national_id';
         const country = String(prof.country || 'NG').toUpperCase().slice(0, 2);
 
         const sender = {
@@ -371,12 +377,14 @@ class CurrencyEngineService {
             idType,
         };
 
-        // Nigerian senders require an additional ID (BVN/NIN) on the new /send + Direct Settlement endpoints.
+        // Nigerian senders require an additional ID (BVN/NIN) on the new /send + Direct Settlement
+        // endpoints. Yellow Card has specifically flagged BVN as required, so prefer it over NIN
+        // when the user has both on file; fall back to NIN, then any generic national ID document.
         if (country === 'NG') {
-            const extra = docs.find((x) => {
-                const t = String(x.document_type || '').toLowerCase();
-                return t.includes('bvn') || t.includes('nin') || t.includes('national');
-            });
+            const findDoc = (pred) => docs.find((x) => pred(String(x.document_type || '').toLowerCase()));
+            const extra = findDoc((t) => t.includes('bvn'))
+                || findDoc((t) => t.includes('nin'))
+                || findDoc((t) => t.includes('national'));
             if (extra) {
                 const t = String(extra.document_type).toLowerCase();
                 sender.additionalIdType = t.includes('bvn') ? 'bvn' : 'nin';

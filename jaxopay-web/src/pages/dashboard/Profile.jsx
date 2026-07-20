@@ -15,6 +15,7 @@ import {
     Wallet,
     CreditCard,
     TrendingUp,
+    Copy,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import userService from '../../services/userService';
@@ -39,7 +40,15 @@ const Profile = () => {
     const [editForm, setEditForm] = useState({});
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
+    const [uidCopied, setUidCopied] = useState(false);
     const fileInputRef = useRef(null);
+
+    const copyUid = (uid) => {
+        if (!uid) return;
+        navigator.clipboard?.writeText(uid);
+        setUidCopied(true);
+        setTimeout(() => setUidCopied(false), 1500);
+    };
 
     useEffect(() => {
         fetchProfile();
@@ -195,6 +204,15 @@ const Profile = () => {
                                     <Shield className="w-3 h-3 inline mr-1" />
                                     {kycBadge.label}
                                 </span>
+                                <button
+                                    type="button"
+                                    onClick={() => copyUid(profile?.id || user?.id)}
+                                    title="Copy your Customer ID — share this with support if they ask for it"
+                                    className="mt-2 ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono text-muted-foreground bg-muted/60 hover:bg-muted rounded-full transition-colors"
+                                >
+                                    {uidCopied ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
+                                    ID: {(profile?.id || user?.id || '').slice(0, 8)}…
+                                </button>
                             </div>
                         </div>
 
@@ -266,6 +284,21 @@ const Profile = () => {
                                         Email
                                     </label>
                                     <p className="text-foreground font-medium">{user?.email}</p>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-muted-foreground mb-1">
+                                        <Shield className="w-4 h-4 inline mr-1" />
+                                        Customer ID
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => copyUid(profile?.id || user?.id)}
+                                        title="Copy — share this with support if they ask for your account ID"
+                                        className="flex items-center gap-2 text-foreground font-medium font-mono text-sm hover:text-primary transition-colors"
+                                    >
+                                        {profile?.id || user?.id || '—'}
+                                        {uidCopied ? <Check className="w-3.5 h-3.5 text-primary shrink-0" /> : <Copy className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                                    </button>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-muted-foreground mb-1">

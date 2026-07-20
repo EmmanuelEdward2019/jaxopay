@@ -275,9 +275,11 @@ class YellowCardService {
    *   amount (in destination local currency), destinationCountry (ISO2, e.g. NG),
    *   recipientName, accountNumber, networkId, networkName, networkAccountType ('bank'|'phone'),
    *   networkChannelIds[], sender {name,country,phone,address,dob,email,idNumber,idType},
+   *   customerUID (required — JAXOPAY's user id; Yellow Card rejects requests without it),
    *   reason (YC enum, default 'other'), currency (destination currency, optional hint).
    */
   async sendInternationalPayment(p) {
+    if (!p.customerUID) throw { message: 'customerUID is required by Yellow Card', statusCode: 400 };
     const channel = await this.getWithdrawChannel(p.destinationCountry, {
       currency: p.currency,
       networkChannelIds: p.networkChannelIds,
@@ -295,6 +297,8 @@ class YellowCardService {
       country: p.destinationCountry,
       localAmount: Number(p.amount),
       reason: p.reason || 'other',
+      // customerUID is a top-level field per Yellow Card — never nested under sender/destination.
+      customerUID: String(p.customerUID),
       sender: p.sender,
       destination: {
         accountName: p.recipientName,
@@ -327,6 +331,7 @@ class YellowCardService {
    *   cryptoAmount, refundAddress?, reason?
    */
   async submitCryptoWithdrawal(p) {
+    if (!p.customerUID) throw { message: 'customerUID is required by Yellow Card', statusCode: 400 };
     const channel = await this.getWithdrawChannel(p.destinationCountry, { currency: p.currency, networkChannelIds: p.networkChannelIds });
     if (!channel) throw { message: `No active Yellow Card payout channel for ${p.destinationCountry}`, statusCode: 400 };
     const sequenceId = crypto.randomUUID();
@@ -373,6 +378,7 @@ class YellowCardService {
    *   walletAddress (crypto destination), cryptoCurrency, cryptoNetwork, walletTag?, reason?
    */
   async submitCryptoDeposit(p) {
+    if (!p.customerUID) throw { message: 'customerUID is required by Yellow Card', statusCode: 400 };
     const channel = await this.getCollectionChannel(p.country, { currency: p.currency });
     if (!channel) throw { message: `No active Yellow Card collection channel for ${p.country}`, statusCode: 400 };
     const sequenceId = crypto.randomUUID();
@@ -383,6 +389,9 @@ class YellowCardService {
       country: p.country,
       amount: Number(p.amount),
       reason: p.reason || 'other',
+      // customerUID is a top-level field per Yellow Card — was previously accepted here but never
+      // forwarded into the request body, so every on-ramp buy silently omitted it. Fixed.
+      customerUID: String(p.customerUID),
       forceAccept: true,
       directSettlement: true,
       recipient: p.recipient,
