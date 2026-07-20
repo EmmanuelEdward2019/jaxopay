@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
     Coins, ArrowDownToLine, ArrowUpFromLine, ShieldCheck, RefreshCw,
-    CheckCircle2, AlertCircle, Wallet, Copy, Building2, ArrowRight,
+    CheckCircle2, AlertCircle, Wallet, Copy, Building2, ArrowRight, TrendingUp,
 } from 'lucide-react';
 import fxService from '../../services/fxService';
 import walletService from '../../services/walletService';
@@ -42,7 +42,36 @@ const CryptoRamp = () => {
     const [pinProcessing, setPinProcessing] = useState(false);
     const [pendingAction, setPendingAction] = useState(null); // 'buy' | 'sell'
 
+    // Live rate quote (NGN per 1 unit of the selected coin)
+    const [rate, setRate] = useState(null);
+    const [rateLoading, setRateLoading] = useState(false);
+    const [rateError, setRateError] = useState(null);
+    const [rateAt, setRateAt] = useState(null);
+
     useEffect(() => { loadAll(); }, []);
+
+    const activeCoin = tab === 'buy' ? buy.coin : sell.coin;
+
+    const fetchRate = async (coin) => {
+        setRateLoading(true); setRateError(null);
+        const res = await fxService.getRates(coin, 'NGN').catch(() => null);
+        setRateLoading(false);
+        if (res?.success && res.data?.rate > 0) {
+            setRate(res.data.rate);
+            setRateAt(Date.now());
+        } else {
+            setRate(null);
+            setRateError('Rate unavailable right now.');
+        }
+    };
+
+    // Fetch on coin/tab change, then keep it fresh every 20s while this screen is open.
+    useEffect(() => {
+        fetchRate(activeCoin);
+        const id = setInterval(() => fetchRate(activeCoin), 20000);
+        return () => clearInterval(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeCoin]);
 
     const loadAll = async () => {
         setLoading(true);
@@ -248,6 +277,11 @@ const CryptoRamp = () => {
                                         </select>
                                     </Field>
                                 </div>
+                                <RateQuote
+                                    coin={buy.coin} rate={rate} loading={rateLoading} error={rateError} rateAt={rateAt}
+                                    onRefresh={() => fetchRate(buy.coin)}
+                                    direction="buy" amount={buy.fiatAmount}
+                                />
                                 <ModeToggle value={buy.mode} onChange={(m) => setBuy({ ...buy, mode: m })}
                                     internalLabel="To my JAXOPAY wallet" externalLabel="To external wallet" />
                                 {buy.mode === 'external' && (
@@ -278,6 +312,11 @@ const CryptoRamp = () => {
                                         </select>
                                     </Field>
                                 </div>
+                                <RateQuote
+                                    coin={sell.coin} rate={rate} loading={rateLoading} error={rateError} rateAt={rateAt}
+                                    onRefresh={() => fetchRate(sell.coin)}
+                                    direction="sell" amount={sell.cryptoAmount}
+                                />
                                 <ModeToggle value={sell.mode} onChange={(m) => setSell({ ...sell, mode: m })}
                                     internalLabel="NGN to my wallet" externalLabel="NGN to a bank" />
                                 {sell.mode === 'external' ? (
@@ -348,6 +387,55 @@ const ModeToggle = ({ value, onChange, internalLabel, externalLabel }) => (
         ))}
     </div>
 );
+
+// Live NGN ↔ coin rate + an estimate of what the current amount is worth. `rate` is NGN per 1
+// unit of `coin`. Purely informational — the actual amount credited is computed by the backend
+// from the live rate at the moment the transaction settles, so this is always framed as an estimate.
+const RateQuote = ({ coin, rate, loading, error, rateAt, onRefresh, direction, amount }) => {
+    const amt = parseFloat(amount);
+    const hasAmount = Number.isFinite(amt) && amt > 0 && rate > 0;
+    const estimate = !hasAmount ? null
+        : direction === 'buy' ? amt / rate   // paying NGN → receiving coin
+            : amt * rate;                     // selling coin → receiving NGN
+
+    const secondsAgo = rateAt ? Math.max(0, Math.round((Date.now() - rateAt) / 1000)) : null;
+    const freshness = secondsAgo == null ? '' : secondsAgo < 5 ? 'just now' : `${secondsAgo}s ago`;
+
+    return (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 px-3.5 py-3 text-sm">
+            <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                    <TrendingUp className="w-3.5 h-3.5" /> Live rate
+                </span>
+                <button type="button" onClick={onRefresh} disabled={loading}
+                    className="text-xs text-green-600 hover:text-green-700 disabled:opacity-50 flex items-center gap-1">
+                    <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                    {loading ? 'Refreshing…' : freshness ? `Updated ${freshness}` : 'Refresh'}
+                </button>
+            </div>
+
+            {error ? (
+                <p className="text-red-500 text-xs mt-1.5">{error}</p>
+            ) : rate ? (
+                <>
+                    <p className="font-semibold text-gray-900 dark:text-white mt-1">
+                        1 {coin} ≈ {formatCurrency(rate, 'NGN')}
+                    </p>
+                    {hasAmount && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {direction === 'buy'
+                                ? <>You'll receive ≈ <strong className="text-gray-700 dark:text-gray-200">{estimate.toFixed(6)} {coin}</strong></>
+                                : <>You'll receive ≈ <strong className="text-gray-700 dark:text-gray-200">{formatCurrency(estimate, 'NGN')}</strong></>}
+                        </p>
+                    )}
+                    <p className="text-[11px] text-gray-400 mt-1">Estimate only — the exact amount is confirmed at settlement.</p>
+                </>
+            ) : (
+                <p className="text-xs text-gray-400 mt-1">{loading ? 'Fetching rate…' : 'No rate yet.'}</p>
+            )}
+        </div>
+    );
+};
 
 const RampResult = ({ result, onDone }) => {
     const isBuy = result.kind === 'buy';
