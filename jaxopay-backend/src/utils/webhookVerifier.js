@@ -85,6 +85,9 @@ class WebhookVerifier {
             case 'quidax':
                 // Always pass raw body for Quidax — their HMAC is over raw HTTP bytes
                 return this._verifyQuidax(headers, rawBody || payload);
+            case 'obiex':
+                // Obiex signs the raw HTTP body bytes with HMAC-SHA512 — same requirement as Quidax.
+                return this._verifyObiex(headers, rawBody || payload);
             default:
                 logger.warn(`[WEBHOOK] No verification for: ${provider}`);
                 return process.env.NODE_ENV === 'development';
@@ -266,6 +269,39 @@ class WebhookVerifier {
             return crypto.timingSafeEqual(hashBuf, sigBuf);
         } catch (err) {
             logger.warn(`[WEBHOOK] Quidax: signature verification error — ${err.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * Obiex signs the raw request body with HMAC-SHA512, hex-encoded, in the
+     * `x-obiex-signature` header. Secret is set in the Obiex dashboard under
+     * Settings > Developers > Webhook Url (OBIEX_SIGNATURE_SECRET).
+     */
+    _verifyObiex(headers, payload) {
+        const secret = process.env.OBIEX_SIGNATURE_SECRET;
+        const signature = headers['x-obiex-signature'];
+
+        if (!secret) {
+            logger.warn('[WEBHOOK] Obiex: no signature secret configured');
+            return process.env.NODE_ENV !== 'production';
+        }
+        if (!signature) {
+            logger.warn('[WEBHOOK] Obiex: missing x-obiex-signature header');
+            return process.env.NODE_ENV !== 'production';
+        }
+
+        try {
+            const hash = crypto.createHmac('sha512', secret).update(payload).digest('hex');
+            const hashBuf = Buffer.from(hash, 'hex');
+            const sigBuf = Buffer.from(signature, 'hex');
+            if (hashBuf.length === 0 || hashBuf.length !== sigBuf.length) {
+                logger.warn(`[WEBHOOK] Obiex: signature length mismatch (expected ${hashBuf.length}, got ${sigBuf.length})`);
+                return false;
+            }
+            return crypto.timingSafeEqual(hashBuf, sigBuf);
+        } catch (err) {
+            logger.warn(`[WEBHOOK] Obiex: signature verification error — ${err.message}`);
             return false;
         }
     }

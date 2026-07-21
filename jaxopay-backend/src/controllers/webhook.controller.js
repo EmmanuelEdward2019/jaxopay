@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { SMILE_APPROVED_RESULT_CODES, SMILE_PROVISIONAL_RESULT_CODES } from '../services/smileId.service.js';
 import * as kycNotify from '../services/kycNotification.service.js';
 import { creditUserWalletByQuidax, persistQuidaxWalletAddress } from '../services/quidaxWebhook.service.js';
+import { creditUserWalletByObiex, updateObiexWithdrawal } from '../services/obiexWebhook.service.js';
 import { sendTransactionEmails } from '../services/email.service.js';
 
 /**
@@ -38,6 +39,14 @@ export const handleWebhook = catchAsync(async (req, res) => {
                 'Verify QUIDAX_WEBHOOK_SECRET matches the "Signature Secret" in the Quidax dashboard.'
             );
             // continue to processing below
+        } else if (provider.toLowerCase() === 'obiex') {
+            // Same fail-open reasoning as Quidax — a misconfigured OBIEX_SIGNATURE_SECRET must
+            // never silently block real user deposits/withdrawals from being reconciled.
+            logger.error(
+                '[WEBHOOK] ⚠️  Obiex signature FAILED — processing anyway. ' +
+                'Verify OBIEX_SIGNATURE_SECRET matches the Signature Secret in Settings > Developers on the Obiex dashboard.'
+            );
+            // continue to processing below
         } else if (!['vtpass', 'smile_identity', 'smile', 'smile-id'].includes(provider.toLowerCase())) {
             return res.status(401).json({ success: false, message: 'Invalid signature' });
         }
@@ -57,6 +66,9 @@ export const handleWebhook = catchAsync(async (req, res) => {
                 break;
             case 'quidax':
                 await processQuidax(body);
+                break;
+            case 'obiex':
+                await processObiex(body);
                 break;
             case 'korapay':
                 await processKorapay(body);
@@ -581,6 +593,28 @@ async function processQuidax(payload) {
         }
         default:
             logger.info(`[WEBHOOK] Quidax unhandled event: ${event}`);
+    }
+}
+
+/**
+ * Obiex webhook — no `event` envelope; the payload itself carries `type: 'DEPOSIT'|'WITHDRAWAL'`.
+ * Deposits are matched to a user by address (see obiexWebhook.service.js — Obiex's deposit
+ * payload doesn't carry our uniqueUserIdentifier). Withdrawals are matched by the
+ * obiex_withdraw_id/obiex_reference we stored when the withdrawal was submitted.
+ */
+async function processObiex(payload) {
+    const type = String(payload?.type || '').toUpperCase();
+    logger.info(`[WEBHOOK] Obiex event: ${type}`, { transactionId: payload?.transactionId, status: payload?.status });
+
+    switch (type) {
+        case 'DEPOSIT':
+            await creditUserWalletByObiex(payload);
+            break;
+        case 'WITHDRAWAL':
+            await updateObiexWithdrawal(payload);
+            break;
+        default:
+            logger.info(`[WEBHOOK] Obiex unhandled type: ${type}`);
     }
 }
 

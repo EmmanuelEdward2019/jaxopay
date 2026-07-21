@@ -9,7 +9,13 @@
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
+import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
 import cache from '../utils/cache.js';
+
+// Same provider selection as crypto.controller.js. Order-book endpoints in this file
+// (getLiveOrderBook) have no Obiex equivalent and always use `quidax` directly.
+const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() === 'quidax' ? 'quidax' : 'obiex';
+const cryptoFx = CRYPTO_PROVIDER === 'quidax' ? quidax : obiex;
 
 // Static fallback networks — used when Quidax API is unavailable or credentials are invalid.
 // Network ids match Quidax's id field (lowercase). All entries include deposits_enabled /
@@ -119,25 +125,34 @@ export const getCryptoNetworks = catchAsync(async (req, res) => {
   }
 
   try {
-    // Fetch the user's wallet for this currency — networks live in the wallet object
-    // Quidax auto-creates wallets for all supported currencies
-    const walletRes = await quidax.getWallet(coin);
-    const wallet = walletRes?.data || walletRes;
+    let networkList;
+    if (CRYPTO_PROVIDER === 'obiex') {
+      // Obiex's active-networks map already returns fee/min per network, keyed by currency code.
+      networkList = (await obiex.getNetworksForCurrency(coinUpper)).map((n) => ({
+        ...n,
+        withdrawMax: '1000000',
+      }));
+    } else {
+      // Fetch the user's wallet for this currency — networks live in the wallet object
+      // Quidax auto-creates wallets for all supported currencies
+      const walletRes = await quidax.getWallet(coin);
+      const wallet = walletRes?.data || walletRes;
 
-    // wallet.networks contains { id, name, deposits_enabled, withdraws_enabled }
-    const quidaxNetworks = wallet?.networks || [];
-    const networkList = quidaxNetworks.map(n => ({
-      network: n.id,                              // id is the value used in API calls (e.g. "trc20")
-      name: n.name,                               // human-readable label
-      deposits_enabled: n.deposits_enabled !== false,
-      withdraws_enabled: n.withdraws_enabled !== false,
-      withdrawFee: '0',                           // Quidax wallet networks don't expose fee here
-      withdrawMin: '0',
-      withdrawMax: '1000000',
-      depositMin: '0',
-      isDefault: wallet?.default_network ? wallet.default_network === n.id : false,
-      confirmations: 0,
-    }));
+      // wallet.networks contains { id, name, deposits_enabled, withdraws_enabled }
+      const quidaxNetworks = wallet?.networks || [];
+      networkList = quidaxNetworks.map(n => ({
+        network: n.id,                              // id is the value used in API calls (e.g. "trc20")
+        name: n.name,                               // human-readable label
+        deposits_enabled: n.deposits_enabled !== false,
+        withdraws_enabled: n.withdraws_enabled !== false,
+        withdrawFee: '0',                           // Quidax wallet networks don't expose fee here
+        withdrawMin: '0',
+        withdrawMax: '1000000',
+        depositMin: '0',
+        isDefault: wallet?.default_network ? wallet.default_network === n.id : false,
+        confirmations: 0,
+      }));
+    }
 
     // If wallet returned no networks, fall back to static
     if (networkList.length === 0 && STATIC_NETWORKS[coinUpper]) {
@@ -167,7 +182,7 @@ export const getCryptoNetworks = catchAsync(async (req, res) => {
     res.status(200).json({ success: true, data: result });
 
   } catch (error) {
-    logger.warn(`[CryptoNetworks] Quidax failed for ${coin}, using static fallback:`, error.message);
+    logger.warn(`[CryptoNetworks] ${CRYPTO_PROVIDER} failed for ${coin}, using static fallback:`, error.message);
 
     // Return static fallback networks
     const staticNets = STATIC_NETWORKS[coinUpper];
@@ -242,7 +257,7 @@ export const getLiveExchangeRate = catchAsync(async (req, res) => {
   }
 
   try {
-    const rate = await quidax.getExchangeRate(from, to);
+    const rate = await cryptoFx.getExchangeRate(from, to);
 
     const result = {
       from: from.toUpperCase(),

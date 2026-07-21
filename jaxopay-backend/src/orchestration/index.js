@@ -7,6 +7,7 @@ import PaymentService from './services/PaymentService.js';
 // Import Adapters
 import SafeHavenAdapter from './adapters/payments/SafeHavenAdapter.js';
 import QuidaxAdapter from './adapters/crypto/QuidaxAdapter.js';
+import ObiexAdapter from './adapters/crypto/ObiexAdapter.js';
 import StrowalletAdapter from './adapters/cards/StrowalletAdapter.js';
 import VTpassAdapter from './adapters/utilities/VTpassAdapter.js';
 import ReloadlyAdapter from './adapters/digital/ReloadlyAdapter.js';
@@ -18,6 +19,11 @@ const initOrchestration = () => {
     providerRegistry.register('payment', 'safehaven', new SafeHavenAdapter());
     providerRegistry.register('payment', 'quidax', QuidaxAdapter); // QuidaxAdapter is an exported instance
 
+    // Crypto — Obiex primary (CRYPTO_PROVIDER env selects which crypto.controller.js actually
+    // calls), Quidax remains registered as fallback and for order-book spot trading.
+    providerRegistry.register('crypto', 'obiex', ObiexAdapter);
+    providerRegistry.register('crypto', 'quidax', QuidaxAdapter);
+
     // Cards
     providerRegistry.register('card', 'strowallet', new StrowalletAdapter());
 
@@ -27,7 +33,7 @@ const initOrchestration = () => {
     // Digital Goods
     providerRegistry.register('digital', 'reloadly', new ReloadlyAdapter());
 
-    console.log('✅ Orchestration Layer Initialized (Strowallet, Quidax, VTpass, Reloadly)');
+    console.log('✅ Orchestration Layer Initialized (Strowallet, Obiex, Quidax, VTpass, Reloadly)');
 };
 
 /**

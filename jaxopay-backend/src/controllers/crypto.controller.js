@@ -4,6 +4,7 @@ import logger from '../utils/logger.js';
 import { auditFromReq } from '../services/audit.service.js';
 import cache, { CacheTTL } from '../utils/cache.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
+import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
 import fxService from '../orchestration/adapters/fx/YellowCardService.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { enforceTierLimit } from '../services/kycLimits.service.js';
@@ -12,6 +13,13 @@ import { decimal, validateAmount, formatForDB, hasSufficientBalance, convertCurr
 import { getSpendableBalance } from '../utils/walletBalance.js';
 import { getQuidaxErrorMessage } from '../utils/quidax.js';
 import { randomUUID } from 'crypto';
+
+// Crypto deposit/withdrawal/swap provider — Obiex by default; set CRYPTO_PROVIDER=quidax to
+// fall back (e.g. during an Obiex outage). Order-book spot trading (createOrder, getOrderBook,
+// getUserOrders, cancelOrder, klines, getMarkets/getMarketTicker for the Trade page) has no
+// Obiex equivalent and always uses `quidax` directly, regardless of this setting.
+const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() === 'quidax' ? 'quidax' : 'obiex';
+const cryptoFx = CRYPTO_PROVIDER === 'quidax' ? quidax : obiex;
 
 // ─── Ticker Cache (module-level, shared across requests) ─────────────────────
 // Pre-fetches all Quidax market tickers every 15s so exchange rate lookups
@@ -84,7 +92,7 @@ async function bridgeRate(from, to, bridgeCoin = 'USDT') {
 // Get all supported assets from Quidax (fiat and crypto)
 export const getSupportedCryptos = catchAsync(async (req, res) => {
   try {
-    const currencies = await quidax.getCurrencies();
+    const currencies = await cryptoFx.getCurrencies();
 
     // Map to unified format for frontend
     const assets = currencies.map(cur => ({
@@ -128,11 +136,11 @@ export const getExchangeRates = catchAsync(async (req, res) => {
   const amountNum  = amount ? parseFloat(amount) : null;
   const refAmount  = amountNum ?? 1;
 
-  // ─── Strategy 1: Quidax Temporary Swap Quotation ─────────────────────────
-  // Most accurate: includes real fees, uses Quidax's own matching engine.
+  // ─── Strategy 1: Live Temporary Swap Quotation (Obiex primary, Quidax fallback) ──
+  // Most accurate: includes real fees, uses the provider's own matching engine.
   try {
-    const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-    const quote = await quidax.getTemporarySwapQuote({
+    if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
+    const quote = await cryptoFx.getTemporarySwapQuote({
       from: fromCurr,
       to:   toCurr,
       from_amount: refAmount
@@ -151,7 +159,7 @@ export const getExchangeRates = catchAsync(async (req, res) => {
                         && !(fromCurr === 'USDT' || toCurr === 'USDT'
                           || fromCurr === 'USDC' || toCurr === 'USDC');
       if (isCrossAsset && rate >= 0.9 && rate <= 1.1) {
-        logger.warn(`[ExchangeRates] Quidax quote for ${fromCurr}/${toCurr} returned suspicious rate ${rate} — discarding`);
+        logger.warn(`[ExchangeRates] ${CRYPTO_PROVIDER} quote for ${fromCurr}/${toCurr} returned suspicious rate ${rate} — discarding`);
         throw new Error('Suspicious rate');
       }
 
@@ -163,19 +171,19 @@ export const getExchangeRates = catchAsync(async (req, res) => {
           from: fromCurr,
           to:   toCurr,
           rate,
-          rate_with_fee: rate,          // fee already baked in by Quidax
+          rate_with_fee: rate,          // fee already baked in by the provider
           fee_percentage: 0,
           amount: amountNum,
           exchange_amount: exchangeAmount,
           quoted_price: quote.quoted_price,
-          source: 'quidax_swap_quote',
+          source: `${CRYPTO_PROVIDER}_swap_quote`,
           timestamp: new Date().toISOString(),
           expiry:    quote.expires_at || new Date(Date.now() + 15000).toISOString(),
         },
       });
     }
   } catch (e) {
-    logger.warn(`[ExchangeRates] Quidax swap quote failed for ${fromCurr}/${toCurr}:`, e.message);
+    logger.warn(`[ExchangeRates] ${CRYPTO_PROVIDER} swap quote failed for ${fromCurr}/${toCurr}:`, e.message);
   }
 
   // ─── Strategy 2: Ticker cache fallback ───────────────────────────────────
@@ -246,15 +254,14 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
       throw new AppError('Insufficient crypto balance', 400);
     }
 
-    // Get live rate + exact to_amount via Quidax swap quotation
+    // Get live rate + exact to_amount via a swap quotation (Obiex primary, Quidax fallback)
     let quotation;
-    let quidaxUserId;
     try {
-      quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-      quotation = await quidax.getSwapQuote({ from: from_coin, to: to_fiat, amount: qty, side: 'from' });
+      if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
+      quotation = await cryptoFx.getSwapQuote({ from: from_coin, to: to_fiat, amount: qty, side: 'from' });
       if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) throw new Error('Bad quotation');
     } catch (e) {
-      logger.warn('[Exchange] Quidax quotation failed, falling back to ticker:', e.message);
+      logger.warn(`[Exchange] ${CRYPTO_PROVIDER} quotation failed, falling back to ticker:`, e.message);
       quotation = null;
     }
 
@@ -262,7 +269,7 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
     if (quotation) {
       fiatAmount = parseFloat(quotation.to_amount);
       rate       = fiatAmount / qty;
-      fee        = 0; // fee already baked into Quidax quote
+      fee        = 0; // fee already baked into the provider's quote
       netAmount  = fiatAmount;
     } else {
       rate      = await getLiveExchangeRate(from_coin, to_fiat);
@@ -298,14 +305,14 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
       [netAmount, fiatWallet.rows[0].id]
     );
 
-    // Confirm Quidax swap if we used a real quotation
-    let quidaxSwapId = quotation?.id || null;
+    // Confirm the swap on the provider if we used a real quotation
+    let providerSwapId = quotation?.id || null;
     if (quotation?.id) {
       try {
-        const confirmed = await quidax.executeSwap(quotation.id);
-        if (confirmed?.id) quidaxSwapId = confirmed.id;
+        const confirmed = await cryptoFx.executeSwap(quotation.id);
+        if (confirmed?.id) providerSwapId = confirmed.id;
       } catch (e) {
-        logger.warn('[Exchange] Quidax confirm failed (balances already updated):', e.message);
+        logger.warn(`[Exchange] ${CRYPTO_PROVIDER} confirm failed (balances already updated):`, e.message);
       }
     }
 
@@ -324,8 +331,9 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
           fiat_amount: fiatAmount,
           fee,
           net_amount: netAmount,
-          quidax_swap_id: quidaxSwapId,
-          source: 'quidax_live'
+          provider: CRYPTO_PROVIDER,
+          provider_swap_id: providerSwapId,
+          source: `${CRYPTO_PROVIDER}_live`
         }),
       ]
     );
@@ -409,15 +417,14 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       throw new AppError('Insufficient fiat balance', 400);
     }
 
-    // Get live rate + exact crypto_amount via Quidax swap quotation
+    // Get live rate + exact crypto_amount via a swap quotation (Obiex primary, Quidax fallback)
     let quotation;
-    let quidaxUserId;
     try {
-      quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-      quotation = await quidax.getSwapQuote({ from: from_fiat, to: to_coin, amount: qty, side: 'from' });
+      if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
+      quotation = await cryptoFx.getSwapQuote({ from: from_fiat, to: to_coin, amount: qty, side: 'from' });
       if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) throw new Error('Bad quotation');
     } catch (e) {
-      logger.warn('[Exchange] Quidax quotation failed, falling back to ticker:', e.message);
+      logger.warn(`[Exchange] ${CRYPTO_PROVIDER} quotation failed, falling back to ticker:`, e.message);
       quotation = null;
     }
 
@@ -425,7 +432,7 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
     if (quotation) {
       cryptoAmount = parseFloat(quotation.to_amount);
       rate         = cryptoAmount / qty;
-      fee          = 0;    // Quidax handles fee internally
+      fee          = 0;    // the provider handles fee internally
       netFiat      = qty;
     } else {
       rate         = await getLiveExchangeRate(from_fiat, to_coin);
@@ -465,14 +472,14 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       [cryptoAmount, cryptoWallet.rows[0].id]
     );
 
-    // Confirm Quidax swap if we used a real quotation
-    let quidaxSwapId = quotation?.id || null;
+    // Confirm the swap on the provider if we used a real quotation
+    let providerSwapId = quotation?.id || null;
     if (quotation?.id) {
       try {
-        const confirmed = await quidax.executeSwap(quotation.id);
-        if (confirmed?.id) quidaxSwapId = confirmed.id;
+        const confirmed = await cryptoFx.executeSwap(quotation.id);
+        if (confirmed?.id) providerSwapId = confirmed.id;
       } catch (e) {
-        logger.warn('[Exchange] Quidax confirm failed (balances already updated):', e.message);
+        logger.warn(`[Exchange] ${CRYPTO_PROVIDER} confirm failed (balances already updated):`, e.message);
       }
     }
 
@@ -490,8 +497,9 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
           crypto_currency: to_coin.toUpperCase(),
           crypto_amount: cryptoAmount,
           fee,
-          quidax_swap_id: quidaxSwapId,
-          source: 'quidax_live'
+          provider: CRYPTO_PROVIDER,
+          provider_swap_id: providerSwapId,
+          source: `${CRYPTO_PROVIDER}_live`
         }),
       ]
     );
@@ -577,11 +585,6 @@ export const getExchangeHistory = catchAsync(async (req, res) => {
     },
   });
 });
-
-/**
- * Get Live Exchange Rate using MEXC for Crypto 
- * and Graph Finance for Fiat bridges.
- */
 
 /**
  * Get live exchange rate using the pre-cached Quidax market ticker snapshot.
@@ -808,27 +811,35 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
   }
 
   try {
-    // ── Self-custody: fetch/create the Quidax sub-account for this user ──────
-    // Each user has their own Quidax sub-user with unique wallet addresses.
-    // This is the key fix: previously all users shared the master account,
-    // so funds deposited went to Quidax but couldn't be attributed to a user.
-    const userRow = await query(
-      `SELECT u.quidax_user_id, p.first_name, p.last_name
-       FROM users u
-       LEFT JOIN user_profiles p ON p.user_id = u.id
-       WHERE u.id = $1`,
-      [req.user.id]
-    );
-    const userProfile = userRow.rows[0] || {};
-    const quidaxUserId = await ensureQuidaxSubUser(
-      req.user.id,
-      req.user.email,
-      userProfile.first_name,
-      userProfile.last_name
-    );
+    let dataResponse;
+    if (CRYPTO_PROVIDER === 'obiex') {
+      // Obiex is a single pooled broker account — no sub-account provisioning needed.
+      // uniqueUserIdentifier=our own user id is enough; Obiex returns the same address on
+      // repeat calls (idempotent), and the deposit webhook is matched back by this address.
+      dataResponse = await obiex.getDepositAddress(req.user.id, coin.toUpperCase(), network || coin.toUpperCase());
+    } else {
+      // ── Self-custody: fetch/create the Quidax sub-account for this user ──────
+      // Each user has their own Quidax sub-user with unique wallet addresses.
+      // This is the key fix: previously all users shared the master account,
+      // so funds deposited went to Quidax but couldn't be attributed to a user.
+      const userRow = await query(
+        `SELECT u.quidax_user_id, p.first_name, p.last_name
+         FROM users u
+         LEFT JOIN user_profiles p ON p.user_id = u.id
+         WHERE u.id = $1`,
+        [req.user.id]
+      );
+      const userProfile = userRow.rows[0] || {};
+      const quidaxUserId = await ensureQuidaxSubUser(
+        req.user.id,
+        req.user.email,
+        userProfile.first_name,
+        userProfile.last_name
+      );
 
-    // ── Fetch deposit address from sub-user's wallet ──────────────────────────
-    const dataResponse = await quidax.getDepositAddressForUser(quidaxUserId, coin.toLowerCase(), network || null);
+      // ── Fetch deposit address from sub-user's wallet ──────────────────────────
+      dataResponse = await quidax.getDepositAddressForUser(quidaxUserId, coin.toLowerCase(), network || null);
+    }
     const addressData = dataResponse?.data || dataResponse;
     const address = addressData.deposit_address || addressData.address;
     const tag = addressData.destination_tag || addressData.tag || addressData.memo || '';
@@ -869,7 +880,7 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
       }
     });
   } catch (err) {
-    logger.warn(`[CryptoDeposit] Quidax failed for ${coin}/${network}:`, err.message);
+    logger.warn(`[CryptoDeposit] ${CRYPTO_PROVIDER} failed for ${coin}/${network}:`, err.message);
 
     const isNotPermitted = /E0609|not permitted|not enabled/i.test(err.message);
     if (isNotPermitted) {
@@ -912,7 +923,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
 
   const coinUpper = coin.toUpperCase();
   const reference = createCryptoWithdrawalReference(req.user.id);
-  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
+  const quidaxUserId = CRYPTO_PROVIDER === 'quidax' ? await getQuidaxSubUserIdForRequest(req) : null;
 
   const withdrawal = await transaction(async (client) => {
     // 1. Get wallet and lock
@@ -949,9 +960,9 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
       [amountValue, wallet.rows[0].id]
     );
 
-    // 3. Record the pending transaction with the same reference sent to Quidax.
+    // 3. Record the pending transaction with the same reference sent to the provider.
     const txResult = await client.query(
-      `INSERT INTO wallet_transactions 
+      `INSERT INTO wallet_transactions
        (wallet_id, transaction_type, amount, currency, status, description, metadata)
        VALUES ($1, 'withdrawal', $2, $3, 'pending', $4, $5)
        RETURNING id`,
@@ -964,8 +975,9 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
           network,
           address,
           memo,
-          quidax_reference: reference,
-          quidax_user_id: quidaxUserId,
+          provider: CRYPTO_PROVIDER,
+          [`${CRYPTO_PROVIDER}_reference`]: reference,
+          ...(quidaxUserId ? { quidax_user_id: quidaxUserId } : {}),
         })
       ]
     );
@@ -976,9 +988,9 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
     };
   });
 
-  let quidaxWithdrawId = null;
+  let providerWithdrawId = null;
   try {
-    const withdrawRes = await quidax.withdraw({
+    const withdrawRes = await cryptoFx.withdraw({
       currency: coin,
       network,
       fund_uid: address,
@@ -988,7 +1000,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
       transaction_note: `Jaxopay withdrawal ${reference}`,
       narration: 'Jaxopay withdrawal'
     });
-    quidaxWithdrawId = withdrawRes?.data?.id || withdrawRes?.id;
+    providerWithdrawId = withdrawRes?.data?.id || withdrawRes?.id;
 
     try {
       await query(
@@ -998,19 +1010,19 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
          WHERE id = $2`,
         [
           JSON.stringify({
-            quidax_withdraw_id: quidaxWithdrawId,
-            quidax_status: withdrawRes?.status || null,
-            quidax_response_reference: withdrawRes?.reference || null,
+            [`${CRYPTO_PROVIDER}_withdraw_id`]: providerWithdrawId,
+            [`${CRYPTO_PROVIDER}_status`]: withdrawRes?.status || null,
+            [`${CRYPTO_PROVIDER}_response_reference`]: withdrawRes?.reference || null,
           }),
           withdrawal.txId,
         ]
       );
     } catch (dbErr) {
-      logger.error(`[CryptoWithdraw] Could not attach Quidax withdrawal id to local tx ${withdrawal.txId}:`, dbErr.message);
+      logger.error(`[CryptoWithdraw] Could not attach ${CRYPTO_PROVIDER} withdrawal id to local tx ${withdrawal.txId}:`, dbErr.message);
     }
   } catch (err) {
-    const providerMessage = getQuidaxErrorMessage(err);
-    logger.error(`[CryptoWithdraw] Quidax failed for ${reference}: ${providerMessage}`);
+    const providerMessage = CRYPTO_PROVIDER === 'quidax' ? getQuidaxErrorMessage(err) : (err.message || 'Withdrawal failed');
+    logger.error(`[CryptoWithdraw] ${CRYPTO_PROVIDER} failed for ${reference}: ${providerMessage}`);
 
     await transaction(async (client) => {
       await client.query(
@@ -1030,7 +1042,7 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
          WHERE id = $2`,
         [
           JSON.stringify({
-            quidax_error: providerMessage,
+            [`${CRYPTO_PROVIDER}_error`]: providerMessage,
             failed_at: new Date().toISOString(),
           }),
           withdrawal.txId,
@@ -1045,13 +1057,13 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: 'Withdrawal request submitted. Confirmation pending from Quidax.',
+    message: `Withdrawal request submitted. Confirmation pending from ${CRYPTO_PROVIDER === 'obiex' ? 'Obiex' : 'Quidax'}.`,
     data: {
       txId: withdrawal.txId,
       reference,
-      provider_reference: quidaxWithdrawId,
+      provider_reference: providerWithdrawId,
       status: 'pending',
-      note: 'Status will update via webhook when Quidax confirms the withdrawal'
+      note: `Status will update via webhook when ${CRYPTO_PROVIDER === 'obiex' ? 'Obiex' : 'Quidax'} confirms the withdrawal`
     }
   });
 });
@@ -1072,18 +1084,17 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
   const toUpper   = to_coin.toUpperCase();
   const fromAmt   = parseFloat(amount);
 
-  // ── Step 1: Create a Quidax swap quotation ────────────────────────────────
-  // This reserves liquidity and returns exact to_amount (inclusive of Quidax fees).
+  // ── Step 1: Create a swap quotation (Obiex primary, Quidax fallback) ──────
+  // This reserves the rate and returns the exact to_amount (inclusive of provider fees).
   let quotation;
-  let quidaxUserId;
   try {
-    quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-    quotation = await quidax.getSwapQuote({ from: fromUpper, to: toUpper, amount: fromAmt, side: 'from' });
+    if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
+    quotation = await cryptoFx.getSwapQuote({ from: fromUpper, to: toUpper, amount: fromAmt, side: 'from' });
     if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) {
       throw new Error('Invalid quotation returned');
     }
   } catch (e) {
-    logger.warn('[CryptoSwap] Could not create Quidax quotation:', e.message);
+    logger.warn(`[CryptoSwap] Could not create ${CRYPTO_PROVIDER} quotation:`, e.message);
     throw new AppError('Could not get a live swap rate from the exchange. Please try again.', 503);
   }
 
@@ -1123,13 +1134,13 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
     await client.query('UPDATE wallets SET balance = balance - $1 WHERE id = $2', [fromAmt, fromWallet.rows[0].id]);
     await client.query('UPDATE wallets SET balance = balance + $1 WHERE id = $2', [netAmount, toWallet.rows[0].id]);
 
-    // Confirm the Quidax swap (enqueues execution on their side)
-    let quidaxSwapId = quotation.id;
+    // Confirm the swap on the provider (enqueues/executes on their side)
+    let providerSwapId = quotation.id;
     try {
-      const confirmed = await quidax.executeSwap(quotation.id);
-      if (confirmed?.id) quidaxSwapId = confirmed.id;
+      const confirmed = await cryptoFx.executeSwap(quotation.id);
+      if (confirmed?.id) providerSwapId = confirmed.id;
     } catch (e) {
-      logger.warn('[CryptoSwap] Quidax confirm failed (balances already updated):', e.message);
+      logger.warn(`[CryptoSwap] ${CRYPTO_PROVIDER} confirm failed (balances already updated):`, e.message);
     }
 
     // Record transactions
@@ -1137,17 +1148,17 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
       `INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, currency, status, description, metadata)
        VALUES ($1, 'exchange_out', $2, $3, 'completed', $4, $5)`,
       [fromWallet.rows[0].id, fromAmt, fromUpper, `Swapped to ${toUpper}`,
-       JSON.stringify({ rate, to_coin: toUpper, to_amount: netAmount, quidax_swap_id: quidaxSwapId })]
+       JSON.stringify({ rate, to_coin: toUpper, to_amount: netAmount, provider: CRYPTO_PROVIDER, provider_swap_id: providerSwapId })]
     );
 
     await client.query(
       `INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, currency, status, description, metadata)
        VALUES ($1, 'exchange_in', $2, $3, 'completed', $4, $5)`,
       [toWallet.rows[0].id, netAmount, toUpper, `Swapped from ${fromUpper}`,
-       JSON.stringify({ rate, from_coin: fromUpper, from_amount: fromAmt, quidax_swap_id: quidaxSwapId })]
+       JSON.stringify({ rate, from_coin: fromUpper, from_amount: fromAmt, provider: CRYPTO_PROVIDER, provider_swap_id: providerSwapId })]
     );
 
-    return { rate, fromAmount: fromAmt, toAmount: netAmount, quidaxSwapId };
+    return { rate, fromAmount: fromAmt, toAmount: netAmount, providerSwapId };
   });
 
   res.status(200).json({
@@ -1159,39 +1170,50 @@ export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {
 // Get crypto config (networks per coin, derived from user's wallets)
 export const getCryptoConfig = catchAsync(async (req, res) => {
   try {
-    // Networks live inside each wallet object — fetch all wallets at once
-    const walletsRes = await quidax.getAllWallets();
-    const walletList = walletsRes?.data || walletsRes || [];
-    const wallets = Array.isArray(walletList) ? walletList : [];
+    let configData;
+    if (CRYPTO_PROVIDER === 'obiex') {
+      // Obiex has no per-user wallet list — build config from tradable currencies +
+      // the global active-networks map (fee/min per network, keyed by currency code).
+      const currencies = await obiex.getCurrencies();
+      configData = await Promise.all(currencies.map(async (c) => {
+        const nets = await obiex.getNetworksForCurrency(c.code).catch(() => []);
+        return { coin: c.code, name: c.name, networks: nets, networkList: nets };
+      }));
+    } else {
+      // Networks live inside each wallet object — fetch all wallets at once
+      const walletsRes = await quidax.getAllWallets();
+      const walletList = walletsRes?.data || walletsRes || [];
+      const wallets = Array.isArray(walletList) ? walletList : [];
 
-    // Only include crypto wallets that have blockchain support
-    const configData = wallets
-      .filter(w => w.is_crypto || w.blockchain_enabled)
-      .map(w => {
-        const nets = (w.networks || []).map(n => ({
-          network: n.id,                              // id is used in API calls (e.g. "trc20")
-          name: n.name,
-          deposits_enabled: n.deposits_enabled !== false,
-          withdraws_enabled: n.withdraws_enabled !== false,
-          withdrawFee: '0',
-          withdrawMin: '0',
-          withdrawMax: '1000000',
-          isDefault: w.default_network === n.id,
-        }));
-        return {
-          coin: w.currency.toUpperCase(),
-          name: w.name,
-          networks: nets,
-          networkList: nets,   // kept for backwards compatibility
-        };
-      });
+      // Only include crypto wallets that have blockchain support
+      configData = wallets
+        .filter(w => w.is_crypto || w.blockchain_enabled)
+        .map(w => {
+          const nets = (w.networks || []).map(n => ({
+            network: n.id,                              // id is used in API calls (e.g. "trc20")
+            name: n.name,
+            deposits_enabled: n.deposits_enabled !== false,
+            withdraws_enabled: n.withdraws_enabled !== false,
+            withdrawFee: '0',
+            withdrawMin: '0',
+            withdrawMax: '1000000',
+            isDefault: w.default_network === n.id,
+          }));
+          return {
+            coin: w.currency.toUpperCase(),
+            name: w.name,
+            networks: nets,
+            networkList: nets,   // kept for backwards compatibility
+          };
+        });
+    }
 
     res.status(200).json({
       success: true,
       data: configData
     });
   } catch (err) {
-    logger.error('[CryptoConfig] Quidax Config Failed:', err.message);
+    logger.error(`[CryptoConfig] ${CRYPTO_PROVIDER} Config Failed:`, err.message);
 
     // Fallback to static config if Quidax is down or credentials are invalid
     const d = (n, name, fee = '0') => ({ network: n, name, withdrawFee: fee, withdrawMax: '1000000', withdrawMin: '0', deposits_enabled: true, withdraws_enabled: true });
@@ -1387,7 +1409,7 @@ export const getWithdrawFee = catchAsync(async (req, res) => {
     throw new AppError('Coin parameter is required', 400);
   }
 
-  const data = await quidax.getWithdrawFee(coin, network);
+  const data = await cryptoFx.getWithdrawFee(coin, network);
   res.status(200).json({ success: true, data });
 });
 
@@ -1406,8 +1428,8 @@ export const createSwapQuotation = catchAsync(async (req, res) => {
   if (from_amount != null && to_amount != null) throw new AppError('Provide exactly one of from_amount or to_amount', 400);
   if (from_amount == null && to_amount == null) throw new AppError('Exactly one of from_amount or to_amount is required', 400);
 
-  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-  const quotation = await quidax.getSwapQuote({
+  if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
+  const quotation = await cryptoFx.getSwapQuote({
     from: from_currency,
     to: to_currency,
     amount: from_amount != null ? from_amount : to_amount,
@@ -1429,15 +1451,15 @@ export const refreshSwapQuotation = catchAsync(async (req, res) => {
 
   if (!id) throw new AppError('Quotation ID is required', 400);
 
-  // Build refresh body — Quidax requires the same params as the original quote
+  // Build refresh body — the provider requires the same params as the original quote
   const body = {};
   if (from_currency) body.from_currency = from_currency.toLowerCase();
   if (to_currency)   body.to_currency   = to_currency.toLowerCase();
   if (from_amount != null) body.from_amount = String(from_amount);
   else if (to_amount != null) body.to_amount = String(to_amount);
 
-  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-  const quotation = await quidax.refreshSwapQuotation(id, body);
+  if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
+  const quotation = await cryptoFx.refreshSwapQuotation(id, body);
 
   if (!quotation?.id) throw new AppError('Could not refresh swap quotation. Please try again.', 503);
 
@@ -1453,7 +1475,7 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
   if (kycTierLevel(req.user.kyc_tier) < 1) throw new AppError('Please verify your identity (KYC) to use swaps.', 403, 'KYC_TIER_REQUIRED');
   if (!id) throw new AppError('Quotation ID is required', 400);
 
-  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
+  if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
 
   if (from_currency && from_amount != null) {
     const fromCurrency = from_currency.toUpperCase();
@@ -1476,12 +1498,12 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
   }
 
 
-  // Execute swap on Quidax — this is the authoritative action
-  const confirmed = await quidax.executeSwap(id);
+  // Execute swap on the provider — this is the authoritative action
+  const confirmed = await cryptoFx.executeSwap(id);
 
   if (!confirmed?.id) throw new AppError('Swap execution failed. Please refresh and try again.', 503);
 
-  // Extract amounts and currencies from Quidax's response
+  // Extract amounts and currencies from the provider's response
   const fromCurrency = (confirmed.from_currency || confirmed.swap_quotation?.from_currency || '').toUpperCase();
   const toCurrency   = (confirmed.to_currency   || confirmed.swap_quotation?.to_currency   || '').toUpperCase();
   const fromAmount   = parseFloat(confirmed.from_amount || confirmed.swap_quotation?.from_amount || 0);
@@ -1527,7 +1549,7 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
           [toAmount, toWallet.rows[0].id]
         );
 
-        const meta = JSON.stringify({ quidax_swap_id: confirmed.id, quotation_id: id });
+        const meta = JSON.stringify({ provider: CRYPTO_PROVIDER, provider_swap_id: confirmed.id, quotation_id: id });
 
         await client.query(
           `INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, currency, status, description, metadata)
@@ -1541,8 +1563,8 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
         );
       });
     } catch (dbErr) {
-      // DB update failed but swap succeeded on Quidax — log and continue
-      logger.error('[ConfirmSwap] DB update failed (swap executed on Quidax):', dbErr.message);
+      // DB update failed but the swap already succeeded on the provider — log and continue
+      logger.error(`[ConfirmSwap] DB update failed (swap executed on ${CRYPTO_PROVIDER}):`, dbErr.message);
     }
   }
 
@@ -1554,15 +1576,15 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
 export const getSwapTransaction = catchAsync(async (req, res) => {
   const { id } = req.params;
   if (!id) throw new AppError('Transaction ID is required', 400);
-  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-  const data = await quidax.getSwapTransaction(id);
+  if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
+  const data = await cryptoFx.getSwapTransaction(id);
   res.status(200).json({ success: true, data });
 });
 
 // GET /crypto/swap/transactions — list all swap transactions
 export const getSwapTransactions = catchAsync(async (req, res) => {
-  const quidaxUserId = await getQuidaxSubUserIdForRequest(req);
-  const data = await quidax.getSwapTransactions();
+  if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
+  const data = await cryptoFx.getSwapTransactions();
   res.status(200).json({ success: true, data });
 });
 

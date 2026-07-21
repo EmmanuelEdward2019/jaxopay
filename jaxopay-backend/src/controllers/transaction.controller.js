@@ -1,6 +1,11 @@
 import { query } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
+import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
+
+// Same provider selection as crypto.controller.js — used only for read-only rate lookups here.
+const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() === 'quidax' ? 'quidax' : 'obiex';
+const cryptoFx = CRYPTO_PROVIDER === 'quidax' ? quidax : obiex;
 import logger from '../utils/logger.js';
 
 // Currency the "Total Volume" figure is displayed in.
@@ -23,7 +28,7 @@ async function convertVolumeToDisplay(rows) {
         baseValue = amount;
       } else if (amount > 0) {
         try {
-          const rate = await quidax.getExchangeRate(currency, DISPLAY_CURRENCY);
+          const rate = await cryptoFx.getExchangeRate(currency, DISPLAY_CURRENCY);
           if (rate && rate > 0) baseValue = amount * rate;
         } catch (e) {
           logger.warn(`[Stats] rate ${currency}->${DISPLAY_CURRENCY} failed: ${e.message}`);
@@ -290,7 +295,7 @@ export const getTransactionStats = catchAsync(async (req, res) => {
   // Also provide a USD equivalent of the NGN total so the UI can offer a NGN/USD switch.
   let totalUsd = null;
   try {
-    const ngnToUsd = await quidax.getExchangeRate('NGN', 'USDT'); // USDT ≈ USD
+    const ngnToUsd = await cryptoFx.getExchangeRate('NGN', 'USDT'); // USDT ≈ USD
     if (ngnToUsd && ngnToUsd > 0) totalUsd = total * ngnToUsd;
   } catch { /* leave USD null if unavailable */ }
 

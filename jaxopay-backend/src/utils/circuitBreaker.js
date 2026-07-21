@@ -132,6 +132,12 @@ export const circuitBreakers = {
     resetTimeout: 30000,
     halfOpenMaxCalls: 3,
   }),
+  obiex: new CircuitBreaker({
+    name: 'ObiexAPI',
+    failureThreshold: 5,
+    resetTimeout: 30000,
+    halfOpenMaxCalls: 3,
+  }),
   korapay: new CircuitBreaker({
     name: 'KorapayAPI',
     failureThreshold: 5,

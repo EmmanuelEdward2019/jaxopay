@@ -72,52 +72,8 @@ const FIAT_CODES = new Set(FIAT_CURRENCIES.map(f => f.code));
 const POPULAR_CRYPTO_ORDER = ['BTC', 'USDT', 'USDC', 'ETH', 'BNB', 'SOL', 'XRP', 'TRX', 'DOGE', 'ADA'];
 const POPULAR_RANK = Object.fromEntries(POPULAR_CRYPTO_ORDER.map((c, i) => [c, i + 1]));
 
-// Complete Quidax-supported cryptocurrencies (static fallback — always shown even if API is down)
-const QUIDAX_SUPPORTED_CRYPTOS = [
-    { code: 'BTC', name: 'Bitcoin' },
-    { code: 'ETH', name: 'Ethereum' },
-    { code: 'USDT', name: 'Tether' },
-    { code: 'USDC', name: 'USD Coin' },
-    { code: 'BNB', name: 'Binance Coin' },
-    { code: 'SOL', name: 'Solana' },
-    { code: 'XRP', name: 'Ripple' },
-    { code: 'TRX', name: 'TRON' },
-    { code: 'DOGE', name: 'Dogecoin' },
-    { code: 'LTC', name: 'Litecoin' },
-    { code: 'ADA', name: 'Cardano' },
-    { code: 'DOT', name: 'Polkadot' },
-    { code: 'LINK', name: 'Chainlink' },
-    { code: 'BCH', name: 'Bitcoin Cash' },
-    { code: 'DASH', name: 'Dash' },
-    { code: 'XLM', name: 'Stellar' },
-    { code: 'POL', name: 'Polygon' },
-    { code: 'AAVE', name: 'Aave' },
-    { code: 'CAKE', name: 'PancakeSwap' },
-    { code: 'SHIB', name: 'Shiba Inu' },
-    { code: 'FLOKI', name: 'Floki Inu' },
-    { code: 'PEPE', name: 'Pepecoin' },
-    { code: 'BONK', name: 'Bonk' },
-    { code: 'QDX', name: 'Quidax Token' },
-    { code: 'SLP', name: 'Smooth Love Potion' },
-    { code: 'ALGO', name: 'Algorand' },
-    { code: 'WIF', name: 'Dogwifhat' },
-    { code: 'NOS', name: 'Nosana' },
-    { code: 'NEAR', name: 'NEAR Protocol' },
-    { code: 'TON', name: 'Toncoin' },
-    { code: 'SUI', name: 'Sui' },
-    { code: 'RNDR', name: 'Render' },
-    { code: 'STRK', name: 'Starknet' },
-    { code: 'ZK', name: 'ZKsync' },
-    { code: 'LSK', name: 'Lisk' },
-    { code: 'CFX', name: 'Conflux' },
-    { code: 'S', name: 'Sonic' },
-    { code: 'FARTCOIN', name: 'Fartcoin' },
-    { code: 'HYPE', name: 'Hyperliquid' },
-    { code: 'XYO', name: 'XYO' },
-    { code: 'AXCNH', name: 'AxCNH' },
-];
-
-// Coin icon colors (all Quidax-supported cryptos + fiat)
+// Coin icon colors — a color per code is nice-to-have; unmapped codes fall back to grey.
+// This is a superset (color-only) and is NOT used to decide which coins are selectable.
 const COIN_COLORS = {
     // Major cryptos
     BTC: '#f7931a', ETH: '#627eea', USDT: '#26a17b', USDC: '#2775ca',
@@ -270,30 +226,12 @@ const Wallets = () => {
     const buildAssetList = useCallback(() => {
         const assets = [];
 
-        // Merge API cryptos with static Quidax list (API data takes priority for names)
+        // The API (whichever provider CRYPTO_PROVIDER selects — Obiex by default) is the sole
+        // source of truth for which crypto coins are listed. Never merge in a static list on
+        // top of it — that previously let untradeable coins from an earlier provider (first
+        // MEXC, then Quidax) linger here after each switch. If the API has genuinely returned
+        // nothing (not yet loaded, or a total outage), the crypto section is simply empty.
         const cryptoCodes = new Set();
-        const apiNameMap = {};
-        allCryptos.forEach(c => {
-            const code = (c.code || c.coin || c.currency || '').toUpperCase();
-            if (code && !FIAT_CODES.has(code)) apiNameMap[code] = c.name || code;
-        });
-
-        // Start with static list to guarantee all Quidax coins are present
-        QUIDAX_SUPPORTED_CRYPTOS.forEach(sc => {
-            const code = sc.code;
-            if (cryptoCodes.has(code)) return;
-            cryptoCodes.add(code);
-            assets.push({
-                code,
-                name: apiNameMap[code] || sc.name, // prefer API name if available
-                type: 'crypto',
-                balance: balanceMap[code]?.balance || 0,
-                wallet_id: balanceMap[code]?.wallet_id || null,
-                is_active: balanceMap[code]?.is_active ?? true,
-            });
-        });
-
-        // Add any extra coins the API returned that aren't in the static list
         allCryptos.forEach(c => {
             const code = (c.code || c.coin || c.currency || '').toUpperCase();
             if (!code || cryptoCodes.has(code) || FIAT_CODES.has(code)) return;
@@ -643,21 +581,11 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
     const getCurrencyList = () => {
         let list = [];
         if (assetType === 'crypto') {
+            // The API (Obiex by default via CRYPTO_PROVIDER) is the sole source of truth for
+            // which coins can actually be deposited/withdrawn/transferred here — never merge in
+            // a static list, which previously let untradeable coins from an earlier provider
+            // (MEXC, then Quidax) show up as selectable after each switch.
             const seen = new Set();
-            const apiNameMap = {};
-            allCryptos.forEach(c => {
-                const code = (c.code || c.coin || c.currency || '').toUpperCase();
-                if (code && !FIAT_CODES.has(code)) apiNameMap[code] = c.name || code;
-            });
-
-            // Start with static Quidax list to guarantee all coins appear
-            QUIDAX_SUPPORTED_CRYPTOS.forEach(sc => {
-                if (seen.has(sc.code)) return;
-                seen.add(sc.code);
-                list.push({ code: sc.code, name: apiNameMap[sc.code] || sc.name, balance: balanceMap[sc.code]?.balance || 0 });
-            });
-
-            // Add any extra coins the API returned beyond the static list
             allCryptos.forEach(c => {
                 const code = (c.code || c.coin || c.currency || '').toUpperCase();
                 if (!code || seen.has(code) || FIAT_CODES.has(code)) return;

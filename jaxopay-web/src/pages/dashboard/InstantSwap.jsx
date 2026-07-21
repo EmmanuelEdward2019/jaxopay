@@ -11,52 +11,18 @@ import walletService from '../../services/walletService';
 const POPULAR_CRYPTO_ORDER = ['BTC', 'USDT', 'USDC', 'ETH', 'BNB', 'SOL', 'XRP', 'TRX', 'DOGE', 'ADA'];
 const POPULAR_RANK = Object.fromEntries(POPULAR_CRYPTO_ORDER.map((c, i) => [c, i + 1]));
 
-// Complete Quidax-supported cryptocurrencies (static fallback)
-const QUIDAX_SUPPORTED_CRYPTOS = [
+// Emergency fallback ONLY — used if the /crypto/supported API call fails outright (network
+// error, provider fully down). When it succeeds, its response is the ONLY source of truth for
+// which coins appear here, so the list always matches whatever CRYPTO_PROVIDER is actually
+// active (Obiex) — never a previous provider's coins (this list used to always be merged in
+// unconditionally, which is why untradeable legacy coins kept showing up after past provider
+// switches). Keep this minimal; it is not meant to represent any specific provider's catalog.
+const EMERGENCY_FALLBACK_CRYPTOS = [
   { code: 'BTC', name: 'Bitcoin' },
   { code: 'ETH', name: 'Ethereum' },
   { code: 'USDT', name: 'Tether' },
   { code: 'USDC', name: 'USD Coin' },
-  { code: 'BNB', name: 'Binance Coin' },
-  { code: 'SOL', name: 'Solana' },
-  { code: 'XRP', name: 'Ripple' },
-  { code: 'TRX', name: 'TRON' },
-  { code: 'DOGE', name: 'Dogecoin' },
-  { code: 'LTC', name: 'Litecoin' },
-  { code: 'ADA', name: 'Cardano' },
-  { code: 'DOT', name: 'Polkadot' },
-  { code: 'LINK', name: 'Chainlink' },
-  { code: 'BCH', name: 'Bitcoin Cash' },
-  { code: 'DASH', name: 'Dash' },
-  { code: 'XLM', name: 'Stellar' },
-  { code: 'POL', name: 'Polygon' },
-  { code: 'AAVE', name: 'Aave' },
-  { code: 'CAKE', name: 'PancakeSwap' },
-  { code: 'SHIB', name: 'Shiba Inu' },
-  { code: 'FLOKI', name: 'Floki Inu' },
-  { code: 'PEPE', name: 'Pepecoin' },
-  { code: 'BONK', name: 'Bonk' },
-  { code: 'QDX', name: 'Quidax Token' },
-  { code: 'SLP', name: 'Smooth Love Potion' },
-  { code: 'ALGO', name: 'Algorand' },
-  { code: 'WIF', name: 'Dogwifhat' },
-  { code: 'NOS', name: 'Nosana' },
-  { code: 'NEAR', name: 'NEAR Protocol' },
-  { code: 'TON', name: 'Toncoin' },
-  { code: 'SUI', name: 'Sui' },
-  { code: 'RNDR', name: 'Render' },
-  { code: 'STRK', name: 'Starknet' },
-  { code: 'ZK', name: 'ZKsync' },
-  { code: 'LSK', name: 'Lisk' },
-  { code: 'CFX', name: 'Conflux' },
-  { code: 'S', name: 'Sonic' },
-  { code: 'FARTCOIN', name: 'Fartcoin' },
-  { code: 'HYPE', name: 'Hyperliquid' },
-  { code: 'XYO', name: 'XYO' },
-  { code: 'AXCNH', name: 'AxCNH' },
-  // Fiat pairs for swap
   { code: 'NGN', name: 'Nigerian Naira' },
-  { code: 'GHS', name: 'Ghanaian Cedi' },
 ];
 
 const POPULAR_PAIRS = [
@@ -173,27 +139,23 @@ const InstantSwap = () => {
       if (res.success) setWallets(Array.isArray(res.data) ? res.data : res.data?.wallets || []);
     });
     cryptoService.getSupportedCryptos().then(res => {
-      const apiData = res.success ? (res.data || []) : [];
-      // Merge: static list guarantees all Quidax coins, API data adds any extras & updates names
-      const seen = new Set();
-      const apiNameMap = {};
-      apiData.forEach(c => {
-        const code = (c.code || c.coin || c.currency || '').toUpperCase();
-        if (code) apiNameMap[code] = c.name || code;
-      });
-      const merged = [];
-      QUIDAX_SUPPORTED_CRYPTOS.forEach(sc => {
-        if (seen.has(sc.code)) return;
-        seen.add(sc.code);
-        merged.push({ code: sc.code, coin: sc.code.toLowerCase(), name: apiNameMap[sc.code] || sc.name });
-      });
-      apiData.forEach(c => {
-        const code = (c.code || c.coin || c.currency || '').toUpperCase();
-        if (!code || seen.has(code)) return;
-        seen.add(code);
-        merged.push({ code, coin: code.toLowerCase(), name: c.name || code });
-      });
-      setAssets(merged);
+      // The API (whichever provider CRYPTO_PROVIDER selects — Obiex by default) is the sole
+      // source of truth when it succeeds. Never merge in a static list on top of a successful
+      // response — that's what let untradeable coins from a previous provider linger in this
+      // picker after past switches. Only fall back to a minimal static list if the call fails.
+      if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+        const seen = new Set();
+        const list = [];
+        res.data.forEach(c => {
+          const code = (c.code || c.coin || c.currency || '').toUpperCase();
+          if (!code || seen.has(code)) return;
+          seen.add(code);
+          list.push({ code, coin: code.toLowerCase(), name: c.name || code });
+        });
+        setAssets(list);
+      } else {
+        setAssets(EMERGENCY_FALLBACK_CRYPTOS.map(sc => ({ code: sc.code, coin: sc.code.toLowerCase(), name: sc.name })));
+      }
     });
   }, []);
 

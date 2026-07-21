@@ -3,8 +3,15 @@ import { catchAsync } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 
 import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js'; // exported instance
+import ObiexAdapter from '../orchestration/adapters/crypto/ObiexAdapter.js'; // exported instance
 import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js'; // class
 import yellowCard from '../orchestration/adapters/fx/YellowCardService.js'; // exported instance (replaces Graph)
+
+// Crypto provider selection — mirrors crypto.controller.js (Obiex primary by default).
+const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() === 'quidax' ? 'quidax' : 'obiex';
+// Obiex has no "all balances" endpoint — this is the set of currencies we actually
+// deposit/withdraw/swap through it, checked individually.
+const OBIEX_TREASURY_CURRENCIES = ['USDT', 'USDC'];
 
 const korapay = new KorapayAdapter();
 
@@ -42,7 +49,7 @@ export const getTreasuryOverview = catchAsync(async (req, res) => {
     },
     {
       key: 'quidax',
-      label: 'Quidax (Crypto)',
+      label: CRYPTO_PROVIDER === 'quidax' ? 'Quidax (Crypto)' : 'Quidax (Crypto — fallback/order-book)',
       run: async () => {
         const raw = await quidaxWallets();
         return (raw || [])
@@ -52,6 +59,25 @@ export const getTreasuryOverview = catchAsync(async (req, res) => {
             pending: num(w.locked),
           }))
           .filter((b) => b.currency && (b.available > 0 || b.pending > 0));
+      },
+    },
+    {
+      key: 'obiex',
+      label: CRYPTO_PROVIDER === 'obiex' ? 'Obiex (Crypto)' : 'Obiex (Crypto — fallback)',
+      run: async () => {
+        const settled = await Promise.allSettled(
+          OBIEX_TREASURY_CURRENCIES.map((c) => ObiexAdapter.getWalletBalance(c))
+        );
+        return settled
+          .map((r, i) => {
+            if (r.status !== 'fulfilled' || !r.value) return null;
+            return {
+              currency: OBIEX_TREASURY_CURRENCIES[i],
+              available: num(r.value.availableBalance),
+              pending: num(r.value.pendingBalance) + num(r.value.pendingSwapBalance),
+            };
+          })
+          .filter((b) => b && (b.available > 0 || b.pending > 0));
       },
     },
     {

@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import { providerRegistry } from '../orchestration/index.js';
 import { circuitBreakers } from '../utils/circuitBreaker.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
+import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
 import * as kycNotify from '../services/kycNotification.service.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
 import { auditFromReq } from '../services/audit.service.js';
@@ -1375,6 +1376,7 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
   const breakerState = (name) => {
     try {
       if (name === 'quidax') return quidax.getCircuitBreakerState?.()?.state || null;
+      if (name === 'obiex') return obiex.getCircuitBreakerState?.()?.state || null;
       return circuitBreakers?.[name]?.getState?.()?.state || null;
     } catch { return null; }
   };
@@ -1387,6 +1389,9 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
   // Effective config (account for placeholder/disabled flags)
   const korapay = isSet(env.KORAPAY_SECRET_KEY);
   const quidaxOn = isSet(env.QUIDAX_SECRET_KEY) || isSet(env.QUIDAX_API_KEY);
+  const obiexOn = isSet(env.OBIEX_API_KEY) && isSet(env.OBIEX_API_SECRET);
+  // Crypto deposit/withdraw/swap provider — Obiex by default (see CRYPTO_PROVIDER).
+  const cryptoProviderName = (env.CRYPTO_PROVIDER || 'obiex').toLowerCase() === 'quidax' ? 'quidax' : 'obiex';
   const strowallet = isSet(env.STROWALLET_PUBLIC_KEY) && isSet(env.STROWALLET_SECRET_KEY);
   const yellowcardFx = isSet(env.YELLOWCARD_API_KEY) && isSet(env.YELLOWCARD_SECRET_KEY);
   const smile = isSet(env.SMILE_ID_API_KEY) && isSet(env.SMILE_ID_PARTNER_ID);
@@ -1403,10 +1408,21 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
     },
     {
       type: 'Crypto',
-      adapters: [
-        { name: 'Quidax', role: 'primary', status: statusFor(quidaxOn, 'quidax'),
-          features: ['Wallets & addresses', 'Deposits & withdrawals', 'Swaps', 'Market rates'] },
-      ],
+      adapters: cryptoProviderName === 'obiex'
+        ? [
+            { name: 'Obiex', role: 'primary', status: statusFor(obiexOn, 'obiex'),
+              features: ['Deposit addresses', 'Withdrawals', 'Swaps (quote/accept)'] },
+            // Quidax always powers order-book spot trading (Trade/Exchange pages) regardless of
+            // CRYPTO_PROVIDER, and doubles as the deposit/withdraw/swap fallback.
+            ...(quidaxOn ? [{ name: 'Quidax', role: 'fallback', status: statusFor(quidaxOn, 'quidax'),
+                  features: ['Order-book spot trading', 'Deposit/withdraw/swap fallback', 'Market rates'] }] : []),
+          ]
+        : [
+            { name: 'Quidax', role: 'primary', status: statusFor(quidaxOn, 'quidax'),
+              features: ['Wallets & addresses', 'Deposits & withdrawals', 'Swaps', 'Order-book spot trading', 'Market rates'] },
+            ...(obiexOn ? [{ name: 'Obiex', role: 'fallback', status: statusFor(obiexOn, 'obiex'),
+                  features: ['Deposit/withdraw/swap fallback'] }] : []),
+          ],
     },
     {
       type: 'Virtual Cards',
