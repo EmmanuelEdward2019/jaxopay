@@ -108,6 +108,11 @@ class ObiexAdapter {
     const normalized = new Error(msg);
     normalized.statusCode = err.response?.status || 502;
     normalized.obiexRaw = data;
+    // Mark operational so the global error handler trusts this statusCode/message in production
+    // instead of masking it as a generic 500 (errorHandler.js only forwards trusted details when
+    // isOperational is true — without this flag every Obiex error, even a clean 4xx, was flattened).
+    normalized.isOperational = true;
+    normalized.status = `${normalized.statusCode}`.startsWith('4') ? 'fail' : 'error';
     return normalized;
   }
 
