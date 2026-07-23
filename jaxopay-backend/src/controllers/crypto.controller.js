@@ -22,8 +22,11 @@ const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() =
 const cryptoFx = CRYPTO_PROVIDER === 'quidax' ? quidax : obiex;
 
 // ─── Ticker Cache (module-level, shared across requests) ─────────────────────
-// Pre-fetches all Quidax market tickers every 15s so exchange rate lookups
-// are instant without hitting Quidax on every request.
+// Pre-fetches ticker prices every 15s so exchange rate lookups are instant without
+// hitting the provider on every request. Obiex-first (matches the rate the swap actually
+// executes at — this is the dashboard's "live price" bar, not the Quidax order-book page,
+// which calls its own market-data endpoints directly and is unaffected by this cache).
+// Falls back to Quidax's bulk ticker snapshot only if Obiex is unreachable.
 let _tickerSnapshot = {}; // { usdtngn: { ticker: { buy, sell, last, ... } }, ... }
 let _tickerSnapshotTime = 0;
 const TICKER_TTL_MS = 15000;
@@ -34,13 +37,44 @@ function createCryptoWithdrawalReference(userId) {
   return `QWD-${userPart}-${Date.now()}-${uniquePart}`;
 }
 
+// market id -> { base, quote } for the fixed set of pairs the dashboard ticker bar shows.
+// MATIC is aliased to Obiex's current ticker (POL, post-rebrand) only for the lookup itself —
+// the market id / displayed pair label stay "MATIC/USDT" on the frontend, unchanged.
+const TICKER_PAIRS = {
+  btcusdt: ['BTC', 'USDT'], ethusdt: ['ETH', 'USDT'], btcngn: ['BTC', 'NGN'], ethngn: ['ETH', 'NGN'],
+  usdtngn: ['USDT', 'NGN'], solusdt: ['SOL', 'USDT'], bnbusdt: ['BNB', 'USDT'], xrpusdt: ['XRP', 'USDT'],
+  adausdt: ['ADA', 'USDT'], dogeusdt: ['DOGE', 'USDT'], dotusdt: ['DOT', 'USDT'], maticusdt: ['POL', 'USDT'],
+};
+
+async function refreshTickerCacheFromObiex() {
+  const entries = await Promise.all(
+    Object.entries(TICKER_PAIRS).map(async ([marketId, [base, quote]]) => {
+      const rate = await obiex.getExchangeRate(base, quote).catch(() => null);
+      if (!(rate > 0)) return null;
+      return [marketId, { ticker: { last: rate, buy: rate, sell: rate, change: 0, vol: 0, high: 0, low: 0 } }];
+    })
+  );
+  const payload = Object.fromEntries(entries.filter(Boolean));
+  return payload;
+}
+
 async function refreshTickerCache() {
   try {
+    if (CRYPTO_PROVIDER === 'obiex') {
+      const payload = await refreshTickerCacheFromObiex();
+      if (Object.keys(payload).length > 0) {
+        _tickerSnapshot = payload;
+        _tickerSnapshotTime = Date.now();
+        logger.debug(`[TickerCache] Refreshed via Obiex — ${Object.keys(payload).length} markets`);
+        return;
+      }
+      logger.warn('[TickerCache] Obiex returned no usable rates — falling back to Quidax');
+    }
     const payload = await quidax.getTicker24h(); // GET /markets/tickers
     if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
       _tickerSnapshot = payload;
       _tickerSnapshotTime = Date.now();
-      logger.debug(`[TickerCache] Refreshed — ${Object.keys(payload).length} markets`);
+      logger.debug(`[TickerCache] Refreshed via Quidax (fallback) — ${Object.keys(payload).length} markets`);
     }
   } catch (e) {
     logger.warn('[TickerCache] Refresh failed:', e.message);
