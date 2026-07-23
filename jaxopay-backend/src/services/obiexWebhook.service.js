@@ -1,6 +1,6 @@
 import { transaction as dbTransaction, query } from '../config/database.js';
 import defaultLogger from '../utils/logger.js';
-import { sendTransactionEmails } from './email.service.js';
+import { sendTransactionEmails, sendWithdrawalEmails } from './email.service.js';
 
 /**
  * Obiex webhook attribution model.
@@ -129,9 +129,11 @@ export function createObiexWebhookService({
     }
 
     try {
+      let emailPayload = null;
+
       await transaction(async (client) => {
         const txRes = await client.query(
-          `SELECT id, wallet_id, amount, currency, status AS current_status
+          `SELECT id, wallet_id, amount, currency, status AS current_status, metadata
            FROM wallet_transactions
            WHERE metadata->>'obiex_withdraw_id' = $1
               OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2 OR reference = $2))
@@ -174,7 +176,39 @@ export function createObiexWebhookService({
         } else {
           logger.info(`[WEBHOOK] ✅ Obiex withdrawal ${transactionId} confirmed successful`);
         }
+
+        const walletRes = await client.query(`SELECT user_id FROM wallets WHERE id = $1`, [tx.wallet_id]);
+        emailPayload = {
+          userId: walletRes.rows[0]?.user_id || null,
+          success: newStatus === 'completed',
+          amount: tx.amount,
+          currency: tx.currency,
+          reference: reference || transactionId,
+          txId: tx.id,
+          destination: tx.metadata?.address || null,
+          destinationLabel: 'crypto address',
+          network: tx.metadata?.network || null,
+        };
       });
+
+      if (emailPayload?.userId) {
+        try {
+          const userRes = await query(
+            `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+             FROM users u
+             LEFT JOIN user_profiles up ON up.user_id = u.id
+             WHERE u.id = $1`,
+            [emailPayload.userId]
+          );
+          if (userRes.rows.length > 0) {
+            sendWithdrawalEmails(emailPayload, userRes.rows[0]).catch((e) =>
+              logger.error('[WEBHOOK] Obiex withdrawal email error:', e)
+            );
+          }
+        } catch (emailErr) {
+          logger.error('[WEBHOOK] Obiex withdrawal email notify error:', emailErr);
+        }
+      }
     } catch (err) {
       logger.error('[WEBHOOK] updateObiexWithdrawal error:', err);
       throw err;

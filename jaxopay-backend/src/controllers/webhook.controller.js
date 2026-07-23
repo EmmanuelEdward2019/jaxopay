@@ -8,7 +8,7 @@ import { SMILE_APPROVED_RESULT_CODES, SMILE_PROVISIONAL_RESULT_CODES } from '../
 import * as kycNotify from '../services/kycNotification.service.js';
 import { creditUserWalletByQuidax, persistQuidaxWalletAddress } from '../services/quidaxWebhook.service.js';
 import { creditUserWalletByObiex, updateObiexWithdrawal } from '../services/obiexWebhook.service.js';
-import { sendTransactionEmails } from '../services/email.service.js';
+import { sendTransactionEmails, sendWithdrawalEmails } from '../services/email.service.js';
 
 /**
  * Unified webhook handler for all providers
@@ -502,7 +502,7 @@ async function processKorapayPayout(event, data) {
             );
         });
         logger.info(`[WEBHOOK] ✅ Korapay payout complete: ${reference}`);
-        await notifyTransfer(tx, 'Withdrawal');
+        await notifyTransfer(tx, true);
     } else {
         // transfer.failed — return the reserved funds to the wallet
         await transaction(async (client) => {
@@ -518,12 +518,12 @@ async function processKorapayPayout(event, data) {
             );
         });
         logger.warn(`[WEBHOOK] ❌ Korapay payout failed, funds reversed: ${reference}`);
-        await notifyTransfer(tx, 'Withdrawal Failed');
+        await notifyTransfer(tx, false);
     }
 }
 
-// Email the user about a bank-transfer (withdrawal) outcome.
-async function notifyTransfer(tx, label) {
+// Email the user about a bank-transfer (withdrawal/payout) outcome.
+async function notifyTransfer(tx, success) {
     try {
         const userRes = await query(
             `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
@@ -533,12 +533,14 @@ async function notifyTransfer(tx, label) {
             [tx.user_id]
         );
         if (userRes.rows.length > 0) {
-            sendTransactionEmails({
-                type: label,
+            sendWithdrawalEmails({
+                success,
                 amount: tx.from_amount,
                 currency: tx.from_currency,
                 reference: tx.reference,
-                details: 'Bank Transfer',
+                txId: tx.id,
+                destination: tx.destination || null,
+                destinationLabel: 'bank account',
             }, userRes.rows[0]).catch((e) => logger.error('[WEBHOOK] Transfer email error:', e));
         }
     } catch (e) {
@@ -624,13 +626,15 @@ async function processObiex(payload) {
  */
 async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
     try {
+        let emailPayload = null;
+
         await transaction(async (client) => {
             const quidaxReference = webhookData?.reference ? String(webhookData.reference) : null;
 
             // Check wallet_transactions first (crypto withdrawals)
             let txType = 'wallet_transactions';
             let txRes = await client.query(
-                `SELECT id, wallet_id, amount, currency, status AS current_status
+                `SELECT id, wallet_id, amount, currency, status AS current_status, metadata
                  FROM wallet_transactions
                  WHERE metadata->>'quidax_withdraw_id' = $1
                     OR ($2::text IS NOT NULL AND (metadata->>'quidax_reference' = $2 OR reference = $2))
@@ -642,7 +646,7 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
             if (txRes.rows.length === 0) {
                 txType = 'transactions';
                 txRes = await client.query(
-                    `SELECT id, from_wallet_id AS wallet_id, from_amount AS amount, from_currency AS currency, status AS current_status
+                    `SELECT id, user_id, from_wallet_id AS wallet_id, from_amount AS amount, from_currency AS currency, status AS current_status, metadata
                      FROM transactions
                      WHERE metadata->>'quidax_withdraw_id' = $1
                         OR ($2::text IS NOT NULL AND (metadata->>'quidax_reference' = $2 OR reference = $2))
@@ -712,7 +716,43 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
             } else {
                 logger.info(`[WEBHOOK] ✅ Quidax withdrawal ${status}: ${tx.amount} ${tx.currency} (${txType} ID: ${tx.id})`);
             }
+
+            let userId = tx.user_id || null;
+            if (!userId) {
+                const walletRes = await client.query(`SELECT user_id FROM wallets WHERE id = $1`, [tx.wallet_id]);
+                userId = walletRes.rows[0]?.user_id || null;
+            }
+            emailPayload = {
+                userId,
+                success: status === 'completed',
+                amount: tx.amount,
+                currency: tx.currency,
+                reference: quidaxReference || quidaxWithdrawId,
+                txId: tx.id,
+                destination: tx.metadata?.address || null,
+                destinationLabel: txType === 'wallet_transactions' ? 'crypto address' : 'bank account',
+                network: tx.metadata?.network || null,
+            };
         });
+
+        if (emailPayload?.userId) {
+            try {
+                const userRes = await query(
+                    `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+                     FROM users u
+                     LEFT JOIN user_profiles up ON up.user_id = u.id
+                     WHERE u.id = $1`,
+                    [emailPayload.userId]
+                );
+                if (userRes.rows.length > 0) {
+                    sendWithdrawalEmails(emailPayload, userRes.rows[0]).catch((e) =>
+                        logger.error('[WEBHOOK] Quidax withdrawal email error:', e)
+                    );
+                }
+            } catch (emailErr) {
+                logger.error('[WEBHOOK] Quidax withdrawal email notify error:', emailErr);
+            }
+        }
     } catch (err) {
         logger.error('[WEBHOOK] updateQuidaxWithdrawal error:', err);
         throw err;

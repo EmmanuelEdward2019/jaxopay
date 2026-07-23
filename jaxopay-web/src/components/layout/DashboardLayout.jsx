@@ -261,8 +261,11 @@ const DashboardLayout = () => {
           </div>
         </header>
 
-        {/* Live price ticker bar */}
-        <LivePriceTicker />
+        {/* Live price ticker bar — sourced from Quidax market data, which can differ from the
+            actual Obiex-executed swap rate. Hide it on Instant Swap specifically so the only
+            rate shown there is the one the swap will actually execute at (Trade/Exchange keeps
+            it — that page genuinely trades on Quidax's order book). */}
+        {!location.pathname.startsWith('/dashboard/instant-swap') && <LivePriceTicker />}
 
         {/* Page content */}
         <main className={`flex-1 ${isTrading ? 'p-0' : 'p-4 md:p-6'}`}>

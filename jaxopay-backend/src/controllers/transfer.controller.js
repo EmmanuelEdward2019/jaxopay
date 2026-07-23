@@ -7,6 +7,24 @@ import { getSpendableBalance } from '../utils/walletBalance.js';
 import { getKorapayErrorDetails, getKorapayTransferFailureMessage } from '../utils/korapay.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { enforceTierLimit } from '../services/kycLimits.service.js';
+import { sendWithdrawalEmails } from '../services/email.service.js';
+
+async function notifyPayout(userId, payload) {
+    try {
+        const userRes = await query(
+            `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+             FROM users u
+             LEFT JOIN user_profiles up ON up.user_id = u.id
+             WHERE u.id = $1`,
+            [userId]
+        );
+        if (userRes.rows.length > 0) {
+            sendWithdrawalEmails(payload, userRes.rows[0]).catch((e) => logger.error('[Transfer] payout email error:', e.message));
+        }
+    } catch (e) {
+        logger.error('[Transfer] payout notify error:', e.message);
+    }
+}
 
 const korapay = new KorapayAdapter();
 
@@ -235,6 +253,17 @@ export const sendTransfer = catchAsync(async (req, res) => {
 
         auditFromReq(req, { action: 'bank_transfer', entityType: 'transaction', newValues: { amount: amountValue, currency: transferCurrency, reference, recipient: account_name, bank: bank_name } });
 
+        if (isComplete) {
+            notifyPayout(req.user.id, {
+                success: true,
+                amount: amountValue,
+                currency: transferCurrency,
+                reference,
+                destination: `${account_name} — ${bank_name || bank_code} (${account_number})`,
+                destinationLabel: 'bank account',
+            });
+        }
+
         res.status(200).json({
             success: true,
             message: `Transfer initiated successfully! Reference: ${reference}`,
@@ -268,6 +297,16 @@ export const sendTransfer = catchAsync(async (req, res) => {
                 `UPDATE transactions SET status = 'failed', failure_reason = $2, updated_at = NOW() WHERE reference = $1`,
                 [reference, friendlyMessage]
             );
+        });
+
+        notifyPayout(req.user.id, {
+            success: false,
+            amount: amountValue,
+            currency: transferCurrency,
+            reference,
+            reason: friendlyMessage,
+            destination: `${account_name} — ${bank_name || bank_code} (${account_number})`,
+            destinationLabel: 'bank account',
         });
 
         throw new AppError(friendlyMessage, korapayErr.statusCode || 502);
@@ -311,6 +350,7 @@ export const verifyTransfer = catchAsync(async (req, res) => {
     }
 
     if (['success', 'successful', 'completed'].includes(providerStatus)) {
+        let didFinalize = false;
         await transaction(async (client) => {
             const cur = await client.query(`SELECT status FROM transactions WHERE reference = $1 FOR UPDATE`, [reference]);
             if (['completed', 'failed'].includes(cur.rows[0]?.status)) return;
@@ -318,12 +358,22 @@ export const verifyTransfer = catchAsync(async (req, res) => {
                 `UPDATE transactions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE reference = $1`,
                 [reference]
             );
+            didFinalize = true;
         });
+        if (didFinalize) {
+            notifyPayout(req.user.id, {
+                success: true,
+                amount: tx.from_amount,
+                currency: tx.from_currency,
+                reference,
+            });
+        }
         return res.status(200).json({ success: true, data: { reference, status: 'completed' } });
     }
 
     if (['failed', 'reversed', 'cancelled', 'declined'].includes(providerStatus)) {
         // Reverse the reserved funds (idempotent — only if not already finalised).
+        let didFinalize = false;
         await transaction(async (client) => {
             const cur = await client.query(`SELECT status FROM transactions WHERE reference = $1 FOR UPDATE`, [reference]);
             if (['completed', 'failed'].includes(cur.rows[0]?.status)) return;
@@ -335,7 +385,17 @@ export const verifyTransfer = catchAsync(async (req, res) => {
                 `UPDATE transactions SET status = 'failed', failure_reason = $2, updated_at = NOW() WHERE reference = $1`,
                 [reference, 'Payout failed at provider — funds returned']
             );
+            didFinalize = true;
         });
+        if (didFinalize) {
+            notifyPayout(req.user.id, {
+                success: false,
+                amount: tx.from_amount,
+                currency: tx.from_currency,
+                reference,
+                reason: 'Payout failed at provider — funds returned',
+            });
+        }
         return res.status(200).json({ success: true, data: { reference, status: 'failed' } });
     }
 

@@ -152,6 +152,38 @@ export const templates = {
   `);
   },
 
+  withdrawalSuccess: (data) => layout(`
+    ${heading('Withdrawal Successful ✅')}
+    ${p(`Hello ${data.name},`)}
+    ${p(`Your withdrawal of <strong>${data.currency} ${data.amount}</strong> has been successfully processed and sent to your ${data.destinationLabel || 'destination'}.`)}
+    ${infoBox(`
+      ${row('Reference', data.reference)}
+      ${data.txId ? row('Transaction ID', data.txId) : ''}
+      ${row('Amount', `${data.currency} ${data.amount}`)}
+      ${data.destination ? row('Destination', data.destination) : ''}
+      ${data.network ? row('Network', data.network) : ''}
+      ${row('Status', 'Completed', BRAND_GREEN)}
+      ${row('Date', data.date || new Date().toLocaleString())}
+    `)}
+    ${p('Thank you for using JAXOPAY.')}
+  `),
+
+  withdrawalFailed: (data) => layout(`
+    ${heading('Withdrawal Failed')}
+    ${p(`Hello ${data.name},`)}
+    ${p(`Your withdrawal of <strong>${data.currency} ${data.amount}</strong> could not be completed${data.reason ? `: <span style="color:#dc2626;">${data.reason}</span>` : '.'}`)}
+    ${p('The full amount has been refunded to your JAXOPAY wallet — no funds were lost.')}
+    ${infoBox(`
+      ${row('Reference', data.reference)}
+      ${data.txId ? row('Transaction ID', data.txId) : ''}
+      ${row('Amount refunded', `${data.currency} ${data.amount}`)}
+      ${data.destination ? row('Destination', data.destination) : ''}
+      ${row('Status', 'Failed — Refunded', '#dc2626')}
+      ${row('Date', data.date || new Date().toLocaleString())}
+    `)}
+    ${p('If you believe this is an error, please contact our support team.')}
+  `),
+
   adminTransactionAlert: (data) => layout(`
     ${heading('System Alert: New Transaction')}
     ${p('An important transaction has occurred on the platform:')}

@@ -87,7 +87,21 @@ const COIN_META = {
 };
 
 const CoinIcon = ({ code, size = 32 }) => {
-  const meta = COIN_META[code?.toUpperCase()] || {};
+  const [imgFailed, setImgFailed] = useState(false);
+  const upper = (code || '').toUpperCase();
+  const meta = COIN_META[upper] || {};
+  if (!imgFailed && upper) {
+    return (
+      <img
+        src={`https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons@master/svg/color/${upper.toLowerCase()}.svg`}
+        alt={upper}
+        width={size}
+        height={size}
+        className="rounded-full shrink-0 bg-white/5"
+        onError={() => setImgFailed(true)}
+      />
+    );
+  }
   return (
     <div className="rounded-full flex items-center justify-center text-gray-900 dark:text-white font-black text-xs shrink-0"
       style={{ width: size, height: size, backgroundColor: meta.color || '#848e9c' }}>
@@ -582,7 +596,7 @@ const InstantSwap = () => {
                   )}
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-muted-foreground">Fee</span>
-                    <span className="text-muted-foreground">Included in rate</span>
+                    <span className="text-success font-bold">No Fee</span>
                   </div>
                 </div>
               )}

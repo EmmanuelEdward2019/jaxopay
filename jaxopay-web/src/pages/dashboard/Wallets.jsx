@@ -99,7 +99,21 @@ const CoinIcon = ({ code, size = 36, isFiat = false }) => {
         const fiat = FIAT_CURRENCIES.find(f => f.code === code);
         return <span className="text-2xl leading-none">{fiat?.flag || '💰'}</span>;
     }
-    const color = COIN_COLORS[code?.toUpperCase()] || '#848e9c';
+    const [imgFailed, setImgFailed] = useState(false);
+    const upper = (code || '').toUpperCase();
+    const color = COIN_COLORS[upper] || '#848e9c';
+    if (!imgFailed && upper) {
+        return (
+            <img
+                src={`https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons@master/svg/color/${upper.toLowerCase()}.svg`}
+                alt={upper}
+                width={size}
+                height={size}
+                className="rounded-full shrink-0 bg-white/5"
+                onError={() => setImgFailed(true)}
+            />
+        );
+    }
     return (
         <div className="rounded-full flex items-center justify-center text-white font-black text-[10px] shrink-0"
             style={{ width: size, height: size, backgroundColor: color }}>
@@ -1033,9 +1047,34 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                                     </div>
                                 )}
                             </div>
-                            <p className="text-[10px] text-danger text-center font-medium leading-relaxed">
-                                Only send {code} via the {network} network. Funds sent via other networks will be lost.
-                            </p>
+
+                            {(() => {
+                                const selectedNet = networks.find(n => n.network === network);
+                                const minDeposit = parseFloat(selectedNet?.depositMin ?? 0);
+                                const networkLabel = selectedNet?.name || network;
+                                return (
+                                    <>
+                                        <div className="flex items-center justify-between px-1">
+                                            <span className="text-xs text-muted-foreground">Minimum deposit</span>
+                                            <span className="text-sm font-bold text-foreground">
+                                                {minDeposit > 0 ? `${minDeposit} ${code}` : `Any amount of ${code}`}
+                                            </span>
+                                        </div>
+                                        <div className="bg-warning/10 border border-warning/20 rounded-xl p-4">
+                                            <p className="text-xs font-bold text-warning mb-2">⚠ Important note!</p>
+                                            <ul className="space-y-1.5 text-xs text-muted-foreground list-disc list-inside">
+                                                <li>QR Code is unique to the token {code} and network {networkLabel} that you have selected</li>
+                                                {minDeposit > 0 && (
+                                                    <li>Sending amount lower than {minDeposit} {code} will result in the loss of your assets</li>
+                                                )}
+                                                <li>Send only {code} to this address</li>
+                                                <li>Sending tokens other than {code} will result in the loss of your deposit</li>
+                                                <li>Sending {code} to a different network other than {networkLabel} will result in the loss of your assets</li>
+                                            </ul>
+                                        </div>
+                                    </>
+                                );
+                            })()}
                         </div>
                     )}
                 </div>

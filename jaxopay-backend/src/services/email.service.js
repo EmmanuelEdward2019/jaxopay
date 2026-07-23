@@ -190,7 +190,72 @@ export const sendTransactionEmails = async (transactionData, userData) => {
   }
 };
 
+/**
+ * Send a withdrawal/payout notification (dedicated templates, distinct from the generic
+ * transaction receipt) to both the withdrawing user and admin. Covers crypto withdrawals
+ * (Obiex/Quidax) and fiat bank payouts (Korapay disbursements) alike.
+ */
+export const sendWithdrawalEmails = async (withdrawalData, userData) => {
+  try {
+    const {
+      success,
+      amount,
+      currency,
+      reference,
+      txId,
+      destination,
+      destinationLabel,
+      network,
+      reason,
+    } = withdrawalData;
+
+    const { name, email } = userData;
+    const template = success ? 'withdrawalSuccess' : 'withdrawalFailed';
+
+    const userEmailPromise = sendEmail({
+      to: email,
+      subject: success
+        ? `Withdrawal Successful: ${currency} ${amount}`
+        : `Withdrawal Failed: ${currency} ${amount} (Refunded)`,
+      template,
+      data: {
+        name, amount, currency, reference, txId, destination, destinationLabel, network, reason,
+        date: new Date().toLocaleString(),
+      },
+    });
+
+    const adminEmailsRaw = process.env.ADMIN_EMAIL;
+    let adminEmailPromise = Promise.resolve();
+    if (adminEmailsRaw) {
+      const adminEmails = adminEmailsRaw.split(',').map((e) => e.trim());
+      if (adminEmails.length > 0) {
+        adminEmailPromise = sendEmail({
+          to: adminEmails,
+          subject: `[ADMIN ALERT] Withdrawal ${success ? 'Completed' : 'Failed'}: ${currency} ${amount}`,
+          template: 'adminTransactionAlert',
+          data: {
+            id: txId || reference || 'N/A',
+            userName: name,
+            userEmail: email,
+            type: success ? 'Withdrawal (Completed)' : 'Withdrawal (Failed — Refunded)',
+            amount,
+            currency,
+            reference,
+            metadata: destination ? { destination, ...(network ? { network } : {}) } : undefined,
+            frontendUrl: process.env.FRONTEND_URL,
+          },
+        });
+      }
+    }
+
+    return await Promise.all([userEmailPromise, adminEmailPromise]);
+  } catch (error) {
+    logger.error('Failed to send withdrawal emails:', error);
+  }
+};
+
 export default {
   sendEmail,
   sendTransactionEmails,
+  sendWithdrawalEmails,
 };

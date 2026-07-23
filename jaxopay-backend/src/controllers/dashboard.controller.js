@@ -33,7 +33,16 @@ export const getDashboardSummary = catchAsync(async (req, res) => {
                UNION ALL
 
                SELECT wtx.id::uuid, wtx.transaction_type::varchar, wtx.amount::numeric, wtx.currency::varchar,
-                      wtx.status::varchar, wtx.description::text, wtx.created_at::timestamp, wtx.metadata::jsonb, (wtx.metadata->>'quidax_tx_id')::varchar as reference
+                      wtx.status::varchar, wtx.description::text, wtx.created_at::timestamp, wtx.metadata::jsonb,
+                      COALESCE(
+                        wtx.metadata->>'quidax_tx_id',
+                        wtx.metadata->>'obiex_tx_id',
+                        wtx.metadata->>'provider_swap_id',
+                        wtx.metadata->>'quidax_withdraw_id',
+                        wtx.metadata->>'obiex_withdraw_id',
+                        wtx.metadata->>'quidax_reference',
+                        wtx.metadata->>'obiex_reference'
+                      )::varchar as reference
                FROM wallet_transactions wtx
                JOIN wallets w ON w.id = wtx.wallet_id
                WHERE w.user_id = $1 AND NOT EXISTS (
