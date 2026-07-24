@@ -22,14 +22,23 @@ const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() =
 const cryptoFx = CRYPTO_PROVIDER === 'quidax' ? quidax : obiex;
 
 // ─── Ticker Cache (module-level, shared across requests) ─────────────────────
-// Pre-fetches ticker prices every 15s so exchange rate lookups are instant without
+// Pre-fetches ticker prices on a fixed interval so exchange rate lookups are instant without
 // hitting the provider on every request. Obiex-first (matches the rate the swap actually
 // executes at — this is the dashboard's "live price" bar, not the Quidax order-book page,
 // which calls its own market-data endpoints directly and is unaffected by this cache).
-// Falls back to Quidax's bulk ticker snapshot only if Obiex is unreachable.
+// Falls back to Quidax's bulk ticker snapshot if Obiex is unreachable or disabled below.
+//
+// IMPORTANT: this refresh is a server-wide background loop that runs continuously regardless
+// of user traffic. At the previous 15s interval, the 12-pair Obiex fetch alone generated ~2,880
+// calls/hour, well past Obiex's documented per-key rate limit (200/min) when sustained — this is
+// what got the API key temporarily disabled on 2026-07-23. Fixed by: (1) a much longer interval,
+// and (2) an instant, no-redeploy-needed kill switch (OBIEX_TICKER_DISABLED=true) to fall back to
+// Quidax-only for the ticker without touching CRYPTO_PROVIDER (which governs real money-moving
+// deposit/withdraw/swap calls and should stay independent of this decorative ticker).
 let _tickerSnapshot = {}; // { usdtngn: { ticker: { buy, sell, last, ... } }, ... }
 let _tickerSnapshotTime = 0;
-const TICKER_TTL_MS = 15000;
+const TICKER_TTL_MS = 5 * 60 * 1000; // 5 minutes — 12 pairs/refresh = ~144 calls/hour to Obiex, well under its 200/min limit
+const OBIEX_TICKER_DISABLED = String(process.env.OBIEX_TICKER_DISABLED || '').toLowerCase() === 'true';
 
 function createCryptoWithdrawalReference(userId) {
   const userPart = String(userId || 'user').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'user';
@@ -60,7 +69,7 @@ async function refreshTickerCacheFromObiex() {
 
 async function refreshTickerCache() {
   try {
-    if (CRYPTO_PROVIDER === 'obiex') {
+    if (CRYPTO_PROVIDER === 'obiex' && !OBIEX_TICKER_DISABLED) {
       const payload = await refreshTickerCacheFromObiex();
       if (Object.keys(payload).length > 0) {
         _tickerSnapshot = payload;
@@ -96,9 +105,9 @@ async function getAllTickers() {
   return _tickerSnapshot;
 }
 
-// Warm up on first import; refresh every 15s
+// Warm up on first import; refresh every 5 minutes thereafter
 refreshTickerCache();
-setInterval(refreshTickerCache, TICKER_TTL_MS);
+setInterval(refreshTickerCache, TICKER_TTL_MS).unref?.();
 
 // Extract buy/sell/last price from a raw Quidax ticker entry
 function extractPrice(entry, side = 'last') {
