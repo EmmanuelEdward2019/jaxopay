@@ -10,38 +10,6 @@ import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { enforceTierLimit } from '../services/kycLimits.service.js';
 import { sendWithdrawalEmails } from '../services/email.service.js';
 
-// Obiex's bank list uses its own internal codes (e.g. "0002" for 9PSB), not the real NIBSS
-// codes Korapay/the UI use (e.g. "120001" for 9PSB) — so the bank the user actually picked
-// (a Korapay bank_code — the frontend never sends bank_name) has to be resolved to a real name
-// via Korapay's own list first, then re-matched by NAME against Obiex's list to get the code
-// withdrawFiat() expects. Deliberately strict: no match → throw, rather than silently guessing
-// the wrong bank for a real money transfer.
-const normalizeBankName = (name) => String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-async function resolveObiexBankCode(korapayBankCode) {
-    const [korapayBanks, obiexBanks] = await Promise.all([
-        korapay.listBanks('NGN'),
-        obiex.getNgnBanks(),
-    ]);
-
-    const korapayBank = (korapayBanks || []).find((b) => (b.code || b.nibss_bank_code) === korapayBankCode);
-    if (!korapayBank) {
-        throw new AppError('Could not identify the selected bank. Please try again.', 422);
-    }
-
-    const target = normalizeBankName(korapayBank.name);
-    const exact = obiexBanks.find((b) => normalizeBankName(b.name) === target);
-    if (exact) return { code: exact.uuid || exact.sortCode, name: korapayBank.name };
-
-    const partial = obiexBanks.find((b) => {
-        const n = normalizeBankName(b.name);
-        return n.includes(target) || target.includes(n);
-    });
-    if (partial) return { code: partial.uuid || partial.sortCode, name: korapayBank.name };
-
-    throw new AppError(`"${korapayBank.name}" is not currently supported for Naira withdrawals. Please choose a different bank or contact support.`, 422);
-}
-
 async function notifyPayout(userId, payload) {
     try {
         const userRes = await query(
@@ -62,21 +30,30 @@ async function notifyPayout(userId, payload) {
 const korapay = new KorapayAdapter();
 
 // ─────────────────────────────────────────────
-// GET /transfers/banks  — ALL banks via Korapay's real NIBSS codes (kept even though NGN
-// payouts execute via Obiex — Obiex's bank list uses its own internal codes, not NIBSS codes,
-// which breaks account-name resolution below; see resolveObiexBankCode() for how NGN payouts
-// still reach Obiex despite the list itself staying on Korapay).
+// GET /transfers/banks  — NGN via Obiex (matches the payout provider — Obiex's own bank codes
+// are used consistently across list → resolve → payout, see resolveAccount/sendTransfer below).
+// Other currencies via Korapay (Obiex bank payouts are NGN-only).
 // ─────────────────────────────────────────────
 export const listBanks = catchAsync(async (req, res) => {
     const currency = req.query.currency || 'NGN';
 
     try {
-        const banks = await korapay.listBanks(currency);
-        const normalized = (banks || []).map((b) => ({
-            code: b.code || b.nibss_bank_code,
-            name: b.name,
-        })).filter((b) => b.code && b.name);
-        logger.info(`[Transfer] Fetched ${normalized.length} banks from Korapay (currency=${currency})`);
+        let normalized;
+        if (currency.toUpperCase() === 'NGN') {
+            const banks = await obiex.getNgnBanks();
+            normalized = (banks || []).map((b) => ({
+                code: b.uuid || b.sortCode,
+                name: b.name,
+            })).filter((b) => b.code && b.name);
+            logger.info(`[Transfer] Fetched ${normalized.length} banks from Obiex (NGN)`);
+        } else {
+            const banks = await korapay.listBanks(currency);
+            normalized = (banks || []).map((b) => ({
+                code: b.code || b.nibss_bank_code,
+                name: b.name,
+            })).filter((b) => b.code && b.name);
+            logger.info(`[Transfer] Fetched ${normalized.length} banks from Korapay (currency=${currency})`);
+        }
 
         if (normalized.length === 0) {
             throw new AppError('No banks returned. Please try again.', 503);
@@ -119,16 +96,20 @@ export const listBanks = catchAsync(async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// POST /transfers/resolve  — verify bank account name via Korapay
+// POST /transfers/resolve  — verify bank account name. NGN via Obiex (matches the bank list +
+// payout provider), other currencies via Korapay.
 // ─────────────────────────────────────────────
 export const resolveAccount = catchAsync(async (req, res) => {
     const { bank_code, account_number, currency = 'NGN' } = req.body;
     if (!bank_code || !account_number) {
         throw new AppError('bank_code and account_number are required', 400);
     }
+    const isNgn = currency.toUpperCase() === 'NGN';
 
     try {
-        const data = await korapay.resolveAccount(bank_code, account_number, currency.toUpperCase());
+        const data = isNgn
+            ? await obiex.resolveNgnAccount(bank_code, account_number)
+            : await korapay.resolveAccount(bank_code, account_number, currency.toUpperCase());
 
         const accountName = data?.account_name || data?.account_holder_name || data?.name;
         if (!accountName) {
@@ -146,8 +127,8 @@ export const resolveAccount = catchAsync(async (req, res) => {
         });
     } catch (err) {
         if (err instanceof AppError) throw err;
-        const { message } = getKorapayErrorDetails(err);
-        logger.error(`[Transfer] Korapay account resolve failed: ${message}`);
+        const message = isNgn ? (err.message || 'Obiex request failed') : getKorapayErrorDetails(err).message;
+        logger.error(`[Transfer] ${isNgn ? 'Obiex' : 'Korapay'} account resolve failed: ${message}`);
         throw new AppError(`Could not verify bank account: ${message}`, err.statusCode || 502);
     }
 });
@@ -248,19 +229,17 @@ export const sendTransfer = catchAsync(async (req, res) => {
         let transferStatus, providerReference, providerMetadata, isComplete;
 
         if (useObiex) {
-            // bank_code came from Korapay's (real NIBSS) bank list — Obiex needs its OWN
-            // internal bank code for the same bank, resolved by name.
-            const resolvedBank = await resolveObiexBankCode(bank_code);
-            const resolvedBankName = resolvedBank.name || bank_name;
-            logger.info(`[Transfer] Initiating Obiex NGN payout: ${reference} → ${account_name} (${resolvedBankName}/${account_number}) ${amountValue}`);
+            // bank_code is already an Obiex-native code — the bank list (listBanks) and account
+            // resolution (resolveAccount) both source from Obiex for NGN, so no translation needed.
+            logger.info(`[Transfer] Initiating Obiex NGN payout: ${reference} → ${account_name} (${bank_name || bank_code}/${account_number}) ${amountValue}`);
 
             const transferData = await obiex.withdrawFiat({
                 currency: transferCurrency,
                 amount: amountValue,
                 accountNumber: account_number,
                 accountName: account_name,
-                bankName: resolvedBankName,
-                bankCode: resolvedBank.code,
+                bankName: bank_name,
+                bankCode: bank_code,
                 reference,
                 narration: narration || `Transfer to ${account_name} via Jaxopay`,
             });

@@ -274,6 +274,23 @@ class ObiexAdapter {
   }
 
   /**
+   * Resolve a Naira account number to its holder's name — GET /ngn-payments/accounts/resolve.
+   * sortCode is the SAME code returned by getNgnBanks() (uuid/sortCode), so the bank the user
+   * picks from getNgnBanks() can be resolved and paid out using one consistent code throughout.
+   * Returns { account_name, account_number } (Korapay-shaped, for drop-in compatibility).
+   */
+  async resolveNgnAccount(sortCode, accountNumber) {
+    const data = await this._request('GET', '/ngn-payments/accounts/resolve', undefined, {
+      sortCode, accountNumber,
+    });
+    const d = data?.data || {};
+    return {
+      account_name: d.accountName || null,
+      account_number: d.accountNumber || accountNumber,
+    };
+  }
+
+  /**
    * Real Nigerian bank-account payout (NOT a crypto/address withdrawal) — POST /wallets/ext/debit/fiat.
    * destination: { accountNumber, accountName, bankName, bankCode } (bankCode from getNgnBanks()'s
    * `uuid`/`sortCode` field). Returns a Quidax-shaped {data:{id}, id, status, reference}.
