@@ -230,15 +230,24 @@ export const sendTransfer = catchAsync(async (req, res) => {
 
         if (useObiex) {
             // bank_code is already an Obiex-native code — the bank list (listBanks) and account
-            // resolution (resolveAccount) both source from Obiex for NGN, so no translation needed.
-            logger.info(`[Transfer] Initiating Obiex NGN payout: ${reference} → ${account_name} (${bank_name || bank_code}/${account_number}) ${amountValue}`);
+            // resolution (resolveAccount) both source from Obiex for NGN, so no code translation
+            // needed. The frontend never sends bank_name though, and withdrawFiat requires it —
+            // resolve it server-side from Obiex's own bank list by code.
+            const obiexBanks = await obiex.getNgnBanks();
+            const matchedBank = obiexBanks.find((b) => (b.uuid || b.sortCode) === bank_code);
+            const resolvedBankName = bank_name || matchedBank?.name;
+            if (!resolvedBankName) {
+                throw new AppError('Could not identify the selected bank. Please try again.', 422);
+            }
+
+            logger.info(`[Transfer] Initiating Obiex NGN payout: ${reference} → ${account_name} (${resolvedBankName}/${account_number}) ${amountValue}`);
 
             const transferData = await obiex.withdrawFiat({
                 currency: transferCurrency,
                 amount: amountValue,
                 accountNumber: account_number,
                 accountName: account_name,
-                bankName: bank_name,
+                bankName: resolvedBankName,
                 bankCode: bank_code,
                 reference,
                 narration: narration || `Transfer to ${account_name} via Jaxopay`,
