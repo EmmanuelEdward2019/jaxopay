@@ -132,7 +132,12 @@ export function createObiexWebhookService({
       let emailPayload = null;
 
       await transaction(async (client) => {
-        const txRes = await client.query(
+        // Crypto withdrawal first (wallet_transactions), then fiat bank payout (transactions,
+        // transaction_type='bank_transfer') — Obiex now handles both (crypto via
+        // /wallets/ext/debit/crypto, NGN bank payouts via /wallets/ext/debit/fiat), and both
+        // share the same WITHDRAWAL webhook event, matching Quidax's existing dual-table pattern.
+        let txType = 'wallet_transactions';
+        let txRes = await client.query(
           `SELECT id, wallet_id, amount, currency, status AS current_status, metadata
            FROM wallet_transactions
            WHERE metadata->>'obiex_withdraw_id' = $1
@@ -140,6 +145,19 @@ export function createObiexWebhookService({
            FOR UPDATE`,
           [String(transactionId || ''), reference ? String(reference) : null]
         );
+
+        if (txRes.rows.length === 0) {
+          txType = 'transactions';
+          txRes = await client.query(
+            `SELECT id, user_id, from_wallet_id AS wallet_id, from_amount AS amount, from_currency AS currency, status AS current_status, metadata
+             FROM transactions
+             WHERE transaction_type = 'bank_transfer'
+               AND (metadata->>'obiex_withdraw_id' = $1
+                 OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2 OR reference = $2)))
+             FOR UPDATE`,
+            [String(transactionId || ''), reference ? String(reference) : null]
+          );
+        }
 
         if (txRes.rows.length === 0) {
           logger.warn(`[WEBHOOK] Obiex withdrawal not found: ${transactionId} or ref ${reference}`);
@@ -153,8 +171,9 @@ export function createObiexWebhookService({
           return;
         }
 
+        const table = txType === 'wallet_transactions' ? 'wallet_transactions' : 'transactions';
         await client.query(
-          `UPDATE wallet_transactions
+          `UPDATE ${table}
            SET status = $1,
                metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
                updated_at = NOW(),
@@ -177,16 +196,20 @@ export function createObiexWebhookService({
           logger.info(`[WEBHOOK] ✅ Obiex withdrawal ${transactionId} confirmed successful`);
         }
 
-        const walletRes = await client.query(`SELECT user_id FROM wallets WHERE id = $1`, [tx.wallet_id]);
+        let userId = tx.user_id || null;
+        if (!userId) {
+          const walletRes = await client.query(`SELECT user_id FROM wallets WHERE id = $1`, [tx.wallet_id]);
+          userId = walletRes.rows[0]?.user_id || null;
+        }
         emailPayload = {
-          userId: walletRes.rows[0]?.user_id || null,
+          userId,
           success: newStatus === 'completed',
           amount: tx.amount,
           currency: tx.currency,
           reference: reference || transactionId,
           txId: tx.id,
-          destination: tx.metadata?.address || null,
-          destinationLabel: 'crypto address',
+          destination: tx.metadata?.address || tx.metadata?.account_number || null,
+          destinationLabel: txType === 'wallet_transactions' ? 'crypto address' : 'bank account',
           network: tx.metadata?.network || null,
         };
       });

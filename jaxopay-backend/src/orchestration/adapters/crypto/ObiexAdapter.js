@@ -76,6 +76,18 @@ class ObiexAdapter {
       rates: 5 * 1000,              // 5 seconds
     };
     setInterval(() => this._clearExpiredCache(), 60 * 1000).unref?.();
+
+    // Tracks whether a quotation was created against a "reversed" trade pair (buying the
+    // caller's `from` currency's counterpart — see _resolvePairOrientation) so executeSwap()
+    // can correctly relabel its from/to using the ORIGINAL caller intent, not Obiex's canonical
+    // pair orientation. Quotes expire in ~30s, so a short 5-minute sweep is generous headroom.
+    this._quoteOrientation = new Map(); // quotationId -> { reversed, from, to }
+    setInterval(() => {
+      const cutoff = Date.now() - 5 * 60 * 1000;
+      for (const [id, entry] of this._quoteOrientation.entries()) {
+        if (entry._storedAt < cutoff) this._quoteOrientation.delete(id);
+      }
+    }, 60 * 1000).unref?.();
   }
 
   isConfigured() {
@@ -250,6 +262,41 @@ class ObiexAdapter {
     };
   }
 
+  /** Bank list for Naira withdrawal — { name, uuid (=bank code), sortCode }. Cached 10 min. */
+  async getNgnBanks() {
+    const cacheKey = 'ngn:banks';
+    const cached = this._getFromCache(cacheKey, this._cacheTTL.currencies);
+    if (cached) return cached;
+    const data = await this._request('GET', '/ngn-payments/banks');
+    const list = data?.data || [];
+    this._setCache(cacheKey, list);
+    return list;
+  }
+
+  /**
+   * Real Nigerian bank-account payout (NOT a crypto/address withdrawal) — POST /wallets/ext/debit/fiat.
+   * destination: { accountNumber, accountName, bankName, bankCode } (bankCode from getNgnBanks()'s
+   * `uuid`/`sortCode` field). Returns a Quidax-shaped {data:{id}, id, status, reference}.
+   */
+  async withdrawFiat({ currency = 'NGN', amount, accountNumber, accountName, bankName, bankCode, reference, narration }) {
+    const body = {
+      destination: { accountNumber, accountName, bankName, bankCode },
+      amount: Number(amount),
+      currency: String(currency).toUpperCase(),
+      narration: narration || `Jaxopay withdrawal ${reference || ''}`.trim(),
+    };
+    const data = await this._request('POST', '/wallets/ext/debit/fiat', body);
+    const d = data?.data || {};
+    return {
+      data: { id: d.id || d.reference },
+      id: d.id || d.reference,
+      status: d.payout?.status || 'PENDING',
+      reference: d.reference || reference,
+      fee: d.payout?.fee,
+      raw: d,
+    };
+  }
+
   // ── Swap: quote → accept (mirrors Quidax's create → confirm two-step) ──────
 
   /**
@@ -270,28 +317,88 @@ class ObiexAdapter {
   }
 
   /**
+   * Obiex registers each trade pair in ONE canonical (source, target) orientation (per
+   * `GET /trades/pairs` — e.g. source=BTC/target=NGNX, never the reverse as a separate pair).
+   * `isSellable` means you can sell sourceId for targetId through this pair; `isBuyable` means
+   * you can buy sourceId USING targetId through this SAME pair (i.e. pay targetId, receive
+   * sourceId) — that's the mechanism for "buy crypto with NGN", not a second reversed pair.
+   * Cached for 10 minutes — pair list is static within a session.
+   */
+  async getTradePairs() {
+    const cacheKey = 'trades:pairs';
+    const cached = this._getFromCache(cacheKey, this._cacheTTL.currencies);
+    if (cached) return cached;
+    const data = await this._request('GET', '/trades/pairs');
+    const list = data?.data || [];
+    this._setCache(cacheKey, list);
+    return list;
+  }
+
+  /**
+   * Resolve the request shape Obiex actually expects for a user-level (from -> to) swap,
+   * given pairs are registered in one fixed orientation. Returns:
+   *   { sourceId, targetId, side, reversed } — reversed=true means the canonical pair has
+   *   fromObiex as its TARGET (buying fromObiex's counterpart), so side='BUY' is used instead
+   *   of assuming sourceId/targetId always match the caller's from/to directly.
+   */
+  async _resolvePairOrientation(fromObiex, toObiex) {
+    const pairs = await this.getTradePairs();
+    const direct = pairs.find((p) => p.source?.code === fromObiex && p.target?.code === toObiex);
+    if (direct && direct.isSellable !== false) {
+      return { sourceId: fromObiex, targetId: toObiex, side: 'SELL', reversed: false };
+    }
+    const reverse = pairs.find((p) => p.source?.code === toObiex && p.target?.code === fromObiex);
+    if (reverse && reverse.isBuyable !== false) {
+      return { sourceId: toObiex, targetId: fromObiex, side: 'BUY', reversed: true };
+    }
+    const e = new Error(`Trade pair not available: ${fromObiex} -> ${toObiex}`);
+    e.statusCode = 400;
+    throw e;
+  }
+
+  /**
    * Quidax-compatible: getSwapQuote({from,to,amount,side}) where side 'from' means `amount` is
-   * how much of `from` is being sold (Obiex side SELL), and side 'to' means `amount` is how much
-   * of `to` the user wants to receive (Obiex side BUY).
+   * how much of `from` is being given up, and side 'to' means `amount` is how much of `to` the
+   * user wants to receive. Internally resolves the correct Obiex sourceId/targetId/BUY-SELL
+   * orientation via `_resolvePairOrientation` — never assumes from/to map 1:1 onto sourceId/targetId.
    * Returns: {id, from_currency, to_currency, from_amount, to_amount, quoted_price, expires_at}
    */
   async getSwapQuote({ from, to, amount, side = 'from' }) {
-    const obiexSide = side === 'to' ? 'BUY' : 'SELL';
+    const fromObiex = this._toObiexCurrency(from);
+    const toObiex = this._toObiexCurrency(to);
+    const { sourceId, targetId, side: obiexSide, reversed } = await this._resolvePairOrientation(fromObiex, toObiex);
+
+    // amountIsForFrom: true when the caller's `amount` is denominated in `from` (side='from').
+    // Map that onto whichever of sourceId/targetId actually corresponds to `from` once the
+    // pair's canonical orientation is known (may be reversed vs. the caller's from/to order).
+    const amountIsForFrom = side !== 'to';
+    const amountIsForSource = reversed ? !amountIsForFrom : amountIsForFrom;
+
     const body = {
-      sourceId: this._toObiexCurrency(from),
-      targetId: this._toObiexCurrency(to),
-      amount: Number(amount),
+      sourceId,
+      targetId,
       side: obiexSide,
+      ...(amountIsForSource ? { amount: Number(amount) } : { amountToReceive: Number(amount) }),
     };
     const data = await this._request('POST', '/trades/quote', body);
     const d = data?.data || {};
+    // d.amount/d.amountReceived are always sourceId/targetId amounts respectively, in Obiex's
+    // resolved (possibly reversed) orientation — map them back to the caller's from/to, not
+    // Obiex's source/target, so the contract (from_amount is always "from") holds either way.
+    const fromAmount = reversed ? d.amountReceived : d.amount;
+    const toAmount = reversed ? d.amount : d.amountReceived;
+    if (d.id) {
+      this._quoteOrientation.set(d.id, {
+        reversed, from: String(from).toUpperCase(), to: String(to).toUpperCase(), _storedAt: Date.now(),
+      });
+    }
     return {
       id: d.id,
-      from_currency: this._fromObiexCurrency(d.sourceCode) || String(from).toUpperCase(),
-      to_currency: this._fromObiexCurrency(d.targetCode) || String(to).toUpperCase(),
-      from_amount: d.amount,
-      to_amount: d.amountReceived,
-      quoted_price: d.rate,
+      from_currency: String(from).toUpperCase(),
+      to_currency: String(to).toUpperCase(),
+      from_amount: fromAmount,
+      to_amount: toAmount,
+      quoted_price: reversed ? (fromAmount > 0 ? toAmount / fromAmount : d.rate) : d.rate,
       expires_at: d.expiryDate,
       expires_in: d.expiresIn,
       raw: d,
@@ -330,21 +437,42 @@ class ObiexAdapter {
   async executeSwap(quotationId) {
     const data = await this._request('POST', `/trades/quote/${encodeURIComponent(quotationId)}`, {});
     const d = data?.data || {};
-    const fromCode = this._fromObiexCurrency(d.pair?.source?.code);
-    const toCode = this._fromObiexCurrency(d.pair?.target?.code);
+
+    // Prefer the orientation recorded when the quote was created (getSwapQuote) — Obiex's raw
+    // pair.source/target reflect ITS canonical pair orientation, which is reversed vs. the
+    // caller's from/to whenever the swap went through the isBuyable/BUY-side path. Getting this
+    // wrong would credit/debit the wrong currencies locally, so only fall back to the raw pair
+    // codes (correct in the non-reversed case) if the orientation record isn't found — e.g. an
+    // older in-flight quote created before this tracking existed.
+    const orientation = this._quoteOrientation.get(quotationId);
+    this._quoteOrientation.delete(quotationId);
+
+    let fromCode, toCode, fromAmount, toAmount;
+    if (orientation) {
+      fromCode = orientation.from;
+      toCode = orientation.to;
+      fromAmount = orientation.reversed ? d.amountReceived : d.amount;
+      toAmount = orientation.reversed ? d.amount : d.amountReceived;
+    } else {
+      fromCode = this._fromObiexCurrency(d.pair?.source?.code);
+      toCode = this._fromObiexCurrency(d.pair?.target?.code);
+      fromAmount = d.amount;
+      toAmount = d.amountReceived;
+    }
+
     return {
       id: d.id,
       from_currency: fromCode,
       to_currency: toCode,
-      from_amount: d.amount,
-      received_amount: d.amountReceived,
-      to_amount: d.amountReceived,
+      from_amount: fromAmount,
+      received_amount: toAmount,
+      to_amount: toAmount,
       rate: d.rate,
       swap_quotation: {
         from_currency: fromCode,
         to_currency: toCode,
-        from_amount: d.amount,
-        to_amount: d.amountReceived,
+        from_amount: fromAmount,
+        to_amount: toAmount,
       },
       raw: d,
     };

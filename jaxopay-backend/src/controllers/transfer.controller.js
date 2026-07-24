@@ -3,6 +3,7 @@ import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { auditFromReq } from '../services/audit.service.js';
 import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js';
+import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
 import { getSpendableBalance } from '../utils/walletBalance.js';
 import { getKorapayErrorDetails, getKorapayTransferFailureMessage } from '../utils/korapay.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
@@ -29,19 +30,29 @@ async function notifyPayout(userId, payload) {
 const korapay = new KorapayAdapter();
 
 // ─────────────────────────────────────────────
-// GET /transfers/banks  — ALL banks from Korapay live API
+// GET /transfers/banks  — NGN via Obiex (matches the payout provider); other currencies via
+// Korapay (Obiex bank payouts are NGN-only — /ngn-payments/banks has no other-currency equivalent).
 // ─────────────────────────────────────────────
 export const listBanks = catchAsync(async (req, res) => {
     const currency = req.query.currency || 'NGN';
 
     try {
-        const banks = await korapay.listBanks(currency);
-        const normalized = (banks || []).map((b) => ({
-            code: b.code || b.nibss_bank_code,
-            name: b.name,
-        })).filter((b) => b.code && b.name);
-
-        logger.info(`[Transfer] Fetched ${normalized.length} banks from Korapay (currency=${currency})`);
+        let normalized;
+        if (currency.toUpperCase() === 'NGN') {
+            const banks = await obiex.getNgnBanks();
+            normalized = (banks || []).map((b) => ({
+                code: b.uuid || b.sortCode,
+                name: b.name,
+            })).filter((b) => b.code && b.name);
+            logger.info(`[Transfer] Fetched ${normalized.length} banks from Obiex (NGN)`);
+        } else {
+            const banks = await korapay.listBanks(currency);
+            normalized = (banks || []).map((b) => ({
+                code: b.code || b.nibss_bank_code,
+                name: b.name,
+            })).filter((b) => b.code && b.name);
+            logger.info(`[Transfer] Fetched ${normalized.length} banks from Korapay (currency=${currency})`);
+        }
 
         if (normalized.length === 0) {
             throw new AppError('No banks returned. Please try again.', 503);
@@ -206,33 +217,64 @@ export const sendTransfer = catchAsync(async (req, res) => {
         );
     });
 
-    // 2. Call Korapay disbursement API
+    // 2. Call the payout provider — NGN goes through Obiex (real bank-account payout via
+    // POST /wallets/ext/debit/fiat), other supported currencies remain on Korapay.
+    const useObiex = transferCurrency === 'NGN';
     try {
-        logger.info(`[Transfer] Initiating Korapay payout: ${reference} → ${account_name} (${bank_code}/${account_number}) ${transferCurrency} ${amountValue}`);
+        let transferStatus, providerReference, providerMetadata, isComplete;
 
-        const transferData = await korapay.disburse({
-            reference,
-            amount: amountValue,
-            currency: transferCurrency,
-            bankCode: bank_code,
-            accountNumber: account_number,
-            accountName: account_name,
-            narration: narration || `Transfer to ${account_name} via Jaxopay`,
-            customerEmail: req.user.email,
-        });
+        if (useObiex) {
+            logger.info(`[Transfer] Initiating Obiex NGN payout: ${reference} → ${account_name} (${bank_code}/${account_number}) ${amountValue}`);
 
-        const transferStatus = (transferData?.status || 'processing').toLowerCase();
-        const providerReference = transferData?.providerReference || null;
+            const transferData = await obiex.withdrawFiat({
+                currency: transferCurrency,
+                amount: amountValue,
+                accountNumber: account_number,
+                accountName: account_name,
+                bankName: bank_name,
+                bankCode: bank_code,
+                reference,
+                narration: narration || `Transfer to ${account_name} via Jaxopay`,
+            });
 
-        logger.info(`[Transfer] Korapay response for ${reference}: status=${transferStatus} success=${transferData?.success}`);
+            transferStatus = String(transferData?.status || 'PENDING').toLowerCase();
+            providerReference = transferData?.id || null;
+            // Obiex settles the bank payout asynchronously and confirms via webhook (see
+            // updateObiexWithdrawal) — an accepted submission ("approved"/"pending") is NOT
+            // final completion, unlike Korapay which can return an immediate success.
+            isComplete = false;
+            providerMetadata = { provider: 'obiex', obiex_withdraw_id: providerReference, obiex_reference: reference, obiex_status: transferStatus };
 
-        // Korapay returned an explicit failure synchronously — treat as failed and reverse.
-        if (transferData?.success === false || transferStatus === 'failed') {
-            throw new AppError(transferData?.raw?.message || 'The payout was rejected. Please try again or contact support.', 502);
+            logger.info(`[Transfer] Obiex response for ${reference}: status=${transferStatus}`);
+        } else {
+            logger.info(`[Transfer] Initiating Korapay payout: ${reference} → ${account_name} (${bank_code}/${account_number}) ${transferCurrency} ${amountValue}`);
+
+            const transferData = await korapay.disburse({
+                reference,
+                amount: amountValue,
+                currency: transferCurrency,
+                bankCode: bank_code,
+                accountNumber: account_number,
+                accountName: account_name,
+                narration: narration || `Transfer to ${account_name} via Jaxopay`,
+                customerEmail: req.user.email,
+            });
+
+            transferStatus = (transferData?.status || 'processing').toLowerCase();
+            providerReference = transferData?.providerReference || null;
+
+            logger.info(`[Transfer] Korapay response for ${reference}: status=${transferStatus} success=${transferData?.success}`);
+
+            // Korapay returned an explicit failure synchronously — treat as failed and reverse.
+            if (transferData?.success === false || transferStatus === 'failed') {
+                throw new AppError(transferData?.raw?.message || 'The payout was rejected. Please try again or contact support.', 502);
+            }
+
+            isComplete = ['success', 'successful', 'completed'].includes(transferStatus);
+            providerMetadata = { provider: 'korapay', provider_reference: providerReference, korapay_status: transferStatus };
         }
 
-        // Persist the provider reference; mark completed only on immediate success.
-        const isComplete = ['success', 'successful', 'completed'].includes(transferStatus);
+        // Persist the provider reference; mark completed only on immediate, confirmed success.
         await transaction(async (client) => {
             await client.query(
                 `UPDATE transactions
@@ -245,7 +287,7 @@ export const sendTransfer = catchAsync(async (req, res) => {
                 [
                     isComplete ? 'completed' : 'processing',
                     providerReference,
-                    JSON.stringify({ provider: 'korapay', provider_reference: providerReference, korapay_status: transferStatus }),
+                    JSON.stringify(providerMetadata),
                     reference,
                 ]
             );
@@ -277,12 +319,14 @@ export const sendTransfer = catchAsync(async (req, res) => {
             },
         });
 
-    } catch (korapayErr) {
-        // Korapay request failed — reverse the reserved funds and mark the transfer failed.
-        const friendlyMessage = korapayErr instanceof AppError
-            ? korapayErr.message
-            : getKorapayTransferFailureMessage(korapayErr, transferCurrency);
-        logger.error(`[Transfer] Korapay disburse failed for ${reference}: ${getKorapayErrorDetails(korapayErr).message}`);
+    } catch (providerErr) {
+        // Provider request failed — reverse the reserved funds and mark the transfer failed.
+        const friendlyMessage = providerErr instanceof AppError
+            ? providerErr.message
+            : useObiex
+                ? (providerErr.message || 'The payout was rejected. Please try again or contact support.')
+                : getKorapayTransferFailureMessage(providerErr, transferCurrency);
+        logger.error(`[Transfer] ${useObiex ? 'Obiex' : 'Korapay'} disburse failed for ${reference}: ${useObiex ? friendlyMessage : getKorapayErrorDetails(providerErr).message}`);
 
         await transaction(async (client) => {
             await client.query(
@@ -309,12 +353,12 @@ export const sendTransfer = catchAsync(async (req, res) => {
             destinationLabel: 'bank account',
         });
 
-        throw new AppError(friendlyMessage, korapayErr.statusCode || 502);
+        throw new AppError(friendlyMessage, providerErr.statusCode || 502);
     }
 });
 
 // ─────────────────────────────────────────────
-// POST /transfers/verify  — poll Korapay for a payout's status and reconcile it
+// POST /transfers/verify  — poll the payout provider's status and reconcile it
 // (lets a "Processing" transfer resolve itself without waiting on the webhook).
 // ─────────────────────────────────────────────
 export const verifyTransfer = catchAsync(async (req, res) => {
@@ -322,7 +366,7 @@ export const verifyTransfer = catchAsync(async (req, res) => {
     if (!reference) throw new AppError('reference is required', 400);
 
     const txRes = await query(
-        `SELECT id, user_id, from_wallet_id, from_amount, from_currency, status
+        `SELECT id, user_id, from_wallet_id, from_amount, from_currency, status, metadata
          FROM transactions
          WHERE reference = $1 AND transaction_type = 'bank_transfer'`,
         [reference]
@@ -336,14 +380,27 @@ export const verifyTransfer = catchAsync(async (req, res) => {
         return res.status(200).json({ success: true, data: { reference, status: tx.status } });
     }
 
-    // Ask Korapay for the live disbursement status.
+    const isObiex = tx.metadata?.provider === 'obiex' || tx.from_currency?.toUpperCase() === 'NGN';
+
+    // Ask the provider for the live disbursement status.
     let providerStatus;
     try {
-        const result = await korapay.getDisbursementStatus(reference);
-        providerStatus = (result.status || '').toLowerCase();
+        if (isObiex) {
+            const obiexWithdrawId = tx.metadata?.obiex_withdraw_id;
+            if (!obiexWithdrawId) {
+                // No provider id recorded yet (e.g. the submit call itself hadn't returned one) —
+                // nothing to poll; leave as-is for the webhook to finalize.
+                return res.status(200).json({ success: true, data: { reference, status: tx.status, pending: true } });
+            }
+            const result = await obiex.getTransactionById(obiexWithdrawId);
+            providerStatus = String(result?.payout?.status || result?.status || '').toLowerCase();
+        } else {
+            const result = await korapay.getDisbursementStatus(reference);
+            providerStatus = (result.status || '').toLowerCase();
+        }
         logger.info(`[Transfer] verify ${reference}: provider status = ${providerStatus || 'unknown'}`);
     } catch (err) {
-        const { message } = getKorapayErrorDetails(err);
+        const message = isObiex ? (err.message || 'unknown error') : getKorapayErrorDetails(err).message;
         logger.warn(`[Transfer] verify ${reference} provider query failed: ${message}`);
         // Couldn't reach the provider — leave the transaction as-is.
         return res.status(200).json({ success: true, data: { reference, status: tx.status, pending: true } });
@@ -371,7 +428,7 @@ export const verifyTransfer = catchAsync(async (req, res) => {
         return res.status(200).json({ success: true, data: { reference, status: 'completed' } });
     }
 
-    if (['failed', 'reversed', 'cancelled', 'declined'].includes(providerStatus)) {
+    if (['failed', 'reversed', 'cancelled', 'canceled', 'declined', 'rejected'].includes(providerStatus)) {
         // Reverse the reserved funds (idempotent — only if not already finalised).
         let didFinalize = false;
         await transaction(async (client) => {
