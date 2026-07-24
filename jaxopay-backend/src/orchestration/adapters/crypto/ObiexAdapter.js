@@ -51,12 +51,13 @@ class ObiexAdapter {
     this.client.interceptors.request.use((req) => {
       if (!this.apiKey || !this.apiSecret) return req;
       const method = (req.method || 'get').toUpperCase();
-      // req.url is the path passed to client.request/get/post (relative), e.g. '/trades/quote'.
-      // Sign the PATHNAME only — strip any query string defensively (query params should be
-      // passed via axios `params`, never concatenated into the url, to avoid a signature mismatch
-      // if Obiex's HMAC does not cover query strings, mirroring a real bug hit with another
-      // provider's HMAC scheme).
-      const urlPath = String(req.url || '').split('?')[0];
+      // req.url is the path passed to client.request/get/post (relative), e.g. '/trades/quote',
+      // and INCLUDES the query string when one is present (see _request() — params are appended
+      // to the url directly, not passed via axios's separate `params` option). Sign it as-is:
+      // confirmed empirically that Obiex's HMAC DOES cover the query string — GET requests with
+      // query params (e.g. /ngn-payments/accounts/resolve?sortCode=..&accountNumber=..) return
+      // 401 "Unable to verify authorization token" if it's excluded from the signed content.
+      const urlPath = String(req.url || '');
       const path = `${this._pathPrefix}${urlPath.startsWith('/') ? urlPath : `/${urlPath}`}`;
       const timestamp = Date.now();
       const signature = crypto
@@ -135,10 +136,14 @@ class ObiexAdapter {
       throw e;
     }
     try {
-      // Query params are passed via axios `params` (never concatenated into `path`) so the
-      // signed pathname always excludes them — see the signing interceptor's comment.
+      // Query params are appended directly to `url` (not passed via axios's separate `params`
+      // option) so the signing interceptor — which reads `req.url` — sees the exact same string
+      // that gets sent, guaranteeing the signed content and the actual request always match.
+      const qs = params && Object.keys(params).length > 0
+        ? `?${new URLSearchParams(params).toString()}`
+        : '';
       const res = await this.circuitBreaker.execute(() =>
-        this.client.request({ method, url: path, data: body, params })
+        this.client.request({ method, url: `${path}${qs}`, data: body })
       );
       return res.data;
     } catch (err) {
