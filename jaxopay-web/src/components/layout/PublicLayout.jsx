@@ -40,7 +40,6 @@ export default function PublicLayout({ children }) {
     { name: 'Global Payments', href: '/products/payments', description: 'Cross-border money transfers' },
     { name: 'Virtual Cards', href: '/products/cards', description: 'USD virtual cards' },
     { name: 'Crypto Exchange', href: '/products/crypto', description: 'Buy & sell crypto' },
-    { name: 'Gift Cards', href: '/products/giftcards', description: 'Trade gift cards' },
   ];
 
   const isActive = (href) => {
