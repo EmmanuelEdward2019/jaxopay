@@ -299,13 +299,18 @@ class ObiexAdapter {
    * Real Nigerian bank-account payout (NOT a crypto/address withdrawal) — POST /wallets/ext/debit/fiat.
    * destination: { accountNumber, accountName, bankName, bankCode } (bankCode from getNgnBanks()'s
    * `uuid`/`sortCode` field). Returns a Quidax-shaped {data:{id}, id, status, reference}.
+   * `currency` is translated NGN->NGNX like every other Obiex trading/wallet call — Obiex rejects
+   * a literal "NGN" here with "Currency NGN not available for withdrawal".
    */
   async withdrawFiat({ currency = 'NGN', amount, accountNumber, accountName, bankName, bankCode, reference, narration }) {
+    // Obiex caps narration at 40 chars — our own default (which embeds the recipient's name)
+    // can easily exceed that, and any free-text narration a user typed isn't bounded either.
+    const rawNarration = narration || `Jaxopay withdrawal ${reference || ''}`.trim();
     const body = {
       destination: { accountNumber, accountName, bankName, bankCode },
       amount: Number(amount),
-      currency: String(currency).toUpperCase(),
-      narration: narration || `Jaxopay withdrawal ${reference || ''}`.trim(),
+      currency: this._toObiexCurrency(currency),
+      narration: String(rawNarration).slice(0, 40),
     };
     const data = await this._request('POST', '/wallets/ext/debit/fiat', body);
     const d = data?.data || {};
