@@ -680,7 +680,19 @@ class CurrencyEngineService {
     async _creditRampDestination(client, r) {
         const details = r.recipient_details || {};
         const credit = Number(r.converted_amount) || 0;
-        if (details.mode === 'internal' && credit > 0) {
+        if (details.mode === 'internal') {
+            // Internal mode means the payout is JAXOPAY's own wallet, not an external bank/crypto
+            // address — so a missing/zero converted_amount here means we're about to mark this
+            // ramp COMPLETED without ever crediting anything. Previously this fell through
+            // silently (the `credit > 0` check just skipped the INSERT and the status update
+            // still ran unconditionally below) — the transaction showed "Completed" with nothing
+            // ever landing in the user's wallet. Refuse instead, so the ramp stays PENDING/retryable
+            // and the caller (reconcileRamp's sweep, or the ops confirm action) surfaces the failure
+            // instead of silently lying about success.
+            if (!(credit > 0)) {
+                logger.error(`[ramp] Refusing to complete ramp ${r.id}: internal mode but converted_amount is ${r.converted_amount}`);
+                throw new AppError(`Cannot complete ramp: credit amount is ${credit}`, 500, 'RAMP_CREDIT_AMOUNT_INVALID');
+            }
             const walletType = r.type === 'crypto_onramp' ? 'crypto' : 'fiat';
             await client.query(
                 `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, is_active)

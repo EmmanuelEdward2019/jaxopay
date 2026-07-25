@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeftRight, RefreshCw, ArrowDown, AlertCircle, Check,
+  ArrowLeftRight, RefreshCw, ArrowDown, ArrowRight, AlertCircle, Check,
   ChevronDown, Search, X, ShieldCheck, Clock, Loader2
 } from 'lucide-react';
 import cryptoService from '../../services/cryptoService';
@@ -125,6 +125,7 @@ const InstantSwap = () => {
   const [swapPhase, setSwapPhase] = useState('idle'); // idle|quoting|quoted|refreshing|confirming|polling|completed|failed
   const [swapError, setSwapError] = useState(null);
   const [swapResult, setSwapResult] = useState(null);
+  const [oldToBalance, setOldToBalance] = useState(null);
   const [countdownSecs, setCountdownSecs] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -328,6 +329,9 @@ const InstantSwap = () => {
     }
 
     setSwapPhase('confirming');
+    // Capture the "before" balance so the completion screen can show old → new and make the
+    // credit visibly obvious, rather than the user having to trust a status label.
+    setOldToBalance(getBalance(toCode));
     try {
       const activeQuotationId = quotationIdRef.current;
       quotationIdRef.current = null;
@@ -372,6 +376,7 @@ const InstantSwap = () => {
     setQuotation(null);
     setSwapResult(null);
     setSwapError(null);
+    setOldToBalance(null);
     quotationIdRef.current = null;
   };
 
@@ -479,6 +484,24 @@ const InstantSwap = () => {
                   ? 'Your swap has been submitted. It may take a moment to settle.'
                   : `You swapped ${payAmount} ${fromCode} for ${receiveAmount} ${toCode}`}
               </p>
+
+              {swapResult.status !== 'initiated' && oldToBalance != null && (
+                <div className="bg-muted/50 rounded-xl p-4">
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">
+                    Your new {toCode} balance
+                  </p>
+                  <div className="flex items-center justify-center gap-2.5">
+                    <span className="text-sm text-muted-foreground line-through decoration-2 tabular-nums">
+                      {fmtBal(oldToBalance, toCode)}
+                    </span>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-lg font-bold text-success tabular-nums">
+                      {fmtBal(getBalance(toCode), toCode)} {toCode}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <button onClick={handleNewSwap}
                 className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors">
                 New Swap

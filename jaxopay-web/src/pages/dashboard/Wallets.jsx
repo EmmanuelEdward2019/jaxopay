@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
-    Wallet, ArrowUpRight, ArrowDownLeft, ArrowLeftRight,
+    Wallet, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, ArrowRight,
     Eye, EyeOff, Search, X, ChevronDown, RefreshCw,
     Copy, Check, Info, AlertCircle, ShieldCheck, CheckCircle,
     Star, TrendingUp, Plus, Building2, Users, Send
@@ -20,13 +20,31 @@ import { formatCurrency, formatDateTime } from '../../utils/formatters';
 const isPinError = (code) => ['PIN_INCORRECT', 'PIN_LOCKED', 'PIN_NOT_SET', 'PIN_REQUIRED'].includes(code);
 
 // Shared end-of-transaction status screen (so the user always sees an outcome).
-const TxResultScreen = ({ ok, title, message, reference, onClose }) => (
+const TxResultScreen = ({ ok, title, message, reference, onClose, balanceChange }) => (
     <div className="p-8 text-center">
         <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${ok ? 'bg-success/10' : 'bg-danger/10'}`}>
             {ok ? <CheckCircle className="w-10 h-10 text-success" /> : <AlertCircle className="w-10 h-10 text-danger" />}
         </div>
         <h3 className="text-xl font-bold text-foreground mb-2">{title}</h3>
         <p className="text-sm text-muted-foreground mb-4">{message}</p>
+
+        {ok && balanceChange && (
+            <div className="bg-muted/50 rounded-xl p-4 mb-4">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">
+                    Your new {balanceChange.code} balance
+                </p>
+                <div className="flex items-center justify-center gap-2.5">
+                    <span className="text-sm text-muted-foreground line-through decoration-2 tabular-nums">
+                        {balanceChange.oldValue}
+                    </span>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-lg font-bold text-success tabular-nums">
+                        {balanceChange.newValue} {balanceChange.code}
+                    </span>
+                </div>
+            </div>
+        )}
+
         {reference && <p className="text-xs text-muted-foreground mb-6">Reference: <span className="font-mono">{reference}</span></p>}
         <button onClick={onClose} className="w-full py-3.5 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors">Done</button>
     </div>
@@ -1155,9 +1173,11 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
     }, [recipient, selectedBank, code, isCrypto]);
 
     const [done, setDone] = useState(null);
+    const [oldBalance, setOldBalance] = useState(null);
 
     const handleWithdraw = async (pin) => {
         setPinProcessing(true); setPinError(''); setError(null);
+        setOldBalance(balance);
         const res = isCrypto
             ? await cryptoService.withdraw({ coin: code, address: recipient, amount: parseFloat(amount), network, memo: description, pin })
             : await transferService.sendTransfer({
@@ -1177,7 +1197,12 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
             title={isCrypto ? 'Withdrawal Submitted' : 'Transfer Sent'}
             message={isCrypto
                 ? `Your ${code} withdrawal is being processed. You'll be notified once it's confirmed on-chain.`
-                : `${amount} ${code} is on its way to the recipient.`} />
+                : `${amount} ${code} is on its way to the recipient.`}
+            balanceChange={oldBalance != null ? {
+                code,
+                oldValue: oldBalance.toFixed(isCrypto ? 6 : 2),
+                newValue: balance.toFixed(isCrypto ? 6 : 2),
+            } : null} />
     );
 
     if (!walletId || balance <= 0) {
@@ -1306,9 +1331,11 @@ const TransferForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
     const isCrypto = type === 'crypto';
 
     const [done, setDone] = useState(null);
+    const [oldBalance, setOldBalance] = useState(null);
 
     const handleTransfer = async (pin) => {
         setPinProcessing(true); setPinError(''); setError(null);
+        setOldBalance(balance);
         const res = await walletService.transfer(recipient, parseFloat(amount), code, description, pin);
         if (res.success) { setShowPin(false); onRefresh(); setDone({ ok: true }); }
         else if (isPinError(res.code)) { setPinError(res.error || 'Incorrect PIN. Please try again.'); }
@@ -1318,7 +1345,12 @@ const TransferForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
 
     if (done) return (
         <TxResultScreen ok onClose={onClose} title="Transfer Sent"
-            message={`${amount} ${code} has been sent to ${recipient}.`} />
+            message={`${amount} ${code} has been sent to ${recipient}.`}
+            balanceChange={oldBalance != null ? {
+                code,
+                oldValue: oldBalance.toFixed(isCrypto ? 6 : 2),
+                newValue: balance.toFixed(isCrypto ? 6 : 2),
+            } : null} />
     );
 
     if (balance <= 0) {
@@ -1445,9 +1477,11 @@ const ExternalTransferForm = ({ code, type, balanceMap, onClose, onRefresh }) =>
     }, [recipient, selectedBank, code, isCrypto]);
 
     const [done, setDone] = useState(null);
+    const [oldBalance, setOldBalance] = useState(null);
 
     const handleExternalTransfer = async (pin) => {
         setPinProcessing(true); setPinError(''); setError(null);
+        setOldBalance(balance);
         const res = isCrypto
             ? await cryptoService.withdraw({ coin: code, address: recipient, amount: parseFloat(amount), network, memo: description, pin })
             : await transferService.sendTransfer({
@@ -1464,6 +1498,11 @@ const ExternalTransferForm = ({ code, type, balanceMap, onClose, onRefresh }) =>
 
     if (done) return (
         <TxResultScreen ok={done.ok} reference={done.reference} onClose={onClose}
+            balanceChange={oldBalance != null ? {
+                code,
+                oldValue: oldBalance.toFixed(isCrypto ? 6 : 2),
+                newValue: balance.toFixed(isCrypto ? 6 : 2),
+            } : null}
             title={isCrypto ? 'Withdrawal Submitted' : 'Transfer Sent'}
             message={isCrypto
                 ? `Your ${code} withdrawal is being processed. You'll be notified once it's confirmed on-chain.`

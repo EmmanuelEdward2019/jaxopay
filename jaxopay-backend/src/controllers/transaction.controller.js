@@ -111,12 +111,20 @@ const combinedQuery = `
   SELECT
     fx.id,
     NULL::uuid as wallet_id,
-    (CASE fx.type WHEN 'swap' THEN 'exchange' WHEN 'international_payment' THEN 'transfer' ELSE fx.type END)::varchar as transaction_type,
+    (CASE fx.type
+       WHEN 'swap' THEN 'exchange'
+       WHEN 'international_payment' THEN 'transfer'
+       WHEN 'crypto_offramp' THEN 'exchange'
+       WHEN 'crypto_onramp' THEN 'exchange'
+       ELSE fx.type
+     END)::varchar as transaction_type,
     fx.amount::numeric,
     fx.from_currency::varchar as currency,
     (CASE UPPER(fx.status) WHEN 'SUCCESS' THEN 'completed' WHEN 'PROCESSING' THEN 'pending' WHEN 'FAILED' THEN 'failed' ELSE LOWER(fx.status) END)::varchar as status,
     (CASE fx.type
        WHEN 'swap' THEN 'Currency Swap: ' || fx.from_currency || ' → ' || fx.to_currency
+       WHEN 'crypto_offramp' THEN 'Sold ' || fx.from_currency || ' for ' || fx.to_currency
+       WHEN 'crypto_onramp' THEN 'Bought ' || fx.to_currency || ' with ' || fx.from_currency
        ELSE 'International Transfer to ' || COALESCE(fx.recipient_details->>'name', fx.to_currency)
      END)::text as description,
     fx.recipient_details as metadata,
