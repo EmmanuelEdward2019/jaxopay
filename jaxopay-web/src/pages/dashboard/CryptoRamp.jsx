@@ -8,6 +8,7 @@ import fxService from '../../services/fxService';
 import walletService from '../../services/walletService';
 import kycService from '../../services/kycService';
 import PinModal from '../../components/common/PinModal';
+import SearchableBankSelect from '../../components/common/SearchableBankSelect';
 import { formatCurrency } from '../../utils/formatters';
 
 const STABLECOINS = ['USDT', 'USDC'];
@@ -321,12 +322,14 @@ const CryptoRamp = () => {
                                     internalLabel="NGN to my wallet" externalLabel="NGN to a bank" />
                                 {sell.mode === 'external' ? (
                                     <>
-                                        <Field label="Recipient bank">
-                                            <select value={sell.networkId} onChange={(e) => setSell({ ...sell, networkId: e.target.value })} className={inputCls}>
-                                                <option value="">Select bank…</option>
-                                                {payoutNetworks.map((n) => <option key={n.id || n.code} value={n.id || n.code}>{n.name}</option>)}
-                                            </select>
-                                        </Field>
+                                        <SearchableBankSelect
+                                            items={payoutNetworks}
+                                            selected={payoutNetworks.find(n => (n.id || n.code) === sell.networkId) || null}
+                                            label="Recipient bank"
+                                            placeholder="Select bank…"
+                                            getId={(n) => n.id || n.code}
+                                            onSelect={(n) => setSell({ ...sell, networkId: n.id || n.code })}
+                                        />
                                         <div className="grid grid-cols-2 gap-3">
                                             <Field label="Account number">
                                                 <input value={sell.accountNumber} onChange={(e) => setSell({ ...sell, accountNumber: e.target.value })} className={inputCls} />

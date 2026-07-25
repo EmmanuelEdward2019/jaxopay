@@ -9,7 +9,6 @@ import {
     CheckCircle2,
     AlertCircle,
     ChevronDown,
-    Building2,
     User,
     CreditCard,
     ArrowRight,
@@ -19,6 +18,7 @@ import { Link } from 'react-router-dom';
 import fxService from '../../services/fxService';
 import walletService from '../../services/walletService';
 import PinModal from '../../components/common/PinModal';
+import SearchableBankSelect from '../../components/common/SearchableBankSelect';
 import { formatCurrency } from '../../utils/formatters';
 import { useRecentInputs } from '../../hooks/useRecentInputs';
 
@@ -522,36 +522,24 @@ const CrossBorder = () => {
                                                 </div>
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-sm font-bold text-foreground">Recipient Bank / Network</label>
-                                                <div className="relative">
-                                                    <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                                    <select
-                                                        value={transferData.networkId}
-                                                        disabled={!transferData.recipientCountry || networksLoading}
-                                                        onChange={(e) => {
-                                                            const n = payoutNetworks.find(x => x.id === e.target.value);
-                                                            setTransferData(prev => ({
-                                                                ...prev,
-                                                                networkId: n?.id || '',
-                                                                networkName: n?.name || '',
-                                                                networkAccountType: n?.accountNumberType || '',
-                                                                networkChannelIds: n?.channelIds || [],
-                                                            }));
-                                                        }}
-                                                        className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all disabled:opacity-50"
-                                                    >
-                                                        <option value="">
-                                                            {!transferData.recipientCountry ? 'Select a country first'
-                                                                : networksLoading ? 'Loading banks…'
-                                                                    : `Select bank / network (${payoutNetworks.length})`}
-                                                        </option>
-                                                        {payoutNetworks.map((n) => (
-                                                            <option key={n.id} value={n.id}>
-                                                                {n.name}{n.accountNumberType === 'phone' ? ' (Mobile Money)' : ''}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
+                                                <SearchableBankSelect
+                                                    items={payoutNetworks}
+                                                    selected={payoutNetworks.find(n => n.id === transferData.networkId) || null}
+                                                    loading={networksLoading}
+                                                    label="Recipient Bank / Network"
+                                                    placeholder={!transferData.recipientCountry ? 'Select a country first' : 'Select bank / network'}
+                                                    getId={(n) => n.id}
+                                                    getSubLabel={(n) => n.accountNumberType === 'phone' ? 'Mobile Money' : 'Bank'}
+                                                    onSelect={(n) => {
+                                                        setTransferData(prev => ({
+                                                            ...prev,
+                                                            networkId: n?.id || '',
+                                                            networkName: n?.name || '',
+                                                            networkAccountType: n?.accountNumberType || '',
+                                                            networkChannelIds: n?.channelIds || [],
+                                                        }));
+                                                    }}
+                                                />
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-sm font-bold text-foreground">Account Number / IBAN</label>

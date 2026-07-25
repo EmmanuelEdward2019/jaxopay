@@ -1,16 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Send, Building2, Check, ChevronRight, RefreshCw,
-    AlertCircle, X, Search, Clock, CheckCircle,
+    Send, Check, ChevronRight, RefreshCw,
+    AlertCircle, X, Clock, CheckCircle,
     ArrowRight, ShieldCheck, Star, StarOff, UserPlus,
-    Users, ChevronDown, Trash2, Bookmark,
+    Users, Trash2, Bookmark,
 } from 'lucide-react';
 import apiClient from '../../lib/apiClient';
 import walletService from '../../services/walletService';
 import beneficiaryService from '../../services/beneficiaryService';
 import PinModal from '../../components/common/PinModal';
 import ReceiptShareButton from '../../components/common/ReceiptShareButton';
+import SearchableBankSelect from '../../components/common/SearchableBankSelect';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
 // Map a server saved_beneficiary (type=bank_account) to this page's local shape.
@@ -32,117 +33,6 @@ const statusStyle = (status) => {
     return 'bg-warning/10 text-yellow-700';
 };
 
-// ── BankSelect component ──────────────────────────────────────────────────────
-const BankSelect = ({ banks, selectedBank, onSelect, loading }) => {
-    const [search, setSearch] = useState('');
-    const [open, setOpen] = useState(false);
-    const ref = useRef(null);
-
-    // Close on outside click
-    useEffect(() => {
-        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, []);
-
-    const filtered = search
-        ? banks.filter(b => b.name?.toLowerCase().includes(search.toLowerCase()) || b.code?.includes(search))
-        : banks;
-
-    return (
-        <div className="relative" ref={ref}>
-            <label className="block text-sm font-medium text-foreground mb-2">
-                Bank Name <span className="text-muted-foreground font-normal">({banks.length} banks available)</span>
-            </label>
-
-            {/* Trigger button */}
-            <button
-                type="button"
-                onClick={() => { setOpen(!open); setSearch(''); }}
-                disabled={loading || banks.length === 0}
-                className="w-full flex items-center justify-between px-4 py-3 bg-card border border-border rounded-lg focus:ring-2 focus:ring-ring outline-none transition-all disabled:opacity-50"
-            >
-                <div className="flex items-center gap-3">
-                    <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
-                    {selectedBank ? (
-                        <div className="text-left">
-                            <p className="text-sm font-medium text-foreground">{selectedBank.name}</p>
-                            <p className="text-xs text-muted-foreground">Code: {selectedBank.code}</p>
-                        </div>
-                    ) : (
-                        <span className="text-muted-foreground text-sm">
-                            {loading ? 'Loading banks...' : banks.length === 0 ? 'Failed to load banks — retry' : 'Select your bank'}
-                        </span>
-                    )}
-                </div>
-                {loading
-                    ? <RefreshCw className="w-4 h-4 text-muted-foreground animate-spin" />
-                    : <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
-                }
-            </button>
-
-            {/* Dropdown */}
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -8, scaleY: 0.9 }}
-                        animate={{ opacity: 1, y: 0, scaleY: 1 }}
-                        exit={{ opacity: 0, y: -8, scaleY: 0.9 }}
-                        style={{ transformOrigin: 'top' }}
-                        className="absolute z-50 w-full mt-2 bg-card border border-border rounded-xl shadow-2xl"
-                    >
-                        {/* Search inside dropdown */}
-                        <div className="p-3 border-b border-border">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                <input
-                                    autoFocus
-                                    type="text"
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    placeholder="Type to search banks..."
-                                    className="w-full pl-9 pr-4 py-2 text-sm bg-muted border border-border rounded-lg focus:ring-2 focus:ring-ring outline-none"
-                                />
-                                {search && (
-                                    <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
-                                        <X className="w-3.5 h-3.5 text-muted-foreground" />
-                                    </button>
-                                )}
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1.5">{filtered.length} of {banks.length} banks</p>
-                        </div>
-
-                        {/* Bank list */}
-                        <div className="max-h-64 overflow-y-auto">
-                            {filtered.length === 0 ? (
-                                <p className="text-center text-sm text-muted-foreground py-6">No banks match "{search}"</p>
-                            ) : (
-                                filtered.map((bank) => (
-                                    <button
-                                        key={bank.code}
-                                        onClick={() => { onSelect(bank); setOpen(false); setSearch(''); }}
-                                        className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-primary/10 text-left transition-colors ${selectedBank?.code === bank.code ? 'bg-primary/10' : ''}`}
-                                    >
-                                        <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center shrink-0 text-primary font-bold text-xs">
-                                            {bank.name?.slice(0, 2).toUpperCase()}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-foreground truncate">{bank.name}</p>
-                                            <p className="text-xs text-muted-foreground">Bank code: {bank.code}</p>
-                                        </div>
-                                        {selectedBank?.code === bank.code && (
-                                            <Check className="w-4 h-4 text-primary shrink-0" />
-                                        )}
-                                    </button>
-                                ))
-                            )}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
-    );
-};
 
 // ── Main Transfer component ───────────────────────────────────────────────────
 const Transfer = () => {
@@ -488,10 +378,12 @@ const Transfer = () => {
                                 <h2 className="text-lg font-semibold text-foreground">Recipient Details</h2>
 
                                 {/* Bank Dropdown */}
-                                <BankSelect
-                                    banks={banks}
-                                    selectedBank={selectedBank}
+                                <SearchableBankSelect
+                                    items={banks}
+                                    selected={selectedBank}
                                     loading={banksLoading}
+                                    label="Bank Name"
+                                    placeholder="Select your bank"
                                     onSelect={(bank) => { setSelectedBank(bank); setAccountName(''); }}
                                 />
 

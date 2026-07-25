@@ -13,6 +13,7 @@ import walletService from '../../services/walletService';
 import cryptoService from '../../services/cryptoService';
 import transferService from '../../services/transferService';
 import PinModal from '../../components/common/PinModal';
+import SearchableBankSelect from '../../components/common/SearchableBankSelect';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
 // Shared helper: did a service result fail because of the transaction PIN?
@@ -1208,14 +1209,13 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
 
             <div className="space-y-4">
                 {!isCrypto && (
-                    <div>
-                        <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Select Bank</label>
-                        <select value={selectedBank} onChange={(e) => setSelectedBank(e.target.value)}
-                            className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground font-medium focus:ring-2 focus:ring-ring focus:outline-none">
-                            <option value="" className="bg-card text-foreground">Choose bank...</option>
-                            {banks.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
-                        </select>
-                    </div>
+                    <SearchableBankSelect
+                        items={banks}
+                        selected={banks.find(b => b.code === selectedBank) || null}
+                        onSelect={(bank) => setSelectedBank(bank.code)}
+                        label="Select Bank"
+                        placeholder="Choose bank..."
+                    />
                 )}
 
                 <div>
@@ -1502,14 +1502,13 @@ const ExternalTransferForm = ({ code, type, balanceMap, onClose, onRefresh }) =>
 
             <div className="space-y-4">
                 {!isCrypto && (
-                    <div>
-                        <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Select Bank</label>
-                        <select value={selectedBank} onChange={(e) => setSelectedBank(e.target.value)}
-                            className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground font-medium focus:ring-2 focus:ring-ring focus:outline-none">
-                            <option value="" className="bg-card text-foreground">Choose bank...</option>
-                            {banks.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
-                        </select>
-                    </div>
+                    <SearchableBankSelect
+                        items={banks}
+                        selected={banks.find(b => b.code === selectedBank) || null}
+                        onSelect={(bank) => setSelectedBank(bank.code)}
+                        label="Select Bank"
+                        placeholder="Choose bank..."
+                    />
                 )}
 
                 <div>
