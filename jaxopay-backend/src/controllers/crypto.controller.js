@@ -1557,7 +1557,12 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
   const fromType     = getWalletType(fromCurrency);
   const toType       = getWalletType(toCurrency);
 
-  // Update our local wallets — best-effort (swap already executed on Quidax)
+  // Update our local wallets. The swap is already executed (and irreversible) on the provider
+  // at this point, so a failure here must NOT be swallowed as a false "success" — the user's
+  // balance still needs the credit, and ops needs to know exactly which provider-side swap
+  // requires manual reconciliation.
+  let dbUpdateOk = false;
+  let dbUpdateErr = null;
   if (fromCurrency && toCurrency && fromAmount > 0 && toAmount > 0) {
     try {
       await transaction(async (client) => {
@@ -1608,10 +1613,26 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
           [toWallet.rows[0].id, toAmount, toCurrency, `Swapped from ${fromCurrency}`, meta]
         );
       });
+      dbUpdateOk = true;
     } catch (dbErr) {
-      // DB update failed but the swap already succeeded on the provider — log and continue
-      logger.error(`[ConfirmSwap] DB update failed (swap executed on ${CRYPTO_PROVIDER}):`, dbErr.message);
+      dbUpdateErr = dbErr;
     }
+  } else {
+    dbUpdateErr = new Error(
+      `Could not parse swap amounts from provider response (from=${fromCurrency || '?'} ${fromAmount}, to=${toCurrency || '?'} ${toAmount})`
+    );
+  }
+
+  if (!dbUpdateOk) {
+    logger.error(
+      `[ConfirmSwap] CRITICAL: swap executed on ${CRYPTO_PROVIDER} (provider swap id=${confirmed.id}, quotation=${id}, user=${req.user.id}) ` +
+      `but local wallet update failed — balance NOT credited. ${fromAmount} ${fromCurrency} -> ${toAmount} ${toCurrency}. Error: ${dbUpdateErr?.message}`
+    );
+    throw new AppError(
+      `Your swap was executed but we could not update your balance. Our team has been notified — please contact support with this reference: ${confirmed.id}`,
+      500,
+      'SWAP_CREDIT_FAILED'
+    );
   }
 
   res.status(200).json({ success: true, data: confirmed });
