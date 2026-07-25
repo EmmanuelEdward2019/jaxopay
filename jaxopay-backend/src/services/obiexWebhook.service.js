@@ -120,7 +120,10 @@ export function createObiexWebhookService({
     const { transactionId, reference, status } = data || {};
     const statusUpper = String(status || '').toUpperCase();
     const FAILED_STATUSES = new Set(['FAILED', 'REJECTED', 'CANCELLED', 'CANCELED', 'DECLINED']);
-    const isSuccessful = statusUpper === 'SUCCESSFUL';
+    // Matches verifyTransfer's status set (transfer.controller.js) — Obiex's fiat payout
+    // completion status string was never confirmed against a live webhook payload, so accept
+    // the same synonyms rather than hardcoding a single exact string.
+    const isSuccessful = ['SUCCESSFUL', 'SUCCESS', 'COMPLETED'].includes(statusUpper);
     const isFailed = FAILED_STATUSES.has(statusUpper);
 
     if (!isSuccessful && !isFailed) {

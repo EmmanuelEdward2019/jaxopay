@@ -374,26 +374,25 @@ export const sendTransfer = catchAsync(async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// POST /transfers/verify  — poll the payout provider's status and reconcile it
-// (lets a "Processing" transfer resolve itself without waiting on the webhook).
+// Reconcile a single bank_transfer against its provider — shared by the manual
+// POST /transfers/verify endpoint and the background sweep (sweepPendingBankTransfers
+// below), so a "Processing" transfer resolves itself even if the webhook never arrives
+// and the user isn't watching the success screen (the frontend only auto-polls for
+// ~30s after submission — real Obiex payouts can settle well after that).
 // ─────────────────────────────────────────────
-export const verifyTransfer = catchAsync(async (req, res) => {
-    const reference = req.body.reference || req.params.reference;
-    if (!reference) throw new AppError('reference is required', 400);
-
+async function reconcileBankTransfer(reference) {
     const txRes = await query(
         `SELECT id, user_id, from_wallet_id, from_amount, from_currency, status, metadata
          FROM transactions
          WHERE reference = $1 AND transaction_type = 'bank_transfer'`,
         [reference]
     );
-    if (txRes.rows.length === 0) throw new AppError('Transfer not found', 404);
+    if (txRes.rows.length === 0) return { status: 'not_found' };
     const tx = txRes.rows[0];
-    if (tx.user_id !== req.user.id) throw new AppError('Unauthorized', 403);
 
     // Already finalised — nothing to poll.
     if (['completed', 'failed'].includes(tx.status)) {
-        return res.status(200).json({ success: true, data: { reference, status: tx.status } });
+        return { status: tx.status, userId: tx.user_id };
     }
 
     const isObiex = tx.metadata?.provider === 'obiex' || tx.from_currency?.toUpperCase() === 'NGN';
@@ -406,7 +405,7 @@ export const verifyTransfer = catchAsync(async (req, res) => {
             if (!obiexWithdrawId) {
                 // No provider id recorded yet (e.g. the submit call itself hadn't returned one) —
                 // nothing to poll; leave as-is for the webhook to finalize.
-                return res.status(200).json({ success: true, data: { reference, status: tx.status, pending: true } });
+                return { status: tx.status, userId: tx.user_id, pending: true };
             }
             const result = await obiex.getTransactionById(obiexWithdrawId);
             providerStatus = String(result?.payout?.status || result?.status || '').toLowerCase();
@@ -414,12 +413,12 @@ export const verifyTransfer = catchAsync(async (req, res) => {
             const result = await korapay.getDisbursementStatus(reference);
             providerStatus = (result.status || '').toLowerCase();
         }
-        logger.info(`[Transfer] verify ${reference}: provider status = ${providerStatus || 'unknown'}`);
+        logger.info(`[Transfer] reconcile ${reference}: provider status = ${providerStatus || 'unknown'}`);
     } catch (err) {
         const message = isObiex ? (err.message || 'unknown error') : getKorapayErrorDetails(err).message;
-        logger.warn(`[Transfer] verify ${reference} provider query failed: ${message}`);
+        logger.warn(`[Transfer] reconcile ${reference} provider query failed: ${message}`);
         // Couldn't reach the provider — leave the transaction as-is.
-        return res.status(200).json({ success: true, data: { reference, status: tx.status, pending: true } });
+        return { status: tx.status, userId: tx.user_id, pending: true };
     }
 
     if (['success', 'successful', 'completed'].includes(providerStatus)) {
@@ -434,14 +433,14 @@ export const verifyTransfer = catchAsync(async (req, res) => {
             didFinalize = true;
         });
         if (didFinalize) {
-            notifyPayout(req.user.id, {
+            notifyPayout(tx.user_id, {
                 success: true,
                 amount: tx.from_amount,
                 currency: tx.from_currency,
                 reference,
             });
         }
-        return res.status(200).json({ success: true, data: { reference, status: 'completed' } });
+        return { status: 'completed', userId: tx.user_id };
     }
 
     if (['failed', 'reversed', 'cancelled', 'canceled', 'declined', 'rejected'].includes(providerStatus)) {
@@ -461,7 +460,7 @@ export const verifyTransfer = catchAsync(async (req, res) => {
             didFinalize = true;
         });
         if (didFinalize) {
-            notifyPayout(req.user.id, {
+            notifyPayout(tx.user_id, {
                 success: false,
                 amount: tx.from_amount,
                 currency: tx.from_currency,
@@ -469,12 +468,51 @@ export const verifyTransfer = catchAsync(async (req, res) => {
                 reason: 'Payout failed at provider — funds returned',
             });
         }
-        return res.status(200).json({ success: true, data: { reference, status: 'failed' } });
+        return { status: 'failed', userId: tx.user_id };
     }
 
     // Still processing.
-    return res.status(200).json({ success: true, data: { reference, status: 'processing' } });
+    return { status: 'processing', userId: tx.user_id };
+}
+
+// ─────────────────────────────────────────────
+// POST /transfers/verify  — poll the payout provider's status and reconcile it
+// (lets a "Processing" transfer resolve itself without waiting on the webhook).
+// ─────────────────────────────────────────────
+export const verifyTransfer = catchAsync(async (req, res) => {
+    const reference = req.body.reference || req.params.reference;
+    if (!reference) throw new AppError('reference is required', 400);
+
+    const result = await reconcileBankTransfer(reference);
+    if (result.status === 'not_found') throw new AppError('Transfer not found', 404);
+    if (result.userId !== req.user.id) throw new AppError('Unauthorized', 403);
+
+    res.status(200).json({ success: true, data: { reference, status: result.status, pending: result.pending } });
 });
+
+// ─────────────────────────────────────────────
+// Background sweep — auto-reconcile bank transfers stuck in "processing" against Obiex.
+// Mirrors CurrencyEngineService.sweepPendingRamps; wired up in server.js on an interval.
+// Without this, a transfer whose webhook never arrives (or arrives with a status string
+// we don't recognize) stays "Processing" forever once the user leaves the success screen.
+// ─────────────────────────────────────────────
+export async function sweepPendingBankTransfers(maxAgeMinutes = 2, limit = 50) {
+    const rows = (await query(
+        `SELECT reference FROM transactions
+         WHERE transaction_type = 'bank_transfer' AND status = 'processing'
+           AND metadata->>'provider' = 'obiex'
+           AND created_at < NOW() - ($1 || ' minutes')::interval
+         ORDER BY created_at ASC LIMIT $2`,
+        [String(maxAgeMinutes), limit]
+    )).rows;
+    let changed = 0;
+    for (const r of rows) {
+        const res = await reconcileBankTransfer(r.reference).catch(() => null);
+        if (res && res.status !== 'processing') changed++;
+    }
+    if (rows.length) logger.info(`[transfer sweep] checked ${rows.length}, resolved ${changed}`);
+    return { checked: rows.length, resolved: changed };
+}
 
 // ─────────────────────────────────────────────
 // GET /transfers/history  — transfer history for user

@@ -173,6 +173,16 @@ const startServer = async () => {
             .then((m) => m.default.sweepPendingRamps())
             .catch((e) => logger.warn('[ramp sweep] error:', e.message));
         }, RAMP_SWEEP_MS).unref();
+
+        // Auto-reconcile NGN bank transfers stuck "processing" against Obiex — the frontend
+        // only polls for ~30s after submission, so a slower-settling (but successful) payout
+        // would otherwise sit stale until the webhook fires (see transfer.controller.js).
+        const TRANSFER_SWEEP_MS = Number(process.env.TRANSFER_SWEEP_MS) || 60000;
+        setInterval(() => {
+          import('./controllers/transfer.controller.js')
+            .then((m) => m.sweepPendingBankTransfers())
+            .catch((e) => logger.warn('[transfer sweep] error:', e.message));
+        }, TRANSFER_SWEEP_MS).unref();
       })
       .catch((dbError) => {
         logger.warn('⚠️  Database connection failed - server running without database');
