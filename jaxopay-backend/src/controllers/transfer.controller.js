@@ -317,8 +317,9 @@ export const sendTransfer = catchAsync(async (req, res) => {
                 amount: amountValue,
                 currency: transferCurrency,
                 reference,
-                destination: `${account_name} — ${bank_name || bank_code} (${account_number})`,
+                beneficiary: { bankName: bank_name || bank_code, accountNumber: account_number, accountName: account_name },
                 destinationLabel: 'bank account',
+                typeDetail: `${transferCurrency} Bank Transfer`,
             });
         }
 
@@ -365,8 +366,9 @@ export const sendTransfer = catchAsync(async (req, res) => {
             currency: transferCurrency,
             reference,
             reason: friendlyMessage,
-            destination: `${account_name} — ${bank_name || bank_code} (${account_number})`,
+            beneficiary: { bankName: bank_name || bank_code, accountNumber: account_number, accountName: account_name },
             destinationLabel: 'bank account',
+            typeDetail: `${transferCurrency} Bank Transfer`,
         });
 
         throw new AppError(friendlyMessage, providerErr.statusCode || 502);
@@ -389,6 +391,10 @@ async function reconcileBankTransfer(reference) {
     );
     if (txRes.rows.length === 0) return { status: 'not_found' };
     const tx = txRes.rows[0];
+    const beneficiary = (tx.metadata?.bank_name || tx.metadata?.account_number)
+        ? { bankName: tx.metadata?.bank_name, accountNumber: tx.metadata?.account_number, accountName: tx.metadata?.account_name }
+        : undefined;
+    const typeDetail = `${tx.from_currency} Bank Transfer`;
 
     // Already finalised — nothing to poll.
     if (['completed', 'failed'].includes(tx.status)) {
@@ -438,6 +444,9 @@ async function reconcileBankTransfer(reference) {
                 amount: tx.from_amount,
                 currency: tx.from_currency,
                 reference,
+                beneficiary,
+                destinationLabel: 'bank account',
+                typeDetail,
             });
         }
         return { status: 'completed', userId: tx.user_id };
@@ -466,6 +475,9 @@ async function reconcileBankTransfer(reference) {
                 currency: tx.from_currency,
                 reference,
                 reason: 'Payout failed at provider — funds returned',
+                beneficiary,
+                destinationLabel: 'bank account',
+                typeDetail,
             });
         }
         return { status: 'failed', userId: tx.user_id };

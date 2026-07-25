@@ -13,6 +13,7 @@ import { decimal, validateAmount, formatForDB, hasSufficientBalance, convertCurr
 import { getSpendableBalance } from '../utils/walletBalance.js';
 import { getQuidaxErrorMessage } from '../utils/quidax.js';
 import { randomUUID } from 'crypto';
+import emailService from '../services/email.service.js';
 
 // Crypto deposit/withdrawal/swap provider — Obiex by default; set CRYPTO_PROVIDER=quidax to
 // fall back (e.g. during an Obiex outage). Order-book spot trading (createOrder, getOrderBook,
@@ -1634,6 +1635,23 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
       'SWAP_CREDIT_FAILED'
     );
   }
+
+  // Best-effort receipt email — never blocks the response.
+  query(
+    `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+     FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = $1`,
+    [req.user.id]
+  ).then((userRes) => {
+    if (userRes.rows.length === 0) return;
+    emailService.sendTransactionEmails({
+      type: 'Swap',
+      amount: toAmount,
+      currency: toCurrency,
+      reference: confirmed.id,
+      details: `Instant Swap: ${fromAmount} ${fromCurrency} → ${toAmount} ${toCurrency}`,
+      date: new Date().toLocaleString(),
+    }, userRes.rows[0]).catch((e) => logger.error('[ConfirmSwap] receipt email error:', e.message));
+  }).catch((e) => logger.error('[ConfirmSwap] receipt email lookup error:', e.message));
 
   res.status(200).json({ success: true, data: confirmed });
 });

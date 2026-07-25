@@ -169,13 +169,13 @@ export const templates = {
     ${p(`Hello ${data.name},`)}
     ${p(intro)}
     ${infoBox(`
+      ${data.details ? row('Type', data.details) : ''}
       ${row('Reference', data.reference)}
       ${data.id ? row('Transaction ID', data.id) : ''}
       ${row('Amount', `${data.currency} ${data.amount}`)}
       ${row('Status', statusLabel, statusColor)}
       ${row('Date', data.date || new Date().toLocaleString())}
     `)}
-    ${data.details ? `<div style="margin:-8px 0 20px;font-family:${FONT};font-size:14px;color:#4b5563;"><strong>Details:</strong><br/>${data.details}</div>` : ''}
     ${p('Thank you for choosing JAXOPAY for your global transactions.')}
   `);
   },
@@ -185,10 +185,14 @@ export const templates = {
     ${p(`Hello ${data.name},`)}
     ${p(`Your withdrawal of <strong>${data.currency} ${data.amount}</strong> has been successfully processed and sent to your ${data.destinationLabel || 'destination'}.`)}
     ${infoBox(`
+      ${data.typeDetail ? row('Type', data.typeDetail) : ''}
       ${row('Reference', data.reference)}
       ${data.txId ? row('Transaction ID', data.txId) : ''}
       ${row('Amount', `${data.currency} ${data.amount}`)}
-      ${data.destination ? row('Destination', data.destination) : ''}
+      ${data.beneficiary?.bankName ? row('Bank', data.beneficiary.bankName) : ''}
+      ${data.beneficiary?.accountNumber ? row('Account Number', data.beneficiary.accountNumber) : ''}
+      ${data.beneficiary?.accountName ? row('Account Name', data.beneficiary.accountName) : ''}
+      ${!data.beneficiary && data.destination ? row('Destination', data.destination) : ''}
       ${data.network ? row('Network', data.network) : ''}
       ${row('Status', 'Completed', BRAND_GREEN)}
       ${row('Date', data.date || new Date().toLocaleString())}
@@ -202,10 +206,14 @@ export const templates = {
     ${p(`Your withdrawal of <strong>${data.currency} ${data.amount}</strong> could not be completed${data.reason ? `: <span style="color:#dc2626;">${data.reason}</span>` : '.'}`)}
     ${p('The full amount has been refunded to your JAXOPAY wallet — no funds were lost.')}
     ${infoBox(`
+      ${data.typeDetail ? row('Type', data.typeDetail) : ''}
       ${row('Reference', data.reference)}
       ${data.txId ? row('Transaction ID', data.txId) : ''}
       ${row('Amount refunded', `${data.currency} ${data.amount}`)}
-      ${data.destination ? row('Destination', data.destination) : ''}
+      ${data.beneficiary?.bankName ? row('Bank', data.beneficiary.bankName) : ''}
+      ${data.beneficiary?.accountNumber ? row('Account Number', data.beneficiary.accountNumber) : ''}
+      ${data.beneficiary?.accountName ? row('Account Name', data.beneficiary.accountName) : ''}
+      ${!data.beneficiary && data.destination ? row('Destination', data.destination) : ''}
       ${row('Status', 'Failed — Refunded', '#dc2626')}
       ${row('Date', data.date || new Date().toLocaleString())}
     `)}

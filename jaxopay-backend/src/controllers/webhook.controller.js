@@ -477,7 +477,7 @@ async function processKorapayPayout(event, data) {
     }
 
     const txRes = await query(
-        `SELECT id, user_id, from_wallet_id, from_amount, from_currency, reference, status
+        `SELECT id, user_id, from_wallet_id, from_amount, from_currency, reference, status, metadata
          FROM transactions
          WHERE reference = $1 AND transaction_type = 'bank_transfer'`,
         [reference]
@@ -533,14 +533,18 @@ async function notifyTransfer(tx, success) {
             [tx.user_id]
         );
         if (userRes.rows.length > 0) {
+            const beneficiary = (tx.metadata?.bank_name || tx.metadata?.account_number)
+                ? { bankName: tx.metadata?.bank_name, accountNumber: tx.metadata?.account_number, accountName: tx.metadata?.account_name }
+                : undefined;
             sendWithdrawalEmails({
                 success,
                 amount: tx.from_amount,
                 currency: tx.from_currency,
                 reference: tx.reference,
                 txId: tx.id,
-                destination: tx.destination || null,
+                beneficiary,
                 destinationLabel: 'bank account',
+                typeDetail: `${tx.from_currency} Bank Transfer`,
             }, userRes.rows[0]).catch((e) => logger.error('[WEBHOOK] Transfer email error:', e));
         }
     } catch (e) {
@@ -722,6 +726,7 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
                 const walletRes = await client.query(`SELECT user_id FROM wallets WHERE id = $1`, [tx.wallet_id]);
                 userId = walletRes.rows[0]?.user_id || null;
             }
+            const isCrypto = txType === 'wallet_transactions';
             emailPayload = {
                 userId,
                 success: status === 'completed',
@@ -729,9 +734,15 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
                 currency: tx.currency,
                 reference: quidaxReference || quidaxWithdrawId,
                 txId: tx.id,
-                destination: tx.metadata?.address || null,
-                destinationLabel: txType === 'wallet_transactions' ? 'crypto address' : 'bank account',
+                destination: isCrypto ? (tx.metadata?.address || null) : null,
+                destinationLabel: isCrypto ? 'crypto address' : 'bank account',
                 network: tx.metadata?.network || null,
+                beneficiary: !isCrypto && (tx.metadata?.bank_name || tx.metadata?.account_number)
+                    ? { bankName: tx.metadata?.bank_name, accountNumber: tx.metadata?.account_number, accountName: tx.metadata?.account_name }
+                    : undefined,
+                typeDetail: isCrypto
+                    ? `Crypto Withdrawal (${tx.currency}${tx.metadata?.network ? ' · ' + tx.metadata.network : ''})`
+                    : `${tx.currency} Bank Transfer`,
             };
         });
 

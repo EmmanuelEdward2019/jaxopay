@@ -204,6 +204,7 @@ export function createObiexWebhookService({
           const walletRes = await client.query(`SELECT user_id FROM wallets WHERE id = $1`, [tx.wallet_id]);
           userId = walletRes.rows[0]?.user_id || null;
         }
+        const isCrypto = txType === 'wallet_transactions';
         emailPayload = {
           userId,
           success: newStatus === 'completed',
@@ -211,9 +212,15 @@ export function createObiexWebhookService({
           currency: tx.currency,
           reference: reference || transactionId,
           txId: tx.id,
-          destination: tx.metadata?.address || tx.metadata?.account_number || null,
-          destinationLabel: txType === 'wallet_transactions' ? 'crypto address' : 'bank account',
+          destination: isCrypto ? (tx.metadata?.address || null) : null,
+          destinationLabel: isCrypto ? 'crypto address' : 'bank account',
           network: tx.metadata?.network || null,
+          beneficiary: !isCrypto && (tx.metadata?.bank_name || tx.metadata?.account_number)
+            ? { bankName: tx.metadata?.bank_name, accountNumber: tx.metadata?.account_number, accountName: tx.metadata?.account_name }
+            : undefined,
+          typeDetail: isCrypto
+            ? `Crypto Withdrawal (${tx.currency}${tx.metadata?.network ? ' · ' + tx.metadata.network : ''})`
+            : `${tx.currency} Bank Transfer`,
         };
       });
 

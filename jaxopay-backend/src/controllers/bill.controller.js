@@ -108,6 +108,45 @@ function staticEpinProviders() {
   }));
 }
 
+/** Human-readable provider name for a bill payment receipt, e.g. "MTN Nigeria" or "Ikeja Electric (IKEDC)". */
+function billerDisplayName(providerId) {
+  const s = String(providerId || '').toLowerCase();
+  const all = [
+    ...STATIC_DISCOS,
+    ...STATIC_CABLE_PROVIDERS,
+    ...staticStrowalletNetworkProviders(),
+    ...staticEducationProviders(),
+  ];
+  const match = all.find((p) => p.id === s);
+  if (match) return match.name;
+  // Fall back to a readable version of the raw id (e.g. "mtn-data" -> "Mtn Data").
+  return s.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || 'Biller';
+}
+
+/** Builds the "Type" line shown on the bill payment receipt email, e.g.
+ *  "MTN Airtime Purchase" or "Ikeja Electric (IKEDC) — Electricity Units Purchase". */
+function describeBillPayment({ category, providerId, accountNumber, phone, units }) {
+  const name = billerDisplayName(providerId);
+  const cat = String(category || '').toLowerCase();
+  const contact = phone || accountNumber;
+  switch (cat) {
+    case 'airtime':
+      return `${name} Airtime Purchase${contact ? ` (${contact})` : ''}`;
+    case 'data':
+      return `${name} Data Bundle Purchase${contact ? ` (${contact})` : ''}`;
+    case 'electricity':
+      return `${name} — Electricity Units Purchase${accountNumber ? ` (Meter ${accountNumber})` : ''}${units ? ` — ${units} units` : ''}`;
+    case 'cable_tv':
+      return `${name} Subscription Renewal${accountNumber ? ` (Smartcard ${accountNumber})` : ''}`;
+    case 'epin':
+      return `${name} e-PIN Purchase`;
+    case 'education':
+      return `${name} — Education Bill Payment`;
+    default:
+      return `${name} — Bill Payment`;
+  }
+}
+
 function inferCategoryFromProvider(providerId) {
   const s = String(providerId || '').toLowerCase();
   if (STATIC_DISCOS.some((d) => d.id === s)) return 'electricity';
@@ -911,7 +950,7 @@ export const payBill = catchAsync(async (req, res) => {
         amount,
         currency: currency.toUpperCase(),
         reference: result.reference,
-        details: 'Bill Payment transaction',
+        details: describeBillPayment({ category: cat, providerId: provider_id, accountNumber: account_number, phone, units }),
         metadata: {
           Provider: provider_id,
           Account: account_number,

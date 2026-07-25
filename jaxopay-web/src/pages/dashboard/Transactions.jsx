@@ -109,12 +109,20 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
     const getMetadataFields = (meta) => {
         if (!meta) return [];
         const result = [];
-        if (meta.bank_name) result.push({ label: 'Bank', value: meta.bank_name });
-        if (meta.account_number) result.push({ label: 'Account', value: meta.account_number });
-        if (meta.account_name) result.push({ label: 'Account Name', value: meta.account_name });
+        // Bank transfers/crypto withdrawals store snake_case keys; international transfer and
+        // crypto ramp (fx_transactions.recipient_details) store camelCase keys instead — check both.
+        const bankName = meta.bank_name || meta.networkName || meta.bank;
+        const acctNumber = meta.account_number || meta.accountNumber || meta.account;
+        const acctName = meta.account_name || meta.recipientName || meta.name;
+        const network = meta.network || meta.cryptoNetwork;
+        const address = meta.address || meta.walletAddress;
+        if (bankName) result.push({ label: 'Bank', value: bankName });
+        if (acctNumber) result.push({ label: 'Account', value: acctNumber });
+        if (acctName) result.push({ label: 'Account Name', value: acctName });
         if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
-        if (meta.network) result.push({ label: 'Network', value: meta.network });
-        if (meta.address) result.push({ label: 'Address', value: meta.address });
+        if (network) result.push({ label: 'Network', value: network });
+        if (address) result.push({ label: 'Address', value: address });
+        if (meta.country) result.push({ label: 'Country', value: meta.country });
         if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
         if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
         if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });
@@ -283,12 +291,20 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
     const getMetadataFields = (meta) => {
         if (!meta) return [];
         const result = [];
-        if (meta.bank_name) result.push({ label: 'Bank', value: meta.bank_name });
-        if (meta.account_number) result.push({ label: 'Account', value: meta.account_number });
-        if (meta.account_name) result.push({ label: 'Account Name', value: meta.account_name });
+        // Bank transfers/crypto withdrawals store snake_case keys; international transfer and
+        // crypto ramp (fx_transactions.recipient_details) store camelCase keys instead — check both.
+        const bankName = meta.bank_name || meta.networkName || meta.bank;
+        const acctNumber = meta.account_number || meta.accountNumber || meta.account;
+        const acctName = meta.account_name || meta.recipientName || meta.name;
+        const network = meta.network || meta.cryptoNetwork;
+        const address = meta.address || meta.walletAddress;
+        if (bankName) result.push({ label: 'Bank', value: bankName });
+        if (acctNumber) result.push({ label: 'Account', value: acctNumber });
+        if (acctName) result.push({ label: 'Account Name', value: acctName });
         if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
-        if (meta.network) result.push({ label: 'Network', value: meta.network });
-        if (meta.address) result.push({ label: 'Address', value: meta.address });
+        if (network) result.push({ label: 'Network', value: network });
+        if (address) result.push({ label: 'Address', value: address });
+        if (meta.country) result.push({ label: 'Country', value: meta.country });
         if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
         if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
         if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });

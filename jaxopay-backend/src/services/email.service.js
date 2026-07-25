@@ -207,6 +207,8 @@ export const sendWithdrawalEmails = async (withdrawalData, userData) => {
       destinationLabel,
       network,
       reason,
+      beneficiary,
+      typeDetail,
     } = withdrawalData;
 
     const { name, email } = userData;
@@ -220,6 +222,7 @@ export const sendWithdrawalEmails = async (withdrawalData, userData) => {
       template,
       data: {
         name, amount, currency, reference, txId, destination, destinationLabel, network, reason,
+        beneficiary, typeDetail,
         date: new Date().toLocaleString(),
       },
     });
@@ -237,11 +240,13 @@ export const sendWithdrawalEmails = async (withdrawalData, userData) => {
             id: txId || reference || 'N/A',
             userName: name,
             userEmail: email,
-            type: success ? 'Withdrawal (Completed)' : 'Withdrawal (Failed — Refunded)',
+            type: typeDetail || (success ? 'Withdrawal (Completed)' : 'Withdrawal (Failed — Refunded)'),
             amount,
             currency,
             reference,
-            metadata: destination ? { destination, ...(network ? { network } : {}) } : undefined,
+            metadata: (destination || beneficiary)
+              ? { ...(beneficiary || {}), ...(destination ? { destination } : {}), ...(network ? { network } : {}) }
+              : undefined,
             frontendUrl: process.env.FRONTEND_URL,
           },
         });

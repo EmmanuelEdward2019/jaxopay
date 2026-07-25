@@ -4,6 +4,13 @@ import logger from '../utils/logger.js';
 import yellowCard from '../orchestration/adapters/fx/YellowCardService.js';
 import { sendTransactionEmails } from './email.service.js';
 
+/** Human label for a ramp's fx_transactions.type — onramp buys crypto with fiat, offramp sells it. */
+function rampTypeLabel(type) {
+    if (type === 'crypto_onramp') return 'Crypto Buy';
+    if (type === 'crypto_offramp') return 'Crypto Sell';
+    return 'Crypto Ramp';
+}
+
 /** Fire a receipt email for a swap/ramp result — best-effort, never blocks the caller. */
 async function notifyRampResult(userId, { type, amount, currency, reference, status, details }) {
     try {
@@ -180,7 +187,7 @@ class CurrencyEngineService {
         // (see the comment above — JAXOPAY absorbs the provider-side risk), so the user's own
         // wallets did change either way; notify accordingly.
         notifyRampResult(userId, {
-            type: toCurrency, amount: result.convertedAmount, currency: toCurrency,
+            type: 'Swap', amount: result.convertedAmount, currency: toCurrency,
             reference: result.transactionId, status: 'completed', details: `Currency Swap: ${fromCurrency} → ${toCurrency}`,
         });
 
@@ -265,6 +272,11 @@ class CurrencyEngineService {
                 await client.query(`UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`, [amount, record.walletId]);
                 await client.query(`UPDATE fx_transactions SET status = 'FAILED' WHERE id = $1`, [record.txnId]);
             });
+            notifyRampResult(userId, {
+                type: 'International Transfer', amount, currency: fromCurrency,
+                reference: record.txnId, status: 'failed',
+                details: `International Transfer to ${recipientName} (${recipientCountry}) — Failed: ${providerError || 'Transfer failed at provider'}. Your wallet has been refunded.`,
+            });
             throw new AppError(providerError || 'International transfer failed. Your wallet has been refunded.', 400);
         }
 
@@ -272,6 +284,12 @@ class CurrencyEngineService {
             `UPDATE fx_transactions SET status = $1, provider_txn_id = $2 WHERE id = $3`,
             [providerStatus, providerTxnId, record.txnId]
         );
+
+        notifyRampResult(userId, {
+            type: 'International Transfer', amount: convertedAmount, currency: targetCurrency,
+            reference: record.txnId, status: 'completed',
+            details: `International Transfer to ${recipientName} (${recipientCountry}) via ${networkName || recipientBank || 'bank'} — Account ${accountNumber}`,
+        });
 
         return { transactionId: record.txnId, status: providerStatus, amount, convertedAmount };
     }
@@ -760,11 +778,12 @@ class CurrencyEngineService {
             if (!r) throw new AppError('Ramp not found', 404);
             if (String(r.status).toUpperCase() !== 'PENDING') throw new AppError(`Ramp is ${r.status}, not pending`, 400);
             const out = await this._creditRampDestination(client, r);
-            return { rampId, status: 'COMPLETED', ...out, userId: r.user_id };
+            return { rampId, status: 'COMPLETED', ...out, userId: r.user_id, rampType: r.type, fromCurrency: r.from_currency };
         });
         notifyRampResult(result.userId, {
-            type: result.toCurrency, amount: result.credited, currency: result.toCurrency,
-            reference: rampId, status: 'completed', details: 'Crypto Ramp Settlement',
+            type: rampTypeLabel(result.rampType), amount: result.credited, currency: result.toCurrency,
+            reference: rampId, status: 'completed',
+            details: `${rampTypeLabel(result.rampType)}: ${result.fromCurrency} → ${result.toCurrency}`,
         });
         return result;
     }
@@ -776,11 +795,12 @@ class CurrencyEngineService {
             if (!r) throw new AppError('Ramp not found', 404);
             if (String(r.status).toUpperCase() !== 'PENDING') throw new AppError(`Ramp is ${r.status}, not pending`, 400);
             const out = await this._refundRampSource(client, r, reason);
-            return { rampId, status: 'FAILED', ...out, userId: r.user_id };
+            return { rampId, status: 'FAILED', ...out, userId: r.user_id, rampType: r.type, toCurrency: r.to_currency };
         });
         notifyRampResult(result.userId, {
-            type: result.currency, amount: result.refunded, currency: result.currency,
-            reference: rampId, status: 'failed', details: `Crypto Ramp Failed: ${reason}`,
+            type: rampTypeLabel(result.rampType), amount: result.refunded, currency: result.currency,
+            reference: rampId, status: 'failed',
+            details: `${rampTypeLabel(result.rampType)} Failed: ${reason} (${result.currency} → ${result.toCurrency})`,
         });
         return result;
     }
@@ -832,13 +852,16 @@ class CurrencyEngineService {
                 return { rampId: row.id, status: 'FAILED', ...out, userId: cur.user_id };
             });
             if (result.userId) {
+                const label = rampTypeLabel(row.type);
                 notifyRampResult(result.userId, {
-                    type: result.status === 'COMPLETED' ? result.toCurrency : result.currency,
+                    type: label,
                     amount: result.status === 'COMPLETED' ? result.credited : result.refunded,
                     currency: result.status === 'COMPLETED' ? result.toCurrency : result.currency,
                     reference: row.id,
                     status: result.status === 'COMPLETED' ? 'completed' : 'failed',
-                    details: result.status === 'COMPLETED' ? 'Crypto Ramp Settlement' : `Crypto Ramp Failed: ${ycStatus}`,
+                    details: result.status === 'COMPLETED'
+                        ? `${label}: ${row.from_currency} → ${row.to_currency}`
+                        : `${label} Failed: ${ycStatus} (${row.from_currency} → ${row.to_currency})`,
                 });
             }
             return result;
