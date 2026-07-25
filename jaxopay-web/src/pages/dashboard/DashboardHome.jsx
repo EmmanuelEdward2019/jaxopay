@@ -22,6 +22,7 @@ import { useAppStore } from '../../store/appStore';
 import dashboardService from '../../services/dashboardService';
 import cryptoService from '../../services/cryptoService';
 import walletService from '../../services/walletService';
+import HiddenRateQuote from '../../components/crypto/HiddenRateQuote';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import { TransactionDetailModal } from './Transactions';
 
@@ -124,8 +125,6 @@ const DashboardHome = () => {
     transaction_count: 0,
     active_cards: 0,
   });
-  const [markets, setMarkets] = useState([]);
-  const [tickers, setTickers] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -138,11 +137,9 @@ const DashboardHome = () => {
     else setRefreshing(true);
 
     try {
-      const [summaryRes, walletsRes, marketsRes, tickersRes] = await Promise.allSettled([
+      const [summaryRes, walletsRes] = await Promise.allSettled([
         dashboardService.getSummary(),
         walletService.getWallets(),
-        cryptoService.getMarkets(),
-        cryptoService.get24hTickers(),
       ]);
 
       if (summaryRes.status === 'fulfilled' && summaryRes.value?.success) {
@@ -183,22 +180,6 @@ const DashboardHome = () => {
           totalUSD += bal / rate;
         }
         setStats(prev => ({ ...prev, total_balance: totalUSD }));
-      }
-
-      if (marketsRes.status === 'fulfilled' && marketsRes.value?.success) {
-        const raw = marketsRes.value.data?.data || marketsRes.value.data;
-        setMarkets(Array.isArray(raw) ? raw.slice(0, 10) : []);
-      }
-
-      if (tickersRes.status === 'fulfilled' && tickersRes.value?.success) {
-        const raw = tickersRes.value.data;
-        const map = {};
-        if (typeof raw === 'object' && !Array.isArray(raw)) {
-          Object.entries(raw).forEach(([id, v]) => {
-            map[id.toLowerCase()] = v?.ticker || v;
-          });
-        }
-        setTickers(map);
       }
     } catch {
       // silently handle
@@ -290,6 +271,9 @@ const DashboardHome = () => {
           <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
         </button>
       </div>
+
+      {/* Live rates — masked, on-demand only (no background polling) */}
+      <HiddenRateQuote />
 
       {/* Portfolio Value + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

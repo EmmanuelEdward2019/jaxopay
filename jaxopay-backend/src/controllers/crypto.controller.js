@@ -105,9 +105,12 @@ async function getAllTickers() {
   return _tickerSnapshot;
 }
 
-// Warm up on first import; refresh every 5 minutes thereafter
-refreshTickerCache();
-setInterval(refreshTickerCache, TICKER_TTL_MS).unref?.();
+// No eager warm-up / background interval — the dashboard's live ticker bar was removed in
+// favor of an on-demand rate widget (masked until a user hovers/clicks), so nothing should be
+// proactively polling Obiex/Quidax anymore. getAllTickers() above is already lazy-safe: it
+// fetches on first real request and serves the cached snapshot afterward, so this endpoint
+// still works correctly for any remaining caller (e.g. the mobile app) — it just never runs
+// unless something actually asks for it.
 
 // Extract buy/sell/last price from a raw Quidax ticker entry
 function extractPrice(entry, side = 'last') {

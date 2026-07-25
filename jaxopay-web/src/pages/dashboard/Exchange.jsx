@@ -52,7 +52,6 @@ import PinModal from '../../components/common/PinModal';
 import walletService from '../../services/walletService';
 import { formatCurrency } from '../../utils/formatters';
 import TradeDashboard from '../../components/crypto/TradeDashboard';
-// LivePriceTicker is now rendered globally in DashboardLayout
 
 const GET_FLAG = (code) => {
     const flags = {

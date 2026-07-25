@@ -28,7 +28,6 @@ import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
 import NotificationDropdown from '../notifications/NotificationDropdown';
 import AnnouncementBanner from '../notifications/AnnouncementBanner';
-import LivePriceTicker from '../crypto/LivePriceTicker';
 
 const NAV_GROUPS = (isFeatureEnabled) => [
   {
@@ -260,11 +259,6 @@ const DashboardLayout = () => {
             </div>
           </div>
         </header>
-
-        {/* Live price ticker bar — Obiex-sourced (primary crypto provider), same rate the
-            Instant Swap page actually executes at. Quidax's order-book page (Trade/Exchange)
-            calls its own separate market-data endpoints and is unaffected by this. */}
-        <LivePriceTicker />
 
         {/* Page content */}
         <main className={`flex-1 ${isTrading ? 'p-0' : 'p-4 md:p-6'}`}>
