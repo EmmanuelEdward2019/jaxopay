@@ -2,6 +2,26 @@ import { query, transaction } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import yellowCard from '../orchestration/adapters/fx/YellowCardService.js';
+import { sendTransactionEmails } from './email.service.js';
+
+/** Fire a receipt email for a swap/ramp result — best-effort, never blocks the caller. */
+async function notifyRampResult(userId, { type, amount, currency, reference, status, details }) {
+    try {
+        const userRes = await query(
+            `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+             FROM users u
+             LEFT JOIN user_profiles up ON up.user_id = u.id
+             WHERE u.id = $1`,
+            [userId]
+        );
+        if (userRes.rows.length > 0) {
+            sendTransactionEmails({ type, amount, currency, reference, status, details }, userRes.rows[0])
+                .catch((e) => logger.error('[ramp] notification email error:', e.message));
+        }
+    } catch (e) {
+        logger.error('[ramp] notify error:', e.message);
+    }
+}
 
 // Cross-border FX/payments provider — Yellow Card.
 const FX_PROVIDER_NAME = 'yellowcard';
@@ -46,7 +66,7 @@ class CurrencyEngineService {
     async swapCurrency(userId, fromCurrency, toCurrency, amount) {
         if (amount <= 0) throw new AppError('Invalid amount', 400);
 
-        return await transaction(async (client) => {
+        const result = await transaction(async (client) => {
             // 1. Fetch Wallets
             const wallets = await client.query(
                 `SELECT id, currency, balance FROM wallets 
@@ -155,6 +175,16 @@ class CurrencyEngineService {
                 status: providerStatus
             };
         });
+
+        // The internal wallet swap is authoritative regardless of the provider call's outcome
+        // (see the comment above — JAXOPAY absorbs the provider-side risk), so the user's own
+        // wallets did change either way; notify accordingly.
+        notifyRampResult(userId, {
+            type: toCurrency, amount: result.convertedAmount, currency: toCurrency,
+            reference: result.transactionId, status: 'completed', details: `Currency Swap: ${fromCurrency} → ${toCurrency}`,
+        });
+
+        return result;
     }
 
     async sendInternationalPayment(userId, payload) {
@@ -725,24 +755,34 @@ class CurrencyEngineService {
 
     /** Ops manually confirms the settlement leg → credit the destination (internal) + mark COMPLETED. */
     async confirmRampSettlement(rampId) {
-        return await transaction(async (client) => {
+        const result = await transaction(async (client) => {
             const r = (await client.query(`SELECT * FROM fx_transactions WHERE id=$1 FOR UPDATE`, [rampId])).rows[0];
             if (!r) throw new AppError('Ramp not found', 404);
             if (String(r.status).toUpperCase() !== 'PENDING') throw new AppError(`Ramp is ${r.status}, not pending`, 400);
             const out = await this._creditRampDestination(client, r);
-            return { rampId, status: 'COMPLETED', ...out };
+            return { rampId, status: 'COMPLETED', ...out, userId: r.user_id };
         });
+        notifyRampResult(result.userId, {
+            type: result.toCurrency, amount: result.credited, currency: result.toCurrency,
+            reference: rampId, status: 'completed', details: 'Crypto Ramp Settlement',
+        });
+        return result;
     }
 
     /** Ops manually rejects a pending ramp → refund the user's source wallet + mark FAILED. */
     async failRampSettlement(rampId, reason = 'settlement_failed') {
-        return await transaction(async (client) => {
+        const result = await transaction(async (client) => {
             const r = (await client.query(`SELECT * FROM fx_transactions WHERE id=$1 FOR UPDATE`, [rampId])).rows[0];
             if (!r) throw new AppError('Ramp not found', 404);
             if (String(r.status).toUpperCase() !== 'PENDING') throw new AppError(`Ramp is ${r.status}, not pending`, 400);
             const out = await this._refundRampSource(client, r, reason);
-            return { rampId, status: 'FAILED', ...out };
+            return { rampId, status: 'FAILED', ...out, userId: r.user_id };
         });
+        notifyRampResult(result.userId, {
+            type: result.currency, amount: result.refunded, currency: result.currency,
+            reference: rampId, status: 'failed', details: `Crypto Ramp Failed: ${reason}`,
+        });
+        return result;
     }
 
     /**
@@ -785,12 +825,22 @@ class CurrencyEngineService {
                 if (DONE.includes(ycStatus)) {
                     const out = await this._creditRampDestination(client, cur);
                     logger.info(`[ramp reconcile] ${row.provider_txn_id} → COMPLETED (auto), credited ${out.credited} ${out.toCurrency}`);
-                    return { rampId: row.id, status: 'COMPLETED', ...out };
+                    return { rampId: row.id, status: 'COMPLETED', ...out, userId: cur.user_id };
                 }
                 const out = await this._refundRampSource(client, cur, `yc_${ycStatus.toLowerCase()}`);
                 logger.info(`[ramp reconcile] ${row.provider_txn_id} → FAILED (auto: ${ycStatus}), refunded ${out.refunded} ${out.currency}`);
-                return { rampId: row.id, status: 'FAILED', ...out };
+                return { rampId: row.id, status: 'FAILED', ...out, userId: cur.user_id };
             });
+            if (result.userId) {
+                notifyRampResult(result.userId, {
+                    type: result.status === 'COMPLETED' ? result.toCurrency : result.currency,
+                    amount: result.status === 'COMPLETED' ? result.credited : result.refunded,
+                    currency: result.status === 'COMPLETED' ? result.toCurrency : result.currency,
+                    reference: row.id,
+                    status: result.status === 'COMPLETED' ? 'completed' : 'failed',
+                    details: result.status === 'COMPLETED' ? 'Crypto Ramp Settlement' : `Crypto Ramp Failed: ${ycStatus}`,
+                });
+            }
             return result;
         }
         return { rampId: row.id, status: 'PENDING', ycStatus };

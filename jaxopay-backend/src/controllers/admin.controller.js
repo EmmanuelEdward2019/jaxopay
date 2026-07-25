@@ -1138,10 +1138,21 @@ const ADMIN_TX_COMBINED = `
     WHERE NOT EXISTS (SELECT 1 FROM transactions t WHERE (wtx.metadata->>'quidax_tx_id') IS NOT NULL AND (t.metadata->>'quidax_tx_id') = (wtx.metadata->>'quidax_tx_id'))
     UNION ALL
     SELECT fx.id, fx.user_id,
-           (CASE fx.type WHEN 'swap' THEN 'exchange' WHEN 'international_payment' THEN 'transfer' ELSE fx.type END)::varchar,
+           (CASE fx.type
+              WHEN 'swap' THEN 'exchange'
+              WHEN 'international_payment' THEN 'transfer'
+              WHEN 'crypto_offramp' THEN 'exchange'
+              WHEN 'crypto_onramp' THEN 'exchange'
+              ELSE fx.type
+            END)::varchar,
            fx.amount::numeric, fx.from_currency::varchar,
            (CASE UPPER(fx.status) WHEN 'SUCCESS' THEN 'completed' WHEN 'PROCESSING' THEN 'pending' WHEN 'FAILED' THEN 'failed' ELSE LOWER(fx.status) END)::varchar,
-           (CASE fx.type WHEN 'swap' THEN 'Currency Swap: '||fx.from_currency||' → '||fx.to_currency ELSE 'International Transfer to '||COALESCE(fx.recipient_details->>'name', fx.to_currency) END)::text,
+           (CASE fx.type
+              WHEN 'swap' THEN 'Currency Swap: '||fx.from_currency||' → '||fx.to_currency
+              WHEN 'crypto_offramp' THEN 'Sold '||fx.from_currency||' for '||fx.to_currency
+              WHEN 'crypto_onramp' THEN 'Bought '||fx.to_currency||' with '||fx.from_currency
+              ELSE 'International Transfer to '||COALESCE(fx.recipient_details->>'name', fx.to_currency)
+            END)::text,
            fx.provider_txn_id::varchar, fx.created_at
     FROM fx_transactions fx
   )`;
