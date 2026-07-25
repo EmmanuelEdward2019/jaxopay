@@ -22,7 +22,6 @@ import { useAppStore } from '../../store/appStore';
 import dashboardService from '../../services/dashboardService';
 import cryptoService from '../../services/cryptoService';
 import walletService from '../../services/walletService';
-import HiddenRateQuote from '../../components/crypto/HiddenRateQuote';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import { TransactionDetailModal } from './Transactions';
 
@@ -271,9 +270,6 @@ const DashboardHome = () => {
           <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
         </button>
       </div>
-
-      {/* Live rates — masked, on-demand only (no background polling) */}
-      <HiddenRateQuote />
 
       {/* Portfolio Value + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

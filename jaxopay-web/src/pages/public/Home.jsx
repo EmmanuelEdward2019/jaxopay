@@ -28,6 +28,7 @@ import { FaApple, FaGooglePlay } from 'react-icons/fa';
 import { FaPaperPlane, FaCreditCard, FaBitcoin, FaPlane, FaGift, FaGlobe, FaWallet, FaArrowRightArrowLeft, FaBolt, FaShieldHalved } from 'react-icons/fa6';
 import PublicLayout from '../../components/layout/PublicLayout';
 import VideoPlayer from '../../components/VideoPlayer';
+import LiveRatesShowcase from '../../components/public/LiveRatesShowcase';
 
 // Import Swiper styles
 import 'swiper/css';
@@ -357,6 +358,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <LiveRatesShowcase />
 
       {/* Stats Section */}
       <section className="bg-gray-50 dark:bg-gray-800 py-12">
