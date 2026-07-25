@@ -1,9 +1,11 @@
 /**
  * Email Templates for JAXOPAY
  *
- * Built for real-world email clients: inline styles + table-based layout only
- * (no <style> blocks or flexbox, which Gmail/Outlook strip or ignore). Light /
- * white corporate theme with the JAXOPAY logo in the header of every email.
+ * Built for real-world email clients: inline styles + table-based layout as the baseline
+ * (no flexbox — Gmail/Outlook ignore it). One small embedded <style> block in <head> adds
+ * a mobile stacking media query on top of that baseline (see layout()) — clients that don't
+ * support it (older Outlook desktop) just fall back to the inline-styled table layout.
+ * Light / white corporate theme with the JAXOPAY logo in the header of every email.
  */
 
 // Public, absolute URL to the logo (email clients can't load relative/local paths).
@@ -36,12 +38,15 @@ const button = (href, label, bg = BRAND_GREEN) => `
     </tr>
   </table>`;
 
-/** One label/value line inside an info box. Label sits in a narrow fixed column;
- *  the value fills the remaining horizontal width on the same line. */
+/** One label/value line inside an info box. Label sits in a narrow fixed column and the
+ *  value fills the remaining horizontal width on the same line — except on narrow phone
+ *  screens (see the .jx-label/.jx-value media query in layout()), where a long value (a
+ *  name + email, a long reference) would otherwise get squeezed into a thin remaining
+ *  column instead of using the row's full width; there it stacks label-above-value instead. */
 const row = (label, value, valueColor = INK) => `
   <tr>
-    <td width="132" style="padding:9px 0;border-bottom:1px solid #eef2f6;font-family:${FONT};font-size:13px;color:${MUTED};vertical-align:top;white-space:nowrap;width:132px;">${label}</td>
-    <td style="padding:9px 0;border-bottom:1px solid #eef2f6;font-family:${FONT};font-size:14px;color:${valueColor};font-weight:600;text-align:left;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;">${value}</td>
+    <td class="jx-label" width="132" style="padding:9px 0;border-bottom:1px solid #eef2f6;font-family:${FONT};font-size:13px;color:${MUTED};vertical-align:top;white-space:nowrap;width:132px;">${label}</td>
+    <td class="jx-value" style="padding:9px 0;border-bottom:1px solid #eef2f6;font-family:${FONT};font-size:14px;color:${valueColor};font-weight:600;text-align:left;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;">${value}</td>
   </tr>`;
 
 /** Wraps label/value rows in a light card. */
@@ -69,6 +74,29 @@ const layout = (content) => `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transi
     <meta name="color-scheme" content="light only" />
     <meta name="supported-color-schemes" content="light only" />
     <title>JAXOPAY</title>
+    <style>
+      /* Stack info-box label/value rows on narrow phone screens instead of squeezing the
+         value into a thin right-hand column. Clients that don't support embedded CSS/media
+         queries (older Outlook desktop) simply ignore this and keep the side-by-side layout. */
+      @media only screen and (max-width: 480px) {
+        .jx-label {
+          display: block !important;
+          width: 100% !important;
+          white-space: normal !important;
+          padding: 12px 0 2px !important;
+          border-bottom: 0 !important;
+          font-size: 11px !important;
+          letter-spacing: .04em !important;
+          text-transform: uppercase !important;
+        }
+        .jx-value {
+          display: block !important;
+          width: 100% !important;
+          padding: 0 0 10px !important;
+          font-size: 15px !important;
+        }
+      }
+    </style>
   </head>
   <body style="margin:0;padding:0;background:#f4f6f8;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f6f8;">
