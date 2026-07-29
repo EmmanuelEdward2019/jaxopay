@@ -204,9 +204,11 @@ const InstantSwap = () => {
     return () => clearInterval(interval);
   }, [quotation?.expires_at, swapPhase]);
 
-  // Reset quotation when user changes params
+  // Reset quotation when user changes params — including after a failed attempt (e.g.
+  // insufficient funds), so typing a new "You Pay" amount goes back to idle and the preview-rate
+  // effect below picks it up again instead of leaving the old "You Receive" amount stuck on screen.
   useEffect(() => {
-    if (swapPhase === 'quoted' || swapPhase === 'refreshing') {
+    if (['quoted', 'refreshing', 'failed'].includes(swapPhase)) {
       setSwapPhase('idle');
       setQuotation(null);
       setSwapError(null);
