@@ -414,11 +414,13 @@ class ObiexAdapter {
     };
     const data = await this._request('POST', '/trades/quote', body);
     const d = data?.data || {};
-    // d.amount/d.amountReceived are always sourceId/targetId amounts respectively, in Obiex's
-    // resolved (possibly reversed) orientation — map them back to the caller's from/to, not
-    // Obiex's source/target, so the contract (from_amount is always "from") holds either way.
-    const fromAmount = reversed ? d.amountReceived : d.amount;
-    const toAmount = reversed ? d.amount : d.amountReceived;
+    // d.amount/d.amountReceived mirror the request's give/receive semantics, NOT sourceId/targetId
+    // — same as the request body above. Confirmed against a live BUY trade (2026-07-29): reversing
+    // these based on `reversed` swapped the NGN and crypto amounts between currencies (e.g. a
+    // ₦1399 buy was recorded as "₦0.9996 → 1399 USDT" instead of "₦1399 → 0.9996 USDT"). No
+    // reversal needed — `amount` is always the from-leg, `amountReceived` always the to-leg.
+    const fromAmount = d.amount;
+    const toAmount = d.amountReceived;
     if (d.id) {
       this._quoteOrientation.set(d.id, {
         reversed, from: String(from).toUpperCase(), to: String(to).toUpperCase(), _storedAt: Date.now(),
@@ -430,7 +432,7 @@ class ObiexAdapter {
       to_currency: String(to).toUpperCase(),
       from_amount: fromAmount,
       to_amount: toAmount,
-      quoted_price: reversed ? (fromAmount > 0 ? toAmount / fromAmount : d.rate) : d.rate,
+      quoted_price: fromAmount > 0 ? toAmount / fromAmount : d.rate,
       expires_at: d.expiryDate,
       expires_in: d.expiresIn,
       raw: d,
@@ -472,25 +474,19 @@ class ObiexAdapter {
 
     // Prefer the orientation recorded when the quote was created (getSwapQuote) — Obiex's raw
     // pair.source/target reflect ITS canonical pair orientation, which is reversed vs. the
-    // caller's from/to whenever the swap went through the isBuyable/BUY-side path. Getting this
-    // wrong would credit/debit the wrong currencies locally, so only fall back to the raw pair
-    // codes (correct in the non-reversed case) if the orientation record isn't found — e.g. an
-    // older in-flight quote created before this tracking existed.
+    // caller's from/to whenever the swap went through the isBuyable/BUY-side path. Only fall back
+    // to the raw pair codes (correct in the non-reversed case) if the orientation record isn't
+    // found — e.g. an older in-flight quote created before this tracking existed.
     const orientation = this._quoteOrientation.get(quotationId);
     this._quoteOrientation.delete(quotationId);
 
-    let fromCode, toCode, fromAmount, toAmount;
-    if (orientation) {
-      fromCode = orientation.from;
-      toCode = orientation.to;
-      fromAmount = orientation.reversed ? d.amountReceived : d.amount;
-      toAmount = orientation.reversed ? d.amount : d.amountReceived;
-    } else {
-      fromCode = this._fromObiexCurrency(d.pair?.source?.code);
-      toCode = this._fromObiexCurrency(d.pair?.target?.code);
-      fromAmount = d.amount;
-      toAmount = d.amountReceived;
-    }
+    const fromCode = orientation ? orientation.from : this._fromObiexCurrency(d.pair?.source?.code);
+    const toCode = orientation ? orientation.to : this._fromObiexCurrency(d.pair?.target?.code);
+    // d.amount/d.amountReceived mirror give/receive semantics, not sourceId/targetId — same fix
+    // as getSwapQuote (see its comment). No reversal based on orientation.reversed: that was
+    // swapping the NGN/crypto amounts between currencies for every BUY-direction swap.
+    const fromAmount = d.amount;
+    const toAmount = d.amountReceived;
 
     return {
       id: d.id,
