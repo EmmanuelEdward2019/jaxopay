@@ -12,6 +12,7 @@ import QRCodeSVG from 'react-qr-code';
 import walletService from '../../services/walletService';
 import cryptoService from '../../services/cryptoService';
 import transferService from '../../services/transferService';
+import kycService from '../../services/kycService';
 import PinModal from '../../components/common/PinModal';
 import SearchableBankSelect from '../../components/common/SearchableBankSelect';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
@@ -1122,10 +1123,12 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
 
 // ── Withdraw Form ────────────────────────────────────────────────────────
 const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
+    const { user } = useAuthStore();
     const [amount, setAmount] = useState('');
     const [recipient, setRecipient] = useState('');
     const [network, setNetwork] = useState('');
     const [networks, setNetworks] = useState([]);
+    const [tierLimits, setTierLimits] = useState(null);
     const [description, setDescription] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -1159,6 +1162,11 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
             if (res.success) setBanks(res.data || []);
         });
     }, [code, isCrypto]);
+
+    // KYC tier limits — for the "before you withdraw" note below
+    useEffect(() => {
+        kycService.getTierLimits().then(res => { if (res.success) setTierLimits(res.data); });
+    }, []);
 
     // Resolve account name
     useEffect(() => {
@@ -1295,6 +1303,39 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                         placeholder="Optional reference"
                         className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground text-sm focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
                 </div>
+
+                {/* Before-you-withdraw note: minimum, network fee (crypto), daily limit */}
+                {(() => {
+                    const selectedNetworkInfo = isCrypto ? networks.find(n => n.network === network) : null;
+                    const currentTierKey = user?.kyc_tier || 'tier_0';
+                    const currentTierLimit = tierLimits?.limits?.[currentTierKey];
+                    const minWithdraw = isCrypto ? selectedNetworkInfo?.withdrawMin : 100;
+                    const netFee = isCrypto ? selectedNetworkInfo?.withdrawFee : null;
+                    if (!currentTierLimit && minWithdraw == null && netFee == null) return null;
+                    return (
+                        <div className="p-3 bg-muted/50 border border-border rounded-xl space-y-1.5">
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Before you withdraw</p>
+                            {minWithdraw != null && (
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="text-muted-foreground">Minimum withdrawal</span>
+                                    <span className="font-semibold text-foreground">{minWithdraw} {code}</span>
+                                </div>
+                            )}
+                            {isCrypto && netFee != null && (
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="text-muted-foreground">Network fee ({selectedNetworkInfo?.name || network})</span>
+                                    <span className="font-semibold text-foreground">{netFee} {code}</span>
+                                </div>
+                            )}
+                            {currentTierLimit && (
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="text-muted-foreground">Daily limit ({currentTierLimit.name})</span>
+                                    <span className="font-semibold text-foreground">${Number(currentTierLimit.daily_limit).toLocaleString()}</span>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
             </div>
 
             <button onClick={() => { setPinError(''); setShowPin(true); }}
@@ -1382,10 +1423,11 @@ const TransferForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
 
             <div className="space-y-4">
                 <div>
-                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Recipient Email</label>
-                    <input type="email" value={recipient} onChange={(e) => setRecipient(e.target.value)}
-                        placeholder="user@example.com"
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Recipient (Email, Username, or ID)</label>
+                    <input type="text" value={recipient} onChange={(e) => setRecipient(e.target.value)}
+                        placeholder="user@example.com, @username, or user ID"
                         className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground font-medium focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground mt-1.5">Send within JAXOPAY without sharing your email — ask the recipient for their username or User ID in Settings.</p>
                 </div>
 
                 <div>

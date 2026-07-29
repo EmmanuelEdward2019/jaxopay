@@ -183,6 +183,16 @@ const startServer = async () => {
             .then((m) => m.sweepPendingBankTransfers())
             .catch((e) => logger.warn('[transfer sweep] error:', e.message));
         }, TRANSFER_SWEEP_MS).unref();
+
+        // Auto-reconcile crypto withdrawals stuck "pending" against Obiex — same problem as the
+        // NGN bank transfer sweep above, but for crypto withdrawals, which previously had zero
+        // fallback if the completion webhook never arrived (see crypto.controller.js).
+        const CRYPTO_WITHDRAW_SWEEP_MS = Number(process.env.CRYPTO_WITHDRAW_SWEEP_MS) || 60000;
+        setInterval(() => {
+          import('./controllers/crypto.controller.js')
+            .then((m) => m.sweepPendingCryptoWithdrawals())
+            .catch((e) => logger.warn('[crypto withdrawal sweep] error:', e.message));
+        }, CRYPTO_WITHDRAW_SWEEP_MS).unref();
       })
       .catch((dbError) => {
         logger.warn('⚠️  Database connection failed - server running without database');

@@ -40,10 +40,11 @@ const walletService = {
   },
 
   // P2P transfer between users
-  transfer: async (recipientEmail, amount, currency, description = '', pin) => {
+  // recipient may be an email, username, or user ID (UID)
+  transfer: async (recipient, amount, currency, description = '', pin) => {
     try {
       const response = await apiClient.post('/wallets/transfer', {
-        recipient_email: recipientEmail,
+        recipient,
         amount,
         currency,
         description,

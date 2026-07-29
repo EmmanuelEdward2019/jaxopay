@@ -20,6 +20,32 @@ const adminService = {
             return { success: false, error: error.message };
         }
     },
+    // Account deletion requests (super_admin approval workflow)
+    getAccountDeletionRequests: async (status = 'pending') => {
+        try {
+            const response = await apiClient.get('/admin/account-deletion-requests', { params: { status } });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+    approveAccountDeletion: async (id) => {
+        try {
+            const response = await apiClient.post(`/admin/account-deletion-requests/${id}/approve`);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+    rejectAccountDeletion: async (id, admin_note) => {
+        try {
+            const response = await apiClient.post(`/admin/account-deletion-requests/${id}/reject`, { admin_note });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
     // Create user
     createUser: async (userData) => {
         try {

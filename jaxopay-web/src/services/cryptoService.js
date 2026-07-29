@@ -97,6 +97,16 @@ const cryptoService = {
     }
   },
 
+  // Manually re-check a "pending" withdrawal's status (also auto-reconciled server-side)
+  verifyWithdrawal: async (txId) => {
+    try {
+      const response = await apiClient.get(`/crypto/withdraw/${txId}/verify`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
   // Swap crypto for crypto (legacy single-step)
   swap: async (payload) => {
     try {

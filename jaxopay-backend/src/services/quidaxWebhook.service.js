@@ -191,7 +191,7 @@ export function createQuidaxWebhookService({
             walletId,
             parseFloat(amount),
             currencyUpper,
-            `Crypto deposit via Quidax (${quidaxTxId})`,
+            `Crypto deposit (${quidaxTxId})`,
             JSON.stringify({ quidax_tx_id: String(quidaxTxId), address, tag, quidax_user_id: quidaxSubUserId, quidax_user_refs: quidaxUserRefs, source: 'quidax' }),
           ]
         );

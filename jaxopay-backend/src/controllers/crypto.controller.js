@@ -1104,16 +1104,144 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: `Withdrawal request submitted. Confirmation pending from ${CRYPTO_PROVIDER === 'obiex' ? 'Obiex' : 'Quidax'}.`,
+    message: 'Withdrawal request submitted. Confirmation pending.',
     data: {
       txId: withdrawal.txId,
       reference,
       provider_reference: providerWithdrawId,
       status: 'pending',
-      note: `Status will update via webhook when ${CRYPTO_PROVIDER === 'obiex' ? 'Obiex' : 'Quidax'} confirms the withdrawal`
+      note: 'Status will update automatically once the withdrawal is confirmed.'
     }
   });
 });
+
+// ─────────────────────────────────────────────
+// Reconcile a single crypto withdrawal against the provider — shared by the manual verify
+// endpoint and the background sweep (sweepPendingCryptoWithdrawals below). Without this, a
+// withdrawal whose webhook never arrives (or never fires at all) stays "Processing" in the
+// transaction history forever, even though the crypto genuinely left the wallet successfully.
+// ─────────────────────────────────────────────
+async function reconcileCryptoWithdrawal(txId) {
+  const txRes = await query(
+    `SELECT wt.id, wt.wallet_id, wt.amount, wt.currency, wt.status, wt.metadata, w.user_id
+     FROM wallet_transactions wt
+     JOIN wallets w ON w.id = wt.wallet_id
+     WHERE wt.id = $1 AND wt.transaction_type = 'withdrawal'`,
+    [txId]
+  );
+  if (txRes.rows.length === 0) return { status: 'not_found' };
+  const tx = txRes.rows[0];
+
+  if (['completed', 'failed'].includes(tx.status)) {
+    return { status: tx.status, userId: tx.user_id };
+  }
+
+  const obiexWithdrawId = tx.metadata?.obiex_withdraw_id;
+  if (!obiexWithdrawId) {
+    // No provider id recorded yet — nothing to poll; leave as-is for the webhook to finalize.
+    return { status: tx.status, userId: tx.user_id, pending: true };
+  }
+
+  let providerStatus;
+  try {
+    const result = await obiex.getTransactionById(obiexWithdrawId);
+    providerStatus = String(result?.payout?.status || result?.status || '').toLowerCase();
+    logger.info(`[CryptoWithdraw] reconcile ${txId}: provider status = ${providerStatus || 'unknown'}`);
+  } catch (err) {
+    logger.warn(`[CryptoWithdraw] reconcile ${txId} provider query failed: ${err.message}`);
+    return { status: tx.status, userId: tx.user_id, pending: true };
+  }
+
+  if (['success', 'successful', 'completed'].includes(providerStatus)) {
+    let didFinalize = false;
+    await transaction(async (client) => {
+      const cur = await client.query(`SELECT status FROM wallet_transactions WHERE id = $1 FOR UPDATE`, [txId]);
+      if (['completed', 'failed'].includes(cur.rows[0]?.status)) return;
+      await client.query(
+        `UPDATE wallet_transactions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [txId]
+      );
+      didFinalize = true;
+    });
+    if (didFinalize) notifyCryptoWithdrawalResult(tx, true);
+    return { status: 'completed', userId: tx.user_id };
+  }
+
+  if (['failed', 'reversed', 'cancelled', 'canceled', 'declined', 'rejected'].includes(providerStatus)) {
+    let didFinalize = false;
+    await transaction(async (client) => {
+      const cur = await client.query(`SELECT status FROM wallet_transactions WHERE id = $1 FOR UPDATE`, [txId]);
+      if (['completed', 'failed'].includes(cur.rows[0]?.status)) return;
+      await client.query(
+        `UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
+        [tx.amount, tx.wallet_id]
+      );
+      await client.query(
+        `UPDATE wallet_transactions SET status = 'failed', updated_at = NOW() WHERE id = $1`,
+        [txId]
+      );
+      didFinalize = true;
+    });
+    if (didFinalize) notifyCryptoWithdrawalResult(tx, false);
+    return { status: 'failed', userId: tx.user_id };
+  }
+
+  return { status: 'processing', userId: tx.user_id };
+}
+
+async function notifyCryptoWithdrawalResult(tx, success) {
+  try {
+    const userRes = await query(
+      `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+       FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = $1`,
+      [tx.user_id]
+    );
+    if (userRes.rows.length === 0) return;
+    emailService.sendWithdrawalEmails({
+      success,
+      amount: tx.amount,
+      currency: tx.currency,
+      reference: tx.metadata?.obiex_reference || tx.id,
+      txId: tx.id,
+      destination: tx.metadata?.address || null,
+      destinationLabel: 'crypto address',
+      network: tx.metadata?.network || null,
+      typeDetail: `Crypto Withdrawal (${tx.currency}${tx.metadata?.network ? ' · ' + tx.metadata.network : ''})`,
+      reason: success ? undefined : 'Payout failed at provider — funds returned',
+    }, userRes.rows[0]).catch((e) => logger.error('[CryptoWithdraw] reconcile email error:', e.message));
+  } catch (e) {
+    logger.error('[CryptoWithdraw] reconcile notify error:', e.message);
+  }
+}
+
+// GET /crypto/withdraw/:txId/verify — manually re-poll the provider and reconcile a "pending" withdrawal.
+export const verifyCryptoWithdrawal = catchAsync(async (req, res) => {
+  const { txId } = req.params;
+  const result = await reconcileCryptoWithdrawal(txId);
+  if (result.status === 'not_found') throw new AppError('Withdrawal not found', 404);
+  if (result.userId !== req.user.id) throw new AppError('Unauthorized', 403);
+  res.status(200).json({ success: true, data: { txId, status: result.status, pending: result.pending } });
+});
+
+// Background sweep — auto-reconcile crypto withdrawals stuck "pending" against Obiex.
+// Mirrors sweepPendingBankTransfers (transfer.controller.js); wired up in server.js on an interval.
+export async function sweepPendingCryptoWithdrawals(maxAgeMinutes = 2, limit = 50) {
+  const rows = (await query(
+    `SELECT id FROM wallet_transactions
+     WHERE transaction_type = 'withdrawal' AND status = 'pending'
+       AND metadata->>'provider' = 'obiex'
+       AND created_at < NOW() - ($1 || ' minutes')::interval
+     ORDER BY created_at ASC LIMIT $2`,
+    [String(maxAgeMinutes), limit]
+  )).rows;
+  let changed = 0;
+  for (const r of rows) {
+    const res = await reconcileCryptoWithdrawal(r.id).catch(() => null);
+    if (res && !['pending', 'processing'].includes(res.status)) changed++;
+  }
+  if (rows.length) logger.info(`[crypto withdrawal sweep] checked ${rows.length}, resolved ${changed}`);
+  return { checked: rows.length, resolved: changed };
+}
 
 // Exchange crypto to crypto (uses Quidax swap quotation: create → confirm)
 export const exchangeCryptoToCrypto = catchAsync(async (req, res) => {

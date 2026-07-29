@@ -212,6 +212,9 @@ const Settings = () => {
                         >
                             <h2 className="text-lg font-bold text-foreground mb-6">General Settings</h2>
 
+                            {/* JAXOPAY ID & Username — for internal transfers without sharing your email */}
+                            <JaxopayIdSection user={user} setUser={setUser} />
+
                             {/* Theme */}
                             <div className="flex items-center justify-between py-4 border-b border-border">
                                 <div className="flex items-center gap-4">
@@ -396,7 +399,7 @@ const Settings = () => {
                                     </div>
                                     <div className="text-left">
                                         <p className="font-semibold text-danger">Delete Account</p>
-                                        <p className="text-sm text-muted-foreground">Permanently remove your data</p>
+                                        <p className="text-sm text-muted-foreground">Request account deletion — reviewed by our team</p>
                                     </div>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-red-300 group-hover:translate-x-1 transition-transform" />
@@ -549,6 +552,147 @@ const Settings = () => {
                     onSaved={() => { setShowPinModal(false); loadPinStatus(); }}
                 />
             )}
+        </div>
+    );
+};
+
+// Your JAXOPAY ID (UID) + username — lets other JAXOPAY users send you internal transfers
+// without needing your email. UID is always available (copy-only); username is optional/settable.
+const JaxopayIdSection = ({ user, setUser }) => {
+    const [copiedField, setCopiedField] = useState(null);
+    const [editing, setEditing] = useState(false);
+    const [usernameInput, setUsernameInput] = useState(user?.username || '');
+    const [checking, setChecking] = useState(false);
+    const [availability, setAvailability] = useState(null); // { available, reason }
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+
+    const copy = async (text, field) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopiedField(field);
+            setTimeout(() => setCopiedField(null), 1500);
+        } catch { /* clipboard unavailable — silently ignore */ }
+    };
+
+    useEffect(() => {
+        if (!editing) return;
+        const val = usernameInput.trim();
+        if (!val || val === user?.username) { setAvailability(null); return; }
+        const timer = setTimeout(async () => {
+            setChecking(true);
+            const res = await userService.checkUsername(val);
+            if (res.success) setAvailability(res.data);
+            setChecking(false);
+        }, 400);
+        return () => clearTimeout(timer);
+    }, [usernameInput, editing, user?.username]);
+
+    const handleSave = async () => {
+        setError(null);
+        setSaving(true);
+        const res = await userService.setUsername(usernameInput.trim());
+        setSaving(false);
+        if (res.success) {
+            setUser({ ...user, username: res.data.data.username });
+            setEditing(false);
+            setAvailability(null);
+        } else {
+            setError(res.error || 'Could not update username.');
+        }
+    };
+
+    return (
+        <div className="py-4 border-b border-border space-y-4">
+            <div>
+                <p className="font-semibold text-foreground mb-1">Your JAXOPAY ID</p>
+                <p className="text-sm text-muted-foreground mb-3">
+                    Share your ID, username, or email so other JAXOPAY users can send you an internal transfer — without needing your email address.
+                </p>
+            </div>
+
+            {/* UID */}
+            <div className="flex items-center justify-between gap-3 p-3 bg-muted rounded-xl">
+                <div className="min-w-0">
+                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">User ID</p>
+                    <p className="text-sm font-mono text-foreground truncate">{user?.id}</p>
+                </div>
+                <button
+                    onClick={() => copy(user?.id, 'uid')}
+                    className="shrink-0 p-2 rounded-lg hover:bg-card transition-colors"
+                    title="Copy User ID"
+                >
+                    {copiedField === 'uid' ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
+                </button>
+            </div>
+
+            {/* Username */}
+            <div className="p-3 bg-muted rounded-xl">
+                {!editing ? (
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Username</p>
+                            <p className="text-sm font-medium text-foreground truncate">
+                                {user?.username ? `@${user.username}` : <span className="text-muted-foreground italic">Not set</span>}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                            {user?.username && (
+                                <button
+                                    onClick={() => copy(user.username, 'username')}
+                                    className="p-2 rounded-lg hover:bg-card transition-colors"
+                                    title="Copy username"
+                                >
+                                    {copiedField === 'username' ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
+                                </button>
+                            )}
+                            <button
+                                onClick={() => { setEditing(true); setUsernameInput(user?.username || ''); setError(null); }}
+                                className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition-colors"
+                            >
+                                {user?.username ? 'Change' : 'Create username'}
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground font-bold">@</span>
+                            <input
+                                autoFocus
+                                type="text"
+                                value={usernameInput}
+                                onChange={(e) => setUsernameInput(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
+                                maxLength={20}
+                                placeholder="e.g. emmanuel_e"
+                                className="flex-1 px-3 py-2 bg-card border border-border rounded-lg text-sm focus:ring-2 focus:ring-ring outline-none"
+                            />
+                        </div>
+                        {error && <p className="text-xs text-danger font-medium">{error}</p>}
+                        {!error && checking && <p className="text-xs text-muted-foreground">Checking availability…</p>}
+                        {!error && !checking && availability && (
+                            <p className={`text-xs font-medium ${availability.available ? 'text-success' : 'text-danger'}`}>
+                                {availability.available ? 'Available' : (availability.reason || 'Already taken')}
+                            </p>
+                        )}
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => { setEditing(false); setError(null); setUsernameInput(user?.username || ''); }}
+                                className="flex-1 py-2 bg-muted text-foreground text-sm font-bold rounded-lg"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={saving || checking || !usernameInput.trim() || (availability && !availability.available)}
+                                className="flex-1 py-2 bg-primary text-primary-foreground text-sm font-bold rounded-lg disabled:opacity-50"
+                            >
+                                {saving ? 'Saving…' : 'Save username'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
@@ -844,24 +988,50 @@ const TwoFactorModal = ({ onClose, user, setUser }) => {
 
 // Delete Account Modal
 const DeleteAccountModal = ({ onClose }) => {
-    const { logout } = useAuthStore();
     const [password, setPassword] = useState('');
+    const [reason, setReason] = useState('');
     const [confirmation, setConfirmation] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [submitted, setSubmitted] = useState(false);
 
-    const handleDelete = async () => {
+    const handleRequest = async () => {
         if (confirmation !== 'DELETE') return;
         setLoading(true);
-        const result = await userService.deleteAccount(password);
+        setError(null);
+        const result = await userService.requestAccountDeletion(password, reason);
+        setLoading(false);
         if (result.success) {
-            await logout();
-            window.location.href = '/';
+            setSubmitted(true);
         } else {
             setError(result.error);
         }
-        setLoading(false);
     };
+
+    if (submitted) {
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
+                <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="p-3 bg-success/10 rounded-full">
+                            <Check className="w-6 h-6 text-success" />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-foreground">Request submitted</h2>
+                            <p className="text-sm text-muted-foreground">Awaiting super admin approval</p>
+                        </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-6">
+                        Your account isn't deleted yet — our team reviews every deletion request before it's actioned.
+                        You'll be notified once it's approved or rejected. You can keep using JAXOPAY in the meantime.
+                    </p>
+                    <button onClick={onClose} className="w-full py-3 bg-primary text-primary-foreground font-bold rounded-xl">
+                        Done
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
@@ -871,8 +1041,8 @@ const DeleteAccountModal = ({ onClose }) => {
                         <AlertTriangle className="w-6 h-6 text-danger" />
                     </div>
                     <div>
-                        <h2 className="text-xl font-bold text-foreground">Delete Account</h2>
-                        <p className="text-sm text-muted-foreground">This action cannot be undone</p>
+                        <h2 className="text-xl font-bold text-foreground">Request Account Deletion</h2>
+                        <p className="text-sm text-muted-foreground">Reviewed by a super admin before anything is deleted</p>
                     </div>
                 </div>
 
@@ -887,6 +1057,17 @@ const DeleteAccountModal = ({ onClose }) => {
                             onChange={(e) => setPassword(e.target.value)}
                             className="w-full px-4 py-3 bg-card border border-border rounded-lg"
                             placeholder="Enter your password"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-semibold text-foreground mb-2">Reason (optional)</label>
+                        <textarea
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            rows={2}
+                            maxLength={500}
+                            className="w-full px-4 py-3 bg-card border border-border rounded-lg resize-none"
+                            placeholder="Let us know why you're leaving"
                         />
                     </div>
                     <div>
@@ -906,11 +1087,11 @@ const DeleteAccountModal = ({ onClose }) => {
                         Cancel
                     </button>
                     <button
-                        onClick={handleDelete}
+                        onClick={handleRequest}
                         disabled={confirmation !== 'DELETE' || !password || loading}
                         className="flex-1 py-3 bg-danger hover:bg-red-700 text-white font-bold rounded-xl disabled:opacity-50"
                     >
-                        {loading ? 'Deleting...' : 'Delete Account'}
+                        {loading ? 'Submitting...' : 'Submit Request'}
                     </button>
                 </div>
             </div>

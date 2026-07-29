@@ -82,11 +82,13 @@ router.post(
   createWallet
 );
 
-// Transfer between wallets
+// Transfer between wallets — recipient may be an email, username, or user ID (UID).
+// `recipient_email` (legacy, email-only) is still accepted for backward compatibility.
 router.post(
   '/transfer',
   requireKYCTier(1),
-  body('recipient_email').isEmail(),
+  body('recipient').optional({ checkFalsy: true }).isString().trim(),
+  body('recipient_email').optional({ checkFalsy: true }).isString().trim(),
   body('amount').isFloat({ min: 0.01 }),
   body('currency').isString().isLength({ min: 1, max: 10 }),
   body('description').optional().isString(),

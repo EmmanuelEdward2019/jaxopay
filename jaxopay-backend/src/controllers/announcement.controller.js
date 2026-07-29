@@ -26,7 +26,7 @@ export const getActiveAnnouncements = catchAsync(async (req, res) => {
 export const createAnnouncement = catchAsync(async (req, res) => {
     const { title, message, type = 'info', target_audience = 'all', ends_at } = req.body;
 
-    if (!['admin', 'super_admin', 'compliance_officer'].includes(req.user.role)) {
+    if (!(req.user.roles || [req.user.role]).some((r) => ['admin', 'super_admin', 'support'].includes(r))) {
         throw new AppError('Unauthorized', 403);
     }
 
@@ -47,7 +47,7 @@ export const createAnnouncement = catchAsync(async (req, res) => {
 export const deactivateAnnouncement = catchAsync(async (req, res) => {
     const { id } = req.params;
 
-    if (!['admin', 'super_admin', 'compliance_officer'].includes(req.user.role)) {
+    if (!(req.user.roles || [req.user.role]).some((r) => ['admin', 'super_admin', 'support'].includes(r))) {
         throw new AppError('Unauthorized', 403);
     }
 

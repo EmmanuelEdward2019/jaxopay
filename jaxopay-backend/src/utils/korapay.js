@@ -37,7 +37,7 @@ export function getKorapayErrorDetails(error) {
         || raw?.response_description
         || (Array.isArray(raw?.errors) ? raw.errors.map((item) => item.message).filter(Boolean).join('; ') : null)
         || error?.message
-        || 'Unknown Korapay error';
+        || 'Request could not be completed. Please try again.';
 
     return {
         statusCode: error?.response?.status || error?.statusCode || null,
@@ -70,7 +70,7 @@ export function getKorapayTransferFailureMessage(error, currency) {
     }
 
     if (isKorapayAuthError(error)) {
-        return 'Bank transfers are temporarily unavailable because Korapay did not authorize this payout request. Your funds have been returned.';
+        return 'Bank transfers are temporarily unavailable while this payout request is being authorized. Your funds have been returned.';
     }
 
     if (isKorapayChannelDisabledError(error)) {

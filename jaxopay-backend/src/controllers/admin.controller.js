@@ -11,6 +11,22 @@ import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
 import * as kycNotify from '../services/kycNotification.service.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
 import { auditFromReq } from '../services/audit.service.js';
+import { performAccountDeletion } from './user.controller.js';
+
+// Highest-privilege-first — used to pick the legacy single `role` column value from a
+// multi-role assignment, so old single-role checks (req.user.role === 'super_admin', etc.)
+// keep working regardless of the order roles were selected in on the admin form.
+const ROLE_PRIORITY = ['super_admin', 'admin', 'compliance_officer', 'finance', 'support', 'end_user'];
+function normalizeRoles(roleInput, rolesInput) {
+  const set = new Set(
+    Array.isArray(rolesInput) && rolesInput.length > 0
+      ? rolesInput
+      : [roleInput || 'end_user']
+  );
+  const roles = Array.from(set);
+  const primary = ROLE_PRIORITY.find((r) => roles.includes(r)) || roles[0];
+  return { role: primary, roles };
+}
 
 /** Split stored `document_url` (plain URL or JSON { front, back }) for admin review UI. */
 function parseKycDocumentUrls(documentUrl) {
@@ -117,7 +133,7 @@ export const getUsers = catchAsync(async (req, res) => {
   }
 
   const result = await query(
-    `SELECT u.id, u.email, u.phone, u.role, u.kyc_tier, u.is_active,
+    `SELECT u.id, u.email, u.phone, u.role, u.roles, u.kyc_tier, u.is_active,
             u.is_email_verified, u.two_fa_enabled, u.created_at,
             up.first_name, up.last_name, up.country, up.avatar_url
      FROM users u
@@ -154,7 +170,15 @@ export const getUsers = catchAsync(async (req, res) => {
 
 // Create new user (admin only)
 export const createUser = catchAsync(async (req, res) => {
-  const { email, password, phone, first_name, last_name, role = 'end_user', kyc_tier = 'tier_0' } = req.body;
+  const {
+    email, password, phone, first_name, last_name, role: roleInput = 'end_user', roles: rolesInput,
+    kyc_tier = 'tier_0',
+    // Full profile, captured the same way the self-service signup/profile flow does.
+    date_of_birth, gender, country, city, address, postal_code,
+    // Identity verification — same BVN/NIN + photo the user would submit themselves via KYC.
+    id_type, id_number, photo_url,
+  } = req.body;
+  const { role, roles } = normalizeRoles(roleInput, rolesInput);
 
   // Check if user already exists
   const existing = await query('SELECT id FROM users WHERE email = $1 OR phone = $2', [email, phone]);
@@ -167,22 +191,34 @@ export const createUser = catchAsync(async (req, res) => {
   const result = await transaction(async (client) => {
     // 1. Create User
     const userRes = await client.query(
-      `INSERT INTO users (email, phone, password_hash, role, kyc_tier, is_email_verified)
-       VALUES ($1, $2, $3, $4, $5::kyc_tier, true)
-       RETURNING id, email, phone, role, kyc_tier, created_at`,
-      [email, phone, passwordHash, role, kyc_tier]
+      `INSERT INTO users (email, phone, password_hash, role, roles, kyc_tier, is_email_verified)
+       VALUES ($1, $2, $3, $4, $5, $6::kyc_tier, true)
+       RETURNING id, email, phone, role, roles, kyc_tier, created_at`,
+      [email, phone, passwordHash, role, roles, kyc_tier]
     );
 
     const user = userRes.rows[0];
 
-    // 2. Create Profile
+    // 2. Create Profile — same fields captured on the frontend's own profile/signup forms.
     await client.query(
-      `INSERT INTO user_profiles (user_id, first_name, last_name)
-       VALUES ($1, $2, $3)`,
-      [user.id, first_name, last_name]
+      `INSERT INTO user_profiles (user_id, first_name, last_name, date_of_birth, gender, country, city, address_line1, postal_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [user.id, first_name, last_name, date_of_birth || null, gender || null, country || null, city || null, address || null, postal_code || null]
     );
 
-    // 3. Create Wallets (USD, NGN)
+    // 3. Identity document (BVN/NIN + photo) — mirrors the self-service KYC submission, except
+    // it's marked approved immediately since the admin creating the account has already verified
+    // the person directly (e.g. an in-person/offline registration), reviewed_by = this admin.
+    if (id_type && id_number) {
+      const docType = String(id_type).toLowerCase().includes('bvn') ? 'bvn' : 'nin';
+      await client.query(
+        `INSERT INTO kyc_documents (user_id, document_type, document_number, selfie_url, status, reviewed_by, reviewed_at)
+         VALUES ($1, $2, $3, $4, 'approved', $5, NOW())`,
+        [user.id, docType, id_number, photo_url || null, req.user.id]
+      );
+    }
+
+    // 4. Create Wallets (USD, NGN)
     const currencies = ['USD', 'NGN'];
     for (const cur of currencies) {
       await client.query(
@@ -201,7 +237,7 @@ export const createUser = catchAsync(async (req, res) => {
     action: 'create_user',
     targetId: result.id,
     targetType: 'user',
-    changes: { email, role, kyc_tier },
+    changes: { email, role, roles, kyc_tier, id_type: id_type || null },
     req
   });
 
@@ -212,12 +248,67 @@ export const createUser = catchAsync(async (req, res) => {
   });
 });
 
+// ── Account deletion requests (super_admin approval workflow) ──────────────────────────
+// GET /admin/account-deletion-requests?status=pending
+export const getAccountDeletionRequests = catchAsync(async (req, res) => {
+  const status = req.query.status || 'pending';
+  const result = await query(
+    `SELECT r.id, r.user_id, r.reason, r.status, r.requested_at, r.reviewed_at, r.admin_note,
+            u.email, up.first_name, up.last_name
+     FROM account_deletion_requests r
+     JOIN users u ON u.id = r.user_id
+     LEFT JOIN user_profiles up ON up.user_id = u.id
+     WHERE r.status = $1
+     ORDER BY r.requested_at DESC`,
+    [status]
+  );
+  res.status(200).json({ success: true, data: result.rows });
+});
+
+// POST /admin/account-deletion-requests/:id/approve (super_admin only)
+export const approveAccountDeletionRequest = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const r = (await query(`SELECT * FROM account_deletion_requests WHERE id = $1`, [id])).rows[0];
+  if (!r) throw new AppError('Deletion request not found', 404);
+  if (r.status !== 'pending') throw new AppError(`Request is already ${r.status}`, 400);
+
+  // Throws (and leaves the request pending) if the user still has a wallet balance.
+  await performAccountDeletion(r.user_id);
+
+  await query(
+    `UPDATE account_deletion_requests SET status='approved', reviewed_by=$1, reviewed_at=NOW(), updated_at=NOW() WHERE id=$2`,
+    [req.user.id, id]
+  );
+
+  await logAdminAction({ adminId: req.user.id, action: 'approve_account_deletion', targetId: r.user_id, targetType: 'user', req });
+
+  res.status(200).json({ success: true, message: 'Account deleted and request approved.' });
+});
+
+// POST /admin/account-deletion-requests/:id/reject (super_admin only)
+export const rejectAccountDeletionRequest = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { admin_note } = req.body;
+  const r = (await query(`SELECT * FROM account_deletion_requests WHERE id = $1`, [id])).rows[0];
+  if (!r) throw new AppError('Deletion request not found', 404);
+  if (r.status !== 'pending') throw new AppError(`Request is already ${r.status}`, 400);
+
+  await query(
+    `UPDATE account_deletion_requests SET status='rejected', reviewed_by=$1, reviewed_at=NOW(), admin_note=$2, updated_at=NOW() WHERE id=$3`,
+    [req.user.id, admin_note || null, id]
+  );
+
+  await logAdminAction({ adminId: req.user.id, action: 'reject_account_deletion', targetId: r.user_id, targetType: 'user', changes: { admin_note }, req });
+
+  res.status(200).json({ success: true, message: 'Deletion request rejected.' });
+});
+
 // Get single user (admin only)
 export const getUser = catchAsync(async (req, res) => {
   const { userId } = req.params;
 
   const result = await query(
-    `SELECT u.id, u.email, u.phone, u.role, u.kyc_tier, u.is_active,
+    `SELECT u.id, u.email, u.phone, u.role, u.roles, u.kyc_tier, u.is_active,
             u.is_email_verified, u.two_fa_enabled, u.created_at, u.updated_at,
             up.first_name, up.last_name, up.date_of_birth, up.gender,
             up.country, up.city, up.address, up.postal_code, up.avatar_url
@@ -267,7 +358,7 @@ export const getUser = catchAsync(async (req, res) => {
 // Update user (admin only)
 export const updateUser = catchAsync(async (req, res) => {
   const { userId } = req.params;
-  const { kyc_tier, status, role } = req.body;
+  const { kyc_tier, status, role: roleInput, roles: rolesInput } = req.body;
 
   const updates = [];
   const params = [userId];
@@ -287,9 +378,13 @@ export const updateUser = catchAsync(async (req, res) => {
     updates.push(`is_active = $${params.length}`);
   }
 
-  if (role) {
+  let role, roles;
+  if (roleInput || rolesInput) {
+    ({ role, roles } = normalizeRoles(roleInput, rolesInput));
     params.push(role);
     updates.push(`role = $${params.length}`);
+    params.push(roles);
+    updates.push(`roles = $${params.length}`);
   }
 
   if (updates.length === 0) {
@@ -300,7 +395,7 @@ export const updateUser = catchAsync(async (req, res) => {
     `UPDATE users
      SET ${updates.join(', ')}, updated_at = NOW()
      WHERE id = $1
-     RETURNING id, email, role, kyc_tier, is_active`,
+     RETURNING id, email, role, roles, kyc_tier, is_active`,
     params
   );
 
@@ -311,7 +406,7 @@ export const updateUser = catchAsync(async (req, res) => {
   logger.info('User updated by admin:', {
     adminId: req.user.id,
     userId,
-    updates: { kyc_tier, status, role },
+    updates: { kyc_tier, status, role, roles },
   });
 
   // Log the update action
@@ -320,7 +415,7 @@ export const updateUser = catchAsync(async (req, res) => {
     action: 'update_user',
     targetId: userId,
     targetType: 'user',
-    changes: { kyc_tier, status, role },
+    changes: { kyc_tier, status, role, roles },
     req
   });
 
@@ -651,7 +746,7 @@ export const updateFeatureToggle = catchAsync(async (req, res) => {
   const { is_enabled, enabled_countries, disabled_countries, config } = req.body;
 
   // Verify super_admin role
-  if (req.user.role !== 'super_admin') {
+  if (!(req.user.roles?.includes('super_admin') || req.user.role === 'super_admin')) {
     throw new AppError('Only Super Admins can modify feature toggles', 403);
   }
 
@@ -942,7 +1037,7 @@ export const updateFeeConfig = catchAsync(async (req, res) => {
 export const toggleEmergencyShutdown = catchAsync(async (req, res) => {
   const { is_shutdown } = req.body;
 
-  if (req.user.role !== 'super_admin') {
+  if (!(req.user.roles?.includes('super_admin') || req.user.role === 'super_admin')) {
     throw new AppError('Only Super Admins can trigger emergency shutdown', 403);
   }
 

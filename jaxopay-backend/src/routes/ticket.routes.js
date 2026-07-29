@@ -14,7 +14,7 @@ router.patch('/:id/close', ticketController.closeTicket);
 router.post('/:id/rate', restrictTo('user', 'end_user'), ticketController.rateTicket);
 
 // Admin only routes
-router.get('/', restrictTo('admin', 'super_admin', 'compliance_officer'), ticketController.getAllTickets);
-router.patch('/:id/status', restrictTo('admin', 'super_admin', 'compliance_officer'), ticketController.updateTicketStatus);
+router.get('/', restrictTo('admin', 'super_admin', 'support'), ticketController.getAllTickets);
+router.patch('/:id/status', restrictTo('admin', 'super_admin', 'support'), ticketController.updateTicketStatus);
 
 export default router;

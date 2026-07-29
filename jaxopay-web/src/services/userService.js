@@ -72,12 +72,20 @@ const userService = {
     }
   },
 
-  // Delete account
-  deleteAccount: async (password) => {
+  // Request account deletion (pending super_admin approval — does not delete immediately)
+  requestAccountDeletion: async (password, reason) => {
     try {
-      const response = await apiClient.delete('/users/account', {
-        data: { password }
-      });
+      const response = await apiClient.post('/users/account/delete-request', { password, reason });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Check the caller's own deletion request status
+  getAccountDeletionStatus: async () => {
+    try {
+      const response = await apiClient.get('/users/account/deletion-status');
       return { success: true, data: response.data };
     } catch (error) {
       return { success: false, error: error.message };
@@ -88,6 +96,26 @@ const userService = {
   updateSettings: async (settings) => {
     try {
       const response = await apiClient.patch('/users/settings', settings);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Username: check availability
+  checkUsername: async (username) => {
+    try {
+      const response = await apiClient.get('/users/username/check', { params: { username } });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Username: set/change the caller's own
+  setUsername: async (username) => {
+    try {
+      const response = await apiClient.patch('/users/username', { username });
       return { success: true, data: response.data };
     } catch (error) {
       return { success: false, error: error.message };

@@ -361,7 +361,11 @@ import complianceEngine from '../orchestration/compliance/ComplianceEngine.js';
 
 // Internal wallet-to-wallet transfer
 export const transferBetweenWallets = catchAsync(async (req, res) => {
-  const { recipient_email, amount, currency, description } = req.body;
+  const { recipient_email, recipient, amount, currency, description } = req.body;
+  // Accept an email, username, or user ID (UID) — `recipient` is the new generic field;
+  // `recipient_email` is kept for backward compatibility with older clients.
+  const identifier = String(recipient || recipient_email || '').trim();
+  if (!identifier) throw new AppError('Recipient email, username, or ID is required', 400);
 
   // 1. Validate amount using decimal.js
   const amountDecimal = validateAmount(amount, 0.01, 10000000);
@@ -375,10 +379,16 @@ export const transferBetweenWallets = catchAsync(async (req, res) => {
   // 2. Comprehensive Compliance Check
   await complianceEngine.validateTransaction(req.user.id, parseFloat(amountDecimal.toString()), 'INTERNAL_TRANSFER');
 
-  // Find recipient by email
-  const recipientUser = await query('SELECT id FROM users WHERE email = $1', [recipient_email.toLowerCase()]);
+  // Find recipient by UID, username, or email — whichever the identifier matches.
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+  const recipientUser = await query(
+    isUuid
+      ? 'SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL'
+      : 'SELECT id FROM users WHERE (LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($1)) AND deleted_at IS NULL',
+    [identifier]
+  );
   if (!recipientUser.rows[0]) {
-    throw new AppError('Recipient user not found with that email address', 404);
+    throw new AppError('Recipient not found. Check the email, username, or ID and try again.', 404);
   }
   const recipient_id = recipientUser.rows[0].id;
 

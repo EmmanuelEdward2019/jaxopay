@@ -179,13 +179,17 @@ export default function Home() {
               className="max-w-2xl"
             >
 
+              <span className="inline-flex items-center gap-2 mb-5 px-3.5 py-1.5 rounded-full bg-accent-50 border border-accent-100 text-accent-700 text-xs font-bold uppercase tracking-wide">
+                Crypto Exchange &amp; Cross-Border Payments
+              </span>
+
               <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 leading-tight tracking-tight text-gray-900">
                 The better way to
-                <span className="block text-accent-600 mt-1">send money.</span>
+                <span className="block text-accent-600 mt-1">move money &amp; crypto.</span>
               </h1>
 
               <p className="text-xl text-gray-600 mb-8 leading-relaxed max-w-lg">
-                JAXOPAY offers the best exchange rates, instant transfers, and zero hidden fees. Manage your global finances in one secure app.
+                JAXOPAY is a crypto-first platform: buy, sell, and swap crypto, send money across borders, and manage multi-currency wallets — with the best rates, instant transfers, and zero hidden fees.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 mb-10">

@@ -78,7 +78,7 @@ export function createObiexWebhookService({
             wallet.id,
             parseFloat(amount),
             currencyUpper,
-            `Crypto deposit via Obiex (${transactionId})`,
+            `Crypto deposit (${transactionId})`,
             JSON.stringify({ obiex_tx_id: String(transactionId), reference, address, source: 'obiex' }),
           ]
         );

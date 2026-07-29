@@ -7,7 +7,7 @@ import { auditFromReq } from '../services/audit.service.js';
 // Get current user profile
 export const getProfile = catchAsync(async (req, res) => {
   const result = await query(
-    `SELECT u.id, u.email, u.phone, u.country_code, u.role, u.kyc_tier,
+    `SELECT u.id, u.email, u.username, u.phone, u.country_code, u.role, u.kyc_tier,
             u.is_email_verified, u.is_phone_verified, u.two_fa_enabled,
             u.is_active, u.created_at, u.preferred_language, u.preferences,
             up.first_name, up.last_name, up.date_of_birth, up.gender,
@@ -299,68 +299,86 @@ export const getActivityLog = catchAsync(async (req, res) => {
   });
 });
 
-// Delete account
-export const deleteAccount = catchAsync(async (req, res) => {
-  const { password } = req.body;
-
-  // Verify password
-  const userResult = await query(
-    'SELECT password_hash FROM users WHERE id = $1',
-    [req.user.id]
-  );
-
-  const isPasswordValid = await bcrypt.compare(
-    password,
-    userResult.rows[0].password_hash
-  );
-
-  if (!isPasswordValid) {
-    throw new AppError('Invalid password', 401);
-  }
-
-  // Check if user has balance
+// Shared: performs the actual soft-delete. Only called after a super_admin approves a pending
+// account_deletion_requests row (see admin.controller.js) — never directly from a user action,
+// so deletion always goes through review first.
+export async function performAccountDeletion(userId) {
   const balanceCheck = await query(
-    `SELECT SUM(balance) as total_balance
-     FROM wallets
-     WHERE user_id = $1`,
-    [req.user.id]
+    `SELECT SUM(balance) as total_balance FROM wallets WHERE user_id = $1`,
+    [userId]
   );
 
   if (parseFloat(balanceCheck.rows[0].total_balance || 0) > 0) {
     throw new AppError(
-      'Cannot delete account with remaining balance. Please withdraw all funds first.',
+      'Cannot delete this account — it still has a wallet balance. Ask the user to withdraw all funds first.',
       400
     );
   }
 
-  // Soft delete user
   await transaction(async (client) => {
-    // Mark user as deleted
     await client.query(
       `UPDATE users
        SET deleted_at = NOW(), is_active = false, email = CONCAT(email, '_deleted_', id)
        WHERE id = $1`,
-      [req.user.id]
+      [userId]
     );
-
-    // Mark wallets as inactive
-    await client.query(
-      'UPDATE wallets SET is_active = false WHERE user_id = $1',
-      [req.user.id]
-    );
-
-    // Invalidate all sessions
-    await client.query(
-      'UPDATE user_sessions SET is_active = false WHERE user_id = $1',
-      [req.user.id]
-    );
+    await client.query('UPDATE wallets SET is_active = false WHERE user_id = $1', [userId]);
+    await client.query('UPDATE user_sessions SET is_active = false WHERE user_id = $1', [userId]);
   });
 
-  logger.info('Account deleted:', { userId: req.user.id });
+  logger.info('Account deleted (approved):', { userId });
+}
 
+// Request account deletion — does NOT delete anything immediately. Creates a pending request
+// that a super_admin must approve (or reject) from the admin panel.
+export const requestAccountDeletion = catchAsync(async (req, res) => {
+  const { password, reason } = req.body;
+
+  const userResult = await query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
+  const isPasswordValid = await bcrypt.compare(password, userResult.rows[0].password_hash);
+  if (!isPasswordValid) {
+    throw new AppError('Invalid password', 401);
+  }
+
+  const existing = await query(
+    `SELECT id, status, requested_at FROM account_deletion_requests WHERE user_id = $1 AND status = 'pending'`,
+    [req.user.id]
+  );
+  if (existing.rows.length > 0) {
+    return res.status(200).json({
+      success: true,
+      message: 'You already have a pending account deletion request awaiting review.',
+      data: existing.rows[0],
+    });
+  }
+
+  const result = await query(
+    `INSERT INTO account_deletion_requests (user_id, reason, status)
+     VALUES ($1, $2, 'pending')
+     RETURNING id, status, requested_at`,
+    [req.user.id, reason || null]
+  );
+
+  logger.info('Account deletion requested:', { userId: req.user.id, requestId: result.rows[0].id });
+
+  res.status(201).json({
+    success: true,
+    message: 'Your account deletion request has been submitted and is awaiting super admin approval.',
+    data: result.rows[0],
+  });
+});
+
+// GET /users/account/deletion-status — does the caller have a pending/reviewed request?
+export const getMyAccountDeletionStatus = catchAsync(async (req, res) => {
+  const result = await query(
+    `SELECT id, status, reason, requested_at, reviewed_at, admin_note
+     FROM account_deletion_requests WHERE user_id = $1
+     ORDER BY created_at DESC LIMIT 1`,
+    [req.user.id]
+  );
   res.status(200).json({
     success: true,
-    message: 'Account deleted successfully',
+    data: result.rows[0] || null,
   });
 });
 
@@ -395,7 +413,7 @@ export const searchUsers = catchAsync(async (req, res) => {
   }
 
   const result = await query(
-    `SELECT u.id, u.email, u.phone, up.first_name, up.last_name, up.avatar_url
+    `SELECT u.id, u.email, u.username, u.phone, up.first_name, up.last_name, up.avatar_url
      FROM users u
      LEFT JOIN user_profiles up ON u.id = up.user_id
      WHERE u.id != $1
@@ -403,6 +421,7 @@ export const searchUsers = catchAsync(async (req, res) => {
        AND u.is_active = true
        AND (
          u.email ILIKE $2
+         OR u.username ILIKE $2
          OR u.phone ILIKE $2
          OR up.first_name ILIKE $2
          OR up.last_name ILIKE $2
@@ -415,5 +434,37 @@ export const searchUsers = catchAsync(async (req, res) => {
     success: true,
     data: result.rows,
   });
+});
+
+const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
+
+// GET /users/username/check?username=... — availability check (case-insensitive)
+export const checkUsernameAvailability = catchAsync(async (req, res) => {
+  const raw = String(req.query.username || '').trim();
+  if (!USERNAME_PATTERN.test(raw)) {
+    return res.status(200).json({
+      success: true,
+      data: { available: false, reason: '3-20 characters: letters, numbers, and underscores only.' },
+    });
+  }
+  const existing = await query('SELECT id FROM users WHERE LOWER(username) = LOWER($1)', [raw]);
+  res.status(200).json({ success: true, data: { available: existing.rows.length === 0 } });
+});
+
+// PATCH /users/username — set or change the caller's own username
+export const setUsername = catchAsync(async (req, res) => {
+  const raw = String(req.body.username || '').trim();
+  if (!USERNAME_PATTERN.test(raw)) {
+    throw new AppError('Username must be 3-20 characters: letters, numbers, and underscores only.', 400);
+  }
+  const existing = await query(
+    'SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id != $2',
+    [raw, req.user.id]
+  );
+  if (existing.rows.length > 0) {
+    throw new AppError('That username is already taken.', 409);
+  }
+  await query('UPDATE users SET username = $1, updated_at = NOW() WHERE id = $2', [raw, req.user.id]);
+  res.status(200).json({ success: true, message: 'Username updated.', data: { username: raw } });
 });
 

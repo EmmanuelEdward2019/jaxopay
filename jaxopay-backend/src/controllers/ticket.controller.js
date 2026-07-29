@@ -101,7 +101,7 @@ export const getTicketDetails = catchAsync(async (req, res) => {
 
     const ticket = ticketResult.rows[0];
 
-    if (ticket.user_id !== req.user.id && !['admin', 'super_admin', 'compliance_officer'].includes(req.user.role)) {
+    if (ticket.user_id !== req.user.id && !(req.user.roles || [req.user.role]).some((r) => ['admin', 'super_admin', 'support'].includes(r))) {
         throw new AppError('Unauthorized', 403);
     }
 
@@ -141,7 +141,7 @@ export const replyToTicket = catchAsync(async (req, res) => {
     }
 
     const ticket = ticketResult.rows[0];
-    const isAdmin = ['admin', 'super_admin', 'compliance_officer'].includes(req.user.role);
+    const isAdmin = (req.user.roles || [req.user.role]).some((r) => ['admin', 'super_admin', 'support'].includes(r));
 
     if (ticket.user_id !== req.user.id && !isAdmin) {
         throw new AppError('Unauthorized', 403);
@@ -221,7 +221,7 @@ export const closeTicket = catchAsync(async (req, res) => {
     }
 
     const ticket = ticketResult.rows[0];
-    if (ticket.user_id !== req.user.id && !['admin', 'super_admin', 'compliance_officer'].includes(req.user.role)) {
+    if (ticket.user_id !== req.user.id && !(req.user.roles || [req.user.role]).some((r) => ['admin', 'super_admin', 'support'].includes(r))) {
         throw new AppError('Unauthorized', 403);
     }
 
@@ -312,7 +312,7 @@ export const updateTicketStatus = catchAsync(async (req, res) => {
 
 // Admin: Get all tickets
 export const getAllTickets = catchAsync(async (req, res) => {
-    if (!['admin', 'super_admin', 'compliance_officer'].includes(req.user.role)) {
+    if (!(req.user.roles || [req.user.role]).some((r) => ['admin', 'super_admin', 'support'].includes(r))) {
         throw new AppError('Unauthorized', 403);
     }
 

@@ -48,7 +48,7 @@ export const verifyToken = catchAsync(async (req, res, next) => {
   // Use fast timeout — auth checks on indexed columns should be sub-second
   const result = await query(
     `SELECT
-      u.id, u.email, u.role, u.kyc_tier, u.is_active, u.two_fa_enabled,
+      u.id, u.email, u.role, u.roles, u.kyc_tier, u.is_active, u.two_fa_enabled,
       s.id as session_id, s.is_active as session_active, s.expires_at
      FROM users u
      LEFT JOIN user_sessions s ON s.user_id = u.id AND s.session_token = $2
@@ -77,10 +77,13 @@ export const verifyToken = catchAsync(async (req, res, next) => {
     throw new AppError('Your session has expired. Please log in again.', 401);
   }
 
+  // roles: multi-role support for staff accounts. Falls back to the single legacy `role` for
+  // accounts that never had `roles` set — every account has at least one entry either way.
   const user = {
     id: row.id,
     email: row.email,
     role: row.role,
+    roles: (Array.isArray(row.roles) && row.roles.length > 0) ? row.roles : [row.role],
     kyc_tier: row.kyc_tier,
     is_active: row.is_active,
     two_fa_enabled: row.two_fa_enabled,
@@ -104,10 +107,12 @@ export const verifyToken = catchAsync(async (req, res, next) => {
   next();
 });
 
-// Restrict to specific roles
+// Restrict to specific roles — checks the caller's full role set (req.user.roles), so a staff
+// member with multiple assigned roles passes if ANY of them is allowed here.
 export const restrictTo = (...roles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    const userRoles = req.user.roles?.length ? req.user.roles : [req.user.role];
+    if (!userRoles.some((r) => roles.includes(r))) {
       throw new AppError('You do not have permission to perform this action.', 403);
     }
     next();

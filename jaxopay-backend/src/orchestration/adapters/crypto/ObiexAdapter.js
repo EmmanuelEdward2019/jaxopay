@@ -117,7 +117,10 @@ class ObiexAdapter {
   /** Normalize Obiex's `{message, errors:[{message}]}` error shape into a plain Error. */
   _normalizeError(err) {
     const data = err.response?.data;
-    const msg = data?.errors?.[0]?.message || data?.message || err.message || 'Obiex request failed';
+    // isOperational (below) marks this as trusted, so the global error handler forwards this
+    // message straight to the end user in production — never let the provider's own name leak
+    // into it (this fallback used to read 'Obiex request failed' verbatim).
+    const msg = data?.errors?.[0]?.message || data?.message || err.message || 'Request could not be completed. Please try again.';
     const normalized = new Error(msg);
     normalized.statusCode = err.response?.status || 502;
     normalized.obiexRaw = data;
@@ -131,7 +134,8 @@ class ObiexAdapter {
 
   async _request(method, path, body, params) {
     if (!this.isConfigured()) {
-      const e = new Error('Obiex is not configured (missing OBIEX_API_KEY/OBIEX_API_SECRET)');
+      logger.error('[Obiex] Adapter called without OBIEX_API_KEY/OBIEX_API_SECRET configured');
+      const e = new Error('This service is temporarily unavailable. Please try again shortly.');
       e.statusCode = 503;
       throw e;
     }

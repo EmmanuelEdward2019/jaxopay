@@ -2,7 +2,7 @@ import express from 'express';
 import { verifyToken, requireKYCTier } from '../middleware/auth.js';
 import { requireFeature } from '../middleware/featureGuard.js';
 import { validate } from '../middleware/validator.js';
-import { body, query } from 'express-validator';
+import { body, query, param } from 'express-validator';
 import {
   getSupportedCryptos,
   getExchangeRates,
@@ -12,6 +12,7 @@ import {
   getExchangeHistory,
   getCryptoDepositAddress,
   withdrawCrypto,
+  verifyCryptoWithdrawal,
   getCryptoConfig,
   getOrderBook,
   createOrder,
@@ -150,6 +151,14 @@ router.post(
   body('memo').optional().isString(),
   validate,
   withdrawCrypto
+);
+
+// Manually re-check a pending crypto withdrawal's status (also auto-reconciled by a background sweep)
+router.get(
+  '/withdraw/:txId/verify',
+  param('txId').isUUID(),
+  validate,
+  verifyCryptoWithdrawal
 );
 
 // Get crypto config (networks, etc)

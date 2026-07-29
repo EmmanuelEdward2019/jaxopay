@@ -127,7 +127,7 @@ export const resolveAccount = catchAsync(async (req, res) => {
         });
     } catch (err) {
         if (err instanceof AppError) throw err;
-        const message = isNgn ? (err.message || 'Obiex request failed') : getKorapayErrorDetails(err).message;
+        const message = isNgn ? (err.message || 'Bank account verification failed') : getKorapayErrorDetails(err).message;
         logger.error(`[Transfer] ${isNgn ? 'Obiex' : 'Korapay'} account resolve failed: ${message}`);
         throw new AppError(`Could not verify bank account: ${message}`, err.statusCode || 502);
     }

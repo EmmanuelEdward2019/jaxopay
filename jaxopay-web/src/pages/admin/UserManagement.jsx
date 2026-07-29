@@ -49,6 +49,9 @@ const UserManagement = () => {
     const [actionLoading, setActionLoading] = useState(false);
     const [selectedRecipients, setSelectedRecipients] = useState([]); // [{id, email, name}] — survives page changes
     const [showMessageModal, setShowMessageModal] = useState(false);
+    const [showDeletionRequestsModal, setShowDeletionRequestsModal] = useState(false);
+    const { user: currentUser } = useAuthStore();
+    const isSuperAdmin = (currentUser?.roles || [currentUser?.role]).includes('super_admin');
 
     const isSelected = (id) => selectedRecipients.some((r) => r.id === id);
     const toggleRecipient = (user) => {
@@ -150,6 +153,15 @@ const UserManagement = () => {
                     <p className="text-gray-600 dark:text-gray-400">{pagination.total} total users</p>
                 </div>
                 <div className="flex gap-2">
+                    {isSuperAdmin && (
+                        <button
+                            onClick={() => setShowDeletionRequestsModal(true)}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-lg border border-red-200"
+                        >
+                            <AlertTriangle className="w-4 h-4" />
+                            Deletion Requests
+                        </button>
+                    )}
                     <button
                         onClick={() => setShowMessageModal(true)}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg"
@@ -383,6 +395,9 @@ const UserManagement = () => {
                         onSent={() => { setShowMessageModal(false); setSelectedRecipients([]); }}
                     />
                 )}
+                {showDeletionRequestsModal && (
+                    <DeletionRequestsModal onClose={() => setShowDeletionRequestsModal(false)} />
+                )}
             </AnimatePresence>
         </div>
     );
@@ -516,6 +531,13 @@ const MessageUsersModal = ({ recipients, onRemove, onClose, onSent }) => {
 };
 
 // Create User Modal
+const STAFF_ROLE_OPTIONS = [
+    { value: 'admin', label: 'Admin', hint: 'All access' },
+    { value: 'compliance_officer', label: 'Compliance', hint: 'KYC review' },
+    { value: 'finance', label: 'Finance', hint: 'Treasury & transactions' },
+    { value: 'support', label: 'Support', hint: 'Announcements & tickets' },
+];
+
 const CreateUserModal = ({ onClose, onSubmit, loading }) => {
     const [form, setForm] = useState({
         email: '',
@@ -523,13 +545,43 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
         phone: '',
         first_name: '',
         last_name: '',
-        role: 'end_user',
-        kyc_tier: 'tier_0'
+        kyc_tier: 'tier_0',
+        // Profile — same fields captured on the user-facing profile/signup forms.
+        date_of_birth: '',
+        gender: '',
+        country: '',
+        city: '',
+        address: '',
+        postal_code: '',
+        // Identity verification — same as self-service KYC (BVN/NIN + photo).
+        id_type: '',
+        id_number: '',
+        photo_url: '',
     });
+    const [staffRoles, setStaffRoles] = useState([]); // checkboxes; empty = plain end_user account
+    const [photoPreview, setPhotoPreview] = useState(null);
+
+    const toggleStaffRole = (value) => {
+        setStaffRoles((prev) => prev.includes(value) ? prev.filter((r) => r !== value) : [...prev, value]);
+    };
+
+    const handlePhotoChange = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            setForm((f) => ({ ...f, photo_url: reader.result }));
+            setPhotoPreview(reader.result);
+        };
+        reader.readAsDataURL(file);
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onSubmit(form);
+        const payload = { ...form };
+        if (staffRoles.length > 0) payload.roles = staffRoles;
+        else payload.role = 'end_user';
+        onSubmit(payload);
     };
 
     return (
@@ -611,30 +663,157 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
                         />
                     </div>
 
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Staff Roles <span className="text-gray-400 font-normal">(leave unchecked for a regular end user)</span>
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {STAFF_ROLE_OPTIONS.map((opt) => (
+                                <label
+                                    key={opt.value}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${staffRoles.includes(opt.value) ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700'}`}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={staffRoles.includes(opt.value)}
+                                        onChange={() => toggleStaffRole(opt.value)}
+                                        className="rounded"
+                                    />
+                                    <span>
+                                        <span className="font-medium text-gray-900 dark:text-white">{opt.label}</span>
+                                        <span className="block text-[11px] text-gray-500 dark:text-gray-400">{opt.hint}</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        <p className="text-[11px] text-gray-500 mt-1">A user can hold more than one staff role.</p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">KYC Tier</label>
+                        <select
+                            value={form.kyc_tier}
+                            onChange={(e) => setForm({ ...form, kyc_tier: e.target.value })}
+                            className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                        >
+                            <option value="tier_0">Tier 0 (Unverified)</option>
+                            <option value="tier_1">Tier 1 (Basic)</option>
+                            <option value="tier_2">Tier 2 (Verified)</option>
+                        </select>
+                    </div>
+
+                    <hr className="border-gray-200 dark:border-gray-700" />
+                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Profile (optional — as captured at sign-up)</p>
+
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date of Birth</label>
+                            <input
+                                type="date"
+                                value={form.date_of_birth}
+                                onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Gender</label>
                             <select
-                                value={form.role}
-                                onChange={(e) => setForm({ ...form, role: e.target.value })}
+                                value={form.gender}
+                                onChange={(e) => setForm({ ...form, gender: e.target.value })}
                                 className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
                             >
-                                <option value="end_user">End User</option>
-                                <option value="admin">Admin</option>
-                                <option value="compliance_officer">Compliance</option>
+                                <option value="">Select...</option>
+                                <option value="male">Male</option>
+                                <option value="female">Female</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
+                            <input
+                                type="text"
+                                value={form.country}
+                                onChange={(e) => setForm({ ...form, country: e.target.value })}
+                                placeholder="e.g. NG"
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
+                            <input
+                                type="text"
+                                value={form.city}
+                                onChange={(e) => setForm({ ...form, city: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Address</label>
+                            <input
+                                type="text"
+                                value={form.address}
+                                onChange={(e) => setForm({ ...form, address: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Postal Code</label>
+                            <input
+                                type="text"
+                                value={form.postal_code}
+                                onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            />
+                        </div>
+                    </div>
+
+                    <hr className="border-gray-200 dark:border-gray-700" />
+                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Identity Verification (optional — BVN/NIN, as in self-service KYC)</p>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ID Type</label>
+                            <select
+                                value={form.id_type}
+                                onChange={(e) => setForm({ ...form, id_type: e.target.value })}
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                            >
+                                <option value="">None</option>
+                                <option value="bvn">BVN</option>
+                                <option value="nin">NIN</option>
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">KYC Tier</label>
-                            <select
-                                value={form.kyc_tier}
-                                onChange={(e) => setForm({ ...form, kyc_tier: e.target.value })}
-                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
-                            >
-                                <option value="tier_0">Tier 0 (Unverified)</option>
-                                <option value="tier_1">Tier 1 (Basic)</option>
-                                <option value="tier_2">Tier 2 (Verified)</option>
-                            </select>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ID Number</label>
+                            <input
+                                type="text"
+                                value={form.id_number}
+                                onChange={(e) => setForm({ ...form, id_number: e.target.value })}
+                                disabled={!form.id_type}
+                                maxLength={11}
+                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg disabled:opacity-50"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Photo (ID / selfie)</label>
+                        <div className="flex items-center gap-3">
+                            {photoPreview && (
+                                <img src={photoPreview} alt="Preview" className="w-14 h-14 rounded-lg object-cover border border-gray-200 dark:border-gray-600" />
+                            )}
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handlePhotoChange}
+                                className="flex-1 text-sm text-gray-600 dark:text-gray-300 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-50 file:text-primary-700 file:font-medium"
+                            />
                         </div>
                     </div>
 
@@ -660,14 +839,153 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
     );
 };
 
+// Account Deletion Requests — super_admin approve/reject queue
+const DeletionRequestsModal = ({ onClose }) => {
+    const [requests, setRequests] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [actioningId, setActioningId] = useState(null);
+    const [rejectingId, setRejectingId] = useState(null);
+    const [rejectNote, setRejectNote] = useState('');
+    const [error, setError] = useState(null);
+
+    const load = async () => {
+        setLoading(true);
+        const res = await adminService.getAccountDeletionRequests('pending');
+        if (res.success) setRequests(res.data?.data || []);
+        setLoading(false);
+    };
+
+    useEffect(() => { load(); }, []);
+
+    const handleApprove = async (id) => {
+        setError(null);
+        setActioningId(id);
+        const res = await adminService.approveAccountDeletion(id);
+        setActioningId(null);
+        if (res.success) load();
+        else setError(res.error || 'Could not approve this request.');
+    };
+
+    const handleReject = async (id) => {
+        setError(null);
+        setActioningId(id);
+        const res = await adminService.rejectAccountDeletion(id, rejectNote);
+        setActioningId(null);
+        if (res.success) { setRejectingId(null); setRejectNote(''); load(); }
+        else setError(res.error || 'Could not reject this request.');
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            onClick={onClose}
+        >
+            <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Account Deletion Requests</h2>
+                        <p className="text-sm text-gray-500">Pending requests awaiting super admin review</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                        <X className="w-5 h-5 text-gray-500" />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                    {error && <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm font-medium">{error}</div>}
+                    {loading ? (
+                        <p className="text-center text-gray-500 py-8">Loading...</p>
+                    ) : requests.length === 0 ? (
+                        <p className="text-center text-gray-500 py-8">No pending deletion requests.</p>
+                    ) : (
+                        requests.map((r) => (
+                            <div key={r.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="font-semibold text-gray-900 dark:text-white">
+                                            {r.first_name ? `${r.first_name} ${r.last_name || ''}`.trim() : r.email}
+                                        </p>
+                                        <p className="text-xs text-gray-500">{r.email}</p>
+                                    </div>
+                                    <span className="text-xs text-gray-400">{formatDateTime(r.requested_at)}</span>
+                                </div>
+                                {r.reason && (
+                                    <p className="text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-lg p-2">{r.reason}</p>
+                                )}
+                                {rejectingId === r.id ? (
+                                    <div className="space-y-2">
+                                        <input
+                                            type="text"
+                                            value={rejectNote}
+                                            onChange={(e) => setRejectNote(e.target.value)}
+                                            placeholder="Reason for rejecting (optional)"
+                                            className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm"
+                                        />
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => { setRejectingId(null); setRejectNote(''); }}
+                                                className="flex-1 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={() => handleReject(r.id)}
+                                                disabled={actioningId === r.id}
+                                                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                                            >
+                                                Confirm Reject
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setRejectingId(r.id)}
+                                            disabled={actioningId === r.id}
+                                            className="flex-1 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg disabled:opacity-50"
+                                        >
+                                            Reject
+                                        </button>
+                                        <button
+                                            onClick={() => handleApprove(r.id)}
+                                            disabled={actioningId === r.id}
+                                            className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                                        >
+                                            {actioningId === r.id ? 'Deleting...' : 'Approve & Delete'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ))
+                    )}
+                </div>
+            </motion.div>
+        </motion.div>
+    );
+};
+
 // User Detail Modal
 const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
     const [editMode, setEditMode] = useState(false);
     const [form, setForm] = useState({
         kyc_tier: user.kyc_tier || 0,
         status: user.status || 'active',
-        role: user.role || 'user',
     });
+    const [staffRoles, setStaffRoles] = useState(
+        (user.roles && user.roles.length > 0 ? user.roles : [user.role]).filter((r) => STAFF_ROLE_OPTIONS.some((o) => o.value === r))
+    );
+    const toggleStaffRole = (value) => {
+        setStaffRoles((prev) => prev.includes(value) ? prev.filter((r) => r !== value) : [...prev, value]);
+    };
     const [suspendReason, setSuspendReason] = useState('');
     const [showSuspendForm, setShowSuspendForm] = useState(false);
     const [userFeatures, setUserFeatures] = useState([]);
@@ -825,18 +1143,28 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                                 )}
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-500 mb-2">Role</label>
+                                <label className="block text-sm font-medium text-gray-500 mb-2">Staff Roles</label>
                                 {editMode ? (
-                                    <select
-                                        value={form.role}
-                                        onChange={(e) => setForm({ ...form, role: e.target.value })}
-                                        className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
-                                    >
-                                        <option value="user">User</option>
-                                        <option value="admin">Admin</option>
-                                    </select>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {STAFF_ROLE_OPTIONS.map((opt) => (
+                                            <label
+                                                key={opt.value}
+                                                className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${staffRoles.includes(opt.value) ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700'}`}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={staffRoles.includes(opt.value)}
+                                                    onChange={() => toggleStaffRole(opt.value)}
+                                                    className="rounded"
+                                                />
+                                                <span className="font-medium text-gray-900 dark:text-white">{opt.label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
                                 ) : (
-                                    <span className="text-gray-900 dark:text-white capitalize">{user.role || 'User'}</span>
+                                    <span className="text-gray-900 dark:text-white capitalize">
+                                        {(user.roles && user.roles.length > 0 ? user.roles : [user.role]).join(', ') || 'User'}
+                                    </span>
                                 )}
                             </div>
                         </div>
@@ -851,7 +1179,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                                 </button>
                                 <button
                                     onClick={() => {
-                                        onUpdate(user.id, form);
+                                        onUpdate(user.id, { ...form, roles: staffRoles.length > 0 ? staffRoles : ['end_user'] });
                                         setEditMode(false);
                                     }}
                                     disabled={loading}

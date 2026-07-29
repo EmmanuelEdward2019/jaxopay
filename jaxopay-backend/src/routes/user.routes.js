@@ -10,10 +10,13 @@ import {
   updateEmail,
   getUserStats,
   getActivityLog,
-  deleteAccount,
+  requestAccountDeletion,
+  getMyAccountDeletionStatus,
   getUserById,
   searchUsers,
   updateSettings,
+  checkUsernameAvailability,
+  setUsername,
 } from '../controllers/user.controller.js';
 
 const router = express.Router();
@@ -45,6 +48,22 @@ router.get(
   query('query').isString().isLength({ min: 3 }),
   validate,
   searchUsers
+);
+
+// Username availability check
+router.get(
+  '/username/check',
+  query('username').isString().trim().notEmpty(),
+  validate,
+  checkUsernameAvailability
+);
+
+// Set/change own username
+router.patch(
+  '/username',
+  body('username').isString().trim().notEmpty(),
+  validate,
+  setUsername
 );
 
 // Get user by ID
@@ -97,13 +116,17 @@ router.patch(
   updateEmail
 );
 
-// Delete account
-router.delete(
-  '/account',
+// Request account deletion — pending super_admin approval (does not delete immediately)
+router.post(
+  '/account/delete-request',
   body('password').isString(),
+  body('reason').optional({ checkFalsy: true }).isString().isLength({ max: 500 }),
   validate,
-  deleteAccount
+  requestAccountDeletion
 );
+
+// Check the caller's own deletion request status
+router.get('/account/deletion-status', getMyAccountDeletionStatus);
 
 export default router;
 

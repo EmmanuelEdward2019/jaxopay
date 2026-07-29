@@ -35,7 +35,7 @@ export function getQuidaxErrorMessage(error) {
         || raw?.error?.message
         || raw?.error
         || error?.message
-        || 'Unknown Quidax error';
+        || 'Request could not be completed. Please try again.';
 }
 
 export function mapQuidaxWalletToCurrency(wallet) {
