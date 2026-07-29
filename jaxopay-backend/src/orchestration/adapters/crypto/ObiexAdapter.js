@@ -395,17 +395,22 @@ class ObiexAdapter {
     const toObiex = this._toObiexCurrency(to);
     const { sourceId, targetId, side: obiexSide, reversed } = await this._resolvePairOrientation(fromObiex, toObiex);
 
-    // amountIsForFrom: true when the caller's `amount` is denominated in `from` (side='from').
-    // Map that onto whichever of sourceId/targetId actually corresponds to `from` once the
-    // pair's canonical orientation is known (may be reversed vs. the caller's from/to order).
+    // amountIsForFrom: true when the caller's `amount` is denominated in `from` (side='from'),
+    // i.e. what the caller is giving up. Obiex's `amount` field always means "what the caller is
+    // giving up" and `amountToReceive` always means "what the caller wants to receive" —
+    // regardless of which side (BUY/SELL) the pair's canonical orientation resolved to. Confirmed
+    // with Obiex support: buying BTC with NGN on the BTC/NGNX pair is
+    // { sourceId:"BTC", targetId:"NGNX", side:"BUY", amount:<NGN amount> } — `amount` here
+    // denominates the NGN (target leg) being spent, precisely because side=BUY flips which leg
+    // is "given up". Previously this flipped to `amountToReceive` whenever `reversed` was true,
+    // which sent the wrong field (and so the wrong value) for every NGN->crypto buy.
     const amountIsForFrom = side !== 'to';
-    const amountIsForSource = reversed ? !amountIsForFrom : amountIsForFrom;
 
     const body = {
       sourceId,
       targetId,
       side: obiexSide,
-      ...(amountIsForSource ? { amount: Number(amount) } : { amountToReceive: Number(amount) }),
+      ...(amountIsForFrom ? { amount: Number(amount) } : { amountToReceive: Number(amount) }),
     };
     const data = await this._request('POST', '/trades/quote', body);
     const d = data?.data || {};
