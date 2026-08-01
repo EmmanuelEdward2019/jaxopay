@@ -15,9 +15,11 @@ export const getSpendableBalance = (wallet) => {
     return Math.max(0, Math.min(unlockedBalance, balance));
   }
 
-  if (availableBalance == null || availableBalance <= 0) {
-    return balance;
-  }
-
-  return Math.max(0, Math.min(availableBalance, balance));
+  // No active hold: `available_balance` is not authoritative here. Many credit/debit paths
+  // (instant swaps, crypto ramps, gift cards, bill payments, card funding, etc.) update `balance`
+  // without keeping `available_balance` in lockstep, so trusting a stale, lower `available_balance`
+  // would wrongly cap what the user can actually withdraw (confirmed: a USDT->NGN swap correctly
+  // credited `balance` to 3200 but left a stale `available_balance` of 160 behind, which then
+  // capped the withdrawal screen at 160). `balance` is authoritative whenever nothing is locked.
+  return balance;
 };

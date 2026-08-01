@@ -157,8 +157,10 @@ const getSpendableWalletBalance = (wallet) => {
         const unlockedBalance = availableBalance == null ? balance - lockedBalance : availableBalance;
         return Math.max(0, Math.min(unlockedBalance, balance));
     }
-    if (availableBalance == null || availableBalance <= 0) return balance;
-    return Math.max(0, Math.min(availableBalance, balance));
+    // No active hold: available_balance isn't kept in sync by every credit/debit path (swaps,
+    // ramps, bills, etc.), so a stale lower value must not cap what's actually withdrawable.
+    // Mirrors the same fix in the backend's getSpendableBalance (utils/walletBalance.js).
+    return balance;
 };
 
 // Static fallback networks (complete Quidax-supported list)
@@ -247,7 +249,9 @@ const Wallets = () => {
     wallets.forEach(w => {
         balanceMap[w.currency?.toUpperCase()] = {
             balance: parseFloat(w.balance) || 0,
-            spendable_balance: getSpendableWalletBalance(w),
+            // Prefer the backend's computed figure (single source of truth); fall back to the
+            // local copy only for safety during a rolling deploy where the API hasn't updated yet.
+            spendable_balance: w.spendable_balance != null ? parseFloat(w.spendable_balance) : getSpendableWalletBalance(w),
             available_balance: parseFloat(w.available_balance) || 0,
             locked_balance: parseFloat(w.locked_balance) || 0,
             wallet_id: w.id,

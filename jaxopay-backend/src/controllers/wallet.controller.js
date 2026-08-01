@@ -5,6 +5,7 @@ import emailService from '../services/email.service.js';
 import axios from 'axios';
 import crypto from 'crypto';
 import { decimal, validateAmount, formatForDB, hasSufficientBalance } from '../utils/financial.js';
+import { getSpendableBalance } from '../utils/walletBalance.js';
 import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { enforceTierLimit } from '../services/kycLimits.service.js';
@@ -51,9 +52,14 @@ export const getWallets = catchAsync(async (req, res) => {
     [req.user.id]
   );
 
+  // spendable_balance is the single authoritative "what can this user actually move" figure —
+  // computed server-side so every client (web, mobile) reads the same number instead of each
+  // re-deriving it from balance/available_balance/locked_balance and risking drifting logic.
+  const wallets = result.rows.map((w) => ({ ...w, spendable_balance: getSpendableBalance(w) }));
+
   res.status(200).json({
     success: true,
-    data: result.rows,
+    data: wallets,
   });
 });
 
@@ -62,7 +68,7 @@ export const getWallet = catchAsync(async (req, res) => {
   const { walletId } = req.params;
 
   const result = await query(
-    `SELECT id, currency, wallet_type, balance, is_active, created_at, updated_at
+    `SELECT id, currency, wallet_type, balance, available_balance, locked_balance, is_active, created_at, updated_at
      FROM wallets
      WHERE id = $1 AND user_id = $2`,
     [walletId, req.user.id]
@@ -72,9 +78,11 @@ export const getWallet = catchAsync(async (req, res) => {
     throw new AppError('Wallet not found', 404);
   }
 
+  const wallet = { ...result.rows[0], spendable_balance: getSpendableBalance(result.rows[0]) };
+
   res.status(200).json({
     success: true,
-    data: result.rows[0],
+    data: wallet,
   });
 });
 
@@ -83,7 +91,7 @@ export const getWalletByCurrency = catchAsync(async (req, res) => {
   const { currency } = req.params;
 
   const result = await query(
-    `SELECT id, currency, wallet_type, balance, is_active, created_at, updated_at
+    `SELECT id, currency, wallet_type, balance, available_balance, locked_balance, is_active, created_at, updated_at
      FROM wallets
      WHERE user_id = $1 AND currency = $2`,
     [req.user.id, currency.toUpperCase()]
@@ -93,9 +101,11 @@ export const getWalletByCurrency = catchAsync(async (req, res) => {
     throw new AppError('Wallet not found for this currency', 404);
   }
 
+  const wallet = { ...result.rows[0], spendable_balance: getSpendableBalance(result.rows[0]) };
+
   res.status(200).json({
     success: true,
-    data: result.rows[0],
+    data: wallet,
   });
 });
 

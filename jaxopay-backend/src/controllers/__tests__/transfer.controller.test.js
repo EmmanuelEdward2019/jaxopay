@@ -40,4 +40,17 @@ describe('transfer controller balance handling', () => {
 
     expect(spendable).toBeCloseTo(100);
   });
+
+  test('does not let a stale, lower available_balance cap a real credit (e.g. after a swap)', () => {
+    // Regression: a USDT->NGN instant swap correctly raised `balance` to 3200 but the swap path
+    // never touches `available_balance`, which was left behind at 160 — that must not block
+    // the user from withdrawing their real 3200 when nothing is actually locked.
+    const spendable = getSpendableBalance({
+      balance: '3200.00000000',
+      available_balance: '160.00000000',
+      locked_balance: '0.00000000',
+    });
+
+    expect(spendable).toBeCloseTo(3200);
+  });
 });
