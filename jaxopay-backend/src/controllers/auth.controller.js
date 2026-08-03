@@ -100,6 +100,36 @@ const storeDeviceInfo = async (userId, deviceInfo, executor = query) => {
   }
 };
 
+// Issues a fresh verification email, skipping if one was already sent recently (avoids
+// spamming the inbox if a user retries a blocked login several times in a row).
+const VERIFICATION_RESEND_COOLDOWN_MINUTES = 2;
+const issueVerificationEmail = async (user, name) => {
+  const recent = await query(
+    `SELECT id FROM email_verifications
+     WHERE user_id = $1 AND created_at > NOW() - INTERVAL '${VERIFICATION_RESEND_COOLDOWN_MINUTES} minutes'
+     ORDER BY created_at DESC LIMIT 1`,
+    [user.id]
+  );
+  if (recent.rows.length > 0) return;
+
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  await query(
+    `INSERT INTO email_verifications (user_id, token, expires_at)
+     VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
+    [user.id, verificationToken]
+  );
+
+  await sendEmail({
+    to: user.email,
+    subject: 'Verify your JAXOPAY account',
+    template: 'email-verification',
+    data: {
+      name: name || 'User',
+      verificationLink: `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`,
+    },
+  });
+};
+
 // Signup
 export const signup = catchAsync(async (req, res) => {
   console.log('--- SIGNUP REQUEST START ---');
@@ -268,8 +298,13 @@ export const login = catchAsync(async (req, res) => {
   }
 
   // Block login until the email is verified — checked after password verification so we don't
-  // leak account existence to someone who doesn't know the password.
+  // leak account existence to someone who doesn't know the password. Fire off a fresh
+  // verification email right now (best-effort) so "check your inbox" is actually true —
+  // don't rely solely on the user noticing/clicking a separate "resend" action.
   if (!user.is_email_verified) {
+    issueVerificationEmail(user, user.first_name).catch((err) =>
+      logger.error('Failed to auto-send verification email on blocked login:', err.message)
+    );
     throw new AppError(
       'Please verify your email before logging in. Check your inbox for the verification link.',
       403,
@@ -828,23 +863,7 @@ export const resendVerificationEmail = catchAsync(async (req, res) => {
   const user = result.rows[0];
   if (user.is_email_verified) return res.status(200).json(generic);
 
-  const verificationToken = crypto.randomBytes(32).toString('hex');
-
-  await query(
-    `INSERT INTO email_verifications (user_id, token, expires_at)
-     VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
-    [user.id, verificationToken]
-  );
-
-  await sendEmail({
-    to: user.email,
-    subject: 'Verify your JAXOPAY account',
-    template: 'email-verification',
-    data: {
-      name: 'User',
-      verificationLink: `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`,
-    },
-  });
+  await issueVerificationEmail(user);
 
   res.status(200).json(generic);
 });
