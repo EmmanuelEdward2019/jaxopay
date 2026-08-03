@@ -81,6 +81,16 @@ class GlydeAdapter {
   }
 
   /**
+   * Lists transactions credited to a specific virtual account — used as a reconciliation
+   * safety net alongside the webhook (confirmed: a real collection can land on Glyde's side
+   * with no corresponding webhook ever reaching us, so this must not be the only path).
+   */
+  async getTransactions(providerAccountId) {
+    const response = await this.client.get(`/virtual-accounts/${providerAccountId}/transactions`);
+    return response.data?.data || [];
+  }
+
+  /**
    * Verify a Glyde webhook signature: HMAC-SHA256 over the RAW request body,
    * sent in the `X-Glyde-Signature` header (hex-encoded).
    */

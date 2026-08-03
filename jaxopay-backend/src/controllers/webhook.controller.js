@@ -9,6 +9,7 @@ import * as kycNotify from '../services/kycNotification.service.js';
 import { creditUserWalletByQuidax, persistQuidaxWalletAddress } from '../services/quidaxWebhook.service.js';
 import { creditUserWalletByObiex, updateObiexWithdrawal } from '../services/obiexWebhook.service.js';
 import { sendTransactionEmails, sendWithdrawalEmails } from '../services/email.service.js';
+import GlydeAdapter from '../orchestration/adapters/fiat/GlydeAdapter.js';
 
 /**
  * Unified webhook handler for all providers
@@ -530,30 +531,34 @@ async function processKorapayPayout(event, data) {
 // ─────────────────────────────────────────────
 async function processGlyde(payload) {
     const { event, data } = payload || {};
-    logger.info(`[WEBHOOK] Glyde event: ${event}`, { raw: data });
+    // Log unconditionally, regardless of event name — a real deposit was confirmed to arrive
+    // on Glyde's side (total_collected updated) with NO webhook ever reaching this handler, and
+    // when Glyde's own transaction record was inspected directly it carried a "type": "credit"
+    // field never shown in the documented collection.success example. The actual event name for
+    // a virtual-account bank-transfer credit is unconfirmed, so this log is the only way to see
+    // it if/when Glyde does deliver one.
+    logger.info(`[WEBHOOK] Glyde event: ${event}`, { raw: JSON.stringify(payload) });
 
-    if (event !== 'collection.success') {
-        // collection.failed / transfer.* aren't relevant to crediting a deposit.
-        return;
-    }
+    const looksLikeCredit = event === 'collection.success' || String(data?.type).toLowerCase() === 'credit';
+    if (!looksLikeCredit) return;
 
     const { amount, currency, fee, status } = data || {};
     if (status && !['successful', 'success'].includes(String(status).toLowerCase())) return;
 
     const reference = data?.reference;
-    // Glyde's docs don't pin down exactly which field carries our own account reference for a
-    // direct bank-transfer-into-virtual-account credit (only a generic checkout example is shown),
-    // so try every plausible location before giving up.
-    const merchantRef =
-        data?.merchant_reference ||
+    // NOTE: confirmed via Glyde's own /virtual-accounts/{id}/transactions response that
+    // merchant_reference is a bank/NIBSS session id, NOT the customer.reference we set at
+    // account-creation time — it must not be trusted as a primary match key. Try the fields
+    // that plausibly carry our own reference first, and treat merchant_reference as a last resort.
+    const ourRef =
         data?.customer?.reference ||
         data?.account?.reference ||
         data?.virtual_account?.reference ||
-        reference;
+        data?.merchant_reference;
     const accountNumber = data?.account_number || data?.account?.account_number || data?.virtual_account?.account_number;
 
-    if (!merchantRef && !accountNumber) {
-        logger.warn(`[WEBHOOK] Glyde collection.success with no reference or account number to match. Raw: ${JSON.stringify(payload)}`);
+    if (!ourRef && !accountNumber) {
+        logger.warn(`[WEBHOOK] Glyde credit event with no reference or account number to match. Raw: ${JSON.stringify(payload)}`);
         return;
     }
 
@@ -568,10 +573,10 @@ async function processGlyde(payload) {
 
     // 1. Match by our own account reference (set as customer.reference at account-creation time)
     let vbaRes = { rows: [] };
-    if (merchantRef) {
+    if (ourRef) {
         vbaRes = await query(
             `SELECT wallet_id, user_id FROM virtual_bank_accounts WHERE provider = 'glyde' AND provider_reference = $1`,
-            [merchantRef]
+            [ourRef]
         );
     }
 
@@ -584,15 +589,44 @@ async function processGlyde(payload) {
     }
 
     if (vbaRes.rows.length === 0) {
-        logger.warn(`[WEBHOOK] Glyde deposit could not be matched to a virtual account — ref=${merchantRef} acct=${accountNumber}. Raw payload: ${JSON.stringify(payload)}`);
+        logger.warn(`[WEBHOOK] Glyde deposit could not be matched to a virtual account — ref=${ourRef} acct=${accountNumber}. Raw payload: ${JSON.stringify(payload)}`);
         return;
     }
 
     const { wallet_id, user_id } = vbaRes.rows[0];
-    await applyGlydeDeposit(user_id, wallet_id, amount, currency || 'NGN', fee, reference || merchantRef);
+    await applyGlydeDeposit(user_id, wallet_id, amount, currency || 'NGN', fee, reference || ourRef);
 }
 
-async function applyGlydeDeposit(userId, walletId, amount, currency, fee, reference) {
+/**
+ * Reconciliation safety net: polls Glyde directly for a virtual account's transaction history
+ * and credits any successful ones we don't already have recorded. Call this whenever a user's
+ * existing VBA is fetched (see wallet.controller.js getOrCreateVBA) — the webhook alone isn't
+ * provably reliable (a real deposit landed on Glyde's side with no webhook ever received here).
+ */
+export async function reconcileGlydeVBA(vba) {
+    if (!vba?.provider_account_id) return;
+    let transactions;
+    try {
+        transactions = await GlydeAdapter.getTransactions(vba.provider_account_id);
+    } catch (err) {
+        logger.warn(`[Reconcile] Glyde transactions fetch failed for ${vba.provider_account_id}: ${err.message}`);
+        return;
+    }
+
+    for (const tx of transactions || []) {
+        if (String(tx.type).toLowerCase() !== 'credit') continue;
+        if (!['successful', 'success'].includes(String(tx.status).toLowerCase())) continue;
+        if (!tx.reference) continue;
+
+        const existing = await query('SELECT id FROM transactions WHERE reference = $1', [tx.reference]);
+        if (existing.rows.length > 0) continue;
+
+        logger.info(`[Reconcile] Found unprocessed Glyde credit ${tx.reference} for wallet ${vba.wallet_id} — crediting now.`);
+        await applyGlydeDeposit(vba.user_id, vba.wallet_id, tx.amount, 'NGN', tx.fee, tx.reference);
+    }
+}
+
+export async function applyGlydeDeposit(userId, walletId, amount, currency, fee, reference) {
     try {
         const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
 

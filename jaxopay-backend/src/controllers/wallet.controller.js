@@ -12,6 +12,7 @@ import { enforceTierLimit } from '../services/kycLimits.service.js';
 import KorapayAdapter from '../orchestration/adapters/fiat/KorapayAdapter.js';
 import GlydeAdapter from '../orchestration/adapters/fiat/GlydeAdapter.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
+import { reconcileGlydeVBA } from './webhook.controller.js';
 
 const buildApiV1Url = (path) => {
   const rawBaseUrl = (process.env.API_BASE_URL || 'http://localhost:3001').trim();
@@ -756,14 +757,25 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
   // (Scoping by user_id alone could return a stale/wrong-currency row from another wallet.)
   try {
     const vbaResult = await query(
-      'SELECT bank_name, account_number, account_name FROM virtual_bank_accounts WHERE wallet_id = $1 AND user_id = $2 AND is_active = true',
+      `SELECT bank_name, account_number, account_name, provider, provider_account_id
+       FROM virtual_bank_accounts WHERE wallet_id = $1 AND user_id = $2 AND is_active = true`,
       [wallet.id, req.user.id]
     );
 
     if (vbaResult.rows.length > 0) {
+      const vba = vbaResult.rows[0];
+
+      // Reconciliation safety net: the webhook alone isn't provably reliable (confirmed — a
+      // real deposit landed on Glyde with no webhook ever received), so re-check on every fetch.
+      if (vba.provider === 'glyde') {
+        await reconcileGlydeVBA({ ...vba, wallet_id: wallet.id, user_id: req.user.id }).catch((e) =>
+          logger.warn(`[VBA] Glyde reconciliation failed for ${req.user.id}: ${e.message}`)
+        );
+      }
+
       return res.status(200).json({
         success: true,
-        data: vbaResult.rows[0],
+        data: { bank_name: vba.bank_name, account_number: vba.account_number, account_name: vba.account_name },
       });
     }
 
@@ -840,9 +852,9 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
 
     // 6. Save new VBA to our database
     await query(
-      `INSERT INTO virtual_bank_accounts (wallet_id, user_id, account_number, bank_name, bank_code, account_name, provider, provider_reference)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [wallet.id, req.user.id, vbaData.account_number, vbaData.bank_name, vbaData.bank_code || null, vbaData.account_name, provider, vbaData.reference]
+      `INSERT INTO virtual_bank_accounts (wallet_id, user_id, account_number, bank_name, bank_code, account_name, provider, provider_reference, provider_account_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [wallet.id, req.user.id, vbaData.account_number, vbaData.bank_name, vbaData.bank_code || null, vbaData.account_name, provider, vbaData.reference, vbaData.provider_id || null]
     );
 
     return res.status(200).json({
