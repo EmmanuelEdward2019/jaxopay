@@ -163,14 +163,9 @@ export const signup = catchAsync(async (req, res) => {
       );
     }
 
-    // Generate tokens
-    const accessToken = generateToken(user.id);
-    const refreshToken = generateRefreshToken(user.id);
-
-    // Create session (inside transaction)
-    await createSession(user.id, accessToken, req.deviceInfo, (...args) => client.query(...args));
-
-    // Store device info (inside transaction)
+    // No session/access token is issued here — email must be verified before the account can
+    // log in at all (see login()), so there's no working session to hand out yet. Store device
+    // info now anyway since we already have the fingerprint from this request.
     await storeDeviceInfo(user.id, req.deviceInfo, (...args) => client.query(...args));
 
     // Send verification email (generate token)
@@ -203,7 +198,7 @@ export const signup = catchAsync(async (req, res) => {
       }
     }
 
-    return { user, accessToken, refreshToken, verificationToken };
+    return { user, verificationToken };
   });
 
   // Send verification email (async, outside transaction)
@@ -221,7 +216,7 @@ export const signup = catchAsync(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: 'Account created successfully. Please check your email to verify your account.',
+    message: 'Account created successfully. Please check your email to verify your account before logging in.',
     data: {
       user: {
         id: result.user.id,
@@ -232,11 +227,7 @@ export const signup = catchAsync(async (req, res) => {
         kyc_status: result.user.kyc_status,
         created_at: result.user.created_at,
       },
-      session: {
-        access_token: result.accessToken,
-        refresh_token: result.refreshToken,
-        expires_in: '15m',
-      },
+      // No session — the account can't log in until the email is verified.
     },
   });
 });
@@ -274,6 +265,16 @@ export const login = catchAsync(async (req, res) => {
     logger.warn('Login failed: Invalid password', { email, userId: user.id });
     auditFromReq(req, { userId: user.id, action: 'login_failed', entityType: 'user', entityId: user.id, newValues: { email, reason: 'invalid_password' } });
     throw new AppError('Invalid email or password', 401);
+  }
+
+  // Block login until the email is verified — checked after password verification so we don't
+  // leak account existence to someone who doesn't know the password.
+  if (!user.is_email_verified) {
+    throw new AppError(
+      'Please verify your email before logging in. Check your inbox for the verification link.',
+      403,
+      'EMAIL_NOT_VERIFIED'
+    );
   }
 
   // If 2FA is enabled
@@ -808,22 +809,35 @@ export const verifyEmail = catchAsync(async (req, res) => {
 });
 
 // Resend verification email
+// Public (no login required — a user with an unverified email can't log in at all, so they
+// can't reach an authenticated endpoint to ask for this). Takes `email` in the body instead of
+// req.user. Always returns a generic success message to prevent email enumeration, mirroring
+// forgotPassword's pattern — only genuinely unverified accounts actually get an email.
 export const resendVerificationEmail = catchAsync(async (req, res) => {
-  if (req.user.is_email_verified) {
-    throw new AppError('Email is already verified', 400);
-  }
+  const { email } = req.body;
+  if (!email) throw new AppError('email is required', 400);
 
-  // Generate new verification token
+  const generic = { success: true, message: 'If that account exists and needs verification, a new link has been sent.' };
+
+  const result = await query(
+    `SELECT id, email, is_email_verified FROM users WHERE email = $1 AND deleted_at IS NULL`,
+    [email]
+  );
+  if (result.rows.length === 0) return res.status(200).json(generic);
+
+  const user = result.rows[0];
+  if (user.is_email_verified) return res.status(200).json(generic);
+
   const verificationToken = crypto.randomBytes(32).toString('hex');
 
   await query(
     `INSERT INTO email_verifications (user_id, token, expires_at)
      VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
-    [req.user.id, verificationToken]
+    [user.id, verificationToken]
   );
 
   await sendEmail({
-    to: req.user.email,
+    to: user.email,
     subject: 'Verify your JAXOPAY account',
     template: 'email-verification',
     data: {
@@ -832,10 +846,7 @@ export const resendVerificationEmail = catchAsync(async (req, res) => {
     },
   });
 
-  res.status(200).json({
-    success: true,
-    message: 'Verification email sent',
-  });
+  res.status(200).json(generic);
 });
 
 // Placeholder functions for 2FA and device/session management

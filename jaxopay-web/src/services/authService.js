@@ -30,6 +30,17 @@ const authService = {
     }
   },
 
+  // Resend the account-verification email (public — no session required, since an unverified
+  // account can't log in to get one).
+  resendVerification: async (email) => {
+    try {
+      const response = await apiClient.post('/auth/resend-verification', { email });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return handleApiError(error);
+    }
+  },
+
   // Login with phone (request OTP)
   loginWithPhone: async (phone) => {
     try {

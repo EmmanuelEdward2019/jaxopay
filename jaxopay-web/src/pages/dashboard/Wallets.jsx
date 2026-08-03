@@ -13,8 +13,10 @@ import walletService from '../../services/walletService';
 import cryptoService from '../../services/cryptoService';
 import transferService from '../../services/transferService';
 import kycService from '../../services/kycService';
+import fxService from '../../services/fxService';
 import PinModal from '../../components/common/PinModal';
 import SearchableBankSelect from '../../components/common/SearchableBankSelect';
+import NigerianIdGate from '../../components/common/NigerianIdGate';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
 // Shared helper: did a service result fail because of the transaction PIN?
@@ -868,6 +870,7 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [stage, setStage] = useState('form'); // 'form' | 'processing' | 'success'
+    const [idGate, setIdGate] = useState(null); // set only if a BVN/NIN gate blocks this NGN deposit
 
     // Crypto deposit states
     const [network, setNetwork] = useState('');
@@ -982,6 +985,10 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                 } else {
                     setError('No checkout URL returned.'); setStage('form');
                 }
+            } else if (result.code === 'BVN_NIN_REQUIRED' || result.code === 'BVN_NIN_PENDING') {
+                const fresh = await fxService.getRampStatus().catch(() => null);
+                setIdGate(fresh?.success ? fresh.data : { required: true, verified: false });
+                setStage('form');
             } else {
                 setError(result.error || 'Deposit failed'); setStage('form');
             }
@@ -999,6 +1006,20 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                 </div>
                 <h3 className="text-xl font-bold text-foreground mb-2">Deposit Successful!</h3>
                 <p className="text-muted-foreground text-sm">Your wallet balance will update shortly.</p>
+            </div>
+        );
+    }
+
+    // Nigerian users must verify both BVN and NIN before depositing Naira.
+    if (idGate?.required && !idGate?.verified) {
+        return (
+            <div className="p-6">
+                <NigerianIdGate
+                    gate={idGate}
+                    onRefresh={setIdGate}
+                    title="Verify your BVN and NIN"
+                    description="Both your BVN and NIN must be verified before depositing Naira — a Nigerian regulatory requirement. This is a one-time step."
+                />
             </div>
         );
     }
@@ -1333,8 +1354,10 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                             )}
                             {currentTierLimit && (
                                 <div className="flex items-center justify-between text-xs">
-                                    <span className="text-muted-foreground">Daily limit ({currentTierLimit.name})</span>
-                                    <span className="font-semibold text-foreground">${Number(currentTierLimit.daily_limit).toLocaleString()}</span>
+                                    <span className="text-muted-foreground">Daily {isCrypto ? 'crypto' : 'fiat'} limit ({currentTierLimit.name})</span>
+                                    <span className="font-semibold text-foreground">
+                                        ${Number(isCrypto ? currentTierLimit.daily_limit_crypto : currentTierLimit.daily_limit_fiat).toLocaleString()}
+                                    </span>
                                 </div>
                             )}
                         </div>

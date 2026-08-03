@@ -71,6 +71,16 @@ const kycService = {
     }
   },
 
+  // target_tier is a plain integer (1, 2, or 3), not the 'tier_X' string form.
+  requestUpgrade: async (targetTier) => {
+    try {
+      const raw = await apiClient.post('/kyc/upgrade', { target_tier: targetTier });
+      return { success: raw?.success !== false, data: unwrapData(raw), message: raw?.message };
+    } catch (error) {
+      return { success: false, error: error?.response?.data?.message || error.message };
+    }
+  },
+
   getSmileConfig: async () => {
     try {
       const raw = await apiClient.get('/kyc/smile/config');

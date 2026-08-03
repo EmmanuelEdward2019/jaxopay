@@ -20,6 +20,7 @@ const STEPS = [
 ];
 
 const ID_DOCUMENT_TYPES = [
+    { id: 'nin', name: 'NIN (Nigeria)', icon: Fingerprint },
     { id: 'passport', name: 'Passport', icon: Globe },
     { id: 'national_id', name: 'National ID', icon: CreditCard },
     { id: 'drivers_license', name: "Driver's License", icon: CreditCard },
@@ -64,6 +65,11 @@ const KYC = () => {
     const [currentStep, setCurrentStep] = useState(1);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
+
+    // Tier status + upgrade button
+    const [tierLimits, setTierLimits] = useState(null);
+    const [upgrading, setUpgrading] = useState(false);
+    const [upgradeMsg, setUpgradeMsg] = useState(null);
 
     // Form state across steps
     const [formData, setFormData] = useState({
@@ -118,17 +124,32 @@ const KYC = () => {
     // ── Data fetching ────────────────────────────────────────────────
     const fetchKYCData = useCallback(async () => {
         setLoading(true);
-        const [statusResult, docsResult, smileCfg] = await Promise.all([
+        const [statusResult, docsResult, smileCfg, limitsResult] = await Promise.all([
             kycService.getKYCStatus(),
             kycService.getDocuments(),
             kycService.getSmileConfig(),
+            kycService.getTierLimits(),
         ]);
         if (statusResult.success) setKycStatus(statusResult.data);
         if (docsResult.success) setDocuments(docsResult.data.documents || []);
         if (smileCfg.success && smileCfg.data?.configured) setSmileConfigured(true);
         else setSmileConfigured(false);
+        if (limitsResult.success) setTierLimits(limitsResult.data);
         setLoading(false);
     }, []);
+
+    const handleUpgrade = async (targetTier) => {
+        setUpgrading(true);
+        setUpgradeMsg(null);
+        const res = await kycService.requestUpgrade(targetTier);
+        setUpgrading(false);
+        if (res.success) {
+            setUpgradeMsg({ ok: true, text: res.message || `Upgraded to Tier ${targetTier}!` });
+            fetchKYCData();
+        } else {
+            setUpgradeMsg({ ok: false, text: res.error || 'Could not upgrade yet.' });
+        }
+    };
 
     useEffect(() => { fetchKYCData(); }, [fetchKYCData]);
 
@@ -337,8 +358,8 @@ const KYC = () => {
     const currentTier = typeof rawTier === 'string' && rawTier.startsWith('tier_') ? rawTier : `tier_${Number(rawTier) || 0}`;
     const tierNum = parseInt(currentTier.replace('tier_', '')) || 0;
 
-    // Already fully verified
-    if (!loading && tierNum >= 2) {
+    // Already fully verified (Tier 3 — highest tier)
+    if (!loading && tierNum >= 3) {
         return (
             <div className="max-w-2xl mx-auto py-8 px-4">
                 <div className="bg-card border-2 border-success/30 rounded-2xl p-8 text-center">
@@ -351,6 +372,10 @@ const KYC = () => {
                     </p>
                 </div>
 
+                <div className="mt-6">
+                    <TierStatusCard currentTierNum={tierNum} tierLimits={tierLimits} onUpgrade={handleUpgrade} upgrading={upgrading} upgradeMsg={upgradeMsg} />
+                </div>
+
                 {/* Previous Submissions */}
                 {documents.length > 0 && <SubmittedDocuments documents={documents} />}
             </div>
@@ -361,6 +386,9 @@ const KYC = () => {
     if (!loading && kycStatus?.kyc_status === 'pending') {
         return (
             <div className="max-w-2xl mx-auto py-8 px-4">
+                <div className="mb-6">
+                    <TierStatusCard currentTierNum={tierNum} tierLimits={tierLimits} onUpgrade={handleUpgrade} upgrading={upgrading} upgradeMsg={upgradeMsg} />
+                </div>
                 <div className="bg-card border-2 border-warning/30 rounded-2xl p-8 text-center">
                     <div className="w-20 h-20 bg-warning/10 rounded-full flex items-center justify-center mx-auto mb-5">
                         <Clock className="w-10 h-10 text-warning" />
@@ -411,6 +439,14 @@ const KYC = () => {
                 <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">Identity Verification</h1>
                 <p className="text-muted-foreground">Complete verification to unlock all features and higher limits</p>
             </div>
+
+            <TierStatusCard
+                currentTierNum={tierNum}
+                tierLimits={tierLimits}
+                onUpgrade={handleUpgrade}
+                upgrading={upgrading}
+                upgradeMsg={upgradeMsg}
+            />
 
             {/* Progress Bar */}
             <div className="mb-8">
@@ -872,6 +908,51 @@ const KYC = () => {
 };
 
 // ── Submitted Documents List ──────────────────────────────────────────
+// ── Tier status + upgrade CTA — always visible, no ambiguity about current tier or how to
+// reach the next one. Tier 1 = profile complete ($0 limit); Tier 2 = NIN + facial verification;
+// Tier 3 = + proof of address (highest limits). BVN is deliberately not part of this ladder —
+// it gates specific Nigeria-only transactions instead (see the withdrawal/deposit screens).
+const TierStatusCard = ({ currentTierNum, tierLimits, onUpgrade, upgrading, upgradeMsg }) => {
+    const limits = tierLimits?.limits || {};
+    const current = limits[`tier_${currentTierNum}`];
+    const nextNum = currentTierNum + 1;
+    const next = nextNum <= 3 ? limits[`tier_${nextNum}`] : null;
+
+    return (
+        <div className="bg-card border border-border rounded-2xl p-5 mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Your current tier</p>
+                    <span className="text-2xl font-bold text-foreground">{current?.name || `Tier ${currentTierNum}`}</span>
+                    {current && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                            Daily limits: <strong className="text-foreground">${Number(current.daily_limit_crypto).toLocaleString()}</strong> crypto
+                            {' · '}<strong className="text-foreground">${Number(current.daily_limit_fiat).toLocaleString()}</strong> fiat
+                        </p>
+                    )}
+                </div>
+                {next && (
+                    <div className="sm:text-right shrink-0">
+                        <p className="text-xs text-muted-foreground mb-2 max-w-xs sm:ml-auto">
+                            Tier {nextNum} needs: <strong className="text-foreground">{(next.required || []).join(', ')}</strong>
+                        </p>
+                        <button
+                            onClick={() => onUpgrade(nextNum)}
+                            disabled={upgrading}
+                            className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl text-sm disabled:opacity-50 whitespace-nowrap"
+                        >
+                            {upgrading ? 'Upgrading...' : `Upgrade to Tier ${nextNum}`}
+                        </button>
+                    </div>
+                )}
+            </div>
+            {upgradeMsg && (
+                <p className={`text-xs mt-3 ${upgradeMsg.ok ? 'text-success' : 'text-danger'}`}>{upgradeMsg.text}</p>
+            )}
+        </div>
+    );
+};
+
 const SubmittedDocuments = ({ documents }) => (
     <div className="mt-6 bg-card border border-border rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-border">

@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, ChevronDown, Sun, Moon } from 'lucide-react';
-import { FaApple, FaGooglePlay } from 'react-icons/fa';
+import { FaApple, FaGooglePlay, FaWhatsapp } from 'react-icons/fa';
+
+// Live Chat — institutional/bulk trade requiring special orders or negotiation.
+const WHATSAPP_LINK = 'https://wa.me/2348138318705';
 
 export default function PublicLayout({ children }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -121,6 +124,17 @@ export default function PublicLayout({ children }) {
 
             {/* CTA Buttons + Dark Mode Toggle */}
             <div className="hidden lg:flex items-center gap-4">
+              {/* Live Chat (WhatsApp) — for institutional/bulk trade needing special orders or negotiation */}
+              <a
+                href={WHATSAPP_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors"
+              >
+                <FaWhatsapp className="w-4 h-4" />
+                Live Chat
+              </a>
+
               {/* Dark Mode Toggle */}
               <button
                 onClick={toggleDarkMode}
@@ -134,13 +148,13 @@ export default function PublicLayout({ children }) {
                 to="/login"
                 className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-accent-600 dark:hover:text-accent-400 transition-colors"
               >
-                Sign In
+                Login
               </Link>
               <Link
                 to="/signup"
                 className="px-6 py-2.5 bg-accent-600 hover:bg-accent-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm shadow-accent-500/20"
               >
-                Get Started
+                Sign up
               </Link>
             </div>
 
@@ -200,19 +214,28 @@ export default function PublicLayout({ children }) {
                 </div>
 
                 <div className="flex flex-col gap-2 pt-4 border-t border-gray-200 dark:border-gray-800">
+                  <a
+                    href={WHATSAPP_LINK}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 mb-2"
+                  >
+                    <FaWhatsapp className="w-4 h-4" />
+                    Live Chat
+                  </a>
                   <Link
                     to="/login"
                     onClick={() => setMobileMenuOpen(false)}
                     className="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >
-                    Sign In
+                    Login
                   </Link>
                   <Link
                     to="/signup"
                     onClick={() => setMobileMenuOpen(false)}
                     className="px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white text-sm font-medium rounded-lg text-center transition-colors"
                   >
-                    Get Started
+                    Sign up
                   </Link>
                 </div>
               </div>
@@ -299,7 +322,7 @@ export default function PublicLayout({ children }) {
                 <li><Link to="/privacy" className="text-sm hover:text-accent-400 transition-colors">Privacy Policy</Link></li>
                 <li><Link to="/terms" className="text-sm hover:text-accent-400 transition-colors">Terms & Conditions</Link></li>
                 <li><Link to="/cookies" className="text-sm hover:text-accent-400 transition-colors">Cookie Policy</Link></li>
-                <li><a href="#" className="text-sm hover:text-accent-400 transition-colors">Compliance</a></li>
+                <li><a href="#" className="text-sm hover:text-accent-400 transition-colors">AML &amp; CFT Policy</a></li>
               </ul>
             </div>
           </div>
@@ -319,7 +342,11 @@ export default function PublicLayout({ children }) {
                   <span className="sr-only">LinkedIn</span>
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" /></svg>
                 </a>
-                <a href="#" className="text-gray-400 hover:text-accent-400 transition-colors">
+                <a href="https://www.facebook.com/share/1KaATwGDKD/" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-accent-400 transition-colors">
+                  <span className="sr-only">Facebook</span>
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036 26.805 26.805 0 0 0-.733-.009c-.707 0-1.259.096-1.675.309a1.686 1.686 0 0 0-.679.622c-.258.42-.374.995-.374 1.752v1.297h3.919l-.386 1.881-.287 1.786h-3.246v8.245C19.396 23.238 24 18.179 24 12.044c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.628 3.874 10.35 9.101 11.647Z" /></svg>
+                </a>
+                <a href="https://www.instagram.com/jaxopay?igsh=ZHJsOHB5dXE2bjFw" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-accent-400 transition-colors">
                   <span className="sr-only">Instagram</span>
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" /></svg>
                 </a>

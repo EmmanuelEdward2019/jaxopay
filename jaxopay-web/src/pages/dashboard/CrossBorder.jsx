@@ -19,6 +19,7 @@ import fxService from '../../services/fxService';
 import walletService from '../../services/walletService';
 import PinModal from '../../components/common/PinModal';
 import SearchableBankSelect from '../../components/common/SearchableBankSelect';
+import NigerianIdGate from '../../components/common/NigerianIdGate';
 import { formatCurrency } from '../../utils/formatters';
 import { useRecentInputs } from '../../hooks/useRecentInputs';
 
@@ -30,9 +31,6 @@ const COUNTRY_NAMES = {
     US: 'United States', GB: 'United Kingdom', FR: 'France', BR: 'Brazil', MX: 'Mexico', AR: 'Argentina',
     PE: 'Peru', CO: 'Colombia', EC: 'Ecuador', LK: 'Sri Lanka', KH: 'Cambodia',
 };
-
-// Currencies Yellow Card supports for swaps (incl. USDT/USDC stablecoins). CNY/AUD/JPY are not supported.
-const SWAP_CURRENCIES = ['NGN', 'USDT', 'USDC', 'USD', 'GHS', 'KES', 'ZAR', 'GBP', 'EUR', 'CAD'];
 
 const CrossBorder = () => {
     const [activeTab, setActiveTab] = useState('swap'); // 'swap' | 'transfer'
@@ -76,6 +74,10 @@ const CrossBorder = () => {
     const [payoutNetworks, setPayoutNetworks] = useState([]);
     const [networksLoading, setNetworksLoading] = useState(false);
 
+    // Nigerian BVN/NIN gate — both must be verified before swap or international transfer.
+    const [gate, setGate] = useState(null);
+    const idBlocked = gate?.required && !gate?.verified;
+
     // Transaction PIN flow (international transfer)
     const [showPin, setShowPin] = useState(false);
     const [pinError, setPinError] = useState('');
@@ -83,6 +85,7 @@ const CrossBorder = () => {
 
     useEffect(() => {
         fetchWallets();
+        fxService.getRampStatus().then((res) => { if (res.success) setGate(res.data); }).catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -110,6 +113,13 @@ const CrossBorder = () => {
             } catch { /* non-fatal */ }
         })();
     }, []);
+
+    // Currency Swap options: every fiat currency across all Yellow Card payout countries
+    // (not just the original hardcoded shortlist), plus the stablecoins (not tied to any country).
+    const swapCurrencyOptions = [...new Set([
+        'NGN', 'USDT', 'USDC',
+        ...payoutCountries.flatMap(c => c.currencies || []),
+    ])];
 
     useEffect(() => {
         const country = transferData.recipientCountry;
@@ -361,6 +371,14 @@ const CrossBorder = () => {
                 {/* Left Column: Form Content */}
                 <div className="lg:col-span-8">
                     <div className="bg-card rounded-3xl p-6 md:p-8 shadow-sm border border-border min-h-[500px]">
+                        {idBlocked ? (
+                            <NigerianIdGate
+                                gate={gate}
+                                onRefresh={setGate}
+                                title="Verify your BVN and NIN"
+                                description="Both your BVN and NIN must be verified before you can swap currencies or send an international transfer — a Nigerian regulatory requirement. This is a one-time step."
+                            />
+                        ) : <>
                         {step === 1 && (
                             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <div>
@@ -390,7 +408,7 @@ const CrossBorder = () => {
                                                         onChange={(e) => setSwapData(prev => ({ ...prev, fromCurrency: e.target.value }))}
                                                         className="bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
                                                     >
-                                                        {SWAP_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                                        {swapCurrencyOptions.map(c => <option key={c} value={c}>{c}</option>)}
                                                     </select>
                                                 </div>
                                             </div>
@@ -433,7 +451,7 @@ const CrossBorder = () => {
                                                         onChange={(e) => setSwapData(prev => ({ ...prev, toCurrency: e.target.value }))}
                                                         className="bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
                                                     >
-                                                        {SWAP_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                                        {swapCurrencyOptions.map(c => <option key={c} value={c}>{c}</option>)}
                                                     </select>
                                                 </div>
                                             </div>
@@ -743,6 +761,7 @@ const CrossBorder = () => {
                             </div>
                             );
                         })()}
+                        </>}
                     </div>
                 </div>
 

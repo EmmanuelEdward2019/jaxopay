@@ -10,6 +10,7 @@ import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { enforceTierLimit } from '../services/kycLimits.service.js';
 import KorapayAdapter from '../orchestration/adapters/fiat/KorapayAdapter.js';
+import currencyEngine from '../services/CurrencyEngineService.js';
 
 const buildApiV1Url = (path) => {
   const rawBaseUrl = (process.env.API_BASE_URL || 'http://localhost:3001').trim();
@@ -171,6 +172,11 @@ export const initializeDeposit = catchAsync(async (req, res) => {
       `Online deposits are currently only available in NGN. Deposit NGN, then convert to ${depositCurrency} using Swap.`,
       400
     );
+  }
+
+  // Nigerian users must have both BVN and NIN verified before depositing Naira.
+  if (depositCurrency === 'NGN') {
+    await currencyEngine.assertNigerianId(req.user.id);
   }
 
   // Validate and format amount using decimal.js
@@ -741,6 +747,9 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
   if (wallet.currency.toUpperCase() !== 'NGN') {
     throw new AppError('Virtual bank accounts are only available for NGN wallets.', 400);
   }
+
+  // Nigerian users must have both BVN and NIN verified before setting up NGN deposits.
+  await currencyEngine.assertNigerianId(req.user.id);
 
   // 2. Look up existing VBA in our local database
   try {

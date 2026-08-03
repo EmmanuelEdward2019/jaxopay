@@ -6,9 +6,9 @@ import {
 } from 'lucide-react';
 import fxService from '../../services/fxService';
 import walletService from '../../services/walletService';
-import kycService from '../../services/kycService';
 import PinModal from '../../components/common/PinModal';
 import SearchableBankSelect from '../../components/common/SearchableBankSelect';
+import NigerianIdGate from '../../components/common/NigerianIdGate';
 import { formatCurrency } from '../../utils/formatters';
 
 const STABLECOINS = ['USDT', 'USDC'];
@@ -25,12 +25,6 @@ const CryptoRamp = () => {
     const [tab, setTab] = useState('buy');               // 'buy' | 'sell'
     const [error, setError] = useState(null);
     const [result, setResult] = useState(null);          // ramp submission result (instruction screen)
-
-    // BVN/NIN capture
-    const [idType, setIdType] = useState('nin');
-    const [idNumber, setIdNumber] = useState('');
-    const [verifying, setVerifying] = useState(false);
-    const [verifyMsg, setVerifyMsg] = useState('');
 
     // Buy (deposit) form
     const [buy, setBuy] = useState({ coin: 'USDT', network: 'POLYGON', fiatAmount: '', mode: 'internal', walletAddress: '' });
@@ -102,22 +96,6 @@ const CryptoRamp = () => {
         return (opt?.networks || []).map((n) => n.network);
     };
 
-    // ── BVN/NIN verification ──
-    const handleVerifyId = async () => {
-        setVerifyMsg('');
-        if (!/^\d{11}$/.test(idNumber.trim())) { setVerifyMsg('Enter a valid 11-digit ' + idType.toUpperCase() + '.'); return; }
-        setVerifying(true);
-        const res = await kycService.verifyRampId({ id_type: idType.toUpperCase(), id_number: idNumber.trim() });
-        setVerifying(false);
-        if (res.success) {
-            setVerifyMsg('✓ Submitted. Re-checking your verification…');
-            const s = await fxService.getRampStatus().catch(() => null);
-            if (s?.success) setGate(s.data);
-        } else {
-            setVerifyMsg(res.error || 'Verification failed. Please check the number and try again.');
-        }
-    };
-
     // ── Submit ramp (opens PIN) ──
     const startBuy = () => {
         setError(null);
@@ -176,9 +154,8 @@ const CryptoRamp = () => {
         return <div className="flex items-center justify-center h-64"><RefreshCw className="w-6 h-6 animate-spin text-green-500" /></div>;
     }
 
-    // ── Block screen: BVN/NIN required (pending = submitted, awaiting approval) ──
+    // ── Block screen: BVN/NIN required (both must be verified) ──
     const blocked = gate?.required && !gate?.verified;
-    const underReview = blocked && gate?.pending;
 
     return (
         <div className="max-w-3xl mx-auto space-y-6">
@@ -190,49 +167,15 @@ const CryptoRamp = () => {
                 </div>
             </div>
 
-            {underReview ? (
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-amber-200 dark:border-amber-800">
-                    <div className="flex items-start gap-3">
-                        <RefreshCw className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
-                        <div>
-                            <h2 className="font-semibold text-gray-900 dark:text-white">Your ID is under review</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                Your BVN/NIN has been submitted and is being verified. You'll be able to buy and sell crypto
-                                as soon as it's approved — usually shortly. Check back soon.
-                            </p>
-                            <button onClick={loadAll}
-                                className="mt-4 px-5 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm inline-flex items-center gap-2">
-                                <RefreshCw className="w-4 h-4" /> Check status
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            ) : blocked ? (
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-amber-200 dark:border-amber-800">
-                    <div className="flex items-start gap-3 mb-4">
-                        <ShieldCheck className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
-                        <div>
-                            <h2 className="font-semibold text-gray-900 dark:text-white">Verify your BVN or NIN</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">Nigerian regulations require an identity check before you can buy or sell crypto. This is a one-time step.</p>
-                        </div>
-                    </div>
-                    <div className="grid sm:grid-cols-[140px_1fr] gap-3">
-                        <select value={idType} onChange={(e) => setIdType(e.target.value)}
-                            className="px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm">
-                            <option value="nin">NIN</option>
-                            <option value="bvn">BVN</option>
-                        </select>
-                        <input value={idNumber} onChange={(e) => setIdNumber(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                            inputMode="numeric" placeholder={`Enter your 11-digit ${idType.toUpperCase()}`}
-                            className="px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm" />
-                    </div>
-                    {verifyMsg && <p className="text-sm mt-3 text-gray-600 dark:text-gray-300">{verifyMsg}</p>}
-                    <button onClick={handleVerifyId} disabled={verifying}
-                        className="mt-4 w-full sm:w-auto px-6 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm disabled:opacity-60 flex items-center justify-center gap-2">
-                        {verifying ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                        {verifying ? 'Verifying…' : 'Verify & Continue'}
-                    </button>
-                    <p className="text-xs text-gray-400 mt-3">Missing your legal name? <Link to="/dashboard/profile" className="text-green-600 underline">Update your profile</Link> first.</p>
+            {blocked ? (
+                <div className="space-y-3">
+                    <NigerianIdGate
+                        gate={gate}
+                        onRefresh={setGate}
+                        title="Verify your BVN and NIN"
+                        description="Nigerian regulations require both your BVN and NIN verified before you can buy or sell crypto. This is a one-time step."
+                    />
+                    <p className="text-xs text-gray-400">Missing your legal name? <Link to="/dashboard/profile" className="text-green-600 underline">Update your profile</Link> first.</p>
                 </div>
             ) : result ? (
                 <RampResult result={result} onDone={() => setResult(null)} />

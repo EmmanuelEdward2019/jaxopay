@@ -122,7 +122,11 @@ const walletService = {
       const response = await apiClient.post('/wallets/deposit/initialize', { wallet_id: walletId, amount, currency });
       return { success: true, data: response.data ?? response };
     } catch (error) {
-      return { success: false, error: error.message || 'Failed to initialize deposit' };
+      return {
+        success: false,
+        error: error.message || 'Failed to initialize deposit',
+        code: error?.response?.data?.code,
+      };
     }
   },
 

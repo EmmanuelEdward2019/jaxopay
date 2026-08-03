@@ -17,6 +17,7 @@ import {
     RefreshCw,
     Star
 } from 'lucide-react';
+import { FaWhatsapp } from 'react-icons/fa';
 import { useAuthStore } from '../../store/authStore';
 import ticketService from '../../services/ticketService';
 import { formatDateTime } from '../../utils/formatters';
@@ -159,13 +160,25 @@ const Support = () => {
                         Get help from our support team
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-2xl transition-all shadow-lg shadow-primary/20"
-                >
-                    <Plus className="w-5 h-5" />
-                    New Ticket
-                </button>
+                <div className="flex items-center gap-3">
+                    <a
+                        href="https://wa.me/2348138318705"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-bold text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors"
+                        title="For institutional / bulk trade needing special orders or negotiation"
+                    >
+                        <FaWhatsapp className="w-4 h-4" />
+                        Live Chat
+                    </a>
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-2xl transition-all shadow-lg shadow-primary/20"
+                    >
+                        <Plus className="w-5 h-5" />
+                        New Ticket
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

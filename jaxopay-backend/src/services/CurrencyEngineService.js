@@ -73,6 +73,9 @@ class CurrencyEngineService {
     async swapCurrency(userId, fromCurrency, toCurrency, amount) {
         if (amount <= 0) throw new AppError('Invalid amount', 400);
 
+        // This is the Yellow Card swap — Nigerian users need both BVN and NIN verified first.
+        await this.assertNigerianId(userId);
+
         const result = await transaction(async (client) => {
             // 1. Fetch Wallets
             const wallets = await client.query(
@@ -199,6 +202,10 @@ class CurrencyEngineService {
             fromCurrency, amount, targetCurrency, recipientName, recipientBank, accountNumber, recipientCountry,
             networkId, networkName, networkAccountType, networkChannelIds,
         } = payload;
+
+        // Nigerian users must have both BVN and NIN verified before any Yellow Card-routed
+        // transaction. No-op for non-Nigerian profiles.
+        await this.assertNigerianId(userId);
 
         // Remitter (sender) details required by Yellow Card, from the user's profile + KYC.
         const sender = await this._buildSender(userId);
@@ -425,18 +432,27 @@ class CurrencyEngineService {
             idType,
         };
 
-        // Nigerian senders require an additional ID (BVN/NIN) on the new /send + Direct Settlement
-        // endpoints. Yellow Card has specifically flagged BVN as required, so prefer it over NIN
-        // when the user has both on file; fall back to NIN, then any generic national ID document.
+        // Nigerian senders send BOTH BVN and NIN to Yellow Card, not just one — BVN as the
+        // primary idType/idNumber (Yellow Card has specifically flagged BVN as required) and NIN
+        // in the additionalIdType/additionalIdNumber slot. Both are asserted as approved by
+        // assertNigerianId() before any code path reaches this function, so both should be on
+        // file here; the national-ID fallback only applies if NIN somehow isn't found.
         if (country === 'NG') {
             const findDoc = (pred) => docs.find((x) => pred(String(x.document_type || '').toLowerCase()));
-            const extra = findDoc((t) => t.includes('bvn'))
-                || findDoc((t) => t.includes('nin'))
-                || findDoc((t) => t.includes('national'));
-            if (extra) {
-                const t = String(extra.document_type).toLowerCase();
-                sender.additionalIdType = t.includes('bvn') ? 'bvn' : 'nin';
-                sender.additionalIdNumber = extra.document_number;
+            const bvnDoc = findDoc((t) => t.includes('bvn'));
+            const ninDoc = findDoc((t) => t.includes('nin'));
+            const nationalDoc = findDoc((t) => t.includes('national'));
+
+            if (bvnDoc) {
+                sender.idType = 'bvn';
+                sender.idNumber = bvnDoc.document_number;
+            }
+            if (ninDoc) {
+                sender.additionalIdType = 'nin';
+                sender.additionalIdNumber = ninDoc.document_number;
+            } else if (nationalDoc) {
+                sender.additionalIdType = 'national_id';
+                sender.additionalIdNumber = nationalDoc.document_number;
             }
         }
         return sender;
@@ -509,36 +525,57 @@ class CurrencyEngineService {
     }
 
     /**
-     * Whether a user can on/off-ramp crypto. Nigerian users must have a verified BVN or NIN
-     * (Yellow Card's Direct Settlement requires it). Returns { country, required, verified }.
+     * Whether a Nigerian user has BOTH BVN and NIN verified — required before any Yellow
+     * Card-routed transaction (crypto ramp, NGN deposit, international transfer). BVN is
+     * deliberately NOT part of the KYC tier ladder (it doesn't exist outside Nigeria), so this
+     * check is separate from tier and only applies when the user's profile country is NG.
+     * Returns { country, required, bvnVerified, ninVerified, bvnPending, ninPending, verified }.
      */
-    async getRampKycStatus(userId) {
+    async getNigerianIdStatus(userId) {
         const prof = (await query('SELECT country FROM user_profiles WHERE user_id = $1', [userId])).rows[0] || {};
         const country = String(prof.country || 'NG').toUpperCase().slice(0, 2);
-        if (country !== 'NG') return { country, required: false, verified: true, pending: false };
-        // Only an APPROVED BVN/NIN/national ID unlocks the ramp. A submitted-but-unreviewed ID
-        // shows as pending (blocked) until SmileID or compliance approves it.
+        if (country !== 'NG') {
+            return { country, required: false, bvnVerified: true, ninVerified: true, bvnPending: false, ninPending: false, verified: true };
+        }
+        // Only an APPROVED document unlocks the gate. A submitted-but-unreviewed ID shows as
+        // pending (blocked) until SmileID or compliance approves it.
         const rows = (await query(
-            `SELECT status::text AS status FROM kyc_documents
+            `SELECT LOWER(document_type) AS document_type, status::text AS status FROM kyc_documents
              WHERE user_id = $1 AND document_number IS NOT NULL AND (status IS NULL OR status::text <> 'rejected')
-               AND (LOWER(document_type) LIKE '%bvn%' OR LOWER(document_type) LIKE '%nin%' OR LOWER(document_type) LIKE '%national%')`,
+               AND (LOWER(document_type) LIKE '%bvn%' OR LOWER(document_type) LIKE '%nin%')`,
             [userId]
         )).rows;
-        const verified = rows.some((r) => r.status === 'approved');
-        const pending = !verified && rows.length > 0;
-        return { country, required: true, verified, pending };
+        const bvnRows = rows.filter((r) => r.document_type.includes('bvn'));
+        const ninRows = rows.filter((r) => r.document_type.includes('nin'));
+        const bvnVerified = bvnRows.some((r) => r.status === 'approved');
+        const ninVerified = ninRows.some((r) => r.status === 'approved');
+        const bvnPending = !bvnVerified && bvnRows.length > 0;
+        const ninPending = !ninVerified && ninRows.length > 0;
+        return { country, required: true, bvnVerified, ninVerified, bvnPending, ninPending, verified: bvnVerified && ninVerified };
     }
 
-    /** Throws BVN_NIN_REQUIRED / BVN_NIN_PENDING (403) if the user isn't cleared to ramp. */
-    async assertRampKyc(userId) {
-        const s = await this.getRampKycStatus(userId);
-        if (s.required && !s.verified) {
-            if (s.pending) {
-                throw new AppError('Your BVN/NIN is under review. You can buy or sell crypto once it is approved.', 403, 'BVN_NIN_PENDING');
-            }
-            throw new AppError('To buy or sell crypto, please verify your BVN or NIN first.', 403, 'BVN_NIN_REQUIRED');
+    /** Throws BVN_NIN_REQUIRED / BVN_NIN_PENDING (403) if a Nigerian user is missing BVN or NIN. */
+    async assertNigerianId(userId) {
+        const s = await this.getNigerianIdStatus(userId);
+        if (!s.required || s.verified) return s;
+        const missing = [];
+        if (!s.bvnVerified) missing.push('BVN');
+        if (!s.ninVerified) missing.push('NIN');
+        const anyPending = (s.bvnPending && !s.bvnVerified) || (s.ninPending && !s.ninVerified);
+        if (anyPending) {
+            throw new AppError(`Your ${missing.join(' and ')} verification is under review. This will unlock once approved.`, 403, 'BVN_NIN_PENDING');
         }
-        return s;
+        throw new AppError(`Please verify your ${missing.join(' and ')} first — both are required for Nigerian users before this transaction.`, 403, 'BVN_NIN_REQUIRED');
+    }
+
+    /** Back-compat alias — crypto ramp uses the same Nigerian BVN+NIN gate as everything else. */
+    async getRampKycStatus(userId) {
+        return this.getNigerianIdStatus(userId);
+    }
+
+    /** Back-compat alias — see assertNigerianId. */
+    async assertRampKyc(userId) {
+        return this.assertNigerianId(userId);
     }
 
     // ── Crypto on/off-ramp (Yellow Card Direct Settlement, manual-ops settlement) ──

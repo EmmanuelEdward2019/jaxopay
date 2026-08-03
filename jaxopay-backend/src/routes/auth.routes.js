@@ -71,6 +71,14 @@ router.post(
   authController.verifyEmail
 );
 
+// Public — must be reachable by a user who hasn't verified their email yet, so isn't logged in
+// (login is now blocked until email is verified). Takes `email` in the body.
+router.post(
+  '/resend-verification',
+  authRateLimiter,
+  authController.resendVerificationEmail
+);
+
 // Protected routes
 router.use(verifyToken);
 
@@ -83,12 +91,6 @@ router.post(
   '/change-password',
   changePasswordValidation,
   authController.changePassword
-);
-
-router.post(
-  '/resend-verification',
-  authRateLimiter,
-  authController.resendVerificationEmail
 );
 
 // 2FA routes

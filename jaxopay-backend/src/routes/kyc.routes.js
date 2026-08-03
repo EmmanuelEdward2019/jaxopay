@@ -126,10 +126,10 @@ router.post(
   submitRampIdVerification
 );
 
-// Request tier upgrade (schema supports tier_0 → tier_2)
+// Request tier upgrade (schema supports tier_0 → tier_3)
 router.post(
   '/upgrade',
-  body('target_tier').isInt({ min: 1, max: 2 }),
+  body('target_tier').isInt({ min: 1, max: 3 }),
   validate,
   requestTierUpgrade
 );

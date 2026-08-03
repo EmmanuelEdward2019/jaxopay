@@ -86,13 +86,13 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
     throw new AppError('This document type is already verified', 409);
   }
 
-  // Tier: primary ID (T1) vs enhanced / address (T2) — NIN, BVN, POA count toward verified (T2)
+  // Tier label (for admin review UI): NIN/passport/national ID/driver's license count toward
+  // Tier 2 (identity); proof of address counts toward Tier 3. BVN isn't part of the tier ladder
+  // at all (it gates Nigeria-only transactions directly, not KYC tier — see kycLimits.service.js).
   let tier = 'tier_2';
-  if (['passport', 'national_id', 'drivers_license', 'id_card'].includes(document_type)) {
-    tier = 'tier_1';
-  } else if (
-    ['nin', 'bvn', 'proof_of_address', 'utility_bill', 'proof_of_income'].includes(document_type)
-  ) {
+  if (['proof_of_address', 'utility_bill', 'proof_of_income'].includes(document_type)) {
+    tier = 'tier_3';
+  } else if (['nin', 'passport', 'national_id', 'drivers_license', 'id_card', 'bvn'].includes(document_type)) {
     tier = 'tier_2';
   }
 
@@ -151,37 +151,45 @@ export const getKYCDocuments = catchAsync(async (req, res) => {
   });
 });
 
-// Get KYC tier limits
+// Get KYC tier limits — daily/monthly figures mirror TIER_CAPS_USD in kycLimits.service.js
+// (kept as plain literals here since this is a display/status endpoint, not the enforcement path).
 export const getKYCLimits = catchAsync(async (req, res) => {
   const limits = {
     tier_0: {
       name: 'Unverified',
-      daily_limit: 0,
-      monthly_limit: 0,
-      features: ['View only'],
+      daily_limit_crypto: 0,
+      daily_limit_fiat: 0,
+      monthly_limit_crypto: 0,
+      monthly_limit_fiat: 0,
+      features: ['Browse only — cannot transact'],
+      required: ['Sign up'],
     },
     tier_1: {
-      name: 'Basic',
-      daily_limit: 1000,
-      monthly_limit: 10000,
-      features: [
-        'Deposits & transfers',
-        'Bill payments',
-        'Crypto buy/sell & swaps',
-        'Virtual cards',
-      ],
-      required_documents: ['ID Card or Passport'],
+      name: 'Tier 1',
+      daily_limit_crypto: 0,
+      daily_limit_fiat: 0,
+      monthly_limit_crypto: 0,
+      monthly_limit_fiat: 0,
+      features: ['Profile complete — verification in progress'],
+      required: ['Full name', 'Residential address', 'Verified email', 'Phone number'],
     },
     tier_2: {
-      name: 'Intermediate',
-      daily_limit: 5000,
-      monthly_limit: 50000,
-      features: [
-        'All Tier 1 features',
-        'Higher limits',
-        'Priority support',
-      ],
-      required_documents: ['ID Card or Passport', 'Proof of Address'],
+      name: 'Tier 2',
+      daily_limit_crypto: 5000000,
+      daily_limit_fiat: 50000,
+      monthly_limit_crypto: 50000000,
+      monthly_limit_fiat: 500000,
+      features: ['Deposits & transfers', 'Bill payments', 'Crypto buy/sell & swaps', 'Virtual cards'],
+      required: ['NIN', 'Facial verification'],
+    },
+    tier_3: {
+      name: 'Tier 3',
+      daily_limit_crypto: 8000000,
+      daily_limit_fiat: 500000,
+      monthly_limit_crypto: 80000000,
+      monthly_limit_fiat: 5000000,
+      features: ['All Tier 2 features', 'Highest transaction limits', 'Priority support'],
+      required: ['Proof of address (utility bill or bank statement)'],
     },
   };
 
@@ -196,24 +204,16 @@ export const getKYCLimits = catchAsync(async (req, res) => {
 
 function parseTierStep(tier) {
   if (tier == null) return 0;
-  if (typeof tier === 'number' && !Number.isNaN(tier)) return Math.min(2, Math.max(0, tier));
+  if (typeof tier === 'number' && !Number.isNaN(tier)) return Math.min(3, Math.max(0, tier));
   const s = String(tier);
   const m = s.match(/(\d+)/);
-  return m ? Math.min(2, Math.max(0, parseInt(m[1], 10))) : 0;
+  return m ? Math.min(3, Math.max(0, parseInt(m[1], 10))) : 0;
 }
 
-const GOV_ID_DOC_TYPES = new Set([
-  'id_card',
-  'national_id',
-  'passport',
-  'drivers_license',
-  'nin',
-  'bvn',
-  'smile_basic_kyc',
-  'smile_biometric_kyc',
-]);
-
-// Request tier upgrade (DB enum: tier_0 .. tier_2)
+// Request tier upgrade (DB enum: tier_0 .. tier_3)
+// tier_1: profile completion (name/address/phone/verified email) — no document required.
+// tier_2: approved NIN + facial/biometric verification.
+// tier_3: + approved proof of address.
 export const requestTierUpgrade = catchAsync(async (req, res) => {
   const { target_tier } = req.body;
 
@@ -224,42 +224,61 @@ export const requestTierUpgrade = catchAsync(async (req, res) => {
     throw new AppError('Target tier must be higher than current tier', 400);
   }
 
-  if (targetStep > 2) {
+  if (targetStep > 3) {
     throw new AppError('Invalid tier', 400);
   }
 
-  const documents = await query(
-    `SELECT document_type, status
-     FROM kyc_documents
-     WHERE user_id = $1`,
-    [req.user.id]
-  );
-
-  const verifiedDocs = documents.rows
-    .filter((doc) => doc.status === 'approved')
-    .map((doc) => doc.document_type);
-
-  const hasGovId = verifiedDocs.some((t) => GOV_ID_DOC_TYPES.has(t));
-  const hasPoa = verifiedDocs.includes('proof_of_address') || verifiedDocs.includes('utility_bill');
-
   if (targetStep === 1) {
-    if (!hasGovId) {
-      throw new AppError(
-        'Missing approved government ID (passport, national ID, NIN, BVN, or completed identity check)',
-        400
-      );
-    }
-  }
+    const prof = (await query(
+      `SELECT up.first_name, up.last_name, up.address_line1, u.phone, u.is_email_verified
+       FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id
+       WHERE u.id = $1`,
+      [req.user.id]
+    )).rows[0] || {};
 
-  if (targetStep === 2) {
-    if (!hasPoa) {
-      throw new AppError('Missing approved proof of address', 400);
+    const missing = [];
+    if (!prof.is_email_verified) missing.push('a verified email address');
+    if (!String(prof.first_name || '').trim() || !String(prof.last_name || '').trim()) missing.push('your full name');
+    if (!String(prof.address_line1 || '').trim()) missing.push('your address');
+    if (!String(prof.phone || '').trim()) missing.push('a phone number');
+
+    if (missing.length > 0) {
+      throw new AppError(`Please complete your profile first: ${missing.join(', ')}.`, 400);
     }
-    if (!hasGovId) {
-      throw new AppError(
-        'Tier 2 requires proof of address plus an approved government ID (NIN, BVN, passport, national ID, or completed identity verification)',
-        400
-      );
+  } else {
+    const [documents, profRes] = await Promise.all([
+      query(
+        `SELECT document_type, status, selfie_url
+         FROM kyc_documents
+         WHERE user_id = $1`,
+        [req.user.id]
+      ),
+      query(`SELECT country FROM user_profiles WHERE user_id = $1`, [req.user.id]),
+    ]);
+    const country = String(profRes.rows[0]?.country || 'NG').toUpperCase().slice(0, 2);
+
+    const approved = documents.rows.filter((doc) => doc.status === 'approved');
+    const approvedTypes = approved.map((doc) => doc.document_type);
+    // NIN only exists for Nigerians — non-NG users prove identity with a passport/national ID instead.
+    const hasNin = approvedTypes.includes('nin')
+      || (country !== 'NG' && ['passport', 'national_id', 'drivers_license', 'id_card'].some((t) => approvedTypes.includes(t)));
+    const hasFacial = approvedTypes.includes('smile_biometric_kyc')
+      || approved.some((doc) => doc.selfie_url);
+    const hasPoa = approvedTypes.includes('proof_of_address') || approvedTypes.includes('utility_bill');
+
+    if (targetStep === 2) {
+      const missing = [];
+      if (!hasNin) missing.push(country === 'NG' ? 'an approved NIN' : 'an approved government ID');
+      if (!hasFacial) missing.push('facial verification');
+      if (missing.length > 0) {
+        throw new AppError(`Tier 2 requires ${missing.join(' and ')}.`, 400);
+      }
+    }
+
+    if (targetStep === 3) {
+      if (!hasPoa) {
+        throw new AppError('Tier 3 requires an approved proof of address (utility bill or bank statement).', 400);
+      }
     }
   }
 

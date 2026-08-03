@@ -29,7 +29,7 @@ export const useAuthStore = create(
 
         if (!result.success) {
           set({ error: result.message, isLoading: false });
-          return { success: false, error: result.message };
+          return { success: false, error: result.message, code: result.data?.code };
         }
 
         // Check for 2FA requirement

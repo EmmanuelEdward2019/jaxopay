@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Mail, Phone, MapPin, Clock, Send } from 'lucide-react';
+import { FaWhatsapp } from 'react-icons/fa';
 import PublicLayout from '../../components/layout/PublicLayout';
+
+const WHATSAPP_LINK = 'https://wa.me/2348138318705';
 
 export default function Contact() {
   const [formData, setFormData] = useState({
@@ -183,8 +186,28 @@ export default function Contact() {
                 ))}
               </div>
 
+              {/* Institutional / Bulk Trade — Live Chat */}
+              <div className="mt-8 p-6 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800">
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                  <FaWhatsapp className="w-5 h-5 text-green-600 dark:text-green-400" />
+                  Institutional &amp; Bulk Trade
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                  Need special orders or negotiated rates for large-volume trades? Chat with our team directly on WhatsApp.
+                </p>
+                <a
+                  href={WHATSAPP_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors"
+                >
+                  <FaWhatsapp className="w-4 h-4" />
+                  Live Chat on WhatsApp
+                </a>
+              </div>
+
               {/* FAQ Link */}
-              <div className="mt-12 p-6 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <div className="mt-8 p-6 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
                 <h3 className="font-semibold text-gray-900 dark:text-white mb-2">
                   Looking for quick answers?
                 </h3>
