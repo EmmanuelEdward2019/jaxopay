@@ -96,7 +96,7 @@ const Treasury = () => {
             <div className="p-4 sm:p-5 bg-blue-50 dark:bg-blue-900/15 border border-blue-100 dark:border-blue-900/40 rounded-2xl flex gap-3">
                 <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
                 <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1.5">
-                    <p><span className="font-semibold text-gray-900 dark:text-white">Float</span> = the actual money your platform holds at each provider (Korapay, Quidax, etc.). This is your cash on hand.</p>
+                    <p><span className="font-semibold text-gray-900 dark:text-white">Float</span> = the actual money your platform holds at each provider (Glyde, Korapay, Quidax, etc.). This is your cash on hand.</p>
                     <p><span className="font-semibold text-gray-900 dark:text-white">Liabilities</span> = the total balance you owe your users (the sum of their wallets).</p>
                     <p><span className="font-semibold text-gray-900 dark:text-white">Coverage</span> = Float − Liabilities. It must stay <span className="text-emerald-600 font-semibold">positive</span> for every currency — that means you hold enough to cover everything your users could withdraw.</p>
                 </div>

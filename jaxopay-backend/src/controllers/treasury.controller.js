@@ -6,6 +6,7 @@ import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js'; /
 import ObiexAdapter from '../orchestration/adapters/crypto/ObiexAdapter.js'; // exported instance
 import KorapayAdapter from '../orchestration/adapters/payments/KorapayAdapter.js'; // class
 import yellowCard from '../orchestration/adapters/fx/YellowCardService.js'; // exported instance (replaces Graph)
+import GlydeAdapter from '../orchestration/adapters/fiat/GlydeAdapter.js'; // exported instance
 
 // Crypto provider selection — mirrors crypto.controller.js (Obiex primary by default).
 const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() === 'quidax' ? 'quidax' : 'obiex';
@@ -115,6 +116,20 @@ export const getTreasuryOverview = catchAsync(async (req, res) => {
     balances: [],
     note: strowalletConfigured
       ? 'Live & in use for virtual cards and bill payments. Strowallet has no aggregate merchant-float endpoint, so no balance is shown; cards are funded on demand.'
+      : 'Not configured.',
+  });
+
+  // Glyde is primary for Naira collections (static virtual accounts) but, like Strowallet,
+  // has no aggregate merchant-float/balance endpoint — collected funds settle directly rather
+  // than sitting in an API-queryable pool. Korapay remains the silent fallback for collections
+  // (see wallet.controller.js getOrCreateVBA) and is already tracked above.
+  providers.push({
+    key: 'glyde',
+    label: 'Glyde (Naira Collections)',
+    status: GlydeAdapter.isConfigured() ? 'in_use' : 'unavailable',
+    balances: [],
+    note: GlydeAdapter.isConfigured()
+      ? 'Live & primary for Naira deposits via static virtual accounts. Glyde has no aggregate merchant-float endpoint, so no balance is shown here.'
       : 'Not configured.',
   });
 

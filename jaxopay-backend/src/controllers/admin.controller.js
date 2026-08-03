@@ -1493,6 +1493,7 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
   };
 
   // Effective config (account for placeholder/disabled flags)
+  const glydeOn = isSet(env.GLYDE_SECRET_KEY);
   const korapay = isSet(env.KORAPAY_SECRET_KEY);
   const quidaxOn = isSet(env.QUIDAX_SECRET_KEY) || isSet(env.QUIDAX_API_KEY);
   const obiexOn = isSet(env.OBIEX_API_KEY) && isSet(env.OBIEX_API_SECRET);
@@ -1507,10 +1508,20 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
   const data = [
     {
       type: 'Fiat Payments & Transfers',
-      adapters: [
-        { name: 'Korapay', role: 'primary', status: statusFor(korapay, 'korapay'),
-          features: ['Bank payouts & transfers', 'Checkout deposits', 'Virtual accounts', 'Bank/account resolution'] },
-      ],
+      // Glyde is primary for Naira collections/deposits (static virtual accounts); Korapay
+      // remains wired for bank payouts/transfers and is a silent fallback for deposits if
+      // Glyde is unconfigured or its API call fails (see wallet.controller.js getOrCreateVBA).
+      adapters: glydeOn
+        ? [
+            { name: 'Glyde', role: 'primary', status: statusFor(glydeOn, 'glyde'),
+              features: ['Static virtual accounts', 'Naira collections', 'Account resolution'] },
+            { name: 'Korapay', role: 'fallback', status: statusFor(korapay, 'korapay'),
+              features: ['Bank payouts & transfers', 'Checkout deposits', 'Virtual accounts (fallback)', 'Bank/account resolution'] },
+          ]
+        : [
+            { name: 'Korapay', role: 'primary', status: statusFor(korapay, 'korapay'),
+              features: ['Bank payouts & transfers', 'Checkout deposits', 'Virtual accounts', 'Bank/account resolution'] },
+          ],
     },
     {
       type: 'Crypto',

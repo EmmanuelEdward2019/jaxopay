@@ -144,6 +144,12 @@ export const circuitBreakers = {
     resetTimeout: 30000,
     halfOpenMaxCalls: 3,
   }),
+  glyde: new CircuitBreaker({
+    name: 'GlydeAPI',
+    failureThreshold: 5,
+    resetTimeout: 30000,
+    halfOpenMaxCalls: 3,
+  }),
   strowallet: new CircuitBreaker({
     name: 'StrowalletAPI',
     failureThreshold: 5,
