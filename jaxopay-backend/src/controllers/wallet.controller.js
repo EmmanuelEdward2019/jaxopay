@@ -752,11 +752,12 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
   // Nigerian users must have both BVN and NIN verified before setting up NGN deposits.
   await currencyEngine.assertNigerianId(req.user.id);
 
-  // 2. Look up existing VBA in our local database
+  // 2. Look up existing VBA in our local database — scoped to THIS wallet, not just the user.
+  // (Scoping by user_id alone could return a stale/wrong-currency row from another wallet.)
   try {
     const vbaResult = await query(
-      'SELECT bank_name, account_number, account_name FROM virtual_bank_accounts WHERE user_id = $1 AND is_active = true',
-      [req.user.id]
+      'SELECT bank_name, account_number, account_name FROM virtual_bank_accounts WHERE wallet_id = $1 AND user_id = $2 AND is_active = true',
+      [wallet.id, req.user.id]
     );
 
     if (vbaResult.rows.length > 0) {
