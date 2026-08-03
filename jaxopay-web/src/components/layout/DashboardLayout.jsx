@@ -24,10 +24,14 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
+import { FaWhatsapp } from 'react-icons/fa';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
 import NotificationDropdown from '../notifications/NotificationDropdown';
 import AnnouncementBanner from '../notifications/AnnouncementBanner';
+
+// Institutional/bulk trade requiring special orders or negotiation.
+const WHATSAPP_LINK = 'https://wa.me/2348138318705';
 
 const NAV_GROUPS = (isFeatureEnabled) => [
   {
@@ -241,6 +245,25 @@ const DashboardLayout = () => {
 
             {/* Right controls */}
             <div className="flex items-center gap-1 ml-auto">
+              <a
+                href={WHATSAPP_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Live Chat on WhatsApp"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors mr-1"
+              >
+                <FaWhatsapp className="w-4 h-4" />
+                Live Chat
+              </a>
+              <a
+                href={WHATSAPP_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Live Chat on WhatsApp"
+                className="sm:hidden p-2 rounded-lg text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+              >
+                <FaWhatsapp size={18} />
+              </a>
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
