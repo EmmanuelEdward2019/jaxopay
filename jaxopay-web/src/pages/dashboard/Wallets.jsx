@@ -887,6 +887,19 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
         && (!isCrypto || w.wallet_type === 'crypto')
     );
 
+    // Naira deposits require BVN + NIN verified — check upfront so the form shows
+    // immediately instead of only after a failed deposit attempt.
+    useEffect(() => {
+        if (isCrypto || code?.toUpperCase() !== 'NGN') return;
+        let active = true;
+        fxService.getRampStatus().then((res) => {
+            if (active && res.success && res.data?.required && !res.data?.verified) {
+                setIdGate(res.data);
+            }
+        }).catch(() => {});
+        return () => { active = false; };
+    }, [isCrypto, code]);
+
     const handleCopy = (text) => {
         if (!text) return;
         navigator.clipboard.writeText(text);
@@ -985,7 +998,7 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                 } else {
                     setError('No checkout URL returned.'); setStage('form');
                 }
-            } else if (result.code === 'BVN_NIN_REQUIRED' || result.code === 'BVN_NIN_PENDING') {
+            } else if (['BVN_NIN_REQUIRED', 'BVN_NIN_PENDING'].includes(result.code)) {
                 const fresh = await fxService.getRampStatus().catch(() => null);
                 setIdGate(fresh?.success ? fresh.data : { required: true, verified: false });
                 setStage('form');

@@ -139,8 +139,8 @@ const CryptoRamp = () => {
                 setPinError(res?.error || res?.message || 'Transaction failed.');
             }
         } catch (e) {
-            const msg = e?.response?.data?.message || e.message || 'Transaction failed.';
-            if (e?.response?.data?.code === 'BVN_NIN_REQUIRED') {
+            const msg = e?.message || 'Transaction failed.';
+            if (e?.code === 'BVN_NIN_REQUIRED' || e?.data?.code === 'BVN_NIN_REQUIRED') {
                 setShowPin(false);
                 setGate((g) => ({ ...(g || {}), required: true, verified: false }));
             }

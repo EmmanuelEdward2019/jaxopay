@@ -125,7 +125,7 @@ const walletService = {
       return {
         success: false,
         error: error.message || 'Failed to initialize deposit',
-        code: error?.response?.data?.code,
+        code: error?.code || error?.data?.code,
       };
     }
   },
