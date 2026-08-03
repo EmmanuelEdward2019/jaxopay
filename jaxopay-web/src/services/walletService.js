@@ -153,6 +153,17 @@ const walletService = {
       };
     }
   },
+
+  // Completed deposits credited to this wallet since `since` (ISO string) — used to detect a
+  // just-landed deposit while the account-details screen is open.
+  getRecentDeposits: async (walletId, since) => {
+    try {
+      const response = await apiClient.get(`/wallets/${walletId}/recent-deposits`, { params: { since } });
+      return { success: true, data: response.data ?? [] };
+    } catch (error) {
+      return { success: false, error: error.message || 'Failed to check for new deposits' };
+    }
+  },
 };
 
 export default walletService;

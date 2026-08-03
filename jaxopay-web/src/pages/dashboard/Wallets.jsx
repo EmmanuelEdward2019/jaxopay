@@ -885,6 +885,9 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
     const [vbaLoading, setVbaLoading] = useState(false);
     const [vbaError, setVbaError] = useState(null);
     const [vbaPending, setVbaPending] = useState(false);
+    const [depositSuccess, setDepositSuccess] = useState(null); // {amount, fee, net_amount} once detected
+    const ngnWalletIdRef = useRef(null);
+    const screenOpenedAtRef = useRef(new Date().toISOString());
 
     const isCrypto = type === 'crypto';
     const isNGN = !isCrypto && code?.toUpperCase() === 'NGN';
@@ -926,6 +929,7 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
             const wallet = await ensureWallet();
             if (!active.current) return;
             if (!wallet) { setVbaError('Could not set up your NGN wallet. Please try again.'); return; }
+            ngnWalletIdRef.current = wallet.id;
             const res = await walletService.getVBA(wallet.id);
             if (!active.current) return;
             if (res.success) {
@@ -951,6 +955,29 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
         return () => { active.current = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isNGN]);
+
+    // While the account-details screen is showing, poll for a deposit landing (via the Glyde
+    // webhook or the server-side reconciliation sweep) so the user sees it without needing to
+    // refresh anything themselves.
+    useEffect(() => {
+        if (!isNGN || !vba || vbaLoading || vbaError || vbaPending || depositSuccess) return;
+        const interval = setInterval(async () => {
+            const walletId = ngnWalletIdRef.current;
+            if (!walletId) return;
+            const res = await walletService.getRecentDeposits(walletId, screenOpenedAtRef.current);
+            if (res.success && res.data?.length > 0) {
+                const latest = res.data[0];
+                setDepositSuccess({
+                    amount: parseFloat(latest.amount),
+                    fee: parseFloat(latest.fee),
+                    netAmount: parseFloat(latest.net_amount),
+                });
+                onRefresh();
+            }
+        }, 5000);
+        return () => clearInterval(interval);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isNGN, vba, vbaLoading, vbaError, vbaPending, depositSuccess]);
 
     // Fetch networks for crypto
     useEffect(() => {
@@ -1123,14 +1150,60 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
             ) : isNGN ? (
                 /* NGN deposit: dedicated static bank account — transfer anytime, no redirect */
                 <div className="space-y-4">
-                    {vbaLoading && (
+                    {depositSuccess && (
+                        <div className="text-center py-6 space-y-5 animate-in fade-in zoom-in-95 duration-300">
+                            <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto">
+                                <Check className="w-8 h-8 text-success" />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-foreground mb-1">Deposit Received!</h3>
+                                <p className="text-sm text-muted-foreground">Your account has been credited.</p>
+                            </div>
+                            <div className="bg-muted/50 rounded-2xl border border-border p-5 space-y-3 text-left">
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-muted-foreground">Amount deposited</span>
+                                    <span className="font-bold text-foreground">₦{depositSuccess.amount.toLocaleString()}</span>
+                                </div>
+                                {depositSuccess.fee > 0 && (
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-muted-foreground">Fee</span>
+                                        <span className="font-medium text-danger">− ₦{depositSuccess.fee.toLocaleString()}</span>
+                                    </div>
+                                )}
+                                <div className="flex items-center justify-between text-sm pt-2 border-t border-border">
+                                    <span className="text-muted-foreground">Amount credited</span>
+                                    <span className="font-bold text-success">₦{depositSuccess.netAmount.toLocaleString()}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-muted-foreground">New balance</span>
+                                    <span className="font-bold text-foreground">₦{(balanceMap[code]?.balance || 0).toLocaleString()}</span>
+                                </div>
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => { screenOpenedAtRef.current = new Date().toISOString(); setDepositSuccess(null); }}
+                                    className="flex-1 py-3 rounded-xl border border-border text-sm font-semibold text-foreground hover:bg-muted transition-colors"
+                                >
+                                    Make Another Deposit
+                                </button>
+                                <button
+                                    onClick={onClose}
+                                    className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
+                                >
+                                    Done
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {!depositSuccess && vbaLoading && (
                         <div className="flex flex-col items-center gap-3 py-10 text-center">
                             <RefreshCw className="w-8 h-8 text-primary animate-spin" />
                             <p className="text-sm font-bold text-foreground">Setting up your deposit account...</p>
                         </div>
                     )}
 
-                    {!vbaLoading && vbaError && (
+                    {!depositSuccess && !vbaLoading && vbaError && (
                         <div className="flex flex-col items-center gap-3 py-8 text-center">
                             <AlertCircle className="w-8 h-8 text-danger" />
                             <p className="text-sm text-danger">{vbaError}</p>
@@ -1143,7 +1216,7 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                         </div>
                     )}
 
-                    {!vbaLoading && !vbaError && vbaPending && (
+                    {!depositSuccess && !vbaLoading && !vbaError && vbaPending && (
                         <div className="flex flex-col items-center gap-3 py-8 text-center">
                             <Building2 className="w-8 h-8 text-muted-foreground" />
                             <p className="text-sm font-bold text-foreground">Account activation pending</p>
@@ -1151,7 +1224,7 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                         </div>
                     )}
 
-                    {!vbaLoading && !vbaError && !vbaPending && vba && (
+                    {!depositSuccess && !vbaLoading && !vbaError && !vbaPending && vba && (
                         <>
                             <div className="bg-muted/50 rounded-2xl border border-border p-5 space-y-4">
                                 <div className="flex items-center gap-2 text-primary">
@@ -1180,10 +1253,26 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                                 </div>
                             </div>
 
+                            {vba.min_deposit > 0 && (
+                                <div className="bg-warning/10 border border-warning/20 rounded-2xl p-4">
+                                    <p className="text-xs font-bold text-warning">
+                                        Minimum deposit: ₦{Number(vba.min_deposit).toLocaleString()}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        Deposits below this amount may be reduced to ₦0 after the provider's transfer fee.
+                                    </p>
+                                </div>
+                            )}
+
                             <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4">
                                 <p className="text-xs text-foreground leading-relaxed">
                                     This account is permanently yours — transfer any amount from your bank app, USSD, or another bank at any time. Your wallet is credited automatically, usually within a few minutes.
                                 </p>
+                            </div>
+
+                            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                Waiting for your transfer...
                             </div>
                         </>
                     )}

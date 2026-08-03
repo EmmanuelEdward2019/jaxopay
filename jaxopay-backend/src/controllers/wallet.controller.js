@@ -34,6 +34,14 @@ const KORAPAY_CHECKOUT_CURRENCIES = new Set(
     .filter(Boolean)
 );
 
+// Minimum NGN deposit shown on the account-details screen — unset until a real figure is
+// negotiated with Glyde (their flat collection fee can otherwise exceed a small deposit,
+// e.g. a ₦300 transfer with a ₦250 fee nets only ₦50).
+const getMinNgnDeposit = () => {
+  const raw = parseFloat(process.env.GLYDE_MIN_DEPOSIT_NGN);
+  return Number.isFinite(raw) && raw > 0 ? raw : null;
+};
+
 const formatProviderValidationErrors = (errors) => {
   if (!errors || typeof errors !== 'object') return '';
 
@@ -775,7 +783,12 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        data: { bank_name: vba.bank_name, account_number: vba.account_number, account_name: vba.account_name },
+        data: {
+          bank_name: vba.bank_name,
+          account_number: vba.account_number,
+          account_name: vba.account_name,
+          min_deposit: getMinNgnDeposit(),
+        },
       });
     }
 
@@ -863,6 +876,7 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
         bank_name: vbaData.bank_name,
         account_number: vbaData.account_number,
         account_name: vbaData.account_name,
+        min_deposit: getMinNgnDeposit(),
       },
     });
 
@@ -875,5 +889,41 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
       error: 'Could not generate virtual bank account details. Please try again or contact support.',
     });
   }
+});
+
+/**
+ * GET /wallets/:walletId/recent-deposits?since=<ISO timestamp>
+ *
+ * Lets the deposit-account screen detect a just-landed deposit (e.g. via Glyde's webhook or
+ * the reconciliation sweep) while the user is looking at it, without polling the whole
+ * transaction-history endpoint. Returns completed deposits credited to this wallet since
+ * `since` (defaults to 30 minutes ago), with the gross/fee/net breakdown.
+ */
+export const getRecentDeposits = catchAsync(async (req, res) => {
+  const { walletId } = req.params;
+  const since = req.query.since && !Number.isNaN(Date.parse(req.query.since))
+    ? new Date(req.query.since)
+    : new Date(Date.now() - 30 * 60 * 1000);
+
+  const walletCheck = await query(
+    'SELECT id FROM wallets WHERE id = $1 AND user_id = $2',
+    [walletId, req.user.id]
+  );
+  if (walletCheck.rows.length === 0) {
+    throw new AppError('Wallet not found', 404);
+  }
+
+  const result = await query(
+    `SELECT reference, from_amount::numeric AS amount, fee_amount::numeric AS fee,
+            net_amount::numeric AS net_amount, from_currency AS currency, created_at
+     FROM transactions
+     WHERE to_wallet_id = $1 AND transaction_type = 'deposit' AND status = 'completed'
+       AND created_at > $2
+     ORDER BY created_at DESC
+     LIMIT 5`,
+    [walletId, since]
+  );
+
+  res.status(200).json({ success: true, data: result.rows });
 });
 

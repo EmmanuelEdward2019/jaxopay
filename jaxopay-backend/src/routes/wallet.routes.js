@@ -17,6 +17,7 @@ import {
   getWalletTransactions,
   addFunds,
   getOrCreateVBA,
+  getRecentDeposits,
 } from '../controllers/wallet.controller.js';
 
 const router = express.Router();
@@ -37,6 +38,15 @@ router.get(
   param('walletId').isUUID(),
   validate,
   getOrCreateVBA
+);
+
+// Recent completed deposits for a wallet, since a given timestamp (deposit-screen polling)
+router.get(
+  '/:walletId/recent-deposits',
+  param('walletId').isUUID(),
+  query('since').optional().isISO8601(),
+  validate,
+  getRecentDeposits
 );
 
 // Get wallet by currency
