@@ -626,6 +626,30 @@ export async function reconcileGlydeVBA(vba) {
     }
 }
 
+/**
+ * Periodic sweep (see server.js) — reconciles EVERY active Glyde virtual account, not just
+ * the one a user happens to be looking at. Relying on reconcileGlydeVBA firing only when a
+ * user reopens the deposit screen isn't enough: a user who deposits then checks their balance
+ * from the dashboard/wallets list (not the deposit modal) never triggers it at all, and would
+ * see a stuck deposit indefinitely.
+ */
+export async function sweepPendingGlydeDeposits(limit = 100) {
+    const rows = (await query(
+        `SELECT wallet_id, user_id, provider_account_id FROM virtual_bank_accounts
+         WHERE provider = 'glyde' AND is_active = true AND provider_account_id IS NOT NULL
+         ORDER BY updated_at ASC LIMIT $1`,
+        [limit]
+    )).rows;
+
+    let checked = 0;
+    for (const vba of rows) {
+        await reconcileGlydeVBA(vba).catch((e) => logger.warn(`[Glyde sweep] error for wallet ${vba.wallet_id}: ${e.message}`));
+        checked++;
+    }
+    if (rows.length) logger.info(`[Glyde sweep] checked ${checked} virtual account(s)`);
+    return { checked };
+}
+
 export async function applyGlydeDeposit(userId, walletId, amount, currency, fee, reference) {
     try {
         const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));

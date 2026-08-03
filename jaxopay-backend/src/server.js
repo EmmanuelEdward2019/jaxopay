@@ -193,6 +193,17 @@ const startServer = async () => {
             .then((m) => m.sweepPendingCryptoWithdrawals())
             .catch((e) => logger.warn('[crypto withdrawal sweep] error:', e.message));
         }, CRYPTO_WITHDRAW_SWEEP_MS).unref();
+
+        // Auto-reconcile Glyde NGN deposits against every active virtual account — the webhook
+        // alone is not provably reliable (confirmed: a real deposit landed on Glyde's side with
+        // no webhook ever received), and relying only on a user reopening the deposit screen
+        // misses anyone who just checks their balance elsewhere in the app.
+        const GLYDE_SWEEP_MS = Number(process.env.GLYDE_SWEEP_MS) || 60000;
+        setInterval(() => {
+          import('./controllers/webhook.controller.js')
+            .then((m) => m.sweepPendingGlydeDeposits())
+            .catch((e) => logger.warn('[Glyde sweep] error:', e.message));
+        }, GLYDE_SWEEP_MS).unref();
       })
       .catch((dbError) => {
         logger.warn('⚠️  Database connection failed - server running without database');
