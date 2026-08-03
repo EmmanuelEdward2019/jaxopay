@@ -1253,16 +1253,45 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                                 </div>
                             </div>
 
-                            {vba.min_deposit > 0 && (
-                                <div className="bg-warning/10 border border-warning/20 rounded-2xl p-4">
-                                    <p className="text-xs font-bold text-warning">
-                                        Minimum deposit: ₦{Number(vba.min_deposit).toLocaleString()}
+                            <div className="bg-muted/50 rounded-2xl border border-border p-5 space-y-3">
+                                {vba.transaction_fee != null && (
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-muted-foreground">Transaction Fee</p>
+                                        <p className="text-sm font-bold text-foreground">₦{Number(vba.transaction_fee).toLocaleString()}</p>
+                                    </div>
+                                )}
+                                {vba.daily_deposit_limit != null && (
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-muted-foreground">Daily Deposit Limit</p>
+                                        <div className="flex items-center gap-3">
+                                            <p className="text-sm font-bold text-foreground">₦{Number(vba.daily_deposit_limit).toLocaleString()}</p>
+                                            <button
+                                                onClick={() => { onClose(); navigate('/dashboard/kyc'); }}
+                                                className="text-xs font-bold text-primary hover:underline shrink-0"
+                                            >
+                                                Upgrade limit
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                {vba.min_deposit != null && (
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-muted-foreground">Minimum Deposit</p>
+                                        <p className="text-sm font-bold text-foreground">₦{Number(vba.min_deposit).toLocaleString()}</p>
+                                    </div>
+                                )}
+                                {vba.max_deposit != null && (
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-muted-foreground">Maximum Deposit</p>
+                                        <p className="text-sm font-bold text-foreground">₦{Number(vba.max_deposit).toLocaleString()}</p>
+                                    </div>
+                                )}
+                                {vba.min_deposit > 0 && (
+                                    <p className="text-[11px] text-muted-foreground pt-1 border-t border-border">
+                                        Deposits below the minimum may be reduced to ₦0 after the provider's transfer fee.
                                     </p>
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                        Deposits below this amount may be reduced to ₦0 after the provider's transfer fee.
-                                    </p>
-                                </div>
-                            )}
+                                )}
+                            </div>
 
                             <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4">
                                 <p className="text-xs text-foreground leading-relaxed">

@@ -8,7 +8,7 @@ import { decimal, validateAmount, formatForDB, hasSufficientBalance } from '../u
 import { getSpendableBalance } from '../utils/walletBalance.js';
 import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
-import { enforceTierLimit } from '../services/kycLimits.service.js';
+import { enforceTierLimit, tierCapForNGN } from '../services/kycLimits.service.js';
 import KorapayAdapter from '../orchestration/adapters/fiat/KorapayAdapter.js';
 import GlydeAdapter from '../orchestration/adapters/fiat/GlydeAdapter.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
@@ -34,12 +34,36 @@ const KORAPAY_CHECKOUT_CURRENCIES = new Set(
     .filter(Boolean)
 );
 
-// Minimum NGN deposit shown on the account-details screen — unset until a real figure is
-// negotiated with Glyde (their flat collection fee can otherwise exceed a small deposit,
-// e.g. a ₦300 transfer with a ₦250 fee nets only ₦50).
+// Minimum NGN deposit shown on the account-details screen — negotiated with Glyde (their flat
+// collection fee can otherwise exceed a small deposit, e.g. a ₦300 transfer with a ₦250 fee
+// nets only ₦50).
 const getMinNgnDeposit = () => {
   const raw = parseFloat(process.env.GLYDE_MIN_DEPOSIT_NGN);
   return Number.isFinite(raw) && raw > 0 ? raw : null;
+};
+
+// Flat per-collection fee — informational display only. The actual amount credited always
+// comes from whatever fee Glyde reports on the real transaction (see webhook.controller.js
+// applyGlydeDeposit); this is just what to show the user up front on the deposit screen.
+const getNgnDepositFee = () => {
+  const raw = parseFloat(process.env.GLYDE_DEPOSIT_FEE_NGN);
+  return Number.isFinite(raw) && raw >= 0 ? raw : null;
+};
+
+/**
+ * Deposit-screen limits: min/max/fee, and the daily deposit limit read from the user's KYC
+ * tier (fiat cap, converted from USD to NGN). Maximum Deposit mirrors the daily limit — for a
+ * static account with no per-transaction amount field, the practical single-transfer ceiling
+ * is whatever's left of the day's allowance.
+ */
+const buildDepositLimits = async (kycTier) => {
+  const ngnCap = await tierCapForNGN(kycTier).catch(() => null);
+  return {
+    min_deposit: getMinNgnDeposit(),
+    transaction_fee: getNgnDepositFee(),
+    daily_deposit_limit: ngnCap ? Math.round(ngnCap.daily) : null,
+    max_deposit: ngnCap ? Math.round(ngnCap.daily) : null,
+  };
 };
 
 const formatProviderValidationErrors = (errors) => {
@@ -787,7 +811,7 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
           bank_name: vba.bank_name,
           account_number: vba.account_number,
           account_name: vba.account_name,
-          min_deposit: getMinNgnDeposit(),
+          ...(await buildDepositLimits(req.user.kyc_tier)),
         },
       });
     }
@@ -876,7 +900,7 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
         bank_name: vbaData.bank_name,
         account_number: vbaData.account_number,
         account_name: vbaData.account_name,
-        min_deposit: getMinNgnDeposit(),
+        ...(await buildDepositLimits(req.user.kyc_tier)),
       },
     });
 

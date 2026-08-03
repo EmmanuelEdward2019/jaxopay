@@ -30,6 +30,21 @@ export function tierCapFor(kycTier, currency) {
   return isFiat(currency) ? caps.fiat : caps.crypto;
 }
 
+/**
+ * The user's fiat daily/monthly cap converted to NGN — for display on the NGN deposit screen
+ * (the underlying cap is USD-denominated; users transacting in Naira need it in Naira).
+ * Returns null if a live USD/NGN rate isn't available (caller should hide the limit, not show 0).
+ */
+export async function tierCapForNGN(kycTier) {
+  const caps = tierCapFor(kycTier, 'NGN');
+  const rate = await usdRate('NGN'); // USD per 1 NGN
+  if (!rate) return null;
+  return {
+    daily: caps.daily / rate,
+    monthly: caps.monthly / rate,
+  };
+}
+
 // USD-rate cache so limit checks don't hit the FX provider on every transaction.
 const rateCache = new Map(); // currency -> { rate, at }
 const RATE_TTL_MS = 10 * 60 * 1000;
