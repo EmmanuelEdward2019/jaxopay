@@ -82,6 +82,9 @@ class WebhookVerifier {
                 // Korapay signs JSON.stringify(body.data), so it needs the PARSED object,
                 // not the raw/stringified payload used by raw-byte HMAC providers.
                 return this._verifyKorapay(headers, typeof body === 'string' ? JSON.parse(body) : body);
+            case 'glyde':
+                // Glyde signs the raw HTTP body bytes with HMAC-SHA256 — same requirement as Quidax/Obiex.
+                return this._verifyGlyde(headers, rawBody || payload);
             case 'quidax':
                 // Always pass raw body for Quidax — their HMAC is over raw HTTP bytes
                 return this._verifyQuidax(headers, rawBody || payload);
@@ -269,6 +272,43 @@ class WebhookVerifier {
             return crypto.timingSafeEqual(hashBuf, sigBuf);
         } catch (err) {
             logger.warn(`[WEBHOOK] Quidax: signature verification error — ${err.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * Glyde (useglyde.co) — HMAC-SHA256 over the raw request body, hex-encoded,
+     * in the `x-glyde-signature` header. Secret is GLYDE_WEBHOOK_SECRET if the
+     * dashboard issues a distinct one, else falls back to GLYDE_SECRET_KEY.
+     *
+     * Fails CLOSED (401) on any mismatch/missing config — unlike Quidax/Obiex,
+     * this webhook credits real Naira deposits, so an unverified event must
+     * never be trusted just to avoid blocking legitimate ones.
+     */
+    _verifyGlyde(headers, payload) {
+        const secret = (process.env.GLYDE_WEBHOOK_SECRET || process.env.GLYDE_SECRET_KEY || '').trim();
+        const signature = headers['x-glyde-signature'];
+
+        if (!secret || secret.includes('your_')) {
+            logger.warn('[WEBHOOK] Glyde secret not configured');
+            return false;
+        }
+        if (!signature) {
+            logger.warn('[WEBHOOK] Glyde signature missing');
+            return false;
+        }
+
+        try {
+            const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+            const hashBuf = Buffer.from(hash, 'hex');
+            const sigBuf = Buffer.from(signature, 'hex');
+            if (hashBuf.length === 0 || hashBuf.length !== sigBuf.length) {
+                logger.warn(`[WEBHOOK] Glyde: signature length mismatch (expected ${hashBuf.length}, got ${sigBuf.length})`);
+                return false;
+            }
+            return crypto.timingSafeEqual(hashBuf, sigBuf);
+        } catch (err) {
+            logger.warn(`[WEBHOOK] Glyde: signature verification error — ${err.message}`);
             return false;
         }
     }

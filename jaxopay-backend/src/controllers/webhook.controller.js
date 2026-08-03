@@ -73,6 +73,9 @@ export const handleWebhook = catchAsync(async (req, res) => {
             case 'korapay':
                 await processKorapay(body);
                 break;
+            case 'glyde':
+                await processGlyde(body);
+                break;
             default:
                 logger.info(`[WEBHOOK] No handler for ${provider}, acknowledged.`);
         }
@@ -519,6 +522,122 @@ async function processKorapayPayout(event, data) {
         });
         logger.warn(`[WEBHOOK] ❌ Korapay payout failed, funds reversed: ${reference}`);
         await notifyTransfer(tx, false);
+    }
+}
+
+// ─────────────────────────────────────────────
+// Glyde Webhooks (Naira Collections via Static Virtual Accounts) — primary NGN deposit provider
+// ─────────────────────────────────────────────
+async function processGlyde(payload) {
+    const { event, data } = payload || {};
+    logger.info(`[WEBHOOK] Glyde event: ${event}`, { raw: data });
+
+    if (event !== 'collection.success') {
+        // collection.failed / transfer.* aren't relevant to crediting a deposit.
+        return;
+    }
+
+    const { amount, currency, fee, status } = data || {};
+    if (status && !['successful', 'success'].includes(String(status).toLowerCase())) return;
+
+    const reference = data?.reference;
+    // Glyde's docs don't pin down exactly which field carries our own account reference for a
+    // direct bank-transfer-into-virtual-account credit (only a generic checkout example is shown),
+    // so try every plausible location before giving up.
+    const merchantRef =
+        data?.merchant_reference ||
+        data?.customer?.reference ||
+        data?.account?.reference ||
+        data?.virtual_account?.reference ||
+        reference;
+    const accountNumber = data?.account_number || data?.account?.account_number || data?.virtual_account?.account_number;
+
+    if (!merchantRef && !accountNumber) {
+        logger.warn(`[WEBHOOK] Glyde collection.success with no reference or account number to match. Raw: ${JSON.stringify(payload)}`);
+        return;
+    }
+
+    // Idempotency: never credit the same Glyde transaction twice.
+    if (reference) {
+        const existing = await query('SELECT id FROM transactions WHERE reference = $1', [reference]);
+        if (existing.rows.length > 0) {
+            logger.info(`[WEBHOOK] Glyde deposit ${reference} already processed.`);
+            return;
+        }
+    }
+
+    // 1. Match by our own account reference (set as customer.reference at account-creation time)
+    let vbaRes = { rows: [] };
+    if (merchantRef) {
+        vbaRes = await query(
+            `SELECT wallet_id, user_id FROM virtual_bank_accounts WHERE provider = 'glyde' AND provider_reference = $1`,
+            [merchantRef]
+        );
+    }
+
+    // 2. Fallback: match by the destination account number
+    if (vbaRes.rows.length === 0 && accountNumber) {
+        vbaRes = await query(
+            `SELECT wallet_id, user_id FROM virtual_bank_accounts WHERE provider = 'glyde' AND account_number = $1`,
+            [accountNumber]
+        );
+    }
+
+    if (vbaRes.rows.length === 0) {
+        logger.warn(`[WEBHOOK] Glyde deposit could not be matched to a virtual account — ref=${merchantRef} acct=${accountNumber}. Raw payload: ${JSON.stringify(payload)}`);
+        return;
+    }
+
+    const { wallet_id, user_id } = vbaRes.rows[0];
+    await applyGlydeDeposit(user_id, wallet_id, amount, currency || 'NGN', fee, reference || merchantRef);
+}
+
+async function applyGlydeDeposit(userId, walletId, amount, currency, fee, reference) {
+    try {
+        const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
+
+        await transaction(async (client) => {
+            await client.query(
+                `INSERT INTO transactions
+                 (user_id, to_wallet_id, transaction_type, from_amount, to_amount,
+                  from_currency, to_currency, net_amount, fee_amount, status, description, reference)
+                 VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $5, $6, 'completed', 'Bank Transfer Deposit', $7)`,
+                [userId, walletId, amount, currency, netAmount, fee || 0, reference]
+            );
+
+            await client.query(
+                `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`,
+                [netAmount, walletId]
+            );
+        });
+
+        logger.info(`[WEBHOOK] ✅ Glyde deposit complete: credited ${netAmount} ${currency} to user ${userId}`);
+
+        ledgerService.recordDepositEntries({
+            userWalletId: walletId,
+            amount: netAmount,
+            transactionId: reference,
+            description: 'Wallet Funding',
+        }).catch((e) => logger.error('[WEBHOOK] Glyde deposit ledger error:', e.message));
+
+        const userRes = await query(
+            `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+             FROM users u
+             LEFT JOIN user_profiles up ON up.user_id = u.id
+             WHERE u.id = $1`,
+            [userId]
+        );
+        if (userRes.rows.length > 0) {
+            sendTransactionEmails({
+                type: 'Deposit',
+                amount,
+                currency,
+                reference,
+                details: 'Virtual Bank Account Transfer',
+            }, userRes.rows[0]).catch((e) => logger.error('[WEBHOOK] Glyde deposit email error:', e));
+        }
+    } catch (err) {
+        logger.error(`[WEBHOOK] Glyde deposit error: ${err.message}`);
     }
 }
 

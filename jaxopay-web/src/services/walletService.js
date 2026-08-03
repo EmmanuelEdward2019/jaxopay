@@ -144,9 +144,13 @@ const walletService = {
   getVBA: async (walletId) => {
     try {
       const response = await apiClient.get(`/wallets/vba/${walletId}`);
-      return { success: true, data: response.data ?? response };
+      return { success: response?.success !== false, data: response.data ?? response, pending: response?.pending };
     } catch (error) {
-      return { success: false, message: error.message || 'Failed to get account details' };
+      return {
+        success: false,
+        error: error.message || 'Failed to get account details',
+        code: error?.code || error?.data?.code,
+      };
     }
   },
 };

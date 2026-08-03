@@ -866,10 +866,9 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
 
 // ── Deposit Form ─────────────────────────────────────────────────────────
 const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) => {
-    const [amount, setAmount] = useState('');
+    const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [stage, setStage] = useState('form'); // 'form' | 'processing' | 'success'
     const [idGate, setIdGate] = useState(null); // set only if a BVN/NIN gate blocks this NGN deposit
 
     // Crypto deposit states
@@ -881,24 +880,18 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
     const retryRef = useRef(0);
     const retryTimerRef = useRef(null);
 
+    // NGN static deposit account (dedicated virtual account — same account every time)
+    const [vba, setVba] = useState(null);
+    const [vbaLoading, setVbaLoading] = useState(false);
+    const [vbaError, setVbaError] = useState(null);
+    const [vbaPending, setVbaPending] = useState(false);
+
     const isCrypto = type === 'crypto';
+    const isNGN = !isCrypto && code?.toUpperCase() === 'NGN';
     const existingWallet = wallets.find(w =>
         w.currency?.toUpperCase() === code?.toUpperCase()
         && (!isCrypto || w.wallet_type === 'crypto')
     );
-
-    // Naira deposits require BVN + NIN verified — check upfront so the form shows
-    // immediately instead of only after a failed deposit attempt.
-    useEffect(() => {
-        if (isCrypto || code?.toUpperCase() !== 'NGN') return;
-        let active = true;
-        fxService.getRampStatus().then((res) => {
-            if (active && res.success && res.data?.required && !res.data?.verified) {
-                setIdGate(res.data);
-            }
-        }).catch(() => {});
-        return () => { active = false; };
-    }, [isCrypto, code]);
 
     const handleCopy = (text) => {
         if (!text) return;
@@ -922,6 +915,42 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
         console.warn(`[ensureWallet] createWallet failed for ${code}:`, res.error);
         return null;
     };
+
+    // NGN deposits use a permanent, dedicated bank account (one per user, reused on every
+    // visit) instead of a redirect-to-checkout flow. Fetching it also enforces the BVN/NIN
+    // gate server-side, so a single call handles both outcomes.
+    const loadVba = async (active = { current: true }) => {
+        setVbaLoading(true);
+        setVbaError(null);
+        try {
+            const wallet = await ensureWallet();
+            if (!active.current) return;
+            if (!wallet) { setVbaError('Could not set up your NGN wallet. Please try again.'); return; }
+            const res = await walletService.getVBA(wallet.id);
+            if (!active.current) return;
+            if (res.success) {
+                setVba(res.data);
+                setVbaPending(Boolean(res.pending));
+            } else if (['BVN_NIN_REQUIRED', 'BVN_NIN_PENDING'].includes(res.code)) {
+                const fresh = await fxService.getRampStatus().catch(() => null);
+                setIdGate(fresh?.success ? fresh.data : { required: true, verified: false });
+            } else {
+                setVbaError(res.error || 'Could not load your deposit account. Please try again.');
+            }
+        } catch (e) {
+            if (active.current) setVbaError(e.message || 'Could not load your deposit account.');
+        } finally {
+            if (active.current) setVbaLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!isNGN) return;
+        const active = { current: true };
+        loadVba(active);
+        return () => { active.current = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isNGN]);
 
     // Fetch networks for crypto
     useEffect(() => {
@@ -977,51 +1006,6 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
         fetchAddr();
         return () => { cancelled = true; if (retryTimerRef.current) clearTimeout(retryTimerRef.current); };
     }, [network]);
-
-    // Fiat deposit via Korapay
-    const handleFiatDeposit = async () => {
-        if (!amount || parseFloat(amount) <= 0) return;
-        setLoading(true); setError(null); setStage('processing');
-        try {
-            let wallet = existingWallet;
-            if (!wallet) wallet = await ensureWallet();
-
-            const result = await walletService.initializeDeposit(wallet.id, parseFloat(amount), code);
-            if (result.success) {
-                const { checkout_url, mode } = result.data;
-                if (mode === 'simulation') {
-                    await walletService.addFunds(wallet.id, parseFloat(amount), 'Manual deposit');
-                    setStage('success');
-                    setTimeout(() => { onRefresh(); onClose(); }, 2500);
-                } else if (checkout_url) {
-                    window.location.href = checkout_url;
-                } else {
-                    setError('No checkout URL returned.'); setStage('form');
-                }
-            } else if (['BVN_NIN_REQUIRED', 'BVN_NIN_PENDING'].includes(result.code)) {
-                const fresh = await fxService.getRampStatus().catch(() => null);
-                setIdGate(fresh?.success ? fresh.data : { required: true, verified: false });
-                setStage('form');
-            } else {
-                setError(result.error || 'Deposit failed'); setStage('form');
-            }
-        } catch (e) {
-            setError(e.message || 'Something went wrong'); setStage('form');
-        }
-        setLoading(false);
-    };
-
-    if (stage === 'success') {
-        return (
-            <div className="p-8 text-center">
-                <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Check className="w-8 h-8 text-success" />
-                </div>
-                <h3 className="text-xl font-bold text-foreground mb-2">Deposit Successful!</h3>
-                <p className="text-muted-foreground text-sm">Your wallet balance will update shortly.</p>
-            </div>
-        );
-    }
 
     // Nigerian users must verify both BVN and NIN before depositing Naira.
     if (idGate?.required && !idGate?.verified) {
@@ -1136,22 +1120,87 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                         </div>
                     )}
                 </div>
-            ) : (
-                /* Fiat deposit: amount input + proceed to payment */
+            ) : isNGN ? (
+                /* NGN deposit: dedicated static bank account — transfer anytime, no redirect */
                 <div className="space-y-4">
-                    <div>
-                        <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Amount to Deposit</label>
-                        <div className="relative">
-                            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-                                placeholder="0.00"
-                                className="w-full pl-14 pr-4 py-4 bg-muted border border-border rounded-xl focus:ring-2 focus:ring-ring focus:outline-none text-xl font-bold text-foreground placeholder:text-muted-foreground" />
-                            <div className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">{code}</div>
+                    {vbaLoading && (
+                        <div className="flex flex-col items-center gap-3 py-10 text-center">
+                            <RefreshCw className="w-8 h-8 text-primary animate-spin" />
+                            <p className="text-sm font-bold text-foreground">Setting up your deposit account...</p>
                         </div>
-                    </div>
-                    <button onClick={handleFiatDeposit}
-                        disabled={loading || !amount || parseFloat(amount) <= 0}
-                        className="w-full py-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                        {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : 'Proceed to Payment'}
+                    )}
+
+                    {!vbaLoading && vbaError && (
+                        <div className="flex flex-col items-center gap-3 py-8 text-center">
+                            <AlertCircle className="w-8 h-8 text-danger" />
+                            <p className="text-sm text-danger">{vbaError}</p>
+                            <button
+                                onClick={() => loadVba()}
+                                className="px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                            >
+                                Try again
+                            </button>
+                        </div>
+                    )}
+
+                    {!vbaLoading && !vbaError && vbaPending && (
+                        <div className="flex flex-col items-center gap-3 py-8 text-center">
+                            <Building2 className="w-8 h-8 text-muted-foreground" />
+                            <p className="text-sm font-bold text-foreground">Account activation pending</p>
+                            <p className="text-xs text-muted-foreground">Naira deposits are being set up. Please check back shortly or contact support.</p>
+                        </div>
+                    )}
+
+                    {!vbaLoading && !vbaError && !vbaPending && vba && (
+                        <>
+                            <div className="bg-muted/50 rounded-2xl border border-border p-5 space-y-4">
+                                <div className="flex items-center gap-2 text-primary">
+                                    <Building2 className="w-5 h-5" />
+                                    <p className="text-xs font-bold uppercase tracking-wider">Your dedicated NGN account</p>
+                                </div>
+
+                                <div>
+                                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Bank Name</p>
+                                    <p className="text-base font-bold text-foreground">{vba.bank_name}</p>
+                                </div>
+
+                                <div>
+                                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Account Number</p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-2xl font-bold text-foreground tracking-wide tabular-nums">{vba.account_number}</p>
+                                        <button onClick={() => handleCopy(vba.account_number)} className="p-2 hover:bg-muted rounded-lg shrink-0">
+                                            {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Account Name</p>
+                                    <p className="text-sm font-medium text-foreground">{vba.account_name}</p>
+                                </div>
+                            </div>
+
+                            <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4">
+                                <p className="text-xs text-foreground leading-relaxed">
+                                    This account is permanently yours — transfer any amount from your bank app, USSD, or another bank at any time. Your wallet is credited automatically, usually within a few minutes.
+                                </p>
+                            </div>
+                        </>
+                    )}
+                </div>
+            ) : (
+                /* Non-NGN fiat: direct deposit isn't available — route through Swap instead */
+                <div className="flex flex-col items-center gap-3 py-8 text-center">
+                    <AlertCircle className="w-8 h-8 text-muted-foreground" />
+                    <p className="text-sm font-bold text-foreground">Direct {code} deposits aren't available yet</p>
+                    <p className="text-xs text-muted-foreground max-w-xs">
+                        Deposit NGN using its dedicated account, then convert it to {code} using Swap.
+                    </p>
+                    <button
+                        onClick={() => { onClose(); navigate('/dashboard/cross-border'); }}
+                        className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
+                    >
+                        Go to Swap
                     </button>
                 </div>
             )}

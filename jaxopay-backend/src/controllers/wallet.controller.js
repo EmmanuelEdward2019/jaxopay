@@ -10,6 +10,7 @@ import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { enforceTierLimit } from '../services/kycLimits.service.js';
 import KorapayAdapter from '../orchestration/adapters/fiat/KorapayAdapter.js';
+import GlydeAdapter from '../orchestration/adapters/fiat/GlydeAdapter.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
 
 const buildApiV1Url = (path) => {
@@ -765,9 +766,9 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
       });
     }
 
-    // 3. No existing VBA. Check if Korapay keys are configured.
-    if (!process.env.KORAPAY_SECRET_KEY) {
-      logger.warn(`[VBA] KORAPAY_SECRET_KEY not set. Cannot generate fiat account for ${req.user.id}.`);
+    // 3. No existing VBA and no provider configured at all.
+    if (!GlydeAdapter.isConfigured() && !process.env.KORAPAY_SECRET_KEY) {
+      logger.warn(`[VBA] No fiat collection provider configured. Cannot generate account for ${req.user.id}.`);
       return res.status(200).json({
         success: true,
         pending: true,
@@ -779,26 +780,68 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
       });
     }
 
-    // 4. Fetch user profile to pass to Korapay
-    const profileResult = await query('SELECT first_name, last_name FROM user_profiles WHERE user_id = $1', [req.user.id]);
+    // 4. Fetch user profile + approved BVN to pass to the provider
+    const profileResult = await query(
+      `SELECT up.first_name, up.last_name, u.phone
+       FROM user_profiles up
+       LEFT JOIN users u ON u.id = up.user_id
+       WHERE up.user_id = $1`,
+      [req.user.id]
+    );
     const profile = profileResult.rows[0] || {};
     const firstName = profile.first_name || 'User';
     const lastName = profile.last_name || 'Account';
+    const bvnResult = await query(
+      `SELECT document_number FROM kyc_documents
+       WHERE user_id = $1 AND LOWER(document_type) LIKE '%bvn%' AND status::text = 'approved'
+       ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+    const bvn = bvnResult.rows[0]?.document_number;
+    const reference = `VBA-${req.user.id.slice(0, 8)}-${Date.now()}`;
 
-    // 5. Create new VBA via Korapay
-    logger.info(`[VBA] Generating new Korapay Virtual Bank Account for user ${req.user.id}`);
-    const vbaData = await KorapayAdapter.createVirtualBankAccount({
-      reference: `VBA-${req.user.id.slice(0, 8)}-${Date.now()}`,
-      account_name: `${firstName} ${lastName}`,
-      customer_name: `${firstName} ${lastName}`,
-      customer_email: req.user.email
-    });
+    // 5. Create new VBA — Glyde primary, Korapay as a silent fallback if Glyde is
+    // unconfigured or its API call fails. Users never see which provider issued it.
+    let vbaData;
+    let provider;
+    if (GlydeAdapter.isConfigured()) {
+      try {
+        logger.info(`[VBA] Generating new Glyde virtual account for user ${req.user.id}`);
+        vbaData = await GlydeAdapter.createVirtualBankAccount({
+          reference,
+          account_name: `${firstName} ${lastName}`,
+          customer_name: `${firstName} ${lastName}`,
+          customer_email: req.user.email,
+          customer_phone: profile.phone,
+          bvn,
+        });
+        provider = 'glyde';
+      } catch (glydeError) {
+        logger.error(`[VBA] Glyde generation failed for ${req.user.id}, falling back to Korapay: ${glydeError.message}`);
+      }
+    }
+
+    if (!vbaData && process.env.KORAPAY_SECRET_KEY) {
+      logger.info(`[VBA] Generating new Korapay Virtual Bank Account for user ${req.user.id} (fallback)`);
+      vbaData = await KorapayAdapter.createVirtualBankAccount({
+        reference,
+        account_name: `${firstName} ${lastName}`,
+        customer_name: `${firstName} ${lastName}`,
+        customer_email: req.user.email,
+        bvn,
+      });
+      provider = 'korapay';
+    }
+
+    if (!vbaData) {
+      throw new Error('No fiat collection provider is currently available.');
+    }
 
     // 6. Save new VBA to our database
     await query(
-      `INSERT INTO virtual_bank_accounts (wallet_id, user_id, account_number, bank_name, account_name, provider, provider_reference)
-       VALUES ($1, $2, $3, $4, $5, 'korapay', $6)`,
-      [wallet.id, req.user.id, vbaData.account_number, vbaData.bank_name, vbaData.account_name, vbaData.reference]
+      `INSERT INTO virtual_bank_accounts (wallet_id, user_id, account_number, bank_name, bank_code, account_name, provider, provider_reference)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [wallet.id, req.user.id, vbaData.account_number, vbaData.bank_name, vbaData.bank_code || null, vbaData.account_name, provider, vbaData.reference]
     );
 
     return res.status(200).json({
