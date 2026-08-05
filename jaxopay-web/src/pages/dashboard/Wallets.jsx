@@ -886,6 +886,7 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
     const [vbaError, setVbaError] = useState(null);
     const [vbaPending, setVbaPending] = useState(false);
     const [depositSuccess, setDepositSuccess] = useState(null); // {amount, fee, net_amount} once detected
+    const [showUpgradeGuide, setShowUpgradeGuide] = useState(false);
     const ngnWalletIdRef = useRef(null);
     const screenOpenedAtRef = useRef(new Date().toISOString());
 
@@ -1266,12 +1267,28 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                                         <div className="flex items-center gap-3">
                                             <p className="text-sm font-bold text-foreground">₦{Number(vba.daily_deposit_limit).toLocaleString()}</p>
                                             <button
-                                                onClick={() => { onClose(); navigate('/dashboard/kyc'); }}
+                                                onClick={() => setShowUpgradeGuide((v) => !v)}
                                                 className="text-xs font-bold text-primary hover:underline shrink-0"
                                             >
                                                 Upgrade limit
                                             </button>
                                         </div>
+                                    </div>
+                                )}
+
+                                {showUpgradeGuide && (
+                                    <div className="bg-card rounded-xl border border-border p-3 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                        <p className="text-xs text-muted-foreground leading-relaxed">
+                                            To request a higher deposit limit, email our support team with the amount you need and why you need it. Our team will review and get back to you.
+                                        </p>
+                                        <a
+                                            href={`mailto:support@jaxopay.com?subject=${encodeURIComponent('Deposit Limit Upgrade Request')}&body=${encodeURIComponent(
+                                                'Hi JAXOPAY team,\n\nI would like to request a higher deposit limit.\n\nRequested amount: \nReason: \n\nThank you.'
+                                            )}`}
+                                            className="inline-flex items-center justify-center w-full py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
+                                        >
+                                            Email support@jaxopay.com
+                                        </a>
                                     </div>
                                 )}
                                 {vba.min_deposit != null && (

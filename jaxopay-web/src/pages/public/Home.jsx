@@ -189,7 +189,7 @@ export default function Home() {
               </h1>
 
               <p className="text-xl text-gray-600 mb-8 leading-relaxed max-w-lg">
-                JAXOPAY is a crypto-first platform: buy, sell, and swap crypto, send money across borders, and manage multi-currency wallets — with the best rates, instant transfers, and zero hidden fees.
+                JAXOPAY is a crypto exchange platform where you can buy, sell, and swap cryptocurrency at zero fee. We also offer remittance services across borders and let you manage multi-currency fiat &amp; crypto wallets — at the best market rates, with instant transfers and zero hidden fees.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 mb-10">

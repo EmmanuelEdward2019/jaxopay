@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Mail, Phone, MapPin, Clock, Send } from 'lucide-react';
+import { Mail, MapPin, Clock, Send } from 'lucide-react';
 import { FaWhatsapp } from 'react-icons/fa';
 import PublicLayout from '../../components/layout/PublicLayout';
 
@@ -33,11 +33,6 @@ export default function Contact() {
       icon: Mail,
       title: 'Email Us',
       details: ['support@jaxopay.com', 'business@jaxopay.com'],
-    },
-    {
-      icon: Phone,
-      title: 'Call Us',
-      details: ['+234 800 JAXOPAY', '+1 (555) 123-4567'],
     },
     {
       icon: Clock,

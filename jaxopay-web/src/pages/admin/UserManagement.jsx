@@ -990,6 +990,11 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
     const [showSuspendForm, setShowSuspendForm] = useState(false);
     const [userFeatures, setUserFeatures] = useState([]);
     const [featuresLoading, setFeaturesLoading] = useState(false);
+    const [financialControls, setFinancialControls] = useState(null);
+    const [financialControlsLoading, setFinancialControlsLoading] = useState(false);
+    const [financialControlsSaving, setFinancialControlsSaving] = useState(false);
+    const [depositLimitInput, setDepositLimitInput] = useState('');
+    const [withdrawalLimitInput, setWithdrawalLimitInput] = useState('');
     const { user: currentUser } = useAuthStore();
 
     const availableProducts = [
@@ -999,6 +1004,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
     useEffect(() => {
         if (currentUser?.role === 'super_admin') {
             fetchUserFeatures();
+            fetchFinancialControls();
         }
     }, [user.id]);
 
@@ -1009,6 +1015,32 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
             setUserFeatures(result.data || []);
         }
         setFeaturesLoading(false);
+    };
+
+    const fetchFinancialControls = async () => {
+        setFinancialControlsLoading(true);
+        const result = await adminService.getUserFinancialControls(user.id);
+        if (result.success) {
+            setFinancialControls(result.data);
+            setDepositLimitInput(result.data.custom_deposit_limit_ngn ?? '');
+            setWithdrawalLimitInput(result.data.custom_withdrawal_limit_usd ?? '');
+        }
+        setFinancialControlsLoading(false);
+    };
+
+    const handleToggleFinancialControl = async (field, value) => {
+        const result = await adminService.updateUserFinancialControls(user.id, { [field]: value });
+        if (result.success) setFinancialControls(result.data);
+    };
+
+    const handleSaveLimits = async () => {
+        setFinancialControlsSaving(true);
+        const result = await adminService.updateUserFinancialControls(user.id, {
+            custom_deposit_limit_ngn: depositLimitInput === '' ? null : parseFloat(depositLimitInput),
+            custom_withdrawal_limit_usd: withdrawalLimitInput === '' ? null : parseFloat(withdrawalLimitInput),
+        });
+        if (result.success) setFinancialControls(result.data);
+        setFinancialControlsSaving(false);
     };
 
     const handleToggleFeature = async (featureName, isEnabled) => {
@@ -1216,6 +1248,76 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                                             </button>
                                         </div>
                                     ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Financial Controls (Super Admin Only) */}
+                    {currentUser?.role === 'super_admin' && (
+                        <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+                            <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Financial Controls</h3>
+                            {financialControlsLoading ? (
+                                <div className="flex justify-center p-4">
+                                    <RefreshCw className="w-5 h-5 animate-spin text-primary-500" />
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
+                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Deposits Enabled</span>
+                                            <button
+                                                onClick={() => handleToggleFinancialControl('deposits_enabled', !(financialControls?.deposits_enabled ?? true))}
+                                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${(financialControls?.deposits_enabled ?? true) ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                                            >
+                                                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${(financialControls?.deposits_enabled ?? true) ? 'translate-x-5' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
+                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Withdrawals Enabled</span>
+                                            <button
+                                                onClick={() => handleToggleFinancialControl('withdrawals_enabled', !(financialControls?.withdrawals_enabled ?? true))}
+                                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${(financialControls?.withdrawals_enabled ?? true) ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                                            >
+                                                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${(financialControls?.withdrawals_enabled ?? true) ? 'translate-x-5' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">Custom deposit limit (₦/day)</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                placeholder="Tier default"
+                                                value={depositLimitInput}
+                                                onChange={(e) => setDepositLimitInput(e.target.value)}
+                                                className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">Custom withdrawal limit ($/day)</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                placeholder="Tier default"
+                                                value={withdrawalLimitInput}
+                                                onChange={(e) => setWithdrawalLimitInput(e.target.value)}
+                                                className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-gray-400">Leave a field blank to fall back to the user's KYC tier default.</p>
+                                        <button
+                                            onClick={handleSaveLimits}
+                                            disabled={financialControlsSaving}
+                                            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                                        >
+                                            {financialControlsSaving ? 'Saving...' : 'Save Limits'}
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </div>

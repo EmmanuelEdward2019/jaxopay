@@ -331,6 +331,24 @@ const adminService = {
         }
     },
 
+    getUserFinancialControls: async (userId) => {
+        try {
+            const response = await apiClient.get(`/admin/users/${userId}/financial-controls`);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
+    updateUserFinancialControls: async (userId, updates) => {
+        try {
+            const response = await apiClient.patch(`/admin/users/${userId}/financial-controls`, updates);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
     // Orchestration Status
     getOrchestrationStatus: async () => {
         try {
