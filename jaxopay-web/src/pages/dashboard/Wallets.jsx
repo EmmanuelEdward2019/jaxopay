@@ -867,6 +867,7 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
 // ── Deposit Form ─────────────────────────────────────────────────────────
 const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) => {
     const navigate = useNavigate();
+    const { user } = useAuthStore();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [idGate, setIdGate] = useState(null); // set only if a BVN/NIN gate blocks this NGN deposit
@@ -1283,7 +1284,15 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
                                         </p>
                                         <a
                                             href={`mailto:support@jaxopay.com?subject=${encodeURIComponent('Deposit Limit Upgrade Request')}&body=${encodeURIComponent(
-                                                'Hi JAXOPAY team,\n\nI would like to request a higher deposit limit.\n\nRequested amount: \nReason: \n\nThank you.'
+                                                `Hi JAXOPAY team,\n\nI would like to request a higher deposit limit.\n\n` +
+                                                `--- My account details (please don't remove, this helps us find your account) ---\n` +
+                                                `Full name: ${[user?.first_name, user?.last_name].filter(Boolean).join(' ') || ''}\n` +
+                                                `Email: ${user?.email || ''}\n` +
+                                                `User ID (UID): ${user?.id || ''}\n` +
+                                                `KYC Tier: ${user?.kyc_tier || ''}\n` +
+                                                `Current daily deposit limit: ₦${vba?.daily_deposit_limit != null ? Number(vba.daily_deposit_limit).toLocaleString() : ''}\n` +
+                                                `-----------------------------------------------------------------\n\n` +
+                                                `Requested amount: \nReason: \n\nThank you.`
                                             )}`}
                                             className="inline-flex items-center justify-center w-full py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
                                         >
