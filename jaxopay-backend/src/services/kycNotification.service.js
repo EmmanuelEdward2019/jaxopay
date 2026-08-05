@@ -1,5 +1,6 @@
 import { query } from '../config/database.js';
 import { sendEmail } from './email.service.js';
+import { notifyKyc } from './notification.service.js';
 import logger from '../utils/logger.js';
 
 const DOC_LABELS = {
@@ -20,6 +21,7 @@ const TIER_LABELS = {
   tier_0: 'Unverified',
   tier_1: 'Basic',
   tier_2: 'Verified',
+  tier_3: 'Fully Verified',
 };
 
 function documentLabel(documentType) {
@@ -273,6 +275,12 @@ export async function notifyAdminKycDecision({
         ],
       }).catch((e) => logEmailErr('notifyAdminKycDecision staff', e)),
     ]);
+
+    notifyKyc(userId, {
+      tier: kycTier?.replace('tier_', ''),
+      status: approved ? 'approved' : 'rejected',
+      reason: !approved ? rejectionReason : undefined,
+    }).catch(() => {});
   } catch (e) {
     logEmailErr('notifyAdminKycDecision', e);
   }
@@ -368,6 +376,8 @@ export async function notifyTierSelfUpgrade({ userId, newTier }) {
         ],
       }).catch((e) => logEmailErr('notifyTierSelfUpgrade staff', e)),
     ]);
+
+    notifyKyc(userId, { tier: String(newTier).replace('tier_', ''), status: 'approved' }).catch(() => {});
   } catch (e) {
     logEmailErr('notifyTierSelfUpgrade', e);
   }

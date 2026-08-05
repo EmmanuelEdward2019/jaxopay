@@ -30,6 +30,8 @@ import {
   sendAdminBulkSMS,
   getUserFeatureAccess,
   updateUserFeatureAccess,
+  getUserFinancialControlsAdmin,
+  updateUserFinancialControlsAdmin,
   getOrchestrationStatus,
   updateCardStatus,
   getPendingRamps,
@@ -239,6 +241,20 @@ router.post(
 // SuperAdmin Advanced Controls
 router.get('/users/:userId/features', restrictTo('super_admin'), getUserFeatureAccess);
 router.patch('/users/:userId/features', restrictTo('super_admin'), updateUserFeatureAccess);
+
+// Per-user financial controls: enable/disable deposits/withdrawals + custom limit override
+router.get('/users/:userId/financial-controls', restrictTo('super_admin'), param('userId').isUUID(), validate, getUserFinancialControlsAdmin);
+router.patch(
+  '/users/:userId/financial-controls',
+  restrictTo('super_admin'),
+  param('userId').isUUID(),
+  body('deposits_enabled').optional().isBoolean(),
+  body('withdrawals_enabled').optional().isBoolean(),
+  body('custom_deposit_limit_ngn').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('custom_withdrawal_limit_usd').optional({ nullable: true }).isFloat({ min: 0 }),
+  validate,
+  updateUserFinancialControlsAdmin
+);
 router.get('/system/orchestration', restrictTo('super_admin', 'admin'), getOrchestrationStatus);
 
 export default router;

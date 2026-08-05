@@ -1,6 +1,7 @@
 import { transaction as dbTransaction, query } from '../config/database.js';
 import defaultLogger from '../utils/logger.js';
 import { sendTransactionEmails } from './email.service.js';
+import { notifyDeposit } from './notification.service.js';
 
 export function getQuidaxUserRefs(data) {
   const user = data?.user || {};
@@ -225,6 +226,7 @@ export function createQuidaxWebhookService({
         } catch (emailErr) {
           logger.error('[WEBHOOK] Quidax deposit email notify error:', emailErr);
         }
+        notifyDeposit(capturedUserId, { amount, currency: currencyUpper, reference: String(quidaxTxId) }).catch(() => {});
       }
     } catch (err) {
       logger.error('[WEBHOOK] creditUserWalletByQuidax error:', err);

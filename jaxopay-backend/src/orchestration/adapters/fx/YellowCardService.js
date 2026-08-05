@@ -291,7 +291,10 @@ class YellowCardService {
     const sequenceId = crypto.randomUUID();
     const accountType = p.networkAccountType === 'phone' ? 'momo' : 'bank';
     const body = {
-      channelId: channel.id,
+      // Yellow Card's recommended approach (2026-08): pass channelType instead of a pinned
+      // channelId, so they can auto-route to whichever channel of that type currently has the
+      // best success rate / is up, rather than us hard-selecting one specific channel.
+      channelType: accountType,
       sequenceId, // idempotency key
       currency: channel.currency,
       country: p.destinationCountry,
@@ -335,8 +338,11 @@ class YellowCardService {
     const channel = await this.getWithdrawChannel(p.destinationCountry, { currency: p.currency, networkChannelIds: p.networkChannelIds });
     if (!channel) throw { message: `No active Yellow Card payout channel for ${p.destinationCountry}`, statusCode: 400 };
     const sequenceId = crypto.randomUUID();
+    const accountType = p.networkAccountType === 'phone' ? 'momo' : 'bank';
     const body = {
-      channelId: channel.id,
+      // See sendInternationalPayment — channelType replaces channelId per Yellow Card's
+      // 2026-08 recommendation, for auto-routing to the best-performing channel of that type.
+      channelType: accountType,
       sequenceId,
       currency: channel.currency,
       country: p.destinationCountry,
@@ -347,7 +353,7 @@ class YellowCardService {
       destination: {
         accountName: p.recipientName,
         accountNumber: p.accountNumber,
-        accountType: p.networkAccountType === 'phone' ? 'momo' : 'bank',
+        accountType,
         networkId: p.networkId,
       },
       forceAccept: true,
@@ -383,7 +389,9 @@ class YellowCardService {
     if (!channel) throw { message: `No active Yellow Card collection channel for ${p.country}`, statusCode: 400 };
     const sequenceId = crypto.randomUUID();
     const body = {
-      channelId: channel.id,
+      // See sendInternationalPayment — channelType replaces channelId per Yellow Card's
+      // 2026-08 recommendation. Collections are always bank-sourced today (see `source` below).
+      channelType: 'bank',
       sequenceId,
       currency: p.currency,
       country: p.country,

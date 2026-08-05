@@ -9,6 +9,8 @@ import { getKorapayErrorDetails, getKorapayTransferFailureMessage } from '../uti
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { enforceTierLimit } from '../services/kycLimits.service.js';
 import { sendWithdrawalEmails } from '../services/email.service.js';
+import { assertWithdrawalsAllowed } from '../services/financialControls.service.js';
+import { notifyWithdrawal } from '../services/notification.service.js';
 
 async function notifyPayout(userId, payload) {
     try {
@@ -25,6 +27,12 @@ async function notifyPayout(userId, payload) {
     } catch (e) {
         logger.error('[Transfer] payout notify error:', e.message);
     }
+    notifyWithdrawal(userId, {
+        amount: payload.amount,
+        currency: payload.currency,
+        reference: payload.reference,
+        status: payload.success ? 'completed' : 'failed',
+    }).catch(() => {});
 }
 
 const korapay = new KorapayAdapter();
@@ -153,6 +161,8 @@ export const sendTransfer = catchAsync(async (req, res) => {
     if (!wallet_id || !bank_code || !account_number || !account_name || !Number.isFinite(amountValue) || amountValue <= 0) {
         throw new AppError('wallet_id, bank_code, account_number, account_name, and amount are required', 400);
     }
+
+    await assertWithdrawalsAllowed(req.user.id);
 
     // Require the transaction PIN as the final authorization step.
     await verifyTransactionPin(req.user.id, req.body.pin);

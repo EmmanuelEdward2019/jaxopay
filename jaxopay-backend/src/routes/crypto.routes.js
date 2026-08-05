@@ -134,6 +134,7 @@ router.post(
 // Get deposit address
 router.get(
   '/deposit-address',
+  requireFeature('deposits_crypto'),
   query('coin').isString().notEmpty(),
   query('network').optional().isString(),
   validate,
@@ -143,6 +144,7 @@ router.get(
 // Withdraw crypto
 router.post(
   '/withdraw',
+  requireFeature('withdrawals_crypto'),
   requireKYCTier(1),
   body('coin').isString().notEmpty(),
   body('address').isString().notEmpty(),

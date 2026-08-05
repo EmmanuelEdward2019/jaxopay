@@ -10,6 +10,7 @@ import { creditUserWalletByQuidax, persistQuidaxWalletAddress } from '../service
 import { creditUserWalletByObiex, updateObiexWithdrawal } from '../services/obiexWebhook.service.js';
 import { sendTransactionEmails, sendWithdrawalEmails } from '../services/email.service.js';
 import GlydeAdapter from '../orchestration/adapters/fiat/GlydeAdapter.js';
+import { notifyDeposit, notifyWithdrawal } from '../services/notification.service.js';
 
 /**
  * Unified webhook handler for all providers
@@ -184,6 +185,7 @@ async function creditUserWallet(reference, amount, currency) {
         } catch (emailErr) {
             logger.error('[WEBHOOK] Deposit email notify error:', emailErr);
         }
+        notifyDeposit(tx.rows[0].user_id, { amount, currency, reference }).catch(() => {});
     } catch (err) {
         logger.error('[WEBHOOK] creditUserWallet error:', err);
     }
@@ -467,6 +469,7 @@ async function applyKorapayDeposit(userId, walletId, amount, currency, fee, refe
                 details: 'Virtual Bank Account Transfer'
             }, userRes.rows[0]).catch(e => logger.error('[WEBHOOK] VBA deposit email error:', e));
         }
+        notifyDeposit(userId, { amount, currency, reference }).catch(() => {});
     } catch (err) {
         logger.error(`[WEBHOOK] Korapay deposit error: ${err.message}`);
     }
@@ -694,6 +697,7 @@ export async function applyGlydeDeposit(userId, walletId, amount, currency, fee,
                 details: 'Virtual Bank Account Transfer',
             }, userRes.rows[0]).catch((e) => logger.error('[WEBHOOK] Glyde deposit email error:', e));
         }
+        notifyDeposit(userId, { amount, currency, reference }).catch(() => {});
     } catch (err) {
         logger.error(`[WEBHOOK] Glyde deposit error: ${err.message}`);
     }
@@ -724,6 +728,12 @@ async function notifyTransfer(tx, success) {
                 typeDetail: `${tx.from_currency} Bank Transfer`,
             }, userRes.rows[0]).catch((e) => logger.error('[WEBHOOK] Transfer email error:', e));
         }
+        notifyWithdrawal(tx.user_id, {
+            amount: tx.from_amount,
+            currency: tx.from_currency,
+            reference: tx.reference,
+            status: success ? 'completed' : 'failed',
+        }).catch(() => {});
     } catch (e) {
         logger.error('[WEBHOOK] Transfer notify error:', e.message);
     }
@@ -940,6 +950,12 @@ async function updateQuidaxWithdrawal(quidaxWithdrawId, status, webhookData) {
             } catch (emailErr) {
                 logger.error('[WEBHOOK] Quidax withdrawal email notify error:', emailErr);
             }
+            notifyWithdrawal(emailPayload.userId, {
+                amount: emailPayload.amount,
+                currency: emailPayload.currency,
+                reference: emailPayload.reference,
+                status: emailPayload.success ? 'completed' : 'failed',
+            }).catch(() => {});
         }
     } catch (err) {
         logger.error('[WEBHOOK] updateQuidaxWithdrawal error:', err);

@@ -1,5 +1,6 @@
 import express from 'express';
 import { verifyToken, requireKYCTier, restrictTo } from '../middleware/auth.js';
+import { requireFeature } from '../middleware/featureGuard.js';
 import { validate } from '../middleware/validator.js';
 import { body, query } from 'express-validator';
 import {
@@ -52,6 +53,7 @@ router.post(
 // POST /transfers/send — send money to bank account (requires KYC Tier 1)
 router.post(
     '/send',
+    requireFeature('withdrawals_fiat'),
     requireKYCTier(1),
     body('wallet_id').isUUID().withMessage('Valid wallet_id required'),
     body('bank_code').isString().notEmpty().withMessage('bank_code required'),

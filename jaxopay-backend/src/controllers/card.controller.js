@@ -8,6 +8,7 @@ import { enforceTierLimit } from '../services/kycLimits.service.js';
 import { getCardFee, getFeeConfig } from '../services/feeConfig.service.js';
 import { auditFromReq } from '../services/audit.service.js';
 import { kycTierLevel } from '../middleware/auth.js';
+import { notifyCard } from '../services/notification.service.js';
 const strowallet = new StrowalletAdapter();
 
 /** Strowallet blocks unknown outbound IPs — map to actionable text; log raw for ops. */
@@ -420,7 +421,7 @@ export const fundCard = catchAsync(async (req, res) => {
 
   const result = await transaction(async (client) => {
     const card = await client.query(
-      `SELECT id, user_id, balance, status, spending_limit_daily, provider, provider_card_id
+      `SELECT id, user_id, balance, status, spending_limit_daily, provider, provider_card_id, card_last_four
        FROM virtual_cards WHERE id = $1 FOR UPDATE`,
       [cardId]
     );
@@ -477,10 +478,11 @@ export const fundCard = catchAsync(async (req, res) => {
       [cardId, reference, amount, JSON.stringify({ type: 'funding', source: 'usd_wallet', fee: fundingFee })]
     );
 
-    return { newBalance, fee: fundingFee, totalDebit };
+    return { newBalance, fee: fundingFee, totalDebit, cardLast4: card.rows[0].card_last_four };
   });
 
   auditFromReq(req, { action: 'card_funded', entityType: 'virtual_card', entityId: cardId, newValues: { amount, fee: result.fee, total_charged: result.totalDebit } });
+  notifyCard(req.user.id, { action: 'funded', cardLast4: result.cardLast4, amount, currency: 'USD' }).catch(() => {});
 
   res.status(200).json({
     success: true,
@@ -495,7 +497,7 @@ export const fundCard = catchAsync(async (req, res) => {
 export const freezeCard = catchAsync(async (req, res) => {
   const { cardId } = req.params;
   const card = await query(
-    'SELECT id, provider, provider_card_id FROM virtual_cards WHERE id = $1 AND user_id = $2 AND status = \'active\'',
+    'SELECT id, provider, provider_card_id, card_last_four FROM virtual_cards WHERE id = $1 AND user_id = $2 AND status = \'active\'',
     [cardId, req.user.id]
   );
   if (card.rows.length === 0) throw new AppError('Card not found or already frozen', 404);
@@ -516,6 +518,7 @@ export const freezeCard = catchAsync(async (req, res) => {
     [cardId, req.user.id]
   );
 
+  notifyCard(req.user.id, { action: 'frozen', cardLast4: card.rows[0].card_last_four }).catch(() => {});
   res.status(200).json({ success: true, message: 'Card frozen', data: { ...result.rows[0], card_status: 'frozen' } });
 });
 
@@ -527,7 +530,7 @@ export const unfreezeCard = catchAsync(async (req, res) => {
   const result = await query(
     `UPDATE virtual_cards SET status = 'active', frozen_at = NULL, updated_at = NOW()
      WHERE id = $1 AND user_id = $2 AND status = 'frozen'
-     RETURNING id, status, provider, provider_card_id`,
+     RETURNING id, status, provider, provider_card_id, card_last_four`,
     [cardId, req.user.id]
   );
 
@@ -542,6 +545,7 @@ export const unfreezeCard = catchAsync(async (req, res) => {
     }
   }
 
+  notifyCard(req.user.id, { action: 'unfrozen', cardLast4: c.card_last_four }).catch(() => {});
   res.status(200).json({ success: true, message: 'Card unfrozen', data: { id: c.id, status: c.status, card_status: 'active' } });
 });
 
@@ -551,7 +555,7 @@ export const unfreezeCard = catchAsync(async (req, res) => {
 export const terminateCard = catchAsync(async (req, res) => {
   const result = await transaction(async (client) => {
     const card = await client.query(
-      'SELECT id, user_id, balance, status, provider_card_id FROM virtual_cards WHERE id = $1 FOR UPDATE',
+      'SELECT id, user_id, balance, status, provider_card_id, card_last_four FROM virtual_cards WHERE id = $1 FOR UPDATE',
       [req.params.cardId]
     );
     if (card.rows.length === 0) throw new AppError('Card not found', 404);
@@ -571,9 +575,10 @@ export const terminateCard = catchAsync(async (req, res) => {
       [req.params.cardId]
     );
 
-    return { refunded: card.rows[0].balance };
+    return { refunded: card.rows[0].balance, cardLast4: card.rows[0].card_last_four };
   });
 
+  notifyCard(req.user.id, { action: 'terminated', cardLast4: result.cardLast4 }).catch(() => {});
   res.status(200).json({ success: true, message: 'Card terminated and balance refunded', data: { refunded_amount: result.refunded } });
 });
 

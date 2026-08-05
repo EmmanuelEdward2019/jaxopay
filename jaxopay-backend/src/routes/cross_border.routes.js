@@ -1,6 +1,7 @@
 import express from 'express';
 import * as crossBorderController from '../controllers/cross_border.controller.js';
 import { verifyToken, requireKYCTier } from '../middleware/auth.js';
+import { requireFeature } from '../middleware/featureGuard.js';
 
 const router = express.Router();
 
@@ -20,13 +21,13 @@ router.get('/countries', crossBorderController.getPayoutCountries);
 router.get('/networks', crossBorderController.getPayoutNetworks);
 
 // International Payments
-router.post('/transfers/international', requireKYCTier(1), crossBorderController.sendInternationalPayment);
+router.post('/transfers/international', requireFeature('withdrawals_fiat'), requireKYCTier(1), crossBorderController.sendInternationalPayment);
 
 // Crypto on/off-ramp (Yellow Card Direct Settlement)
 router.get('/ramp/status', crossBorderController.getRampStatus);
 router.get('/ramp/options', crossBorderController.getRampOptions);
-router.post('/ramp/deposit', requireKYCTier(1), crossBorderController.cryptoRampDeposit);
-router.post('/ramp/withdraw', requireKYCTier(1), crossBorderController.cryptoRampWithdraw);
+router.post('/ramp/deposit', requireFeature('deposits_crypto'), requireKYCTier(1), crossBorderController.cryptoRampDeposit);
+router.post('/ramp/withdraw', requireFeature('withdrawals_crypto'), requireKYCTier(1), crossBorderController.cryptoRampWithdraw);
 router.get('/ramp/:id/status', crossBorderController.getRampTransactionStatus);
 
 // Provider wallet balances (Yellow Card)

@@ -121,7 +121,7 @@ const layout = (content) => `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transi
             <!-- Footer -->
             <tr>
               <td align="center" style="padding:24px 20px 4px;font-family:${FONT};font-size:13px;line-height:1.7;color:#94a3b8;">
-                <p style="margin:0 0 4px;font-weight:600;color:#64748b;">JAXOPAY — Cross-Border Fintech</p>
+                <p style="margin:0 0 4px;font-weight:600;color:#64748b;">JAXOPAY — Crypto exchange &amp; Remittance Fintech</p>
                 <p style="margin:0 0 4px;">&copy; ${new Date().getFullYear()} JAXOPAY. All rights reserved.</p>
                 <p style="margin:0;">This is an automated message — please do not reply.</p>
               </td>

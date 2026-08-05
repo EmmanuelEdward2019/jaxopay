@@ -11,6 +11,7 @@ import { parseUserAgent, getDeviceInfo } from '../utils/deviceParser.js';
 import logger from '../utils/logger.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { auditFromReq } from '../services/audit.service.js';
+import { notifyLogin } from '../services/notification.service.js';
 
 // Generate JWT token
 const generateToken = (userId, expiresIn = process.env.JWT_EXPIRES_IN || '15m') => {
@@ -381,6 +382,12 @@ export const login = catchAsync(async (req, res) => {
 
   logger.info('User logged in successfully:', { userId: user.id, email });
   auditFromReq(req, { userId: user.id, action: 'login', entityType: 'user', entityId: user.id });
+  notifyLogin(user.id, {
+    device: req.deviceInfo?.deviceName && req.deviceInfo?.browser
+      ? `${req.deviceInfo.browser} on ${req.deviceInfo.deviceName}`
+      : req.deviceInfo?.browser || req.deviceInfo?.os,
+    ipAddress: req.deviceInfo?.ipAddress,
+  }).catch(() => {});
 
   res.status(200).json({
     success: true,

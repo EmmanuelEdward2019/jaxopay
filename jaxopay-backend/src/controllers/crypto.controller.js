@@ -14,6 +14,8 @@ import { getSpendableBalance } from '../utils/walletBalance.js';
 import { getQuidaxErrorMessage } from '../utils/quidax.js';
 import { randomUUID } from 'crypto';
 import emailService from '../services/email.service.js';
+import { notifyUser, notifyWithdrawal, notifyDeposit } from '../services/notification.service.js';
+import { assertDepositsAllowed, assertWithdrawalsAllowed } from '../services/financialControls.service.js';
 
 // Crypto deposit/withdrawal/swap provider — Obiex by default; set CRYPTO_PROVIDER=quidax to
 // fall back (e.g. during an Obiex outage). Order-book spot trading (createOrder, getOrderBook,
@@ -857,6 +859,8 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
     throw new AppError('Coin symbol is required', 400);
   }
 
+  await assertDepositsAllowed(req.user.id);
+
   try {
     let dataResponse;
     if (CRYPTO_PROVIDER === 'obiex') {
@@ -949,6 +953,8 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
 // Withdraw crypto to external wallet
 export const withdrawCrypto = catchAsync(async (req, res) => {
   const { coin, network, address, amount, memo } = req.body;
+
+  await assertWithdrawalsAllowed(req.user.id);
 
   if (kycTierLevel(req.user.kyc_tier) < 1) {
     throw new AppError('Please verify your identity (KYC) to withdraw crypto.', 403, 'KYC_TIER_REQUIRED');
@@ -1212,6 +1218,12 @@ async function notifyCryptoWithdrawalResult(tx, success) {
   } catch (e) {
     logger.error('[CryptoWithdraw] reconcile notify error:', e.message);
   }
+  notifyWithdrawal(tx.user_id, {
+    amount: tx.amount,
+    currency: tx.currency,
+    reference: tx.metadata?.obiex_reference || tx.id,
+    status: success ? 'completed' : 'failed',
+  }).catch(() => {});
 }
 
 // GET /crypto/withdraw/:txId/verify — manually re-poll the provider and reconcile a "pending" withdrawal.
@@ -1780,6 +1792,13 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
       date: new Date().toLocaleString(),
     }, userRes.rows[0]).catch((e) => logger.error('[ConfirmSwap] receipt email error:', e.message));
   }).catch((e) => logger.error('[ConfirmSwap] receipt email lookup error:', e.message));
+
+  notifyUser(req.user.id, {
+    type: 'swap',
+    title: 'Swap completed',
+    message: `Swapped ${fromAmount} ${fromCurrency} for ${toAmount} ${toCurrency}.`,
+    metadata: { reference: confirmed.id, fromAmount, fromCurrency, toAmount, toCurrency },
+  }).catch(() => {});
 
   res.status(200).json({ success: true, data: confirmed });
 });

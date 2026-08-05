@@ -1,6 +1,7 @@
 import { transaction as dbTransaction, query } from '../config/database.js';
 import defaultLogger from '../utils/logger.js';
 import { sendTransactionEmails, sendWithdrawalEmails } from './email.service.js';
+import { notifyDeposit, notifyWithdrawal } from './notification.service.js';
 
 /**
  * Obiex webhook attribution model.
@@ -108,6 +109,7 @@ export function createObiexWebhookService({
         } catch (emailErr) {
           logger.error('[WEBHOOK] Obiex deposit email notify error:', emailErr);
         }
+        notifyDeposit(capturedUserId, { amount, currency: currencyUpper, reference: String(transactionId) }).catch(() => {});
       }
     } catch (err) {
       logger.error('[WEBHOOK] creditUserWalletByObiex error:', err);
@@ -241,6 +243,12 @@ export function createObiexWebhookService({
         } catch (emailErr) {
           logger.error('[WEBHOOK] Obiex withdrawal email notify error:', emailErr);
         }
+        notifyWithdrawal(emailPayload.userId, {
+          amount: emailPayload.amount,
+          currency: emailPayload.currency,
+          reference: emailPayload.reference,
+          status: emailPayload.success ? 'completed' : 'failed',
+        }).catch(() => {});
       }
     } catch (err) {
       logger.error('[WEBHOOK] updateObiexWithdrawal error:', err);

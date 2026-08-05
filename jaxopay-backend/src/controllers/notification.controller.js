@@ -25,7 +25,7 @@ export const getNotifications = catchAsync(async (req, res) => {
     }
 
     let sql = `
-    SELECT id, user_id, type, title, message, is_read, created_at, data
+    SELECT id, user_id, type, title, message, is_read, created_at, metadata
     FROM notifications
     WHERE user_id = $1
   `;

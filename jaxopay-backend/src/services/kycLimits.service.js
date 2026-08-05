@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { kycTierLevel } from '../middleware/auth.js';
 import yellowCard from '../orchestration/adapters/fx/YellowCardService.js';
 import logger from '../utils/logger.js';
+import { getCustomWithdrawalLimitUsd } from './financialControls.service.js';
 
 // Fiat vs crypto — determines which half of a tier's split cap applies to a transaction.
 const FIAT_CURRENCIES = new Set(['NGN', 'USD', 'EUR', 'GBP', 'GHS', 'KES', 'ZAR', 'CAD', 'CNY', 'AUD', 'JPY']);
@@ -28,21 +29,6 @@ export function tierCapFor(kycTier, currency) {
   const level = Math.min(kycTierLevel(kycTier), 3);
   const caps = TIER_CAPS_USD[level] || TIER_CAPS_USD[0];
   return isFiat(currency) ? caps.fiat : caps.crypto;
-}
-
-/**
- * The user's fiat daily/monthly cap converted to NGN — for display on the NGN deposit screen
- * (the underlying cap is USD-denominated; users transacting in Naira need it in Naira).
- * Returns null if a live USD/NGN rate isn't available (caller should hide the limit, not show 0).
- */
-export async function tierCapForNGN(kycTier) {
-  const caps = tierCapFor(kycTier, 'NGN');
-  const rate = await usdRate('NGN'); // USD per 1 NGN
-  if (!rate) return null;
-  return {
-    daily: caps.daily / rate,
-    monthly: caps.monthly / rate,
-  };
 }
 
 // USD-rate cache so limit checks don't hit the FX provider on every transaction.
@@ -115,8 +101,15 @@ async function usdOutflowSince(userId, since) {
  * @throws AppError 403 LIMIT_EXCEEDED when the transaction would breach the daily/monthly cap.
  */
 export async function enforceTierLimit(userId, amount, currency, kycTier) {
-  const caps = tierCapFor(kycTier, currency);
+  let caps = tierCapFor(kycTier, currency);
   const kind = isFiat(currency) ? 'fiat' : 'crypto';
+
+  // An admin-set custom override always replaces the tier default (both daily and monthly,
+  // monthly scaled 10x like every other cap on this platform) — see financialControls.service.js.
+  const customDaily = await getCustomWithdrawalLimitUsd(userId).catch(() => null);
+  if (customDaily != null) {
+    caps = { daily: customDaily, monthly: customDaily * 10 };
+  }
 
   const rate = await usdRate(currency);
   if (rate == null) {

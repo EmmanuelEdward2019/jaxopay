@@ -1,5 +1,6 @@
 import express from 'express';
 import { verifyToken, requireKYCTier } from '../middleware/auth.js';
+import { requireFeature } from '../middleware/featureGuard.js';
 import { validate, createWalletValidation } from '../middleware/validator.js';
 import { useIdempotency } from '../middleware/idempotency.js';
 import { body, param, query } from 'express-validator';
@@ -34,6 +35,7 @@ router.get('/balances', getAllBalances);
 // Get or create Virtual Bank Account (VBA) for receiving funds
 router.get(
   '/vba/:walletId',
+  requireFeature('deposits_fiat'),
   requireKYCTier(1),
   param('walletId').isUUID(),
   validate,
@@ -110,6 +112,7 @@ router.post(
 // Initialize Korapay deposit (returns checkout URL)
 router.post(
   '/deposit/initialize',
+  requireFeature('deposits_fiat'),
   requireKYCTier(1),
   body('wallet_id').isUUID(),
   body('amount').isFloat({ min: 1 }),

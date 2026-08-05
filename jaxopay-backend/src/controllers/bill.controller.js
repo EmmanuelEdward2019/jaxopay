@@ -8,6 +8,7 @@ import StrowalletBillsAdapter from '../orchestration/adapters/utilities/Strowall
 import fxService from '../orchestration/adapters/fx/YellowCardService.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { enforceTierLimit } from '../services/kycLimits.service.js';
+import { notifyBillPayment } from '../services/notification.service.js';
 
 const vtpass = new VTpassAdapter();
 const strowalletBills = new StrowalletBillsAdapter();
@@ -963,6 +964,14 @@ export const payBill = catchAsync(async (req, res) => {
       }
     )
     .catch((e) => logger.error('Email send error:', e));
+
+  notifyBillPayment(req.user.id, {
+    service: cat || provider_id,
+    amount,
+    currency: currency.toUpperCase(),
+    status: providerStatus === 'completed' ? 'completed' : 'processing',
+    reference: result.reference,
+  }).catch(() => {});
 
   auditFromReq(req, { action: 'bill_payment', entityType: 'bill_payment', entityId: result.billPaymentId, newValues: { category: metadata?.category, provider: provider_id, amount, currency, reference: result.reference } });
 

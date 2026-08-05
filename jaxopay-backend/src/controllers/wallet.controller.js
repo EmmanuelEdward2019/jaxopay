@@ -8,11 +8,13 @@ import { decimal, validateAmount, formatForDB, hasSufficientBalance } from '../u
 import { getSpendableBalance } from '../utils/walletBalance.js';
 import QuidaxAdapter from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
-import { enforceTierLimit, tierCapForNGN } from '../services/kycLimits.service.js';
+import { enforceTierLimit } from '../services/kycLimits.service.js';
+import { kycTierLevel } from '../middleware/auth.js';
 import KorapayAdapter from '../orchestration/adapters/fiat/KorapayAdapter.js';
 import GlydeAdapter from '../orchestration/adapters/fiat/GlydeAdapter.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
 import { reconcileGlydeVBA } from './webhook.controller.js';
+import { assertDepositsAllowed, getCustomDepositLimitNgn } from '../services/financialControls.service.js';
 
 const buildApiV1Url = (path) => {
   const rawBaseUrl = (process.env.API_BASE_URL || 'http://localhost:3001').trim();
@@ -50,19 +52,31 @@ const getNgnDepositFee = () => {
   return Number.isFinite(raw) && raw >= 0 ? raw : null;
 };
 
+// Daily NGN deposit ceiling shown on the deposit screen — fixed Naira figures per tier, set
+// directly (not converted from the general USD-denominated fiat outflow cap in
+// kycLimits.service.js, which stays as-is for withdrawals/transfers). Tier 2 and Tier 3 are
+// intentionally equal: any increase beyond this is handled manually via the "Upgrade limit"
+// email-support flow rather than a further KYC tier.
+const NGN_DEPOSIT_LIMIT_BY_TIER = { 0: 0, 1: 0, 2: 5000000, 3: 5000000 };
+const getNgnDepositLimit = (kycTier) => {
+  const level = Math.min(kycTierLevel(kycTier), 3);
+  return NGN_DEPOSIT_LIMIT_BY_TIER[level] ?? 0;
+};
+
 /**
  * Deposit-screen limits: min/max/fee, and the daily deposit limit read from the user's KYC
- * tier (fiat cap, converted from USD to NGN). Maximum Deposit mirrors the daily limit — for a
- * static account with no per-transaction amount field, the practical single-transfer ceiling
- * is whatever's left of the day's allowance.
+ * tier — unless an admin has set a custom override for this specific user, which always wins.
+ * Maximum Deposit mirrors the daily limit — for a static account with no per-transaction amount
+ * field, the practical single-transfer ceiling is whatever's left of the day's allowance.
  */
-const buildDepositLimits = async (kycTier) => {
-  const ngnCap = await tierCapForNGN(kycTier).catch(() => null);
+const buildDepositLimits = async (userId, kycTier) => {
+  const customLimit = await getCustomDepositLimitNgn(userId).catch(() => null);
+  const limit = customLimit != null ? customLimit : getNgnDepositLimit(kycTier);
   return {
     min_deposit: getMinNgnDeposit(),
     transaction_fee: getNgnDepositFee(),
-    daily_deposit_limit: ngnCap ? Math.round(ngnCap.daily) : null,
-    max_deposit: ngnCap ? Math.round(ngnCap.daily) : null,
+    daily_deposit_limit: limit,
+    max_deposit: limit,
   };
 };
 
@@ -180,6 +194,8 @@ export const initializeDeposit = catchAsync(async (req, res) => {
   if (!wallet_id || !amount || amount <= 0) {
     throw new AppError('wallet_id and amount are required', 400);
   }
+
+  await assertDepositsAllowed(req.user.id);
 
   // Verify wallet belongs to user
   const walletResult = await query(
@@ -766,6 +782,8 @@ export const addFunds = catchAsync(async (req, res) => {
 export const getOrCreateVBA = catchAsync(async (req, res) => {
   const { walletId } = req.params;
 
+  await assertDepositsAllowed(req.user.id);
+
   // 1. Verify wallet belongs to user and is NGN
   const walletResult = await query(
     'SELECT id, currency FROM wallets WHERE id = $1 AND user_id = $2 AND is_active = true',
@@ -811,7 +829,7 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
           bank_name: vba.bank_name,
           account_number: vba.account_number,
           account_name: vba.account_name,
-          ...(await buildDepositLimits(req.user.kyc_tier)),
+          ...(await buildDepositLimits(req.user.id, req.user.kyc_tier)),
         },
       });
     }
@@ -900,7 +918,7 @@ export const getOrCreateVBA = catchAsync(async (req, res) => {
         bank_name: vbaData.bank_name,
         account_number: vbaData.account_number,
         account_name: vbaData.account_name,
-        ...(await buildDepositLimits(req.user.kyc_tier)),
+        ...(await buildDepositLimits(req.user.id, req.user.kyc_tier)),
       },
     });
 

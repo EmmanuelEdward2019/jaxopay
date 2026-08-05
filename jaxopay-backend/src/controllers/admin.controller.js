@@ -12,6 +12,7 @@ import * as kycNotify from '../services/kycNotification.service.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
 import { auditFromReq } from '../services/audit.service.js';
 import { performAccountDeletion } from './user.controller.js';
+import { getUserFinancialControls, upsertUserFinancialControls } from '../services/financialControls.service.js';
 
 // Highest-privilege-first — used to pick the legacy single `role` column value from a
 // multi-role assignment, so old single-role checks (req.user.role === 'super_admin', etc.)
@@ -1471,7 +1472,38 @@ export const updateUserFeatureAccess = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: result.rows[0] });
 });
 
+// ── Per-user financial controls: enable/disable deposits/withdrawals + custom limit override ──
 
+export const getUserFinancialControlsAdmin = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+  const controls = await getUserFinancialControls(userId);
+  res.status(200).json({ success: true, data: controls });
+});
+
+export const updateUserFinancialControlsAdmin = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+  const { deposits_enabled, withdrawals_enabled, custom_deposit_limit_ngn, custom_withdrawal_limit_usd } = req.body;
+
+  const updates = {};
+  if (deposits_enabled !== undefined) updates.deposits_enabled = deposits_enabled;
+  if (withdrawals_enabled !== undefined) updates.withdrawals_enabled = withdrawals_enabled;
+  // Explicit null clears the override and falls back to the KYC-tier default.
+  if (custom_deposit_limit_ngn !== undefined) updates.custom_deposit_limit_ngn = custom_deposit_limit_ngn;
+  if (custom_withdrawal_limit_usd !== undefined) updates.custom_withdrawal_limit_usd = custom_withdrawal_limit_usd;
+
+  const result = await upsertUserFinancialControls(userId, updates, req.user.id);
+
+  await logAdminAction({
+    adminId: req.user.id,
+    action: 'update_user_financial_controls',
+    targetId: userId,
+    targetType: 'user',
+    changes: updates,
+    req,
+  });
+
+  res.status(200).json({ success: true, data: result });
+});
 
 // Get Orchestration Status (super_admin/admin)
 export const getOrchestrationStatus = catchAsync(async (req, res) => {

@@ -3,6 +3,7 @@ import currencyEngine from '../services/CurrencyEngineService.js';
 import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { auditFromReq } from '../services/audit.service.js';
 import logger from '../utils/logger.js';
+import { assertDepositsAllowed, assertWithdrawalsAllowed } from '../services/financialControls.service.js';
 
 export const getExchangeRate = catchAsync(async (req, res) => {
     const { from, to } = req.query;
@@ -29,6 +30,8 @@ export const sendInternationalPayment = catchAsync(async (req, res) => {
     if (!b.amount || !b.currency || !b.recipientCountry || !b.recipientName || !b.accountNumber || !b.networkId) {
         throw new AppError('Missing required transfer parameters (amount, currency, recipientCountry, recipientName, accountNumber, networkId)', 400);
     }
+
+    await assertWithdrawalsAllowed(req.user.id);
 
     // Require the transaction PIN — this moves money out of the user's wallet.
     await verifyTransactionPin(req.user.id, b.pin);
@@ -85,6 +88,7 @@ export const cryptoRampDeposit = catchAsync(async (req, res) => {
     if (!b.cryptoCurrency || !b.cryptoNetwork || !b.fiatAmount) {
         throw new AppError('Missing required parameters (cryptoCurrency, cryptoNetwork, fiatAmount)', 400);
     }
+    await assertDepositsAllowed(req.user.id);
     await verifyTransactionPin(req.user.id, b.pin);
     const result = await currencyEngine.cryptoRampDeposit(req.user.id, {
         cryptoCurrency: b.cryptoCurrency, cryptoNetwork: b.cryptoNetwork, fiatAmount: parseFloat(b.fiatAmount),
@@ -105,6 +109,7 @@ export const cryptoRampWithdraw = catchAsync(async (req, res) => {
     if (b.mode === 'external' && (!b.networkId || !b.accountNumber || !b.recipientName)) {
         throw new AppError('Recipient bank details are required (networkId, accountNumber, recipientName)', 400);
     }
+    await assertWithdrawalsAllowed(req.user.id);
     await verifyTransactionPin(req.user.id, b.pin);
     const result = await currencyEngine.cryptoRampWithdraw(req.user.id, {
         cryptoCurrency: b.cryptoCurrency, cryptoNetwork: b.cryptoNetwork, cryptoAmount: parseFloat(b.cryptoAmount),
