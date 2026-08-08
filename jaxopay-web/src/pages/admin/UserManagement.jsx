@@ -36,6 +36,21 @@ const STATUS_COLORS = {
     inactive: 'bg-gray-100 text-gray-700',
 };
 
+// Shared pill switch — hoisted to module scope so it isn't recreated (and doesn't lose click
+// state) on every parent render.
+const ToggleSwitch = ({ label, enabled, onToggle, disabled }) => (
+    <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
+        <button
+            onClick={onToggle}
+            disabled={disabled}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 ${enabled ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+        >
+            <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+        </button>
+    </div>
+);
+
 const UserManagement = () => {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -185,6 +200,10 @@ const UserManagement = () => {
                     </button>
                 </div>
             </div>
+
+            {/* All Users Financial Controls (Super Admin Only) — platform-wide kill switches,
+                separate from the per-user overrides in each user's detail modal. */}
+            {isSuperAdmin && <SystemWideFinancialControls />}
 
             {/* Search & Filters */}
             <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
@@ -399,6 +418,73 @@ const UserManagement = () => {
                     <DeletionRequestsModal onClose={() => setShowDeletionRequestsModal(false)} />
                 )}
             </AnimatePresence>
+        </div>
+    );
+};
+
+// Platform-wide kill switches — halts deposits/withdrawals for EVERY user at once, independent
+// of any per-user override. Backed by the same feature_toggles table/endpoints as the Feature
+// Management page, just surfaced here with dedicated fiat/crypto x deposit/withdrawal labels so
+// it sits directly alongside the per-user controls for a clear "per user" vs "all users" contrast.
+const SYSTEM_TOGGLE_LABELS = {
+    deposits_fiat: 'Fiat Deposits',
+    deposits_crypto: 'Crypto Deposits',
+    withdrawals_fiat: 'Fiat Withdrawals',
+    withdrawals_crypto: 'Crypto Withdrawals',
+};
+
+const SystemWideFinancialControls = () => {
+    const [toggles, setToggles] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [savingId, setSavingId] = useState(null);
+
+    const load = async () => {
+        const result = await adminService.getFeatureToggles();
+        if (result.success) {
+            setToggles((result.data || []).filter((t) => SYSTEM_TOGGLE_LABELS[t.feature_name]));
+        }
+        setLoading(false);
+    };
+
+    useEffect(() => { load(); }, []);
+
+    const handleToggle = async (toggle) => {
+        setSavingId(toggle.id);
+        const result = await adminService.updateFeatureToggle(toggle.id, { is_enabled: !toggle.is_enabled });
+        if (result.success) {
+            setToggles((prev) => prev.map((t) => (t.id === toggle.id ? { ...t, is_enabled: !toggle.is_enabled } : t)));
+        }
+        setSavingId(null);
+    };
+
+    return (
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-red-200 dark:border-red-900/40">
+            <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle className="w-4 h-4 text-red-600" />
+                <h3 className="font-semibold text-gray-900 dark:text-white">All Users Financial Controls</h3>
+            </div>
+            <p className="text-xs text-gray-400 mb-4">Platform-wide kill switches — applies to every user regardless of their individual settings.</p>
+            {loading ? (
+                <div className="flex justify-center p-4">
+                    <RefreshCw className="w-5 h-5 animate-spin text-primary-500" />
+                </div>
+            ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {Object.keys(SYSTEM_TOGGLE_LABELS).map((name) => {
+                        const toggle = toggles.find((t) => t.feature_name === name);
+                        if (!toggle) return null;
+                        return (
+                            <ToggleSwitch
+                                key={name}
+                                label={SYSTEM_TOGGLE_LABELS[name]}
+                                enabled={toggle.is_enabled}
+                                disabled={savingId === toggle.id}
+                                onToggle={() => handleToggle(toggle)}
+                            />
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 };
@@ -851,7 +937,7 @@ const DeletionRequestsModal = ({ onClose }) => {
     const load = async () => {
         setLoading(true);
         const res = await adminService.getAccountDeletionRequests('pending');
-        if (res.success) setRequests(res.data?.data || []);
+        if (res.success) setRequests(res.data || []);
         setLoading(false);
     };
 
@@ -1256,7 +1342,8 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                     {/* Financial Controls (Super Admin Only) */}
                     {currentUser?.role === 'super_admin' && (
                         <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                            <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Financial Controls</h3>
+                            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Financial Controls</h3>
+                            <p className="text-xs text-gray-400 mb-4">Per-user overrides. For platform-wide controls, see "All Users Financial Controls" above the user list.</p>
                             {financialControlsLoading ? (
                                 <div className="flex justify-center p-4">
                                     <RefreshCw className="w-5 h-5 animate-spin text-primary-500" />
@@ -1264,24 +1351,26 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                             ) : (
                                 <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-3">
-                                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
-                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Deposits Enabled</span>
-                                            <button
-                                                onClick={() => handleToggleFinancialControl('deposits_enabled', !(financialControls?.deposits_enabled ?? true))}
-                                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${(financialControls?.deposits_enabled ?? true) ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'}`}
-                                            >
-                                                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${(financialControls?.deposits_enabled ?? true) ? 'translate-x-5' : 'translate-x-1'}`} />
-                                            </button>
-                                        </div>
-                                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
-                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Withdrawals Enabled</span>
-                                            <button
-                                                onClick={() => handleToggleFinancialControl('withdrawals_enabled', !(financialControls?.withdrawals_enabled ?? true))}
-                                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${(financialControls?.withdrawals_enabled ?? true) ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'}`}
-                                            >
-                                                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${(financialControls?.withdrawals_enabled ?? true) ? 'translate-x-5' : 'translate-x-1'}`} />
-                                            </button>
-                                        </div>
+                                        <ToggleSwitch
+                                            label="Fiat Deposits"
+                                            enabled={financialControls?.deposits_fiat_enabled ?? true}
+                                            onToggle={() => handleToggleFinancialControl('deposits_fiat_enabled', !(financialControls?.deposits_fiat_enabled ?? true))}
+                                        />
+                                        <ToggleSwitch
+                                            label="Crypto Deposits"
+                                            enabled={financialControls?.deposits_crypto_enabled ?? true}
+                                            onToggle={() => handleToggleFinancialControl('deposits_crypto_enabled', !(financialControls?.deposits_crypto_enabled ?? true))}
+                                        />
+                                        <ToggleSwitch
+                                            label="Fiat Withdrawals"
+                                            enabled={financialControls?.withdrawals_fiat_enabled ?? true}
+                                            onToggle={() => handleToggleFinancialControl('withdrawals_fiat_enabled', !(financialControls?.withdrawals_fiat_enabled ?? true))}
+                                        />
+                                        <ToggleSwitch
+                                            label="Crypto Withdrawals"
+                                            enabled={financialControls?.withdrawals_crypto_enabled ?? true}
+                                            onToggle={() => handleToggleFinancialControl('withdrawals_crypto_enabled', !(financialControls?.withdrawals_crypto_enabled ?? true))}
+                                        />
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3">

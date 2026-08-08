@@ -162,7 +162,7 @@ export const sendTransfer = catchAsync(async (req, res) => {
         throw new AppError('wallet_id, bank_code, account_number, account_name, and amount are required', 400);
     }
 
-    await assertWithdrawalsAllowed(req.user.id);
+    await assertWithdrawalsAllowed(req.user.id, 'fiat');
 
     // Require the transaction PIN as the final authorization step.
     await verifyTransactionPin(req.user.id, req.body.pin);

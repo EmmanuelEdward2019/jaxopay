@@ -1399,6 +1399,18 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
         kycService.getTierLimits().then(res => { if (res.success) setTierLimits(res.data); });
     }, []);
 
+    // Fiat daily limits are USD-denominated; convert to this wallet's own currency so users see
+    // e.g. "₦68,206,000" instead of "$50,000" when withdrawing NGN.
+    const [usdToWalletRate, setUsdToWalletRate] = useState(null);
+    useEffect(() => {
+        if (isCrypto || code === 'USD') { setUsdToWalletRate(null); return; }
+        let active = true;
+        fxService.getRates('USD', code).then((res) => {
+            if (active && res.success && res.data?.rate) setUsdToWalletRate(Number(res.data.rate));
+        }).catch(() => {});
+        return () => { active = false; };
+    }, [isCrypto, code]);
+
     // Resolve account name
     useEffect(() => {
         if (isCrypto || !selectedBank || recipient.length < 10 || code !== 'NGN') return;
@@ -1540,7 +1552,7 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                     const selectedNetworkInfo = isCrypto ? networks.find(n => n.network === network) : null;
                     const currentTierKey = user?.kyc_tier || 'tier_0';
                     const currentTierLimit = tierLimits?.limits?.[currentTierKey];
-                    const minWithdraw = isCrypto ? selectedNetworkInfo?.withdrawMin : 100;
+                    const minWithdraw = isCrypto ? selectedNetworkInfo?.withdrawMin : 1000;
                     const netFee = isCrypto ? selectedNetworkInfo?.withdrawFee : null;
                     if (!currentTierLimit && minWithdraw == null && netFee == null) return null;
                     return (
@@ -1562,7 +1574,11 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                                 <div className="flex items-center justify-between text-xs">
                                     <span className="text-muted-foreground">Daily {isCrypto ? 'crypto' : 'fiat'} limit ({currentTierLimit.name})</span>
                                     <span className="font-semibold text-foreground">
-                                        ${Number(isCrypto ? currentTierLimit.daily_limit_crypto : currentTierLimit.daily_limit_fiat).toLocaleString()}
+                                        {isCrypto
+                                            ? `$${Number(currentTierLimit.daily_limit_crypto).toLocaleString()}`
+                                            : usdToWalletRate
+                                                ? `${code} ${(Number(currentTierLimit.daily_limit_fiat) * usdToWalletRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                                : `$${Number(currentTierLimit.daily_limit_fiat).toLocaleString()}`}
                                     </span>
                                 </div>
                             )}

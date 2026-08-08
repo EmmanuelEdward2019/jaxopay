@@ -59,7 +59,7 @@ router.post(
     body('bank_code').isString().notEmpty().withMessage('bank_code required'),
     body('account_number').isString().isLength({ min: 10, max: 18 }).withMessage('Valid account_number required'),
     body('account_name').isString().notEmpty().withMessage('account_name required'),
-    body('amount').isFloat({ min: 100 }).withMessage('Minimum transfer amount is 100'),
+    body('amount').isFloat({ min: 1000 }).withMessage('Minimum transfer amount is 1000'),
     body('currency').optional().isString().isLength({ min: 3, max: 6 }),
     body('narration').optional().isString().isLength({ max: 100 }),
     validate,

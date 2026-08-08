@@ -195,7 +195,7 @@ export const initializeDeposit = catchAsync(async (req, res) => {
     throw new AppError('wallet_id and amount are required', 400);
   }
 
-  await assertDepositsAllowed(req.user.id);
+  await assertDepositsAllowed(req.user.id, 'fiat');
 
   // Verify wallet belongs to user
   const walletResult = await query(
@@ -782,7 +782,7 @@ export const addFunds = catchAsync(async (req, res) => {
 export const getOrCreateVBA = catchAsync(async (req, res) => {
   const { walletId } = req.params;
 
-  await assertDepositsAllowed(req.user.id);
+  await assertDepositsAllowed(req.user.id, 'fiat');
 
   // 1. Verify wallet belongs to user and is NGN
   const walletResult = await query(

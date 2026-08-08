@@ -1482,11 +1482,17 @@ export const getUserFinancialControlsAdmin = catchAsync(async (req, res) => {
 
 export const updateUserFinancialControlsAdmin = catchAsync(async (req, res) => {
   const { userId } = req.params;
-  const { deposits_enabled, withdrawals_enabled, custom_deposit_limit_ngn, custom_withdrawal_limit_usd } = req.body;
+  const {
+    deposits_fiat_enabled, deposits_crypto_enabled,
+    withdrawals_fiat_enabled, withdrawals_crypto_enabled,
+    custom_deposit_limit_ngn, custom_withdrawal_limit_usd,
+  } = req.body;
 
   const updates = {};
-  if (deposits_enabled !== undefined) updates.deposits_enabled = deposits_enabled;
-  if (withdrawals_enabled !== undefined) updates.withdrawals_enabled = withdrawals_enabled;
+  if (deposits_fiat_enabled !== undefined) updates.deposits_fiat_enabled = deposits_fiat_enabled;
+  if (deposits_crypto_enabled !== undefined) updates.deposits_crypto_enabled = deposits_crypto_enabled;
+  if (withdrawals_fiat_enabled !== undefined) updates.withdrawals_fiat_enabled = withdrawals_fiat_enabled;
+  if (withdrawals_crypto_enabled !== undefined) updates.withdrawals_crypto_enabled = withdrawals_crypto_enabled;
   // Explicit null clears the override and falls back to the KYC-tier default.
   if (custom_deposit_limit_ngn !== undefined) updates.custom_deposit_limit_ngn = custom_deposit_limit_ngn;
   if (custom_withdrawal_limit_usd !== undefined) updates.custom_withdrawal_limit_usd = custom_withdrawal_limit_usd;

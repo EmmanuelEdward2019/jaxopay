@@ -859,7 +859,7 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
     throw new AppError('Coin symbol is required', 400);
   }
 
-  await assertDepositsAllowed(req.user.id);
+  await assertDepositsAllowed(req.user.id, 'crypto');
 
   try {
     let dataResponse;
@@ -954,7 +954,7 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
 export const withdrawCrypto = catchAsync(async (req, res) => {
   const { coin, network, address, amount, memo } = req.body;
 
-  await assertWithdrawalsAllowed(req.user.id);
+  await assertWithdrawalsAllowed(req.user.id, 'crypto');
 
   if (kycTierLevel(req.user.kyc_tier) < 1) {
     throw new AppError('Please verify your identity (KYC) to withdraw crypto.', 403, 'KYC_TIER_REQUIRED');
