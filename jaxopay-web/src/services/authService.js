@@ -114,12 +114,14 @@ const authService = {
     }
   },
 
-  // Verify email
+  // Verify email — the backend route is POST /auth/verify-email/:token (reads req.params.token
+  // only; it's registered above the router's verifyToken gate specifically so a freshly-signed-up,
+  // not-yet-logged-in user can hit it). The token MUST be in the URL, not the body — sending it
+  // as a body param means the request matches no public route, falls through to the auth-required
+  // routes below, and 401s (which then surfaces as a bogus "session expired" error).
   verifyEmail: async (token) => {
     try {
-      const response = await apiClient.post('/auth/verify-email', {
-        token,
-      });
+      const response = await apiClient.post(`/auth/verify-email/${encodeURIComponent(token)}`);
       return { success: true, data: response.data };
     } catch (error) {
       return handleApiError(error);

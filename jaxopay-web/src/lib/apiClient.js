@@ -150,10 +150,16 @@ apiClient.interceptors.response.use(
     const status = error.response?.status;
 
     // Handle 401 Unauthorized - Token expired (Skip for auth endpoints)
+    // These are all pre-login, unauthenticated-by-design routes — a 401 from any of them is
+    // never a "your session expired" situation (there was no session to expire), so none of
+    // them should trigger the refresh-token flow or the generic session-expired message below.
     const isAuthRoute = originalRequest.url?.includes('/auth/login') ||
       originalRequest.url?.includes('/auth/signup') ||
       originalRequest.url?.includes('/auth/reset-password') ||
-      originalRequest.url?.includes('/auth/verify-otp');
+      originalRequest.url?.includes('/auth/verify-otp') ||
+      originalRequest.url?.includes('/auth/verify-email') ||
+      originalRequest.url?.includes('/auth/resend-verification') ||
+      originalRequest.url?.includes('/auth/forgot-password');
 
     if (!error.response) {
       const msg = error.message || '';
