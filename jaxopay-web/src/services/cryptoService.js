@@ -119,13 +119,16 @@ const cryptoService = {
   },
 
   // ── Quotation-based swap lifecycle ──────────────────────────────────────
-  // Step 2: Create real quotation (returns id + expires_at for 15s countdown)
-  createSwapQuotation: async (from_currency, to_currency, from_amount) => {
+  // Step 2: Create real quotation (returns id + expires_at for 15s countdown). Pass exactly one
+  // of from_amount/to_amount — the backend supports quoting either direction natively (side:
+  // 'from'|'to' on the provider quote call), so typing a desired receive amount is just as
+  // accurate as typing a pay amount, not a client-side estimate.
+  createSwapQuotation: async (from_currency, to_currency, { from_amount, to_amount } = {}) => {
     try {
       const body = await apiClient.post('/crypto/swap/quotation', {
         from_currency,
         to_currency,
-        from_amount,
+        ...(from_amount != null ? { from_amount } : { to_amount }),
       });
       if (body?.success && body?.data) return { success: true, data: body.data };
       return { success: false, error: body?.message || 'Could not create quotation' };

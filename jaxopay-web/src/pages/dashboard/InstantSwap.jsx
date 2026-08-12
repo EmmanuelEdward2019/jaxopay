@@ -117,6 +117,9 @@ const InstantSwap = () => {
   const [toCode, setToCode] = useState(searchParams.get('to')?.toUpperCase() || 'NGN');
   const [payAmount, setPayAmount] = useState('');
   const [receiveAmount, setReceiveAmount] = useState('');
+  // Which of the two amount fields the user is actively typing into — the other one is always
+  // the one recomputed from the live rate/quote.
+  const [lastEdited, setLastEdited] = useState('pay');
   const [wallets, setWallets] = useState([]);
   const [assets, setAssets] = useState([]);
 
@@ -174,15 +177,20 @@ const InstantSwap = () => {
     });
   }, []);
 
-  // Preview rate debounce
+  // Preview rate debounce — recomputes whichever field ISN'T the one the user is typing into.
   useEffect(() => {
     if (swapPhase !== 'idle') return;
+    const editingReceive = lastEdited === 'receive';
+    const activeVal = editingReceive ? receiveAmount : payAmount;
     const timer = setTimeout(() => {
-      if (payAmount && parseFloat(payAmount) > 0) fetchPreviewRate();
-      else { setReceiveAmount(''); setPreviewRate(null); }
+      if (activeVal && parseFloat(activeVal) > 0) fetchPreviewRate(editingReceive ? 'receive' : 'pay');
+      else {
+        if (editingReceive) setPayAmount(''); else setReceiveAmount('');
+        setPreviewRate(null);
+      }
     }, 300);
     return () => clearTimeout(timer);
-  }, [payAmount, fromCode, toCode, swapPhase]);
+  }, [payAmount, receiveAmount, fromCode, toCode, swapPhase, lastEdited]);
 
   // Keep refresh callback ref current
   useEffect(() => { refreshCallbackRef.current = handleRefresh; });
@@ -207,6 +215,11 @@ const InstantSwap = () => {
   // Reset quotation when user changes params — including after a failed attempt (e.g.
   // insufficient funds), so typing a new "You Pay" amount goes back to idle and the preview-rate
   // effect below picks it up again instead of leaving the old "You Receive" amount stuck on screen.
+  // Only the field the user is actually typing into (lastEdited) should invalidate a live quote
+  // — the OTHER field also changes when a quote arrives (handleGetQuote fills it in from the
+  // provider response), and watching both unconditionally would reset the quote the instant it
+  // gets set, discarding it before the user ever sees it.
+  const activeAmount = lastEdited === 'pay' ? payAmount : receiveAmount;
   useEffect(() => {
     if (['quoted', 'refreshing', 'failed'].includes(swapPhase)) {
       setSwapPhase('idle');
@@ -214,27 +227,43 @@ const InstantSwap = () => {
       setSwapError(null);
       quotationIdRef.current = null;
     }
-  }, [fromCode, toCode, payAmount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromCode, toCode, activeAmount]);
 
   const getBalance = (code) => {
     const w = wallets.find(w => w.currency?.toUpperCase() === code?.toUpperCase());
     return parseFloat(w?.balance || 0);
   };
 
-  const fetchPreviewRate = async () => {
+  // direction 'pay': the usual forward preview, amount-accurate (passes the real pay amount to
+  // the rate endpoint). direction 'receive': the user typed a desired receive amount — fetch a
+  // clean per-unit rate (amount=1) and estimate the required pay amount from it client-side.
+  // This is only a preview; handleGetQuote below gets a precise, provider-quoted pay amount via
+  // the backend's native to_amount support before anything is actually confirmed.
+  const fetchPreviewRate = async (direction = 'pay') => {
     setLoadingRate(true);
     try {
-      const res = await cryptoService.getExchangeRates(fromCode, toCode, parseFloat(payAmount));
+      const res = direction === 'pay'
+        ? await cryptoService.getExchangeRates(fromCode, toCode, parseFloat(payAmount))
+        : await cryptoService.getExchangeRates(fromCode, toCode, 1);
       if (res.success && res.data) {
-        const amt = res.data.exchange_amount ?? res.data.converted_amount;
-        setReceiveAmount(amt != null ? Number(amt).toFixed(isFiat(toCode) ? 2 : 6) : '');
-        setPreviewRate(res.data.rate || res.data.rate_with_fee);
+        const rate = res.data.rate || res.data.rate_with_fee;
+        if (direction === 'pay') {
+          const amt = res.data.exchange_amount ?? res.data.converted_amount;
+          const next = amt != null ? Number(amt).toFixed(isFiat(toCode) ? 2 : 6) : '';
+          setReceiveAmount((prev) => (prev === next ? prev : next));
+        } else {
+          const est = rate ? parseFloat(receiveAmount) / rate : null;
+          const next = est != null ? Number(est).toFixed(isFiat(fromCode) ? 2 : 6) : '';
+          setPayAmount((prev) => (prev === next ? prev : next));
+        }
+        setPreviewRate((prev) => (prev === rate ? prev : rate));
       } else {
-        setReceiveAmount('');
+        if (direction === 'pay') setReceiveAmount(''); else setPayAmount('');
         setPreviewRate(null);
       }
     } catch {
-      setReceiveAmount('');
+      if (direction === 'pay') setReceiveAmount(''); else setPayAmount('');
       setPreviewRate(null);
     }
     setLoadingRate(false);
@@ -248,12 +277,18 @@ const InstantSwap = () => {
     setPayAmount('');
     setReceiveAmount('');
     setPreviewRate(null);
+    setLastEdited('pay');
     resetSwap();
   };
 
   // ── Quotation lifecycle ─────────────────────────────────────────────────
+  // Quoting by receive-amount uses the provider's native side:'to' support (see
+  // crypto.controller.js createSwapQuotation) — it's a real provider-priced quote, not a
+  // client-side estimate, same precision either direction.
   const handleGetQuote = async () => {
-    if (!payAmount || parseFloat(payAmount) <= 0) { setSwapError('Enter an amount first.'); return; }
+    const byReceive = lastEdited === 'receive';
+    const activeVal = byReceive ? receiveAmount : payAmount;
+    if (!activeVal || parseFloat(activeVal) <= 0) { setSwapError('Enter an amount first.'); return; }
     setSwapPhase('quoting');
     setSwapError(null);
     setQuotation(null);
@@ -261,11 +296,18 @@ const InstantSwap = () => {
     quotationIdRef.current = null;
 
     try {
-      const res = await cryptoService.createSwapQuotation(fromCode, toCode, parseFloat(payAmount));
+      const res = await cryptoService.createSwapQuotation(
+        fromCode, toCode,
+        byReceive ? { to_amount: parseFloat(activeVal) } : { from_amount: parseFloat(activeVal) }
+      );
       if (res.success && res.data?.id) {
         quotationIdRef.current = res.data.id;
         setQuotation(res.data);
-        setReceiveAmount(parseFloat(res.data.to_amount).toFixed(isFiat(toCode) ? 2 : 6));
+        if (byReceive) {
+          setPayAmount(parseFloat(res.data.from_amount).toFixed(isFiat(fromCode) ? 2 : 6));
+        } else {
+          setReceiveAmount(parseFloat(res.data.to_amount).toFixed(isFiat(toCode) ? 2 : 6));
+        }
         setSwapPhase('quoted');
       } else {
         setSwapError(res.error || 'Could not get quote.');
@@ -283,14 +325,20 @@ const InstantSwap = () => {
     refreshInFlightRef.current = true;
     setIsRefreshing(true);
     setSwapPhase('refreshing');
+    const byReceive = lastEdited === 'receive';
     try {
       const res = await cryptoService.refreshSwapQuotation(qid, {
-        from_currency: fromCode, to_currency: toCode, from_amount: parseFloat(payAmount),
+        from_currency: fromCode, to_currency: toCode,
+        ...(byReceive ? { to_amount: parseFloat(receiveAmount) } : { from_amount: parseFloat(payAmount) }),
       });
       if (res.success && res.data?.id) {
         quotationIdRef.current = res.data.id;
         setQuotation(res.data);
-        setReceiveAmount(parseFloat(res.data.to_amount).toFixed(isFiat(toCode) ? 2 : 6));
+        if (byReceive) {
+          setPayAmount(parseFloat(res.data.from_amount).toFixed(isFiat(fromCode) ? 2 : 6));
+        } else {
+          setReceiveAmount(parseFloat(res.data.to_amount).toFixed(isFiat(toCode) ? 2 : 6));
+        }
         setSwapPhase('quoted');
       } else {
         setSwapError(res.error || 'Refresh failed.');
@@ -306,7 +354,7 @@ const InstantSwap = () => {
     }
     setIsRefreshing(false);
     refreshInFlightRef.current = false;
-  }, [fromCode, toCode, payAmount, swapPhase]);
+  }, [fromCode, toCode, payAmount, receiveAmount, lastEdited, swapPhase]);
 
   const handleConfirm = async () => {
     const qid = quotationIdRef.current;
@@ -317,7 +365,10 @@ const InstantSwap = () => {
     const expiresAt = quotation?.expires_at ? new Date(quotation.expires_at).getTime() : 0;
     if (expiresAt && Date.now() >= expiresAt) {
       setIsRefreshing(true);
-      const rr = await cryptoService.refreshSwapQuotation(qid, { from_currency: fromCode, to_currency: toCode, from_amount: parseFloat(payAmount) });
+      const rr = await cryptoService.refreshSwapQuotation(qid, {
+        from_currency: fromCode, to_currency: toCode,
+        ...(lastEdited === 'receive' ? { to_amount: parseFloat(receiveAmount) } : { from_amount: parseFloat(payAmount) }),
+      });
       setIsRefreshing(false);
       if (!rr.success || !rr.data?.id) {
         setSwapError(rr.error || 'Could not refresh.');
@@ -328,6 +379,13 @@ const InstantSwap = () => {
       }
       quotationIdRef.current = rr.data.id;
       setQuotation(rr.data);
+      // Sync whichever field is derived so the balance pre-check on confirm below (and the
+      // review the user just saw) matches the freshly re-priced quote, not the pre-expiry one.
+      if (lastEdited === 'receive') {
+        setPayAmount(parseFloat(rr.data.from_amount).toFixed(isFiat(fromCode) ? 2 : 6));
+      } else {
+        setReceiveAmount(parseFloat(rr.data.to_amount).toFixed(isFiat(toCode) ? 2 : 6));
+      }
     }
 
     setSwapPhase('confirming');
@@ -387,6 +445,7 @@ const InstantSwap = () => {
     setPayAmount('');
     setReceiveAmount('');
     setPreviewRate(null);
+    setLastEdited('pay');
   };
 
   // Token picker
@@ -403,6 +462,7 @@ const InstantSwap = () => {
     resetSwap();
     setPayAmount('');
     setReceiveAmount('');
+    setLastEdited('pay');
   };
 
   const filteredAssets = assets
@@ -523,14 +583,19 @@ const InstantSwap = () => {
                   </span>
                 </div>
                 <div className="flex items-center gap-2 sm:gap-3">
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    value={payAmount}
-                    onChange={e => setPayAmount(e.target.value)}
-                    disabled={isQuoteActive || isWorking}
-                    className="flex-1 min-w-0 bg-transparent text-xl sm:text-2xl font-bold text-gray-900 dark:text-white placeholder-muted-foreground focus:outline-none disabled:opacity-60"
-                  />
+                  <div className="relative flex-1 min-w-0 flex items-center">
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      value={payAmount}
+                      onChange={e => { setPayAmount(e.target.value); setLastEdited('pay'); }}
+                      disabled={isQuoteActive || isWorking}
+                      className={`w-full bg-transparent text-xl sm:text-2xl font-bold text-gray-900 dark:text-white placeholder-muted-foreground focus:outline-none disabled:opacity-60 ${loadingRate && lastEdited === 'receive' ? 'opacity-50' : ''}`}
+                    />
+                    {loadingRate && lastEdited === 'receive' && (
+                      <RefreshCw className="w-4 h-4 text-primary animate-spin absolute right-0 shrink-0" />
+                    )}
+                  </div>
                   <button onClick={() => openPicker('from')}
                     className="flex items-center gap-1.5 sm:gap-2 bg-muted hover:bg-muted dark:hover:bg-muted rounded-xl px-2.5 sm:px-3 py-2 transition-colors shrink-0">
                     <CoinIcon code={fromCode} size={24} />
@@ -542,7 +607,7 @@ const InstantSwap = () => {
                 <div className="flex gap-1.5">
                   {[25, 50, 75, 100].map(pct => (
                     <button key={pct}
-                      onClick={() => setPayAmount((getBalance(fromCode) * pct / 100).toFixed(isFiat(fromCode) ? 2 : 6))}
+                      onClick={() => { setPayAmount((getBalance(fromCode) * pct / 100).toFixed(isFiat(fromCode) ? 2 : 6)); setLastEdited('pay'); }}
                       disabled={isQuoteActive || isWorking}
                       className="flex-1 py-1 rounded-lg text-[10px] font-bold text-muted-foreground bg-background border border-border hover:text-primary hover:border-primary/40 transition-colors disabled:opacity-40">
                       {pct}%
@@ -568,13 +633,17 @@ const InstantSwap = () => {
                   </span>
                 </div>
                 <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="flex-1 min-w-0 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white tabular-nums truncate">
-                    {loadingRate && !receiveAmount ? (
-                      <span className="text-muted-foreground animate-pulse">Calculating...</span>
-                    ) : receiveAmount ? (
-                      receiveAmount
-                    ) : (
-                      <span className="text-[#5e6673]">0.00</span>
+                  <div className="relative flex-1 min-w-0 flex items-center">
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      value={receiveAmount}
+                      onChange={e => { setReceiveAmount(e.target.value); setLastEdited('receive'); }}
+                      disabled={isQuoteActive || isWorking}
+                      className={`w-full bg-transparent text-xl sm:text-2xl font-bold text-gray-900 dark:text-white placeholder-muted-foreground focus:outline-none disabled:opacity-60 tabular-nums ${loadingRate && lastEdited === 'pay' ? 'opacity-50' : ''}`}
+                    />
+                    {loadingRate && lastEdited === 'pay' && (
+                      <RefreshCw className="w-4 h-4 text-primary animate-spin absolute right-0 shrink-0" />
                     )}
                   </div>
                   <button onClick={() => openPicker('to')}
@@ -641,7 +710,7 @@ const InstantSwap = () => {
               <div className="space-y-2">
                 {swapPhase === 'idle' || swapPhase === 'failed' ? (
                   <button onClick={handleGetQuote}
-                    disabled={!payAmount || parseFloat(payAmount) <= 0 || swapPhase === 'quoting'}
+                    disabled={!payAmount || parseFloat(payAmount) <= 0 || !receiveAmount || parseFloat(receiveAmount) <= 0 || swapPhase === 'quoting' || loadingRate}
                     className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                     {swapPhase === 'quoting' && <Loader2 className="w-4 h-4 animate-spin" />}
                     Get Quote

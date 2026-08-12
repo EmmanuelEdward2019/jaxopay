@@ -48,13 +48,16 @@ const CrossBorder = () => {
     const { recentInputs: recentAccounts, addRecentInput: addRecentAccount } = useRecentInputs('cross_border_accounts');
     const { isFeatureEnabled } = useAppStore();
 
-    // Swap State
+    // Swap State. `lastEdited` tracks which of the two amount fields the user is actively typing
+    // into ('pay' | 'receive') — the OTHER field is always the one recomputed from the live rate,
+    // so typing a desired receive amount works the same way as typing a pay amount.
     const [swapData, setSwapData] = useState({
         fromCurrency: 'NGN',
         toCurrency: 'USD',
         amount: '',
         receiveAmount: '',
-        rate: 0
+        rate: 0,
+        lastEdited: 'pay',
     });
 
     // Transfer State
@@ -138,18 +141,22 @@ const CrossBorder = () => {
         return () => { active = false; };
     }, [transferData.recipientCountry]);
 
-    // Debounce FX rate fetching
+    // Debounce FX rate fetching — recomputes whichever field ISN'T the one the user is typing
+    // into (swapData.lastEdited), so entering an amount in either "You Send" or "You Receive"
+    // works the same way.
     useEffect(() => {
+        const editingReceive = swapData.lastEdited === 'receive';
+        const activeVal = editingReceive ? swapData.receiveAmount : swapData.amount;
         const timer = setTimeout(() => {
-            if (swapData.amount && parseFloat(swapData.amount) > 0) {
-                fetchRate(swapData.fromCurrency, swapData.toCurrency, swapData.amount);
+            if (activeVal && parseFloat(activeVal) > 0) {
+                fetchRate(swapData.fromCurrency, swapData.toCurrency, activeVal, editingReceive ? 'receive' : 'pay');
             } else {
-                setSwapData(prev => ({ ...prev, receiveAmount: '', rate: 0 }));
+                setSwapData(prev => ({ ...prev, [editingReceive ? 'amount' : 'receiveAmount']: '', rate: 0 }));
                 setQuoteExpiry(0);
             }
         }, 150); // Reduced from 300ms for faster updates
         return () => clearTimeout(timer);
-    }, [swapData.amount, swapData.fromCurrency, swapData.toCurrency]);
+    }, [swapData.amount, swapData.receiveAmount, swapData.fromCurrency, swapData.toCurrency, swapData.lastEdited]);
 
     const fetchWallets = async () => {
         const res = await walletService.getWallets();
@@ -274,17 +281,28 @@ const CrossBorder = () => {
         }
     };
 
-    const fetchRate = async (from, to, amount) => {
+    // direction: 'pay' → `amount` is what the user typed, compute receiveAmount = amount * rate.
+    //            'receive' → `amount` here is actually the desired receive amount typed by the
+    //            user, compute the required pay-side amount = receiveAmount / rate. Either way,
+    //            swapData.amount ends up holding the correct value that gets submitted to the
+    //            backend (POST /fx/swap only takes a pay-side amount).
+    const fetchRate = async (from, to, amount, direction = 'pay') => {
         if (!amount || amount <= 0) return;
         setLoading(true);
         try {
             const res = await fxService.getRates(from, to);
             if (res.success) {
-                setSwapData(prev => ({
-                    ...prev,
-                    rate: res.data.rate,
-                    receiveAmount: amount * res.data.rate
-                }));
+                const rate = res.data.rate;
+                const derivedField = direction === 'pay' ? 'receiveAmount' : 'amount';
+                const derivedValue = direction === 'pay' ? amount * rate : amount / rate;
+                setSwapData(prev => {
+                    const currentDerived = parseFloat(prev[derivedField] || 0);
+                    // Bail out (return the same object) if nothing actually changed — otherwise
+                    // setting the derived field re-triggers the debounce effect (it depends on
+                    // both amount and receiveAmount), which would refetch redundantly forever.
+                    if (Math.abs(currentDerived - derivedValue) < 0.0001 && prev.rate === rate) return prev;
+                    return { ...prev, rate, [derivedField]: derivedValue };
+                });
                 setQuoteExpiry(30);
             }
         } catch (e) {
@@ -396,17 +414,23 @@ const CrossBorder = () => {
                                             <div className="md:col-span-11 p-4 bg-muted/50 rounded-2xl border border-border">
                                                 <label className="text-xs font-bold text-muted-foreground uppercase mb-2 block">You Send</label>
                                                 <div className="flex items-center gap-4">
-                                                    <input
-                                                        type="number"
-                                                        value={swapData.amount}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value;
-                                                            setSwapData(prev => ({ ...prev, amount: val }));
-                                                            // Removed direct fetchRate call to use debounced useEffect
-                                                        }}
-                                                        placeholder="0.00"
-                                                        className="w-full bg-transparent text-3xl font-bold outline-none border-none focus:ring-0"
-                                                    />
+                                                    <div className="relative w-full">
+                                                        <input
+                                                            type="number"
+                                                            value={swapData.lastEdited === 'receive'
+                                                                ? (swapData.amount ? Number(swapData.amount).toFixed(4) : '')
+                                                                : swapData.amount}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setSwapData(prev => ({ ...prev, amount: val, lastEdited: 'pay' }));
+                                                            }}
+                                                            placeholder="0.00"
+                                                            className={`w-full bg-transparent text-3xl font-bold outline-none border-none focus:ring-0 ${loading && swapData.lastEdited === 'receive' ? 'opacity-50' : ''}`}
+                                                        />
+                                                        {loading && swapData.lastEdited === 'receive' && (
+                                                            <RefreshCw className="w-4 h-4 text-primary animate-spin absolute right-0 top-1/2 -translate-y-1/2" />
+                                                        )}
+                                                    </div>
                                                     <select
                                                         value={swapData.fromCurrency}
                                                         onChange={(e) => setSwapData(prev => ({ ...prev, fromCurrency: e.target.value }))}
@@ -424,7 +448,8 @@ const CrossBorder = () => {
                                                         fromCurrency: prev.toCurrency,
                                                         toCurrency: prev.fromCurrency,
                                                         amount: prev.receiveAmount,
-                                                        receiveAmount: prev.amount
+                                                        receiveAmount: prev.amount,
+                                                        lastEdited: 'pay',
                                                     }))}
                                                     className="w-12 h-12 bg-card border border-border rounded-2xl shadow-lg flex items-center justify-center text-primary hover:rotate-180 transition-transform duration-500"
                                                 >
@@ -437,13 +462,18 @@ const CrossBorder = () => {
                                                 <div className="flex items-center gap-4">
                                                     <div className="relative w-full">
                                                         <input
-                                                            type="text"
+                                                            type="number"
                                                             placeholder="0.00"
-                                                            value={loading ? '...' : (swapData.receiveAmount ? Number(swapData.receiveAmount).toFixed(4) : '0.00')}
-                                                            readOnly
-                                                            className={`bg-transparent text-3xl font-bold text-foreground focus:outline-none w-full ${loading ? 'opacity-50' : ''}`}
+                                                            value={swapData.lastEdited === 'pay'
+                                                                ? (swapData.receiveAmount ? Number(swapData.receiveAmount).toFixed(4) : '')
+                                                                : swapData.receiveAmount}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setSwapData(prev => ({ ...prev, receiveAmount: val, lastEdited: 'receive' }));
+                                                            }}
+                                                            className={`bg-transparent text-3xl font-bold text-foreground focus:outline-none w-full ${loading && swapData.lastEdited === 'pay' ? 'opacity-50' : ''}`}
                                                         />
-                                                        {loading && (
+                                                        {loading && swapData.lastEdited === 'pay' && (
                                                             <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
                                                                 <RefreshCw className="w-5 h-5 text-primary animate-spin" />
                                                                 <span className="text-xs text-primary font-medium hidden sm:inline">Updating...</span>
@@ -492,7 +522,7 @@ const CrossBorder = () => {
 
                                         <button
                                             onClick={() => setStep(2)}
-                                            disabled={!swapData.amount || swapData.amount <= 0 || swapData.fromCurrency === swapData.toCurrency}
+                                            disabled={loading || !swapData.amount || swapData.amount <= 0 || !swapData.receiveAmount || swapData.fromCurrency === swapData.toCurrency}
                                             className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50"
                                         >
                                             Review Swap

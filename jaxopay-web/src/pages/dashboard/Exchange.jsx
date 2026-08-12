@@ -423,7 +423,7 @@ const Exchange = () => {
             const result = await cryptoService.createSwapQuotation(
                 fromAsset.code,
                 toAsset.code,
-                parseFloat(payAmount)
+                { from_amount: parseFloat(payAmount) }
             );
             if (result.success && result.data?.id) {
                 const q = result.data;
