@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
     DollarSign,
@@ -18,7 +19,10 @@ import { useAuthStore } from '../../store/authStore';
 import { formatCurrency } from '../../utils/formatters';
 
 const SystemManagement = () => {
-    const [activeTab, setActiveTab] = useState('general'); // 'general', 'rates_fees'
+    const [searchParams] = useSearchParams();
+    // Allows deep-linking straight into the Rates & Fees tab (e.g. from the sidebar) instead of
+    // always landing on 'general' and requiring an extra click to find fee configuration.
+    const [activeTab, setActiveTab] = useState(searchParams.get('tab') === 'rates_fees' ? 'rates_fees' : 'general');
     const [exchangeRates, setExchangeRates] = useState([]);
     const [feeConfigs, setFeeConfigs] = useState([]);
     const [isGlobalShutdown, setIsGlobalShutdown] = useState(false);

@@ -35,7 +35,7 @@ export function tierCapFor(kycTier, currency) {
 const rateCache = new Map(); // currency -> { rate, at }
 const RATE_TTL_MS = 10 * 60 * 1000;
 
-async function usdRate(currency) {
+export async function usdRate(currency) {
   const cur = String(currency || 'USD').toUpperCase();
   if (['USD', 'USDT', 'USDC'].includes(cur)) return 1;
   const hit = rateCache.get(cur);

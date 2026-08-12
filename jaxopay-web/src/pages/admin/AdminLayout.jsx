@@ -20,7 +20,9 @@ import {
     LifeBuoy,
     Megaphone,
     Landmark,
-    Coins
+    Coins,
+    Mail,
+    Percent
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import NotificationDropdown from '../../components/notifications/NotificationDropdown';
@@ -38,10 +40,12 @@ const navItems = [
     { path: '/admin/cards', icon: CreditCard, label: 'Cards', roles: ['admin', 'super_admin'] },
     { path: '/admin/crypto', icon: TrendingUp, label: 'Crypto Assets', roles: ['admin', 'super_admin'] },
     { path: '/admin/features', icon: Settings, label: 'Platform Features', roles: ['super_admin'] },
+    { path: '/admin/system?tab=rates_fees', icon: Percent, label: 'Rates & Fees', roles: ['admin', 'super_admin'] },
     { path: '/admin/system', icon: ShieldAlert, label: 'System Configurations', roles: ['admin', 'super_admin'] },
     { path: '/admin/audit', icon: Activity, label: 'Audit Logs', roles: ['super_admin', 'compliance_officer'] },
     { path: '/admin/announcements', icon: Megaphone, label: 'Announcements', roles: ['admin', 'super_admin', 'compliance_officer'] },
     { path: '/admin/support', icon: LifeBuoy, label: 'Support Tickets', roles: ['admin', 'super_admin', 'compliance_officer'] },
+    { path: '/admin/public-forms', icon: Mail, label: 'Contact Messages', roles: ['admin', 'super_admin'] },
 ];
 
 const AdminLayout = () => {

@@ -25,6 +25,9 @@ import {
   processRefund,
   getComplianceStats,
   getAllWallets,
+  updateWalletStatus,
+  getPublicFormSubmissions,
+  updatePublicFormSubmission,
   getAllCards,
   getAllTransactions,
   sendAdminBulkSMS,
@@ -55,6 +58,7 @@ const router = express.Router();
 const STAFF_ROLES = ['admin', 'super_admin', 'compliance_officer', 'finance', 'support'];
 const COMPLIANCE_ACCESS = ['admin', 'super_admin', 'compliance_officer'];
 const FINANCE_ACCESS = ['admin', 'super_admin', 'finance'];
+const SUPPORT_ACCESS = ['admin', 'super_admin', 'support'];
 
 // All admin routes require authentication
 router.use(verifyToken);
@@ -219,12 +223,32 @@ router.get('/compliance/stats', restrictTo(...COMPLIANCE_ACCESS), getComplianceS
 
 // Wallet & Card Management
 router.get('/wallets', restrictTo(...FINANCE_ACCESS), getAllWallets);
+router.patch(
+  '/wallets/:walletId',
+  restrictTo(...FINANCE_ACCESS),
+  param('walletId').isUUID(),
+  body('status').isBoolean(),
+  validate,
+  updateWalletStatus
+);
 router.get('/cards', getAllCards);
 router.patch('/cards/:cardId/status', restrictTo('admin', 'super_admin'), updateCardStatus);
 router.get('/transactions', restrictTo(...FINANCE_ACCESS), getAllTransactions);
 
 // Admin SMS
 router.post('/sms/bulk', restrictTo('admin', 'super_admin'), sendAdminBulkSMS);
+
+// Public form submissions (Contact page, etc.) — support handles these day-to-day
+router.get('/public-forms', restrictTo(...SUPPORT_ACCESS), getPublicFormSubmissions);
+router.patch(
+  '/public-forms/:id',
+  restrictTo(...SUPPORT_ACCESS),
+  param('id').isUUID(),
+  body('status').optional().isIn(['new', 'read', 'responded', 'archived']),
+  body('admin_note').optional({ checkFalsy: true }).isString().isLength({ max: 2000 }),
+  validate,
+  updatePublicFormSubmission
+);
 
 // Account deletion requests — super_admin approval only
 router.get('/account-deletion-requests', restrictTo('super_admin'), getAccountDeletionRequests);

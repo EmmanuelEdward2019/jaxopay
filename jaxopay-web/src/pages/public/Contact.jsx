@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Mail, MapPin, Clock, Send } from 'lucide-react';
 import { FaWhatsapp } from 'react-icons/fa';
 import PublicLayout from '../../components/layout/PublicLayout';
+import apiClient from '../../lib/apiClient';
 
 const WHATSAPP_LINK = 'https://wa.me/2348138318705';
 
@@ -13,12 +14,23 @@ export default function Contact() {
     message: '',
   });
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: Implement actual form submission
-    setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 3000);
+    setSubmitting(true);
+    setError('');
+    try {
+      await apiClient.post('/public-forms', { form_type: 'contact', ...formData });
+      setSubmitted(true);
+      setFormData({ name: '', email: '', subject: '', message: '' });
+      setTimeout(() => setSubmitted(false), 5000);
+    } catch (err) {
+      setError(err.message || 'Something went wrong sending your message. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleChange = (e) => {
@@ -75,6 +87,12 @@ export default function Contact() {
                   <p className="text-accent-800 dark:text-accent-200">
                     Thank you! Your message has been sent successfully. We'll get back to you soon.
                   </p>
+                </div>
+              )}
+
+              {error && (
+                <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <p className="text-red-800 dark:text-red-200">{error}</p>
                 </div>
               )}
 
@@ -145,10 +163,11 @@ export default function Contact() {
 
                 <button
                   type="submit"
-                  className="w-full px-6 py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                  disabled={submitting}
+                  className="w-full px-6 py-3 bg-accent-600 hover:bg-accent-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   <Send className="w-5 h-5" />
-                  Send Message
+                  {submitting ? 'Sending...' : 'Send Message'}
                 </button>
               </form>
             </div>

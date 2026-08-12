@@ -11,6 +11,7 @@ import { enforceTierLimit } from '../services/kycLimits.service.js';
 import { sendWithdrawalEmails } from '../services/email.service.js';
 import { assertWithdrawalsAllowed } from '../services/financialControls.service.js';
 import { notifyWithdrawal } from '../services/notification.service.js';
+import { getFeeConfig, computeFee } from '../services/feeConfig.service.js';
 
 async function notifyPayout(userId, payload) {
     try {
@@ -178,6 +179,13 @@ export const sendTransfer = catchAsync(async (req, res) => {
         );
     }
 
+    // Platform withdrawal fee — debited from the wallet as part of amountValue (so the balance
+    // check above already covers it), but only netAmount is actually sent to the payout
+    // provider; the difference is the platform's fee. 0% until an admin sets a real value.
+    const withdrawalFeeCfg = await getFeeConfig('fiat_withdrawal', transferCurrency);
+    const platformFee = computeFee(withdrawalFeeCfg, amountValue);
+    const netAmount = amountValue - platformFee;
+
     const reference = `TXF-${req.user.id.slice(0, 8)}-${Date.now()}`;
 
     // 1. Verify wallet belongs to user, reserve funds, and create a pending transaction atomically.
@@ -222,12 +230,12 @@ export const sendTransfer = catchAsync(async (req, res) => {
             `INSERT INTO transactions
                (user_id, from_wallet_id, transaction_type, from_amount, from_currency, net_amount, fee_amount,
                 status, description, reference, metadata)
-             VALUES ($1, $2, 'bank_transfer', $3, $4, $3, 0, 'pending', $5, $6, $7)`,
+             VALUES ($1, $2, 'bank_transfer', $3, $4, $5, $6, 'pending', $7, $8, $9)`,
             [
-                req.user.id, wallet_id, amountValue, transferCurrency,
+                req.user.id, wallet_id, amountValue, transferCurrency, netAmount, platformFee,
                 narration || `Transfer to ${account_name}`,
                 reference,
-                JSON.stringify({ bank_code, account_number, account_name, bank_name, currency: transferCurrency }),
+                JSON.stringify({ bank_code, account_number, account_name, bank_name, currency: transferCurrency, platform_fee: platformFee }),
             ]
         );
     });
@@ -250,11 +258,11 @@ export const sendTransfer = catchAsync(async (req, res) => {
                 throw new AppError('Could not identify the selected bank. Please try again.', 422);
             }
 
-            logger.info(`[Transfer] Initiating Obiex NGN payout: ${reference} → ${account_name} (${resolvedBankName}/${account_number}) ${amountValue}`);
+            logger.info(`[Transfer] Initiating Obiex NGN payout: ${reference} → ${account_name} (${resolvedBankName}/${account_number}) ${netAmount} (debited ${amountValue}, fee ${platformFee})`);
 
             const transferData = await obiex.withdrawFiat({
                 currency: transferCurrency,
-                amount: amountValue,
+                amount: netAmount,
                 accountNumber: account_number,
                 accountName: account_name,
                 bankName: resolvedBankName,
@@ -273,11 +281,11 @@ export const sendTransfer = catchAsync(async (req, res) => {
 
             logger.info(`[Transfer] Obiex response for ${reference}: status=${transferStatus}`);
         } else {
-            logger.info(`[Transfer] Initiating Korapay payout: ${reference} → ${account_name} (${bank_code}/${account_number}) ${transferCurrency} ${amountValue}`);
+            logger.info(`[Transfer] Initiating Korapay payout: ${reference} → ${account_name} (${bank_code}/${account_number}) ${transferCurrency} ${netAmount} (debited ${amountValue}, fee ${platformFee})`);
 
             const transferData = await korapay.disburse({
                 reference,
-                amount: amountValue,
+                amount: netAmount,
                 currency: transferCurrency,
                 bankCode: bank_code,
                 accountNumber: account_number,
@@ -340,6 +348,8 @@ export const sendTransfer = catchAsync(async (req, res) => {
                 reference,
                 status: isComplete ? 'completed' : 'processing',
                 amount: amountValue,
+                fee: platformFee,
+                net_amount: netAmount,
                 currency: transferCurrency,
                 recipient: { account_name, account_number, bank_name, bank_code },
                 provider_reference: providerReference,

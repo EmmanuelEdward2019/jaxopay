@@ -15,6 +15,7 @@ import GlydeAdapter from '../orchestration/adapters/fiat/GlydeAdapter.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
 import { reconcileGlydeVBA } from './webhook.controller.js';
 import { assertDepositsAllowed, getCustomDepositLimitNgn } from '../services/financialControls.service.js';
+import { getFeeConfig, computeFee } from '../services/feeConfig.service.js';
 
 const buildApiV1Url = (path) => {
   const rawBaseUrl = (process.env.API_BASE_URL || 'http://localhost:3001').trim();
@@ -355,16 +356,23 @@ export const verifyDeposit = catchAsync(async (req, res) => {
         const currentTx = await client.query('SELECT status FROM transactions WHERE reference = $1 FOR UPDATE', [reference]);
         if (currentTx.rows[0]?.status === 'completed') return;
 
-        const kAmount = response.data?.data?.amount || tx.from_amount;
+        const grossAmount = response.data?.data?.amount || tx.from_amount;
         const kCurrency = response.data?.data?.currency || tx.to_currency;
+
+        // Same platform deposit fee as the webhook path (applyKorapayDeposit/applyGlydeDeposit)
+        // — this polling fallback must charge the same fee, not just whatever the webhook race
+        // happens to land first.
+        const depositFeeCfg = await getFeeConfig('fiat_deposit', kCurrency);
+        const platformFee = computeFee(depositFeeCfg, grossAmount);
+        const kAmount = Math.max(0, grossAmount - platformFee);
 
         await client.query(
           `UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
           [kAmount, tx.to_wallet_id]
         );
         await client.query(
-          `UPDATE transactions SET status = 'completed', to_amount = $1, completed_at = NOW() WHERE reference = $2`,
-          [kAmount, reference]
+          `UPDATE transactions SET status = 'completed', to_amount = $1, fee_amount = $3, completed_at = NOW() WHERE reference = $2`,
+          [kAmount, reference, platformFee]
         );
         credited = { amount: kAmount, currency: kCurrency };
         logger.info(`[Wallet] ✅ Wallet ${tx.to_wallet_id} credited ${kAmount} ${kCurrency} — ref ${reference}`);

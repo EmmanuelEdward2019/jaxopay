@@ -11,6 +11,7 @@ import { creditUserWalletByObiex, updateObiexWithdrawal } from '../services/obie
 import { sendTransactionEmails, sendWithdrawalEmails } from '../services/email.service.js';
 import GlydeAdapter from '../orchestration/adapters/fiat/GlydeAdapter.js';
 import { notifyDeposit, notifyWithdrawal } from '../services/notification.service.js';
+import { getFeeConfig, computeFee } from '../services/feeConfig.service.js';
 
 /**
  * Unified webhook handler for all providers
@@ -339,7 +340,12 @@ async function processKorapay(payload) {
 
         if (pendingTx.rows.length > 0) {
             const tx = pendingTx.rows[0];
-            const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
+            const providerNet = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
+            // Platform deposit fee (separate from Korapay's own processing fee above) — 0% until
+            // an admin sets a real value in Rates & Fees.
+            const depositFeeCfg = await getFeeConfig('fiat_deposit', currency);
+            const platformFee = computeFee(depositFeeCfg, providerNet);
+            const netAmount = Math.max(0, providerNet - platformFee);
             await transaction(async (client) => {
                 await client.query(
                     `UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
@@ -422,16 +428,18 @@ async function processKorapay(payload) {
 
 async function applyKorapayDeposit(userId, walletId, amount, currency, fee, reference) {
     try {
+        const providerNet = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
+        const depositFeeCfg = await getFeeConfig('fiat_deposit', currency);
+        const platformFee = computeFee(depositFeeCfg, providerNet);
+        const netAmount = Math.max(0, providerNet - platformFee);
         await transaction(async (client) => {
             // Log transaction
-            const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
-            
             await client.query(
                 `INSERT INTO transactions
                  (user_id, to_wallet_id, transaction_type, from_amount, to_amount,
                   from_currency, to_currency, net_amount, fee_amount, status, description, reference)
                  VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $5, $6, 'completed', 'Bank Transfer Deposit', $7)`,
-                [userId, walletId, amount, currency, netAmount, fee || 0, reference]
+                [userId, walletId, amount, currency, netAmount, (parseFloat(fee) || 0) + platformFee, reference]
             );
 
             // Credit wallet
@@ -655,7 +663,10 @@ export async function sweepPendingGlydeDeposits(limit = 100) {
 
 export async function applyGlydeDeposit(userId, walletId, amount, currency, fee, reference) {
     try {
-        const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
+        const providerNet = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
+        const depositFeeCfg = await getFeeConfig('fiat_deposit', currency);
+        const platformFee = computeFee(depositFeeCfg, providerNet);
+        const netAmount = Math.max(0, providerNet - platformFee);
 
         await transaction(async (client) => {
             await client.query(
@@ -663,7 +674,7 @@ export async function applyGlydeDeposit(userId, walletId, amount, currency, fee,
                  (user_id, to_wallet_id, transaction_type, from_amount, to_amount,
                   from_currency, to_currency, net_amount, fee_amount, status, description, reference)
                  VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $5, $6, 'completed', 'Bank Transfer Deposit', $7)`,
-                [userId, walletId, amount, currency, netAmount, fee || 0, reference]
+                [userId, walletId, amount, currency, netAmount, (parseFloat(fee) || 0) + platformFee, reference]
             );
 
             await client.query(

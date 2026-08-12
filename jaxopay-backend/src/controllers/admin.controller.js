@@ -13,6 +13,7 @@ import currencyEngine from '../services/CurrencyEngineService.js';
 import { auditFromReq } from '../services/audit.service.js';
 import { performAccountDeletion } from './user.controller.js';
 import { getUserFinancialControls, upsertUserFinancialControls } from '../services/financialControls.service.js';
+import { usdRate } from '../services/kycLimits.service.js';
 
 // Highest-privilege-first — used to pick the legacy single `role` column value from a
 // multi-role assignment, so old single-role checks (req.user.role === 'super_admin', etc.)
@@ -123,9 +124,11 @@ export const getUsers = catchAsync(async (req, res) => {
     conditions += ` AND u.kyc_tier = $${params.length}::kyc_tier`;
   }
 
-  if (status) {
+  if (status === 'deleted') {
+    conditions += ` AND u.deleted_at IS NOT NULL`;
+  } else if (status) {
     params.push(status === 'active');
-    conditions += ` AND u.is_active = $${params.length}`;
+    conditions += ` AND u.is_active = $${params.length} AND u.deleted_at IS NULL`;
   }
 
   if (role) {
@@ -135,7 +138,7 @@ export const getUsers = catchAsync(async (req, res) => {
 
   const result = await query(
     `SELECT u.id, u.email, u.phone, u.role, u.roles, u.kyc_tier, u.is_active,
-            u.is_email_verified, u.two_fa_enabled, u.created_at,
+            u.is_email_verified, u.two_fa_enabled, u.created_at, u.deleted_at,
             up.first_name, up.last_name, up.country, up.avatar_url
      FROM users u
      LEFT JOIN user_profiles up ON u.id = up.user_id
@@ -157,7 +160,7 @@ export const getUsers = catchAsync(async (req, res) => {
     data: {
       users: result.rows.map(u => ({
         ...u,
-        status: u.is_active ? 'active' : 'suspended'
+        status: u.deleted_at ? 'deleted' : (u.is_active ? 'active' : 'suspended')
       })),
       pagination: {
         page: parseInt(page),
@@ -310,9 +313,9 @@ export const getUser = catchAsync(async (req, res) => {
 
   const result = await query(
     `SELECT u.id, u.email, u.phone, u.role, u.roles, u.kyc_tier, u.is_active,
-            u.is_email_verified, u.two_fa_enabled, u.created_at, u.updated_at,
+            u.is_email_verified, u.two_fa_enabled, u.created_at, u.updated_at, u.deleted_at,
             up.first_name, up.last_name, up.date_of_birth, up.gender,
-            up.country, up.city, up.address, up.postal_code, up.avatar_url
+            up.country, up.city, up.address_line1, up.address_line2, up.postal_code, up.avatar_url
      FROM users u
      LEFT JOIN user_profiles up ON u.id = up.user_id
      WHERE u.id = $1`,
@@ -325,7 +328,7 @@ export const getUser = catchAsync(async (req, res) => {
 
   // Get user wallets
   const wallets = await query(
-    `SELECT id, currency, wallet_type, balance, status
+    `SELECT id, currency, wallet_type, balance, is_active
      FROM wallets
      WHERE user_id = $1`,
     [userId]
@@ -342,7 +345,7 @@ export const getUser = catchAsync(async (req, res) => {
 
   const user = {
     ...result.rows[0],
-    status: result.rows[0].is_active ? 'active' : 'suspended'
+    status: result.rows[0].deleted_at ? 'deleted' : (result.rows[0].is_active ? 'active' : 'suspended')
   };
 
   res.status(200).json({
@@ -1162,57 +1165,124 @@ export const getComplianceStats = catchAsync(async (req, res) => {
 });
 
 // Get all wallets (admin only)
+// Returns one row per user — total balance (converted to USD) summed across every wallet they
+// hold, fiat and crypto together, with the individual per-currency wallets nested underneath
+// for the expand-to-view breakdown. exchange_rates (the admin-managed FX table) has no seeded
+// rows, so USD conversion is done from live rates (the same source kycLimits uses for tier-limit
+// checks) rather than that table — the CASE expression below lets Postgres do the per-user
+// SUM/ORDER/LIMIT so sorting by total balance works across all users, not just the current page.
 export const getAllWallets = catchAsync(async (req, res) => {
-  const { page = 1, limit = 20, currency, wallet_type, status, user_id } = req.query;
-  const offset = (page - 1) * limit;
+  const { page = 1, limit = 20, search, currency, wallet_type, status } = req.query;
 
-  let conditions = 'WHERE 1=1';
-  const params = [];
+  // Aggregation/filter/sort/pagination all happen in JS below rather than in SQL — this is an
+  // admin tool over a small table (tens to low hundreds of wallets), so there's no performance
+  // reason to push this into the database, and it avoids building a request-shaped dynamic SQL
+  // CASE expression (one WHEN per distinct currency) whose parameter count scales with how many
+  // currencies exist on the platform.
+  const walletsResult = await query(
+    `SELECT w.id, w.user_id, w.currency, w.wallet_type, w.balance, w.available_balance, w.locked_balance,
+            w.is_active, w.created_at, w.updated_at,
+            u.email AS user_email,
+            COALESCE(NULLIF(TRIM(COALESCE(up.first_name,'') || ' ' || COALESCE(up.last_name,'')), ''), u.email) AS user_name
+     FROM wallets w
+     JOIN users u ON w.user_id = u.id
+     LEFT JOIN user_profiles up ON up.user_id = u.id
+     ORDER BY (w.wallet_type = 'fiat') DESC, w.currency`
+  );
 
+  const currencies = [...new Set(walletsResult.rows.map((w) => w.currency))];
+  const rateEntries = await Promise.all(currencies.map(async (c) => [c, (await usdRate(c)) || 0]));
+  const rateMap = Object.fromEntries(rateEntries);
+
+  const byUser = new Map();
+  for (const w of walletsResult.rows) {
+    if (!byUser.has(w.user_id)) {
+      byUser.set(w.user_id, { user_id: w.user_id, user_email: w.user_email, user_name: w.user_name, wallets: [] });
+    }
+    byUser.get(w.user_id).wallets.push({
+      id: w.id,
+      currency: w.currency,
+      wallet_type: w.wallet_type,
+      balance: w.balance,
+      available_balance: w.available_balance,
+      locked_balance: w.locked_balance,
+      is_active: w.is_active,
+      created_at: w.created_at,
+      updated_at: w.updated_at,
+      usd_value: Number(w.balance || 0) * (rateMap[w.currency] || 0),
+    });
+  }
+
+  let users = Array.from(byUser.values()).map((u) => ({
+    ...u,
+    wallet_count: u.wallets.length,
+    total_usd_value: u.wallets.reduce((sum, w) => sum + w.usd_value, 0),
+  }));
+
+  if (search) {
+    const q = search.toLowerCase();
+    users = users.filter(
+      (u) => u.user_email.toLowerCase().includes(q) || u.user_name.toLowerCase().includes(q) || u.user_id === search
+    );
+  }
   if (currency) {
-    params.push(currency.toUpperCase());
-    conditions += ` AND currency = $${params.length}`;
+    const cur = currency.toUpperCase();
+    users = users.filter((u) => u.wallets.some((w) => w.currency === cur));
   }
   if (wallet_type) {
-    params.push(wallet_type);
-    conditions += ` AND wallet_type = $${params.length}`;
+    users = users.filter((u) => u.wallets.some((w) => w.wallet_type === wallet_type));
   }
   if (status) {
-    params.push(status === 'active');
-    conditions += ` AND is_active = $${params.length}`;
-  }
-  if (user_id) {
-    params.push(user_id);
-    conditions += ` AND user_id = $${params.length}`;
+    const active = status === 'active';
+    users = users.filter((u) => u.wallets.some((w) => w.is_active === active));
   }
 
-  const result = await query(
-    `SELECT w.*, u.email as user_email 
-     FROM wallets w 
-     JOIN users u ON w.user_id = u.id 
-     ${conditions} 
-     ORDER BY w.created_at DESC 
-     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-    [...params, limit, offset]
-  );
+  users.sort((a, b) => b.total_usd_value - a.total_usd_value);
 
-  const countResult = await query(
-    `SELECT COUNT(*) as total FROM wallets w ${conditions}`,
-    params
-  );
+  const total = users.length;
+  const offset = (page - 1) * limit;
+  const pageUsers = users.slice(offset, offset + Number(limit));
 
   res.status(200).json({
     success: true,
     data: {
-      wallets: result.rows,
+      users: pageUsers,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
-        total: parseInt(countResult.rows[0].total),
-        pages: Math.ceil(countResult.rows[0].total / limit)
-      }
-    }
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    },
   });
+});
+
+// Freeze/unfreeze a single wallet — this is the backend counterpart the frontend's
+// Freeze/Unfreeze button has always called (PATCH /admin/wallets/:walletId); the route/handler
+// never existed, so the button silently 404'd. Adding it here alongside the wallets-page rework.
+export const updateWalletStatus = catchAsync(async (req, res) => {
+  const { walletId } = req.params;
+  const { status } = req.body;
+
+  const result = await query(
+    'UPDATE wallets SET is_active = $1, updated_at = NOW() WHERE id = $2 RETURNING id, user_id, currency, is_active',
+    [!!status, walletId]
+  );
+
+  if (result.rows.length === 0) {
+    throw new AppError('Wallet not found', 404);
+  }
+
+  await logAdminAction({
+    adminId: req.user.id,
+    action: status ? 'unfreeze_wallet' : 'freeze_wallet',
+    targetId: walletId,
+    targetType: 'wallet',
+    changes: { is_active: !!status },
+    req,
+  });
+
+  res.status(200).json({ success: true, data: result.rows[0] });
 });
 
 // Get all transactions across the system (admin only)
@@ -1259,7 +1329,16 @@ export const getAllTransactions = catchAsync(async (req, res) => {
 
   let conditions = 'WHERE 1=1';
   const params = [];
-  if (type) { params.push(type); conditions += ` AND c.transaction_type = $${params.length}`; }
+  if (type === 'crypto') {
+    // No source table ever writes a literal transaction_type of 'crypto' — crypto activity
+    // shows up as deposit/withdrawal/exchange_in/exchange_out/exchange etc, same as fiat.
+    // What actually distinguishes it is the currency, so filter on that instead (matching the
+    // same wallet_type='crypto' classification the Wallets page uses).
+    conditions += ` AND c.currency IN (SELECT DISTINCT currency::varchar FROM wallets WHERE wallet_type = 'crypto')`;
+  } else if (type) {
+    params.push(type);
+    conditions += ` AND c.transaction_type = $${params.length}`;
+  }
   if (status) { params.push(status); conditions += ` AND c.status = $${params.length}`; }
   if (user_id) { params.push(user_id); conditions += ` AND c.user_id = $${params.length}`; }
 
@@ -1293,6 +1372,85 @@ export const getAllTransactions = catchAsync(async (req, res) => {
       }
     }
   });
+});
+
+// Public form submissions (Contact page, etc.) — admin & support view.
+export const getPublicFormSubmissions = catchAsync(async (req, res) => {
+  const { page = 1, limit = 20, status, form_type } = req.query;
+  const offset = (page - 1) * limit;
+
+  let conditions = 'WHERE 1=1';
+  const params = [];
+  if (status) {
+    params.push(status);
+    conditions += ` AND status = $${params.length}`;
+  }
+  if (form_type) {
+    params.push(form_type);
+    conditions += ` AND form_type = $${params.length}`;
+  }
+
+  const result = await query(
+    `SELECT * FROM public_form_submissions
+     ${conditions}
+     ORDER BY created_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset]
+  );
+
+  const countResult = await query(
+    `SELECT COUNT(*) as total FROM public_form_submissions ${conditions}`,
+    params
+  );
+  const newCountResult = await query(
+    `SELECT COUNT(*) as new_count FROM public_form_submissions WHERE status = 'new'`
+  );
+
+  res.status(200).json({
+    success: true,
+    data: {
+      submissions: result.rows,
+      new_count: parseInt(newCountResult.rows[0].new_count, 10),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: parseInt(countResult.rows[0].total),
+        pages: Math.ceil(countResult.rows[0].total / limit),
+      },
+    },
+  });
+});
+
+export const updatePublicFormSubmission = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { status, admin_note } = req.body;
+
+  const fields = [];
+  const params = [];
+  if (status) {
+    params.push(status);
+    fields.push(`status = $${params.length}`);
+  }
+  if (admin_note !== undefined) {
+    params.push(admin_note);
+    fields.push(`admin_note = $${params.length}`);
+  }
+  if (fields.length === 0) {
+    throw new AppError('Nothing to update', 400);
+  }
+  fields.push('updated_at = NOW()');
+  params.push(id);
+
+  const result = await query(
+    `UPDATE public_form_submissions SET ${fields.join(', ')} WHERE id = $${params.length} RETURNING *`,
+    params
+  );
+
+  if (result.rows.length === 0) {
+    throw new AppError('Submission not found', 404);
+  }
+
+  res.status(200).json({ success: true, data: result.rows[0] });
 });
 
 // Get all virtual cards (admin only)

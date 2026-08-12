@@ -283,6 +283,25 @@ const adminService = {
         }
     },
 
+    // Public form submissions (Contact page, etc.)
+    getPublicFormSubmissions: async (params = {}) => {
+        try {
+            const response = await apiClient.get('/admin/public-forms', { params });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
+    updatePublicFormSubmission: async (id, updates) => {
+        try {
+            const response = await apiClient.patch(`/admin/public-forms/${id}`, updates);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
     // Global Card Management
     getAllCards: async (params = {}) => {
         try {

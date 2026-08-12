@@ -34,6 +34,7 @@ const STATUS_COLORS = {
     active: 'bg-primary-100 text-primary-700',
     suspended: 'bg-red-100 text-red-700',
     inactive: 'bg-gray-100 text-gray-700',
+    deleted: 'bg-gray-200 text-gray-500',
 };
 
 // Shared pill switch — hoisted to module scope so it isn't recreated (and doesn't lose click
@@ -237,6 +238,7 @@ const UserManagement = () => {
                         <option value="active">Active</option>
                         <option value="suspended">Suspended</option>
                         <option value="inactive">Inactive</option>
+                        <option value="deleted">Deleted</option>
                     </select>
                     <button
                         type="submit"
@@ -1211,7 +1213,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                     <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="font-semibold text-gray-900 dark:text-white">Account Settings</h3>
-                            {!editMode && (
+                            {!editMode && user.status !== 'deleted' && (
                                 <button
                                     onClick={() => setEditMode(true)}
                                     className="text-sm text-primary-600 hover:text-primary-700"
@@ -1413,7 +1415,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                     )}
 
                     {/* Suspend User Section */}
-                    {user.status !== 'suspended' && (
+                    {user.status !== 'suspended' && user.status !== 'deleted' && (
                         <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
                             {!showSuspendForm ? (
                                 <button

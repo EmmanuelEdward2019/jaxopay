@@ -23,11 +23,14 @@ router.get('/networks', crossBorderController.getPayoutNetworks);
 // International Payments
 router.post('/transfers/international', requireFeature('withdrawals_fiat'), requireKYCTier(1), crossBorderController.sendInternationalPayment);
 
-// Crypto on/off-ramp (Yellow Card Direct Settlement)
+// Crypto on/off-ramp (Yellow Card Direct Settlement) — gated by its own toggle, separate from
+// deposits_crypto/withdrawals_crypto which also gate plain (non-ramp) crypto deposits/withdraws
+// in crypto.routes.js. /status and /options stay ungated so the frontend can still show a
+// friendly "unavailable" state instead of erroring when the ramp is off.
 router.get('/ramp/status', crossBorderController.getRampStatus);
 router.get('/ramp/options', crossBorderController.getRampOptions);
-router.post('/ramp/deposit', requireFeature('deposits_crypto'), requireKYCTier(1), crossBorderController.cryptoRampDeposit);
-router.post('/ramp/withdraw', requireFeature('withdrawals_crypto'), requireKYCTier(1), crossBorderController.cryptoRampWithdraw);
+router.post('/ramp/deposit', requireFeature('crypto_ramp'), requireKYCTier(1), crossBorderController.cryptoRampDeposit);
+router.post('/ramp/withdraw', requireFeature('crypto_ramp'), requireKYCTier(1), crossBorderController.cryptoRampWithdraw);
 router.get('/ramp/:id/status', crossBorderController.getRampTransactionStatus);
 
 // Provider wallet balances (Yellow Card)

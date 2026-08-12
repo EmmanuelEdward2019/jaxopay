@@ -16,6 +16,7 @@ import { randomUUID } from 'crypto';
 import emailService from '../services/email.service.js';
 import { notifyUser, notifyWithdrawal, notifyDeposit } from '../services/notification.service.js';
 import { assertDepositsAllowed, assertWithdrawalsAllowed } from '../services/financialControls.service.js';
+import { getFeeConfig, computeFee } from '../services/feeConfig.service.js';
 
 // Crypto deposit/withdrawal/swap provider — Obiex by default; set CRYPTO_PROVIDER=quidax to
 // fall back (e.g. during an Obiex outage). Order-book spot trading (createOrder, getOrderBook,
@@ -328,6 +329,14 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
       netAmount  = fiatAmount - fee;
     }
 
+    // Platform spread — applied on top of whatever the provider quote/ticker already produced,
+    // as a percentage taken from the fiat payout (sell side, so the user receives slightly less
+    // than the raw rate rather than being charged extra up front). 0% until an admin sets a real
+    // value in Rates & Fees.
+    const platformFeeCfg = await getFeeConfig('swap_sell', to_fiat.toUpperCase());
+    const platformFee = computeFee(platformFeeCfg, netAmount);
+    netAmount = netAmount - platformFee;
+
     // Get or create fiat wallet
     let fiatWallet = await client.query(
       `SELECT id FROM wallets
@@ -379,6 +388,7 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
           fiat_currency: to_fiat.toUpperCase(),
           fiat_amount: fiatAmount,
           fee,
+          platform_fee: platformFee,
           net_amount: netAmount,
           provider: CRYPTO_PROVIDER,
           provider_swap_id: providerSwapId,
@@ -401,11 +411,12 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
           crypto_amount: qty,
           exchange_rate: rate,
           fee,
+          platform_fee: platformFee,
         }),
       ]
     );
 
-    return { rate, fiatAmount, fee, netAmount };
+    return { rate, fiatAmount, fee, platformFee, netAmount };
   });
 
   logger.info('Crypto to fiat exchange:', {
@@ -425,6 +436,7 @@ export const exchangeCryptoToFiat = catchAsync(async (req, res) => {
       fiat_currency: to_fiat.toUpperCase(),
       exchange_rate: result.rate,
       fee: result.fee,
+      platform_fee: result.platformFee,
       net_amount: result.netAmount,
     },
   });
@@ -491,6 +503,13 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       cryptoAmount = (qty - fee) * rate;
     }
 
+    // Platform spread — buy side, so it's taken from the crypto the user receives (user pays the
+    // full fiat amount, gets slightly less crypto than the raw rate). Kept as its own category
+    // from swap_sell since the user explicitly wants buy/sell markup configured independently.
+    const platformFeeCfg = await getFeeConfig('swap_buy', to_coin.toUpperCase());
+    const platformFee = computeFee(platformFeeCfg, cryptoAmount);
+    cryptoAmount = cryptoAmount - platformFee;
+
     if (parseFloat(fiatWallet.rows[0].balance) < netFiat) {
       throw new AppError('Insufficient balance to cover trade and fees', 400);
     }
@@ -546,6 +565,7 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
           crypto_currency: to_coin.toUpperCase(),
           crypto_amount: cryptoAmount,
           fee,
+          platform_fee: platformFee,
           provider: CRYPTO_PROVIDER,
           provider_swap_id: providerSwapId,
           source: `${CRYPTO_PROVIDER}_live`
@@ -567,11 +587,12 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
           fiat_amount: qty,
           exchange_rate: rate,
           fee,
+          platform_fee: platformFee,
         }),
       ]
     );
 
-    return { rate, cryptoAmount, fee };
+    return { rate, cryptoAmount, fee, platformFee };
   });
 
   logger.info('Fiat to crypto exchange:', {
@@ -591,6 +612,7 @@ export const exchangeFiatToCrypto = catchAsync(async (req, res) => {
       crypto_currency: to_coin.toUpperCase(),
       exchange_rate: result.rate,
       fee: result.fee,
+      platform_fee: result.platformFee,
     },
   });
 });

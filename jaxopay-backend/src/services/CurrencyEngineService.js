@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import yellowCard from '../orchestration/adapters/fx/YellowCardService.js';
 import { sendTransactionEmails } from './email.service.js';
+import { getFeeConfig, computeFee } from './feeConfig.service.js';
 
 /** Human label for a ramp's fx_transactions.type — onramp buys crypto with fiat, offramp sells it. */
 function rampTypeLabel(type) {
@@ -112,7 +113,13 @@ class CurrencyEngineService {
             // 2. Get Exchange Rate
             const rateData = await this.getRate(fromCurrency, toCurrency);
             const rate = parseFloat(rateData.rate);
-            const convertedAmount = amount * rate;
+            const rawConvertedAmount = amount * rate;
+
+            // Platform spread — taken from the credited (destination) side, same convention as
+            // the crypto swap spread. 0% until an admin sets a real value in Rates & Fees.
+            const swapFeeCfg = await getFeeConfig('yc_currency_swap', toCurrency);
+            const platformFee = computeFee(swapFeeCfg, rawConvertedAmount);
+            const convertedAmount = Math.max(0, rawConvertedAmount - platformFee);
 
             // 3. Debit / Credit Wallets internally first
             await client.query(
@@ -128,10 +135,10 @@ class CurrencyEngineService {
             // 4. Create FX Transaction DB record
             const fxTxn = await client.query(
                 `INSERT INTO fx_transactions
-         (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, status)
-         VALUES ($1, '${FX_PROVIDER_NAME}', 'swap', $2, $3, $4, $5, $6, 'PROCESSING')
+         (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, fee_amount, status)
+         VALUES ($1, '${FX_PROVIDER_NAME}', 'swap', $2, $3, $4, $5, $6, $7, 'PROCESSING')
          RETURNING id`,
-                [userId, fromCurrency, toCurrency, amount, convertedAmount, rate]
+                [userId, fromCurrency, toCurrency, amount, convertedAmount, rate, platformFee]
             );
 
             const txnId = fxTxn.rows[0].id;
@@ -182,6 +189,7 @@ class CurrencyEngineService {
                 amount,
                 convertedAmount,
                 rate,
+                fee: platformFee,
                 status: providerStatus
             };
         });
@@ -220,6 +228,14 @@ class CurrencyEngineService {
             convertedAmount = amount * rate;
         }
 
+        // Platform fee — taken from the payout (destination-currency) side, same spread
+        // convention as the currency swap above: the sender's wallet is debited the full
+        // `amount` they requested, the recipient receives slightly less than the raw converted
+        // rate would give. 0% until an admin sets a real value in Rates & Fees.
+        const intlFeeCfg = await getFeeConfig('yc_international_transfer', targetCurrency);
+        const platformFee = computeFee(intlFeeCfg, convertedAmount);
+        convertedAmount = Math.max(0, convertedAmount - platformFee);
+
         // 1) Short transaction: lock + debit the wallet, record a PROCESSING fx tx. No external calls.
         const record = await transaction(async (client) => {
             const w = await client.query(
@@ -236,10 +252,10 @@ class CurrencyEngineService {
 
             const fxTxn = await client.query(
                 `INSERT INTO fx_transactions
-          (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, recipient_details, status)
-          VALUES ($1, '${FX_PROVIDER_NAME}', 'international_payment', $2, $3, $4, $5, $6, $7, 'PROCESSING')
+          (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, fee_amount, recipient_details, status)
+          VALUES ($1, '${FX_PROVIDER_NAME}', 'international_payment', $2, $3, $4, $5, $6, $7, $8, 'PROCESSING')
           RETURNING id`,
-                [userId, fromCurrency, targetCurrency, amount, convertedAmount, rate, JSON.stringify({
+                [userId, fromCurrency, targetCurrency, amount, convertedAmount, rate, platformFee, JSON.stringify({
                     name: recipientName, bank: networkName || recipientBank, account: accountNumber, country: recipientCountry, networkId
                 })]
             );

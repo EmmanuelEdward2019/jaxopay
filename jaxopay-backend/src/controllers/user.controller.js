@@ -299,9 +299,17 @@ export const getActivityLog = catchAsync(async (req, res) => {
   });
 });
 
-// Shared: performs the actual soft-delete. Only called after a super_admin approves a pending
-// account_deletion_requests row (see admin.controller.js) — never directly from a user action,
-// so deletion always goes through review first.
+// Shared: performs the actual account erasure. Only called after a super_admin approves a
+// pending account_deletion_requests row (see admin.controller.js) — never directly from a user
+// action, so deletion always goes through review first.
+//
+// This is a PII anonymization, not a row deletion: financial/AML-relevant records (transactions,
+// fx_transactions, wallet_transactions, bill_payments, card_transactions, crypto_exchanges,
+// digital_transactions, gift_card_purchases/sales, aml_risk_scores, sanctions_screening,
+// audit_logs, virtual_bank_accounts) are retained for compliance recordkeeping, deactivated
+// where applicable but never redacted or deleted. Everything else that identifies the person
+// (profile, KYC document images/numbers, card PANs, session/device/OTP tokens, saved
+// beneficiaries, notifications) is erased or replaced with placeholders.
 export async function performAccountDeletion(userId) {
   const balanceCheck = await query(
     `SELECT SUM(balance) as total_balance FROM wallets WHERE user_id = $1`,
@@ -316,17 +324,99 @@ export async function performAccountDeletion(userId) {
   }
 
   await transaction(async (client) => {
+    // Core identity + credentials — mangle email/username so the address can never be
+    // re-derived or logged in with again, wipe every secret/auth field.
     await client.query(
       `UPDATE users
-       SET deleted_at = NOW(), is_active = false, email = CONCAT(email, '_deleted_', id)
+       SET deleted_at = NOW(),
+           is_active = false,
+           email = CONCAT(email, '_deleted_', id),
+           username = NULL,
+           phone = NULL,
+           password_hash = NULL,
+           two_fa_secret = NULL,
+           two_fa_enabled = false,
+           transaction_pin = NULL,
+           transaction_pin_set_at = NULL,
+           transaction_pin_failed_attempts = 0,
+           transaction_pin_locked_until = NULL,
+           quidax_user_id = NULL,
+           quidax_user_sn = NULL
        WHERE id = $1`,
       [userId]
     );
+
+    // Profile PII — replaced with a placeholder rather than left NULL so any admin UI that
+    // renders a name doesn't just show blank.
+    await client.query(
+      `UPDATE user_profiles
+       SET first_name = 'Deleted',
+           last_name = 'User',
+           middle_name = NULL,
+           date_of_birth = NULL,
+           gender = NULL,
+           address_line1 = NULL,
+           address_line2 = NULL,
+           city = NULL,
+           state = NULL,
+           postal_code = NULL,
+           avatar_url = NULL
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    // KYC documents — keep the review trail (status/tier/reviewed_by/rejection_reason) for
+    // compliance, erase the actual ID number and document/selfie images.
+    await client.query(
+      `UPDATE kyc_documents
+       SET document_number = NULL, document_url = NULL, selfie_url = NULL
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    // Virtual cards — several columns are NOT NULL, so overwrite with placeholders instead of
+    // nulling. Force-terminate any card that wasn't already.
+    await client.query(
+      `UPDATE virtual_cards
+       SET card_number_encrypted = 'REDACTED',
+           card_last_four = '0000',
+           cvv_encrypted = 'REDACTED',
+           cardholder_name = 'DELETED USER',
+           expiry_month = 1,
+           expiry_year = 2000,
+           status = 'terminated',
+           terminated_at = COALESCE(terminated_at, NOW())
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    // Virtual bank accounts are deactivated but the account number/bank details are kept —
+    // the issuing banking partner may need to trace a stray inbound wire to this account after
+    // closure, so this is treated like the rest of the financial trail, not PII to erase.
+    await client.query('UPDATE virtual_bank_accounts SET is_active = false WHERE user_id = $1', [userId]);
+
     await client.query('UPDATE wallets SET is_active = false WHERE user_id = $1', [userId]);
-    await client.query('UPDATE user_sessions SET is_active = false WHERE user_id = $1', [userId]);
+
+    // Pure security/session artifacts — no compliance reason to retain any of these.
+    await client.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM user_devices WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM email_verifications WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM password_resets WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM otp_codes WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM totp_secrets WHERE user_id = $1', [userId]);
+
+    // Saved recipients hold third-party PII (other people's bank/crypto details) with no
+    // compliance need to retain once the account is closed.
+    await client.query('DELETE FROM beneficiaries WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM saved_beneficiaries WHERE user_id = $1', [userId]);
+
+    // User-owned notification content/settings — not part of the financial record.
+    await client.query('DELETE FROM notifications WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM notification_preferences WHERE user_id = $1', [userId]);
   });
 
-  logger.info('Account deleted (approved):', { userId });
+  logger.info('Account deleted (approved) — PII erased, financial/AML records retained:', { userId });
 }
 
 // Request account deletion — does NOT delete anything immediately. Creates a pending request

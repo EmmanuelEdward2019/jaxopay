@@ -67,6 +67,7 @@ import CardManagement from './pages/admin/CardManagement';
 import ProductManagement from './pages/admin/ProductManagement';
 import AMLCompliance from './pages/admin/AMLCompliance';
 import AnnouncementManagement from './pages/admin/AnnouncementManagement';
+import PublicFormSubmissions from './pages/admin/PublicFormSubmissions';
 import AdminSupport from './pages/admin/AdminSupport';
 
 // Create a client
@@ -302,7 +303,11 @@ function App() {
 
             <Route path="support" element={<Support />} />
             <Route path="cross-border" element={<CrossBorder />} />
-            <Route path="crypto-ramp" element={<CryptoRamp />} />
+            <Route path="crypto-ramp" element={
+              <FeatureGuard feature="crypto_ramp">
+                <CryptoRamp />
+              </FeatureGuard>
+            } />
           </Route>
 
           {/* Admin Routes */}
@@ -399,6 +404,11 @@ function App() {
             <Route path="crypto" element={
               <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
                 <ProductManagement />
+              </RoleProtectedRoute>
+            } />
+            <Route path="public-forms" element={
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                <PublicFormSubmissions />
               </RoleProtectedRoute>
             } />
 

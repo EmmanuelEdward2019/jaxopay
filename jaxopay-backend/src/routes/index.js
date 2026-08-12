@@ -22,6 +22,7 @@ import webhookRoutes from './webhook.routes.js';
 import transferRoutes from './transfer.routes.js';
 import pinRoutes from './pin.routes.js';
 import beneficiaryRoutes from './beneficiary.routes.js';
+import publicFormRoutes from './publicForm.routes.js';
 
 import { checkDatabaseHealth } from '../config/database.js';
 import cache, { CacheNamespaces } from '../utils/cache.js';
@@ -101,6 +102,7 @@ router.use('/webhooks', webhookRoutes);
 router.use('/transfers', transferRoutes);
 router.use('/security', pinRoutes);
 router.use('/beneficiaries', beneficiaryRoutes);
+router.use('/public-forms', publicFormRoutes);
 
 export default router;
 

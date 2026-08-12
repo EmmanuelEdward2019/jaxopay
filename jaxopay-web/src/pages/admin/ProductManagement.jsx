@@ -130,6 +130,7 @@ const ProductManagement = () => {
                         <thead className="bg-gray-50/50 dark:bg-gray-700/30 border-b border-gray-100 dark:border-gray-700">
                             <tr>
                                 <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Details</th>
+                                <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Type</th>
                                 <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Value</th>
                                 <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Status</th>
                                 <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Timestamp</th>
@@ -139,7 +140,7 @@ const ProductManagement = () => {
                         <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                             {items.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
+                                    <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
                                         <div className="flex flex-col items-center gap-2">
                                             <Clock className="w-8 h-8 opacity-20" />
                                             <p>No {productType} activity found matching your criteria</p>
@@ -158,6 +159,11 @@ const ProductManagement = () => {
                                                     <p className="text-gray-400 font-mono text-[10px]">{item.id}</p>
                                                 </div>
                                             </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-[10px] font-bold uppercase tracking-wider">
+                                                {(item.transaction_type || '').replace(/_/g, ' ')}
+                                            </span>
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="text-sm">

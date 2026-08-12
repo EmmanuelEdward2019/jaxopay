@@ -15,6 +15,14 @@ import adminService from '../../services/adminService';
 import { useAppStore } from '../../store/appStore';
 import { useAuthStore } from '../../store/authStore';
 
+// Some feature_toggles rows use an internal name that doesn't match the product's customer-facing
+// name — cross_border is branded "Global Pay" everywhere else in the app (nav, marketing pages),
+// so show that here too instead of the raw column name.
+const FEATURE_LABELS = {
+    cross_border: 'Global Pay',
+};
+const featureLabel = (name) => FEATURE_LABELS[name] || name.replace(/_/g, ' ');
+
 const FeatureManagement = () => {
     const [toggles, setToggles] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -110,7 +118,7 @@ const FeatureManagement = () => {
                         <div key={toggle.id} className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
                             <div className="flex items-start justify-between mb-2">
                                 <h3 className="text-lg font-bold text-gray-900 dark:text-white capitalize">
-                                    {toggle.feature_name.replace('_', ' ')}
+                                    {featureLabel(toggle.feature_name)}
                                 </h3>
                                 <button
                                     onClick={() => setSelectedToggle(toggle)}
@@ -224,7 +232,7 @@ const FeatureConfigModal = ({ toggle, onClose, onUpdate }) => {
                 <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
                     <div>
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white capitalize">
-                            Configure {toggle.feature_name.replace('_', ' ')}
+                            Configure {featureLabel(toggle.feature_name)}
                         </h2>
                         <p className="text-sm text-gray-500">Advanced settings and regional controls</p>
                     </div>
