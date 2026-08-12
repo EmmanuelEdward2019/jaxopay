@@ -104,10 +104,14 @@ const AdminDashboard = () => {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                        {user?.role === 'super_admin' ? 'Super Admin Dashboard Overview' : 'Dashboard Overview'}
+                        {user?.role === 'super_admin' ? 'Super Admin Dashboard Overview'
+                            : user?.role === 'compliance_officer' ? 'Compliance Dashboard Overview'
+                                : 'Dashboard Overview'}
                     </h1>
                     <p className="text-gray-600 dark:text-gray-400">
-                        {user?.role === 'super_admin' ? 'Monitor and manage the entire platform' : 'Monitor platform performance'}
+                        {user?.role === 'super_admin' ? 'Monitor and manage the entire platform'
+                            : user?.role === 'compliance_officer' ? 'Monitor compliance, KYC, and risk activity across the platform'
+                                : 'Monitor platform performance'}
                     </p>
                 </div>
                 <button

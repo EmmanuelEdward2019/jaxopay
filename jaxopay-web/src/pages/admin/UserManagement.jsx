@@ -135,6 +135,7 @@ const UserManagement = () => {
             setShowUserModal(false);
         }
         setActionLoading(false);
+        return result;
     };
 
     const handleCreateUser = async (userData) => {
@@ -1074,6 +1075,8 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
     const toggleStaffRole = (value) => {
         setStaffRoles((prev) => prev.includes(value) ? prev.filter((r) => r !== value) : [...prev, value]);
     };
+    const [saveError, setSaveError] = useState(null);
+    const [saving, setSaving] = useState(false);
     const [suspendReason, setSuspendReason] = useState('');
     const [showSuspendForm, setShowSuspendForm] = useState(false);
     const [userFeatures, setUserFeatures] = useState([]);
@@ -1290,23 +1293,36 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                         </div>
 
                         {editMode && (
-                            <div className="flex gap-3 mt-4">
-                                <button
-                                    onClick={() => setEditMode(false)}
-                                    className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-lg"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        onUpdate(user.id, { ...form, roles: staffRoles.length > 0 ? staffRoles : ['end_user'] });
-                                        setEditMode(false);
-                                    }}
-                                    disabled={loading}
-                                    className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg disabled:opacity-50"
-                                >
-                                    {loading ? 'Saving...' : 'Save Changes'}
-                                </button>
+                            <div className="mt-4 space-y-3">
+                                {saveError && (
+                                    <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm font-medium">{saveError}</div>
+                                )}
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => { setEditMode(false); setSaveError(null); }}
+                                        className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-lg"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            setSaveError(null);
+                                            setSaving(true);
+                                            const result = await onUpdate(user.id, { ...form, roles: staffRoles.length > 0 ? staffRoles : ['end_user'] });
+                                            setSaving(false);
+                                            // Only leave edit mode once the change actually persisted — otherwise the
+                                            // modal would silently revert to showing the OLD role with no explanation,
+                                            // which is exactly what made a failed role change look like it "refused"
+                                            // to update.
+                                            if (result?.success) setEditMode(false);
+                                            else setSaveError(result?.error || 'Could not save changes.');
+                                        }}
+                                        disabled={loading || saving}
+                                        className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg disabled:opacity-50"
+                                    >
+                                        {loading || saving ? 'Saving...' : 'Save Changes'}
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>

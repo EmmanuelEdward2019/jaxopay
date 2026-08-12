@@ -1,0 +1,11 @@
+-- 029_remove_gift_cards_flights_bulk_sms_toggles.sql
+--
+-- Removes the gift_cards/flights/bulk_sms rows seeded in 022. On investigation: flights has no
+-- real implementation behind it at all (FlightService is an unimplemented interface stub, every
+-- method throws 'Not implemented' — the toggle controlled nothing), bulk_sms is an internal admin
+-- messaging tool rather than a customer-facing product, and gift_cards — while fully built and
+-- working — is being pulled from this self-service toggle list per request. requireFeature()
+-- treats a missing row as enabled by default (see middleware/featureGuard.js), so removing these
+-- rows does not disable gift card purchases; it only removes them from the admin Platform
+-- Features management UI.
+DELETE FROM feature_toggles WHERE feature_name IN ('gift_cards', 'flights', 'bulk_sms');

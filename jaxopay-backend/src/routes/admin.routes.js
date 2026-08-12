@@ -62,9 +62,16 @@ const SUPPORT_ACCESS = ['admin', 'super_admin', 'support'];
 
 // All admin routes require authentication
 router.use(verifyToken);
-// Base restriction: general admin/user-management routes are admin & super_admin only.
-// compliance/finance/support get access to their own specific routes below, not this catch-all.
-router.use(restrictTo('admin', 'super_admin'));
+// Base restriction: any staff role can reach this router at all — every route below that needs
+// to be narrower than that already has its own explicit restrictTo(...) (verified: every
+// mutating/sensitive route here has one; the handful without an override — /stats, /users list,
+// /users/:id, /toggles, /audit-logs, /cards — are read-only and meant to be broadly visible to
+// staff). This used to be restrictTo('admin', 'super_admin') here, which silently blocked
+// compliance_officer/finance/support from EVERY /admin/* route regardless of their own
+// role-appropriate restrictTo below (Express runs this middleware first and short-circuits with
+// a 403 before the route's own check ever runs) — e.g. compliance_officer's dashboard always
+// showed zeros because GET /admin/stats 403'd before ever reaching its handler.
+router.use(restrictTo(...STAFF_ROLES));
 
 // Get system statistics - Available to all
 router.get('/stats', getSystemStats);
