@@ -30,9 +30,18 @@ function normalizeRoles(roleInput, rolesInput) {
   return { role: primary, roles };
 }
 
+// document_url is NOT NULL, so submissions with no real image (Smile-based jobs, or a manual
+// number-only ID submission) store one of these fixed placeholders instead — not an actual photo.
+// The admin review UI must not try to render these as images.
+const KYC_PLACEHOLDER_DOCUMENT_URLS = new Set([
+  'https://jaxopay.com/kyc/smile-id-async',
+  'https://jaxopay.com/kyc/smile-biometric',
+  'https://jaxopay.com/kyc/manual-number-only',
+]);
+
 /** Split stored `document_url` (plain URL or JSON { front, back }) for admin review UI. */
 function parseKycDocumentUrls(documentUrl) {
-  if (documentUrl == null || documentUrl === '') {
+  if (documentUrl == null || documentUrl === '' || KYC_PLACEHOLDER_DOCUMENT_URLS.has(String(documentUrl).trim())) {
     return { document_front_url: null, document_back_url: null };
   }
   const s = String(documentUrl).trim();

@@ -33,6 +33,11 @@ const DOC_TYPES = {
     smile_biometric_kyc: { label: 'Biometric / liveness', icon: FileText },
 };
 
+// Tier 2 no longer collects an ID document photo — these types are expected to have no
+// document_front_url/back_url, so an empty state here isn't a sign of a broken/incomplete
+// submission the way it would be for e.g. proof_of_address.
+const ID_ONLY_DOC_TYPES = ['nin', 'bvn', 'passport', 'national_id', 'drivers_license', 'id_card', 'smile_basic_kyc', 'smile_biometric_kyc'];
+
 /**
  * Navigating directly to a long data: URL hits browser URL-length limits (blank tab).
  * Opening a short blob: URL avoids that; fetch() decodes the data URL reliably.
@@ -609,7 +614,14 @@ const KYCReviewModal = ({ document, mode, onClose, onVerify, loading }) => {
                         {!document.document_front_url && !document.document_back_url && !document.selfie_url && (
                             <div className="text-center py-8 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
                                 <FileText className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                                <p className="text-gray-500">No document images available</p>
+                                {ID_ONLY_DOC_TYPES.includes(document.document_type) ? (
+                                    <>
+                                        <p className="text-gray-500">No document photo submitted — verified by ID number + liveness check only.</p>
+                                        <p className="text-sm text-gray-400 mt-1">Review the document number above and the provider's result before deciding.</p>
+                                    </>
+                                ) : (
+                                    <p className="text-gray-500">No document images available</p>
+                                )}
                             </div>
                         )}
                     </div>

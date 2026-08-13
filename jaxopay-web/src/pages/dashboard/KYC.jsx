@@ -102,8 +102,6 @@ const KYC = () => {
         address: '',
         documentType: '',
         documentNumber: '',
-        documentFront: null,
-        documentBack: null,
         selfie: null,
         addressDocument: null,
     });
@@ -113,8 +111,6 @@ const KYC = () => {
     const smileSubmittingRef = useRef(false);
     const manualSelfieVideoRef = useRef(null);
     const manualSelfieStreamRef = useRef(null);
-    const frontInputRef = useRef(null);
-    const backInputRef = useRef(null);
     const selfieInputRef = useRef(null);
     const addressDocInputRef = useRef(null);
 
@@ -266,8 +262,11 @@ const KYC = () => {
         if (!showCameraModal || !smileCameraHostRef.current) return undefined;
         const host = smileCameraHostRef.current;
         host.innerHTML = '';
+        // No `capture-id` attribute: Tier 2 only needs a selfie + liveness capture, not a photo of
+        // the physical ID document — the typed document number (sent as idInfo) is what Smile
+        // verifies against, so a card photo is redundant. See @smile_identity/smart-camera-web's
+        // README: omitting capture-id skips straight from liveness to the selfie review screen.
         const el = document.createElement('smart-camera-web');
-        el.setAttribute('capture-id', '');
 
         const onImages = async (e) => {
             const { images } = e.detail || {};
@@ -370,21 +369,19 @@ const KYC = () => {
         }
     };
 
-    // ── Tier 2: submit ID + selfie (manual path) ─────────────────────
+    // ── Tier 2: submit ID number + selfie (manual path) ────────────────
     const isTier2FormValid = () =>
-        formData.documentType && formData.documentFront && formData.documentNumber.trim() && formData.selfie;
+        formData.documentType && formData.documentNumber.trim() && formData.selfie;
 
     const handleSubmitTier2 = async () => {
         if (!isTier2FormValid()) {
-            setError('Please complete the document type, number, upload, and selfie.'); return;
+            setError('Please complete the document type, number, and selfie.'); return;
         }
         setSubmitting(true); setError(null);
         try {
             const idResult = await kycService.submitDocument({
                 document_type: formData.documentType,
                 document_number: formData.documentNumber.trim(),
-                document_front: formData.documentFront,
-                document_back: formData.documentBack,
                 selfie: formData.selfie,
             });
             if (!idResult.success) {
@@ -605,7 +602,7 @@ const KYC = () => {
                                             {tier.num === 2 && (status === 'none' || status === 'rejected') && (
                                                 <Tier2Form
                                                     formData={formData} updateField={updateField} handleFileChange={handleFileChange}
-                                                    frontInputRef={frontInputRef} backInputRef={backInputRef} selfieInputRef={selfieInputRef}
+                                                    selfieInputRef={selfieInputRef}
                                                     docNumberSuggestions={docNumberSuggestions}
                                                     smileConfigured={smileConfigured}
                                                     onOpenSmileCamera={() => setShowCameraModal(true)}
@@ -682,7 +679,7 @@ const KYC = () => {
                             <X className="w-5 h-5 text-foreground" />
                         </button>
                         <p className="text-sm text-muted-foreground mb-3 pr-10">
-                            Allow camera access, then follow on-screen steps: liveness capture, selfie review, then ID front (and back if prompted).
+                            Allow camera access, then follow on-screen steps: liveness capture, then selfie review.
                         </p>
                         <div ref={smileCameraHostRef} className="min-h-[320px] w-full relative" />
                         {submitting && (
@@ -821,7 +818,7 @@ const Tier1Form = ({ formData, updateField, onSave, saving, nationalities }) => 
 );
 
 const Tier2Form = ({
-    formData, updateField, handleFileChange, frontInputRef, backInputRef, selfieInputRef,
+    formData, updateField, handleFileChange, selfieInputRef,
     docNumberSuggestions, smileConfigured, onOpenSmileCamera, onOpenManualSelfie, onSubmit, submitting, isValid,
 }) => (
     <div className="space-y-6">
@@ -855,52 +852,6 @@ const Tier2Form = ({
                     {docNumberSuggestions.map(v => <option key={v} value={v} />)}
                 </datalist>
             )}
-        </div>
-
-        {/* Upload Areas */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Front Side *</label>
-                <div onClick={() => frontInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all hover:border-primary/50 ${
-                        formData.documentFront ? 'border-primary bg-primary/5' : 'border-border'
-                    }`}>
-                    {formData.documentFront ? (
-                        <div className="text-primary">
-                            <Check className="w-8 h-8 mx-auto mb-2" />
-                            <p className="text-sm font-medium truncate">{formData.documentFront.name}</p>
-                            <p className="text-xs text-muted-foreground mt-1">Click to replace</p>
-                        </div>
-                    ) : (
-                        <>
-                            <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                            <p className="text-sm font-medium text-foreground">Upload front</p>
-                        </>
-                    )}
-                </div>
-                <input ref={frontInputRef} type="file" accept="image/*" onChange={e => handleFileChange(e, 'documentFront')} className="hidden" />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Back Side (optional)</label>
-                <div onClick={() => backInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all hover:border-primary/50 ${
-                        formData.documentBack ? 'border-primary bg-primary/5' : 'border-border'
-                    }`}>
-                    {formData.documentBack ? (
-                        <div className="text-primary">
-                            <Check className="w-8 h-8 mx-auto mb-2" />
-                            <p className="text-sm font-medium truncate">{formData.documentBack.name}</p>
-                            <p className="text-xs text-muted-foreground mt-1">Click to replace</p>
-                        </div>
-                    ) : (
-                        <>
-                            <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                            <p className="text-sm font-medium text-foreground">Upload back</p>
-                        </>
-                    )}
-                </div>
-                <input ref={backInputRef} type="file" accept="image/*" onChange={e => handleFileChange(e, 'documentBack')} className="hidden" />
-            </div>
         </div>
 
         {/* Selfie / Liveness */}

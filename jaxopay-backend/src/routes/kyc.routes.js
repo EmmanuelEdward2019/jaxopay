@@ -61,29 +61,38 @@ router.post(
   submitSmileBiometricKyc
 );
 
-const imageDataOrUrl = (field) =>
-  body(field)
-    .isString()
-    .trim()
-    .custom((value) => {
-      if (!value || value.length < 24) return false;
-      if (/^https?:\/\//i.test(value)) return true;
-      // Any raster image data URL (jpeg, png, webp, heic, etc.)
-      return /^data:image\/[a-z0-9.+-]+;base64,/i.test(value);
-    })
-    .withMessage(`${field} must be a valid https URL or a base64 image data URL`);
+const looksLikeImageOrUrl = (value) => {
+  if (!value || typeof value !== 'string' || value.length < 24) return false;
+  if (/^https?:\/\//i.test(value)) return true;
+  // Any raster image data URL (jpeg, png, webp, heic, etc.)
+  return /^data:image\/[a-z0-9.+-]+;base64,/i.test(value);
+};
 
 const optionalImageDataOrUrl = (field) =>
   body(field)
     .optional({ values: 'falsy' })
     .isString()
     .trim()
-    .custom((value) => {
-      if (!value) return true;
-      if (value.length < 24) return false;
-      if (/^https?:\/\//i.test(value)) return true;
-      return /^data:image\/[a-z0-9.+-]+;base64,/i.test(value);
-    });
+    .custom((value) => !value || looksLikeImageOrUrl(value));
+
+// document_front_url is only mandatory for proof-of-address-style docs (Tier 3, which still needs
+// an actual photo). ID documents (nin/passport/national_id/drivers_license/id_card/bvn) no longer
+// collect a photo — the controller stores a sentinel when this is omitted for those types.
+// NOTE: deliberately not using .optional() here — it would skip this custom() entirely for falsy
+// values, which is exactly the case we need to inspect (to decide, per document_type, whether a
+// missing value is allowed).
+const NO_PHOTO_DOC_TYPES = ['nin', 'passport', 'national_id', 'drivers_license', 'id_card', 'bvn'];
+const documentFrontUrlField = body('document_front_url')
+  .custom((value, { req }) => {
+    if (!value) {
+      if (NO_PHOTO_DOC_TYPES.includes(req.body?.document_type)) return true;
+      throw new Error('document_front_url is required for this document type');
+    }
+    if (!looksLikeImageOrUrl(value)) {
+      throw new Error('document_front_url must be a valid https URL or a base64 image data URL');
+    }
+    return true;
+  });
 
 // Submit KYC document (JSON with URLs or data:image URLs from the client)
 router.post(
@@ -106,7 +115,7 @@ router.post(
     if (t === 'proof_of_address' || t === 'utility_bill') return true;
     return typeof value === 'string' && value.trim().length >= 1;
   }),
-  imageDataOrUrl('document_front_url'),
+  documentFrontUrlField,
   optionalImageDataOrUrl('document_back_url'),
   optionalImageDataOrUrl('selfie_url'),
   validate,

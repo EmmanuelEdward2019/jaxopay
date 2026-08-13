@@ -25,14 +25,18 @@ const kycService = {
     }
   },
 
+  // document_front/document_back are only required for proof-of-address-style submissions (Tier
+  // 3) — ID documents (nin/passport/etc, Tier 2) no longer collect a photo, so document_front may
+  // be omitted for those and the backend stores a placeholder in its place.
   submitDocument: async (documentData) => {
     try {
-      const document_front_url = await fileToDataUrl(documentData.document_front);
       const payload = {
         document_type: documentData.document_type,
         document_number: documentData.document_number?.trim() ?? '',
-        document_front_url,
       };
+      if (documentData.document_front) {
+        payload.document_front_url = await fileToDataUrl(documentData.document_front);
+      }
       if (documentData.document_back) {
         payload.document_back_url = await fileToDataUrl(documentData.document_back);
       }

@@ -12,6 +12,14 @@ function buildKycDocumentUrl(frontUrl, backUrl) {
   return JSON.stringify({ front: frontUrl, back: backUrl });
 }
 
+// document_url is NOT NULL in the schema, but Tier 2 (nin/passport/national_id/drivers_license/
+// id_card/bvn) no longer collects a document photo — only proof_of_address (Tier 3) still does.
+// This sentinel fills the column for a number-only submission, same convention already used by
+// the Smile-based paths below (e.g. 'https://jaxopay.com/kyc/smile-biometric') for rows with no
+// locally-stored image.
+const NO_DOCUMENT_PHOTO_URL = 'https://jaxopay.com/kyc/manual-number-only';
+const ID_DOCUMENT_TYPES_NO_PHOTO = ['nin', 'passport', 'national_id', 'drivers_license', 'id_card', 'bvn'];
+
 /**
  * Build a public `${host}/api/v1/<path>` URL for provider callbacks, tolerant of how
  * API_BASE_URL is set (with or without a trailing /api/v1, with or without scheme).
@@ -99,7 +107,9 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
     tier = 'tier_2';
   }
 
-  const documentUrl = buildKycDocumentUrl(document_front_url, document_back_url || null);
+  const documentUrl = ID_DOCUMENT_TYPES_NO_PHOTO.includes(document_type)
+    ? buildKycDocumentUrl(document_front_url || NO_DOCUMENT_PHOTO_URL, document_back_url || null)
+    : buildKycDocumentUrl(document_front_url, document_back_url || null);
 
   const result = await query(
     `INSERT INTO kyc_documents
@@ -505,17 +515,17 @@ export const submitRampIdVerification = catchAsync(async (req, res) => {
   });
 });
 
+// Tier 2 no longer collects an ID document photo — Smile's Biometric KYC (job_type 1) matches the
+// selfie/liveness capture against the government record for the typed id_number/id_type (sent via
+// idInfo below), so a photo of the physical card adds nothing the number lookup doesn't already
+// cover. Only selfie + liveness frames are required now.
 function validateSmileBiometricImages(images) {
-  if (!Array.isArray(images) || images.length < 4) {
-    return 'images must be a non-empty array (selfie, liveness, and ID captures required)';
+  if (!Array.isArray(images) || images.length < 2) {
+    return 'images must include a selfie and at least one liveness frame';
   }
   const typeIds = images.map((i) => parseInt(i.image_type_id, 10));
   if (!typeIds.includes(2)) return 'Missing selfie image (image_type_id 2)';
   if (!typeIds.some((t) => t === 6)) return 'Missing liveness images (image_type_id 6)';
-  // Smart Camera Web uses 3 = ID front, 7 = ID back / alternate capture
-  if (!typeIds.some((t) => t === 3 || t === 7)) {
-    return 'Missing ID document image (image_type_id 3 or 7)';
-  }
   for (const img of images) {
     if (!img?.image || typeof img.image !== 'string' || img.image.length < 50) {
       return 'Each image must include a base64-encoded JPEG payload';
@@ -524,7 +534,7 @@ function validateSmileBiometricImages(images) {
   return null;
 }
 
-/** POST /kyc/smile/biometric-kyc — Biometric KYC with liveness (Smart Camera Web). */
+/** POST /kyc/smile/biometric-kyc — Biometric KYC with liveness (Smart Camera Web, selfie + liveness only — no ID document photo). */
 export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
   if (!smileId.isSmileConfigured()) {
     throw new AppError('Identity verification is not available', 503);
@@ -559,7 +569,9 @@ export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
     id_type: String(id_type).trim(),
     id_number: String(id_number).trim(),
     dob: dob ? String(dob).trim() : '',
-    entered: 'false',
+    // 'true' = id_number/id_type were typed by the user, not read off an ID photo (we no longer
+    // capture one) — tells Smile to verify against the number itself rather than expect to OCR it.
+    entered: 'true',
   };
 
   const normalizedImages = images.map((i) => ({
