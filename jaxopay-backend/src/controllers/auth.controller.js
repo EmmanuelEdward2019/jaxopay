@@ -101,24 +101,30 @@ const storeDeviceInfo = async (userId, deviceInfo, executor = query) => {
   }
 };
 
-// Issues a fresh verification email, skipping if one was already sent recently (avoids
-// spamming the inbox if a user retries a blocked login several times in a row).
+// Issues a verification email, re-sending the same still-valid token if one was already issued
+// within the cooldown window (avoids spamming the inbox if a user retries a blocked login
+// several times in a row) instead of silently sending nothing. The previous version bailed out
+// on a recent token without emailing it again — resendVerificationEmail always reports success
+// regardless (by design, to avoid leaking whether an account exists), so within 2 minutes of
+// signup a "Request New Link" click looked like it worked but delivered no email at all.
 const VERIFICATION_RESEND_COOLDOWN_MINUTES = 2;
 const issueVerificationEmail = async (user, name) => {
   const recent = await query(
-    `SELECT id FROM email_verifications
-     WHERE user_id = $1 AND created_at > NOW() - INTERVAL '${VERIFICATION_RESEND_COOLDOWN_MINUTES} minutes'
+    `SELECT token FROM email_verifications
+     WHERE user_id = $1 AND verified_at IS NULL AND expires_at > NOW()
+       AND created_at > NOW() - INTERVAL '${VERIFICATION_RESEND_COOLDOWN_MINUTES} minutes'
      ORDER BY created_at DESC LIMIT 1`,
     [user.id]
   );
-  if (recent.rows.length > 0) return;
 
-  const verificationToken = crypto.randomBytes(32).toString('hex');
-  await query(
-    `INSERT INTO email_verifications (user_id, token, expires_at)
-     VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
-    [user.id, verificationToken]
-  );
+  const verificationToken = recent.rows[0]?.token || crypto.randomBytes(32).toString('hex');
+  if (recent.rows.length === 0) {
+    await query(
+      `INSERT INTO email_verifications (user_id, token, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
+      [user.id, verificationToken]
+    );
+  }
 
   await sendEmail({
     to: user.email,
