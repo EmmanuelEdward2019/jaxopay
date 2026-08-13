@@ -79,14 +79,21 @@ export const notifyLogin = (userId, { device, location, ipAddress }) =>
     metadata: { device, location, ipAddress },
   });
 
+// next-tier nudge appended to an approval message — Tier 3 is the top of the ladder, nothing to
+// continue to from there.
+const NEXT_TIER_HINT = {
+  '1': ' Continue to Tier 2 (NIN + liveness verification) to unlock deposits, transfers, and crypto.',
+  '2': ' Continue to Tier 3 (proof of address) for the highest transaction limits.',
+};
+
 export const notifyKyc = (userId, { tier, status, reason }) =>
   notifyUser(userId, {
     type: 'kyc',
     title: status === 'approved' ? `KYC Tier ${tier} approved` : status === 'rejected' ? 'KYC submission rejected' : 'KYC update',
     message: status === 'approved'
-      ? `Your KYC Tier ${tier} verification has been approved. Your limits have been updated.`
+      ? `Your KYC Tier ${tier} verification has been approved. Your limits have been updated.${NEXT_TIER_HINT[String(tier)] || ''}`
       : status === 'rejected'
-        ? `Your KYC submission was rejected.${reason ? ` Reason: ${reason}` : ''} Please resubmit.`
+        ? `Your KYC submission was rejected.${reason ? ` Reason: ${reason}` : ''} You can retry verification from your dashboard, and our compliance team can also review it manually.`
         : 'There has been an update to your KYC verification status.',
     metadata: { tier, status, reason },
   });

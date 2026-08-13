@@ -52,22 +52,51 @@ function parseKycDocumentUrls(documentUrl) {
 
 const KYC_TIER_RANK = { tier_0: 0, tier_1: 1, tier_2: 2, tier_3: 3 };
 
+const KYC_ID_DOC_TYPES = ['nin', 'passport', 'national_id', 'drivers_license', 'id_card'];
+const KYC_FACIAL_DOC_TYPES = ['smile_biometric_kyc'];
+const KYC_ADDRESS_DOC_TYPES = ['proof_of_address', 'utility_bill'];
+
 /**
  * Derive users.kyc_tier / users.kyc_status from kyc_documents after approve or reject.
- * Tier is the max rank among approved rows (uses each document's `tier` from submission).
+ * Tier 2 requires an approved ID/NIN document AND facial/liveness verification — both, not
+ * either — matching the same requirement requestTierUpgrade enforces for the self-service path
+ * (kyc.controller.js). Previously this just took the max `tier` value among any single approved
+ * row, which meant approving one NIN document alone (no liveness check at all) was enough to
+ * grant Tier 2 through the admin review path — a real gap in what Tier 2 is supposed to mean.
  */
 async function syncUserKycStateFromDocuments(client, userId) {
   const approvedRes = await client.query(
-    `SELECT tier::text AS tier FROM kyc_documents WHERE user_id = $1 AND status = 'approved'`,
+    `SELECT document_type, selfie_url FROM kyc_documents WHERE user_id = $1 AND status = 'approved'`,
     [userId]
   );
+  const approvedTypes = approvedRes.rows.map((r) => r.document_type);
 
-  let maxRank = 0;
-  for (const row of approvedRes.rows) {
-    maxRank = Math.max(maxRank, KYC_TIER_RANK[row.tier] ?? 0);
-  }
+  const hasId = KYC_ID_DOC_TYPES.some((t) => approvedTypes.includes(t));
+  // Facial verification is satisfied by an approved smile_biometric_kyc row, OR an approved ID
+  // document that actually has a selfie_url attached (the manual /kyc/submit path accepts an
+  // optional selfie alongside the ID upload — it is NOT guaranteed present, so this must check
+  // the real column, not just infer it from the document type). Matches the same check
+  // requestTierUpgrade uses for the self-service upgrade path.
+  const hasFacial = approvedRes.rows.some((r) =>
+    KYC_FACIAL_DOC_TYPES.includes(r.document_type) || (KYC_ID_DOC_TYPES.includes(r.document_type) && r.selfie_url)
+  );
+  const hasAddress = KYC_ADDRESS_DOC_TYPES.some((t) => approvedTypes.includes(t));
 
-  const newTier = maxRank >= 2 ? 'tier_2' : maxRank >= 1 ? 'tier_1' : 'tier_0';
+  let documentRank = 0;
+  if (hasId && hasFacial) documentRank = 2;
+  if (documentRank >= 2 && hasAddress) documentRank = 3;
+
+  // Tier 1 is earned via the separate profile-completion path (no documents involved — see
+  // requestTierUpgrade target_tier===1), so this function, which only ever runs when a document
+  // is being approved/rejected, must not erase it. Tier 2/3 DO reflect the current approved-
+  // document snapshot exactly, so reversing a previously-approved document correctly revokes
+  // whatever tier it had granted.
+  const currentRes = await client.query(`SELECT kyc_tier::text AS kyc_tier FROM users WHERE id = $1`, [userId]);
+  const currentRank = KYC_TIER_RANK[currentRes.rows[0]?.kyc_tier] ?? 0;
+  const preservedFloor = Math.min(currentRank, 1);
+  const maxRank = Math.max(documentRank, preservedFloor);
+
+  const newTier = `tier_${maxRank}`;
 
   const pendingRes = await client.query(
     `SELECT 1 FROM kyc_documents WHERE user_id = $1 AND status = 'pending' LIMIT 1`,
@@ -77,7 +106,11 @@ async function syncUserKycStateFromDocuments(client, userId) {
 
   let kycStatus;
   if (hasPending) {
-    kycStatus = 'pending';
+    // 'pending' is reserved for "hasn't submitted anything yet" (it's the column default a
+    // fresh signup starts with) — a real outstanding submission uses 'under_review' so the two
+    // are distinguishable everywhere kyc_status is read (the KYC page relied on this to decide
+    // whether to show a review-in-progress screen).
+    kycStatus = 'under_review';
   } else if (approvedRes.rows.length > 0) {
     kycStatus = 'approved';
   } else {
@@ -581,6 +614,89 @@ export const getApprovedKYC = catchAsync(async (req, res) => {
       document_back_url,
       selfie_url: selfie_url || null,
       reviewer_email: reviewer_email || null,
+      user: {
+        id: user_id,
+        email: email || null,
+        phone: phone || null,
+        first_name: first_name || null,
+        last_name: last_name || null,
+        full_name: nameParts.length ? nameParts.join(' ') : null,
+      },
+    };
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      documents,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: parseInt(countResult.rows[0].total),
+        pages: Math.ceil(countResult.rows[0].total / limit),
+      },
+    },
+  });
+});
+
+// Rejected/needs-review KYC documents — includes both admin-rejected submissions AND
+// auto-rejected Smile Identity results (see webhook.controller.js processSmileIdentity). A
+// Smile auto-reject is a machine's best guess, not a final human decision, so these stay
+// visible here (rather than disappearing once rejected) specifically so a compliance officer
+// can double-check and override a false negative via the existing verifyKYCDocument endpoint.
+export const getRejectedKYC = catchAsync(async (req, res) => {
+  const { page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
+
+  const result = await query(
+    `SELECT kd.id, kd.user_id, kd.document_type, kd.document_number,
+            kd.document_url, kd.selfie_url, kd.status, kd.tier, kd.rejection_reason,
+            kd.created_at, kd.submitted_at, kd.updated_at,
+            kd.reviewed_at, kd.reviewed_by,
+            u.email, u.phone,
+            up.first_name, up.last_name,
+            ru.email AS reviewer_email
+     FROM kyc_documents kd
+     JOIN users u ON kd.user_id = u.id
+     LEFT JOIN user_profiles up ON u.id = up.user_id
+     LEFT JOIN users ru ON kd.reviewed_by = ru.id
+     WHERE kd.status = 'rejected'
+     ORDER BY kd.reviewed_at DESC NULLS LAST, kd.updated_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+
+  const countResult = await query(
+    `SELECT COUNT(*) as total
+     FROM kyc_documents
+     WHERE status = 'rejected'`
+  );
+
+  const documents = result.rows.map((row) => {
+    const {
+      document_url,
+      email,
+      phone,
+      first_name,
+      last_name,
+      user_id,
+      selfie_url,
+      reviewer_email,
+      ...rest
+    } = row;
+    const { document_front_url, document_back_url } = parseKycDocumentUrls(document_url);
+    const nameParts = [first_name, last_name].filter(Boolean);
+    return {
+      ...rest,
+      user_id,
+      document_front_url,
+      document_back_url,
+      selfie_url: selfie_url || null,
+      reviewer_email: reviewer_email || null,
+      // reviewed_by is null for an automated Smile ID rejection (no human touched it yet) —
+      // surface that distinction so admin can tell "the machine rejected this" apart from
+      // "a colleague already looked at this and rejected it."
+      auto_rejected: !row.reviewed_by,
       user: {
         id: user_id,
         email: email || null,

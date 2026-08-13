@@ -222,6 +222,55 @@ export async function notifySmileBiometricSubmitted({ userId, jobId }) {
 }
 
 /**
+ * The automated provider couldn't be reached to submit a biometric/liveness job (network/API/
+ * config failure — NOT a verification result). The document stays 'pending' so it lands in the
+ * admin's normal KYC review queue for manual approval; this just makes sure staff notice it and
+ * the user knows their submission is safe (queued for manual review) rather than silently lost,
+ * with the option to simply retry the automated check.
+ */
+export async function notifySmileProviderUnreachable({ userId, jobId, documentType, error }) {
+  try {
+    const contact = await getUserContact(userId);
+    const base = frontendBase();
+    const label = documentLabel(documentType);
+
+    const userPromise = contact
+      ? sendEmail({
+          to: contact.email,
+          subject: "We're reviewing your verification manually",
+          template: 'kycUserSubmissionReceived',
+          data: {
+            name: contact.name,
+            documentLabel: label,
+            dashboardUrl: `${base}/dashboard/kyc`,
+            bodyExtra:
+              'Our automatic checker could not process your submission right away, so our compliance team will review it manually instead. You can also try the liveness/ID verification again from your dashboard — it may succeed automatically on a retry.',
+          },
+        })
+      : Promise.resolve();
+
+    await Promise.all([
+      userPromise.catch((e) => logEmailErr('notifySmileProviderUnreachable user', e)),
+      sendStaffKycEmail({
+        subject: `[KYC] Automated check unavailable — needs manual review (job ${jobId})`,
+        eventTitle: 'Smile ID unreachable — manual review needed',
+        intro: 'A verification job could not be submitted to Smile Identity and needs a compliance officer to review it manually.',
+        rows: [
+          { label: 'User', value: contact?.email || userId },
+          { label: 'Job ID', value: jobId },
+          { label: 'Document type', value: label },
+          { label: 'Error', value: error || 'unknown' },
+        ],
+      }).catch((e) => logEmailErr('notifySmileProviderUnreachable staff', e)),
+    ]);
+
+    notifyKyc(userId, { tier: '', status: 'update', reason: 'Queued for manual review — automated check unavailable.' }).catch(() => {});
+  } catch (e) {
+    logEmailErr('notifySmileProviderUnreachable', e);
+  }
+}
+
+/**
  * Admin approved or rejected a document — user + staff audit.
  */
 export async function notifyAdminKycDecision({
@@ -339,6 +388,15 @@ export async function notifySmileKycWebhookResult({
         ],
       }).catch((e) => logEmailErr('notifySmileKycWebhookResult staff', e)),
     ]);
+
+    // In-app (bell icon) notification — this was previously email-only, so a user verified
+    // automatically by Smile ID never saw anything on their dashboard confirming it, let alone a
+    // nudge toward the next tier.
+    notifyKyc(userId, {
+      tier: String(kycTier || '').replace('tier_', ''),
+      status: approved ? 'approved' : 'rejected',
+      reason: approved ? undefined : resultText,
+    }).catch(() => {});
   } catch (e) {
     logEmailErr('notifySmileKycWebhookResult', e);
   }

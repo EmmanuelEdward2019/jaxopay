@@ -14,6 +14,7 @@ import {
     ChevronRight,
     AlertTriangle,
     Archive,
+    Bot,
 } from 'lucide-react';
 import adminService from '../../services/adminService';
 import { formatDateTime } from '../../utils/formatters';
@@ -56,26 +57,31 @@ function openImageInNewTab(src) {
         });
 }
 
+const TABS = ['pending', 'rejected', 'approved'];
+
 const KYCReview = () => {
     const [searchParams, setSearchParams] = useSearchParams();
-    const activeTab = searchParams.get('tab') === 'approved' ? 'approved' : 'pending';
+    const activeTab = TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'pending';
 
     const [pendingDocs, setPendingDocs] = useState([]);
     const [approvedDocs, setApprovedDocs] = useState([]);
+    const [rejectedDocs, setRejectedDocs] = useState([]);
     const [pendingLoading, setPendingLoading] = useState(true);
     const [approvedLoading, setApprovedLoading] = useState(true);
+    const [rejectedLoading, setRejectedLoading] = useState(true);
     const [pendingPagination, setPendingPagination] = useState({ page: 1, limit: 20, total: 0 });
     const [approvedPagination, setApprovedPagination] = useState({ page: 1, limit: 20, total: 0 });
+    const [rejectedPagination, setRejectedPagination] = useState({ page: 1, limit: 20, total: 0 });
     const [selectedDoc, setSelectedDoc] = useState(null);
     const [showReviewModal, setShowReviewModal] = useState(false);
-    const [modalReadOnly, setModalReadOnly] = useState(false);
+    const [modalMode, setModalMode] = useState('review'); // 'review' | 'view' | 'reconsider'
     const [actionLoading, setActionLoading] = useState(false);
 
     const setTab = (tab) => {
-        if (tab === 'approved') {
-            setSearchParams({ tab: 'approved' });
-        } else {
+        if (tab === 'pending') {
             setSearchParams({});
+        } else {
+            setSearchParams({ tab });
         }
     };
 
@@ -111,6 +117,22 @@ const KYCReview = () => {
         setApprovedLoading(false);
     };
 
+    const fetchRejectedKYC = async () => {
+        setRejectedLoading(true);
+        const result = await adminService.getRejectedKYC({
+            page: rejectedPagination.page,
+            limit: rejectedPagination.limit,
+        });
+        if (result.success) {
+            setRejectedDocs(result.data.documents || []);
+            setRejectedPagination((prev) => ({
+                ...prev,
+                total: result.data.pagination?.total || 0,
+            }));
+        }
+        setRejectedLoading(false);
+    };
+
     useEffect(() => {
         if (activeTab !== 'pending') {
             setPendingLoading(false);
@@ -127,20 +149,35 @@ const KYCReview = () => {
         fetchApprovedKYC();
     }, [activeTab, approvedPagination.page]);
 
+    useEffect(() => {
+        if (activeTab !== 'rejected') {
+            setRejectedLoading(false);
+            return;
+        }
+        fetchRejectedKYC();
+    }, [activeTab, rejectedPagination.page]);
+
     const handleRefresh = () => {
         if (activeTab === 'pending') fetchPendingKYC();
+        else if (activeTab === 'rejected') fetchRejectedKYC();
         else fetchApprovedKYC();
     };
 
     const handleReviewDoc = (doc) => {
         setSelectedDoc(doc);
-        setModalReadOnly(false);
+        setModalMode('review');
         setShowReviewModal(true);
     };
 
     const handleViewApproved = (doc) => {
         setSelectedDoc(doc);
-        setModalReadOnly(true);
+        setModalMode('view');
+        setShowReviewModal(true);
+    };
+
+    const handleReconsiderRejected = (doc) => {
+        setSelectedDoc(doc);
+        setModalMode('reconsider');
         setShowReviewModal(true);
     };
 
@@ -150,6 +187,7 @@ const KYCReview = () => {
         if (result.success) {
             fetchPendingKYC();
             fetchApprovedKYC();
+            fetchRejectedKYC();
             setShowReviewModal(false);
         }
         setActionLoading(false);
@@ -157,11 +195,12 @@ const KYCReview = () => {
 
     const pendingTotalPages = Math.ceil(pendingPagination.total / pendingPagination.limit) || 1;
     const approvedTotalPages = Math.ceil(approvedPagination.total / approvedPagination.limit) || 1;
-    const documents = activeTab === 'pending' ? pendingDocs : approvedDocs;
-    const pagination = activeTab === 'pending' ? pendingPagination : approvedPagination;
-    const totalPages = activeTab === 'pending' ? pendingTotalPages : approvedTotalPages;
-    const setPagination = activeTab === 'pending' ? setPendingPagination : setApprovedPagination;
-    const loading = activeTab === 'pending' ? pendingLoading : approvedLoading;
+    const rejectedTotalPages = Math.ceil(rejectedPagination.total / rejectedPagination.limit) || 1;
+    const documents = activeTab === 'pending' ? pendingDocs : activeTab === 'rejected' ? rejectedDocs : approvedDocs;
+    const pagination = activeTab === 'pending' ? pendingPagination : activeTab === 'rejected' ? rejectedPagination : approvedPagination;
+    const totalPages = activeTab === 'pending' ? pendingTotalPages : activeTab === 'rejected' ? rejectedTotalPages : approvedTotalPages;
+    const setPagination = activeTab === 'pending' ? setPendingPagination : activeTab === 'rejected' ? setRejectedPagination : setApprovedPagination;
+    const loading = activeTab === 'pending' ? pendingLoading : activeTab === 'rejected' ? rejectedLoading : approvedLoading;
 
     return (
         <div className="space-y-6">
@@ -171,7 +210,9 @@ const KYCReview = () => {
                     <p className="text-gray-600 dark:text-gray-400">
                         {activeTab === 'pending'
                             ? `${pendingPagination.total} pending document${pendingPagination.total === 1 ? '' : 's'}`
-                            : `${approvedPagination.total} approved record${approvedPagination.total === 1 ? '' : 's'} on file`}
+                            : activeTab === 'rejected'
+                                ? `${rejectedPagination.total} rejected/needs-review record${rejectedPagination.total === 1 ? '' : 's'}`
+                                : `${approvedPagination.total} approved record${approvedPagination.total === 1 ? '' : 's'} on file`}
                     </p>
                 </div>
                 <button
@@ -196,6 +237,18 @@ const KYCReview = () => {
                 >
                     <Shield className="w-4 h-4" />
                     Pending queue
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setTab('rejected')}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'rejected'
+                            ? 'bg-red-100 dark:bg-red-900/40 text-red-900 dark:text-red-100'
+                            : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                    }`}
+                >
+                    <AlertTriangle className="w-4 h-4" />
+                    Rejected / needs review
                 </button>
                 <button
                     type="button"
@@ -224,6 +277,12 @@ const KYCReview = () => {
                                 <h3 className="text-lg font-medium text-gray-900 dark:text-white">No pending documents</h3>
                                 <p className="text-gray-500">All KYC submissions have been reviewed</p>
                             </>
+                        ) : activeTab === 'rejected' ? (
+                            <>
+                                <AlertTriangle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                <h3 className="text-lg font-medium text-gray-900 dark:text-white">Nothing rejected right now</h3>
+                                <p className="text-gray-500">Auto-rejected Smile ID results and manually-rejected documents show up here for a second look</p>
+                            </>
                         ) : (
                             <>
                                 <Archive className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -245,12 +304,16 @@ const KYCReview = () => {
                                             className={`p-3 rounded-xl ${
                                                 activeTab === 'pending'
                                                     ? 'bg-yellow-100 dark:bg-yellow-900/30'
-                                                    : 'bg-accent-100 dark:bg-accent-900/30'
+                                                    : activeTab === 'rejected'
+                                                        ? 'bg-red-100 dark:bg-red-900/30'
+                                                        : 'bg-accent-100 dark:bg-accent-900/30'
                                             }`}
                                         >
                                             <FileText
                                                 className={`w-6 h-6 ${
-                                                    activeTab === 'pending' ? 'text-yellow-600' : 'text-accent-600'
+                                                    activeTab === 'pending' ? 'text-yellow-600'
+                                                        : activeTab === 'rejected' ? 'text-red-600'
+                                                            : 'text-accent-600'
                                                 }`}
                                             />
                                         </div>
@@ -263,12 +326,19 @@ const KYCReview = () => {
                                                     className={`px-2 py-0.5 text-xs font-medium rounded-full ${
                                                         activeTab === 'pending'
                                                             ? 'bg-yellow-100 text-yellow-700'
-                                                            : 'bg-accent-100 text-accent-800 dark:bg-accent-900/50 dark:text-accent-200'
+                                                            : activeTab === 'rejected'
+                                                                ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-200'
+                                                                : 'bg-accent-100 text-accent-800 dark:bg-accent-900/50 dark:text-accent-200'
                                                     }`}
                                                 >
-                                                    {activeTab === 'pending' ? 'Pending' : 'Approved'}
+                                                    {activeTab === 'pending' ? 'Pending' : activeTab === 'rejected' ? 'Rejected' : 'Approved'}
                                                 </span>
-                                                {activeTab === 'approved' && doc.tier && (
+                                                {activeTab === 'rejected' && doc.auto_rejected && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                                                        <Bot className="w-3 h-3" /> Auto-rejected by Smile ID
+                                                    </span>
+                                                )}
+                                                {activeTab !== 'pending' && doc.tier && (
                                                     <span className="text-xs text-gray-500">Target tier: {doc.tier}</span>
                                                 )}
                                             </div>
@@ -284,7 +354,7 @@ const KYCReview = () => {
                                                     <Calendar className="w-4 h-4" />
                                                     {formatDateTime(doc.created_at)}
                                                 </span>
-                                                {activeTab === 'approved' && doc.reviewed_at && (
+                                                {activeTab !== 'pending' && doc.reviewed_at && (
                                                     <span className="text-xs">
                                                         Reviewed {formatDateTime(doc.reviewed_at)}
                                                     </span>
@@ -293,17 +363,24 @@ const KYCReview = () => {
                                             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                                                 Document #: {doc.document_number}
                                             </p>
+                                            {activeTab === 'rejected' && doc.rejection_reason && (
+                                                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                                                    Reason: {doc.rejection_reason}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                     <button
                                         type="button"
-                                        onClick={() =>
-                                            activeTab === 'pending' ? handleReviewDoc(doc) : handleViewApproved(doc)
-                                        }
+                                        onClick={() => {
+                                            if (activeTab === 'pending') handleReviewDoc(doc);
+                                            else if (activeTab === 'rejected') handleReconsiderRejected(doc);
+                                            else handleViewApproved(doc);
+                                        }}
                                         className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg"
                                     >
                                         <Eye className="w-4 h-4" />
-                                        {activeTab === 'pending' ? 'Review' : 'View record'}
+                                        {activeTab === 'pending' ? 'Review' : activeTab === 'rejected' ? 'Reconsider' : 'View record'}
                                     </button>
                                 </div>
                             </div>
@@ -346,7 +423,7 @@ const KYCReview = () => {
                 {showReviewModal && selectedDoc && (
                     <KYCReviewModal
                         document={selectedDoc}
-                        readOnly={modalReadOnly}
+                        mode={modalMode}
                         onClose={() => setShowReviewModal(false)}
                         onVerify={handleVerify}
                         loading={actionLoading}
@@ -357,8 +434,11 @@ const KYCReview = () => {
     );
 };
 
-// KYC Review Modal
-const KYCReviewModal = ({ document, readOnly, onClose, onVerify, loading }) => {
+// KYC Review Modal — mode 'review' (pending, approve/reject), 'view' (approved, read-only),
+// or 'reconsider' (rejected — mostly an automated Smile ID result — offering an override to
+// approved, since the admin is here specifically to double-check a machine decision).
+const KYCReviewModal = ({ document, mode, onClose, onVerify, loading }) => {
+    const readOnly = mode === 'view';
     const [rejectionReason, setRejectionReason] = useState('');
     const [showRejectForm, setShowRejectForm] = useState(false);
 
@@ -381,7 +461,7 @@ const KYCReviewModal = ({ document, readOnly, onClose, onVerify, loading }) => {
                 <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                     <div>
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                            {readOnly ? 'Approved KYC record' : 'Review KYC Document'}
+                            {mode === 'view' ? 'Approved KYC record' : mode === 'reconsider' ? 'Reconsider Rejected Document' : 'Review KYC Document'}
                         </h2>
                         <p className="text-gray-500">
                             {DOC_TYPES[document.document_type]?.label || document.document_type}
@@ -550,9 +630,20 @@ const KYCReviewModal = ({ document, readOnly, onClose, onVerify, loading }) => {
                         </div>
                     )}
 
+                    {/* Existing rejection reason — shown for 'reconsider' so the admin sees why the
+                        automated check (or a colleague) rejected it before deciding to override. */}
+                    {mode === 'reconsider' && document.rejection_reason && (
+                        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 rounded-xl">
+                            <p className="text-sm font-medium text-red-800 dark:text-red-200 mb-1">
+                                {document.auto_rejected ? 'Smile ID rejection reason' : 'Rejection reason on file'}
+                            </p>
+                            <p className="text-sm text-red-700 dark:text-red-300">{document.rejection_reason}</p>
+                        </div>
+                    )}
+
                     {/* Actions */}
                     <div className="flex gap-4">
-                        {readOnly ? (
+                        {mode === 'view' ? (
                             <button
                                 type="button"
                                 onClick={onClose}
@@ -560,6 +651,25 @@ const KYCReviewModal = ({ document, readOnly, onClose, onVerify, loading }) => {
                             >
                                 Close
                             </button>
+                        ) : mode === 'reconsider' ? (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={onClose}
+                                    className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl"
+                                >
+                                    Leave Rejected
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onVerify(document.id, 'approved')}
+                                    disabled={loading}
+                                    className="flex-1 inline-flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-700 text-gray-900 font-semibold rounded-xl disabled:opacity-50"
+                                >
+                                    <Check className="w-5 h-5" />
+                                    {loading ? 'Approving...' : 'Approve (Override)'}
+                                </button>
+                            </>
                         ) : !showRejectForm ? (
                             <>
                                 <button

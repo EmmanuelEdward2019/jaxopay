@@ -5,18 +5,19 @@ import '@smile_identity/smart-camera-web';
 import {
     Shield, Upload, Check, X, AlertTriangle, Clock,
     FileText, Camera, CreditCard, Info, Home,
-    User, ChevronRight, ChevronLeft, Lock, Unlock, CheckCircle2,
-    Fingerprint, ScanFace, MapPin, ArrowRight, Globe, Calendar
+    User, ChevronRight, ChevronDown, Lock, CheckCircle2,
+    Fingerprint, ScanFace, ArrowRight, Globe, PartyPopper,
 } from 'lucide-react';
 import kycService from '../../services/kycService';
-import { SMILE_ISO2_COUNTRIES, getSmileIdTypeOptions } from '../../constants/smileKycOptions';
+import userService from '../../services/userService';
+import { SMILE_ISO2_COUNTRIES } from '../../constants/smileKycOptions';
 
-// ── Step definitions ──────────────────────────────────────────────────
-const STEPS = [
-    { id: 1, label: 'Personal Info', icon: User, description: 'Basic personal details' },
-    { id: 2, label: 'ID Document', icon: FileText, description: 'Government-issued identification' },
-    { id: 3, label: 'Selfie Verification', icon: Camera, description: 'Photo verification' },
-    { id: 4, label: 'Address Proof', icon: MapPin, description: 'Proof of residence' },
+// ── Tier ladder definitions — JAXOPAY's own requirements, always visible so a user can see the
+// whole path ahead, not just whatever they're on right now. ────────────────────────────────────
+const TIER_DEFS = [
+    { num: 1, title: 'Basic Profile', subtitle: 'Confirm your details', icon: User },
+    { num: 2, title: 'Identity Verification', subtitle: 'Government ID + liveness check', icon: ScanFace },
+    { num: 3, title: 'Address Verification', subtitle: 'Proof of residence', icon: Home },
 ];
 
 const ID_DOCUMENT_TYPES = [
@@ -25,6 +26,8 @@ const ID_DOCUMENT_TYPES = [
     { id: 'national_id', name: 'National ID', icon: CreditCard },
     { id: 'drivers_license', name: "Driver's License", icon: CreditCard },
 ];
+const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card']);
+const ADDRESS_DOC_TYPE_VALUES = ['proof_of_address', 'utility_bill'];
 
 const ADDRESS_DOCUMENT_TYPES = [
     'Utility bill (electricity, water, gas)',
@@ -55,14 +58,30 @@ function rememberKycDocNumber(documentType, rawValue) {
     try { localStorage.setItem(KYC_DOC_NUMBER_STORAGE_KEY, JSON.stringify(hist)); } catch {}
 }
 
+/** Aggregate status across a set of document_type values: approved beats pending beats rejected. */
+function docStatusFor(documents, types) {
+    const relevant = documents.filter((d) => types.includes(d.document_type));
+    if (relevant.some((d) => d.verification_status === 'approved' || d.status === 'approved')) return 'approved';
+    if (relevant.some((d) => d.verification_status === 'pending' || d.status === 'pending')) return 'pending';
+    if (relevant.length > 0) return 'rejected';
+    return 'none';
+}
+
+function latestRejectionReason(documents, types) {
+    const rejected = documents
+        .filter((d) => types.includes(d.document_type) && (d.verification_status === 'rejected' || d.status === 'rejected'))
+        .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+    return rejected[0]?.rejection_reason || null;
+}
+
 // ── Main Component ────────────────────────────────────────────────────
 const KYC = () => {
     const refreshSession = useAuthStore(s => s.refreshSession);
     const [kycStatus, setKycStatus] = useState(null);
     const [documents, setDocuments] = useState([]);
+    const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [currentStep, setCurrentStep] = useState(1);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
 
@@ -71,21 +90,21 @@ const KYC = () => {
     const [upgrading, setUpgrading] = useState(false);
     const [upgradeMsg, setUpgradeMsg] = useState(null);
 
-    // Form state across steps
+    // Which tier's panel is expanded — defaults to the first non-verified tier once data loads.
+    const [expandedTier, setExpandedTier] = useState(null);
+    const [tierPopup, setTierPopup] = useState(null); // { completedTier, nextTier } | null
+
+    // Form state (shared across tier panels)
     const [formData, setFormData] = useState({
-        // Step 1: Personal Info
         fullName: '',
         dateOfBirth: '',
         nationality: 'NG',
         address: '',
-        // Step 2: ID Document
         documentType: '',
         documentNumber: '',
         documentFront: null,
         documentBack: null,
-        // Step 3: Selfie
         selfie: null,
-        // Step 4: Address Proof
         addressDocument: null,
     });
 
@@ -124,32 +143,32 @@ const KYC = () => {
     // ── Data fetching ────────────────────────────────────────────────
     const fetchKYCData = useCallback(async () => {
         setLoading(true);
-        const [statusResult, docsResult, smileCfg, limitsResult] = await Promise.all([
+        const [statusResult, docsResult, smileCfg, limitsResult, profileResult] = await Promise.all([
             kycService.getKYCStatus(),
             kycService.getDocuments(),
             kycService.getSmileConfig(),
             kycService.getTierLimits(),
+            userService.getProfile(),
         ]);
         if (statusResult.success) setKycStatus(statusResult.data);
         if (docsResult.success) setDocuments(docsResult.data.documents || []);
         if (smileCfg.success && smileCfg.data?.configured) setSmileConfigured(true);
         else setSmileConfigured(false);
         if (limitsResult.success) setTierLimits(limitsResult.data);
+        if (profileResult.success) {
+            const u = profileResult.data?.user || {};
+            setProfile(u);
+            // Pre-fill from the saved profile so a returning user doesn't retype what's already on file.
+            setFormData((prev) => ({
+                ...prev,
+                fullName: prev.fullName || [u.first_name, u.last_name].filter(Boolean).join(' '),
+                address: prev.address || u.address || '',
+                dateOfBirth: prev.dateOfBirth || (u.date_of_birth ? String(u.date_of_birth).slice(0, 10) : ''),
+                nationality: u.country || prev.nationality,
+            }));
+        }
         setLoading(false);
     }, []);
-
-    const handleUpgrade = async (targetTier) => {
-        setUpgrading(true);
-        setUpgradeMsg(null);
-        const res = await kycService.requestUpgrade(targetTier);
-        setUpgrading(false);
-        if (res.success) {
-            setUpgradeMsg({ ok: true, text: res.message || `Upgraded to Tier ${targetTier}!` });
-            fetchKYCData();
-        } else {
-            setUpgradeMsg({ ok: false, text: res.error || 'Could not upgrade yet.' });
-        }
-    };
 
     useEffect(() => { fetchKYCData(); }, [fetchKYCData]);
 
@@ -166,7 +185,83 @@ const KYC = () => {
         };
     }, [fetchKYCData, refreshSession]);
 
-    // ── SmileID Camera ───────────────────────────────────────────────
+    // ── Tier status derivation ─────────────────────────────────────────
+    const rawTier = kycStatus?.kyc_tier;
+    const currentTierLabel = typeof rawTier === 'string' && rawTier.startsWith('tier_') ? rawTier : `tier_${Number(rawTier) || 0}`;
+    const tierNum = parseInt(currentTierLabel.replace('tier_', '')) || 0;
+
+    const idDocStatus = docStatusFor(documents, ID_DOC_TYPE_VALUES);
+    const facialDocStatus = docStatusFor(documents, ['smile_biometric_kyc', 'smile_basic_kyc']);
+    // A manually-uploaded ID document only counts toward facial verification if it actually has
+    // a selfie attached (has_selfie, from the real selfie_url column — the ID upload alone does
+    // NOT guarantee one was included). Mirrors the backend's own check exactly, so this never
+    // shows a checkmark the server wouldn't also honor.
+    const approvedIdWithSelfie = documents.some((d) => ID_DOC_TYPE_VALUES.includes(d.document_type) && d.verification_status === 'approved' && d.has_selfie);
+    const facialApproved = facialDocStatus === 'approved' || approvedIdWithSelfie;
+    const tier2SubStatus = (() => {
+        if (idDocStatus === 'pending' || facialDocStatus === 'pending') return 'pending';
+        if (idDocStatus === 'rejected' && !facialApproved) return 'rejected';
+        if (facialDocStatus === 'rejected' && idDocStatus !== 'approved') return 'rejected';
+        return 'none';
+    })();
+    const addressDocStatus = docStatusFor(documents, ADDRESS_DOC_TYPE_VALUES);
+
+    const tierStatus = (num) => {
+        if (tierNum >= num) return 'approved';
+        if (num === 1) return 'none'; // Tier 1 is instant (profile check), never "pending"
+        if (num === 2) return tier2SubStatus;
+        if (num === 3) return addressDocStatus;
+        return 'none';
+    };
+
+    // Sequential: a tier is locked until every tier before it is approved.
+    const isLocked = (num) => num > 1 && tierNum < num - 1;
+    const firstActionableTier = TIER_DEFS.find((t) => tierStatus(t.num) !== 'approved' && !isLocked(t.num))?.num ?? null;
+
+    useEffect(() => {
+        if (loading) return;
+        setExpandedTier((prev) => (prev !== null ? prev : firstActionableTier));
+    }, [loading, firstActionableTier]);
+
+    // ── Tier 1: save profile + instant upgrade ──────────────────────────
+    const handleSaveTier1 = async () => {
+        setError(null);
+        const [first, ...rest] = formData.fullName.trim().split(/\s+/);
+        if (!first || rest.length === 0) { setError('Please enter your full first and last name.'); return; }
+        if (!formData.address.trim()) { setError('Please enter your residential address.'); return; }
+        setUpgrading(true);
+        setUpgradeMsg(null);
+        const profileRes = await userService.updateProfile({
+            first_name: first,
+            last_name: rest.join(' '),
+            address: formData.address.trim(),
+            date_of_birth: formData.dateOfBirth || undefined,
+            country: formData.nationality,
+        });
+        if (!profileRes.success) {
+            setUpgrading(false);
+            setUpgradeMsg({ ok: false, text: profileRes.error || 'Could not save your profile.' });
+            return;
+        }
+        const res = await kycService.requestUpgrade(1);
+        setUpgrading(false);
+        if (res.success) {
+            setUpgradeMsg(null);
+            setSuccess('Tier 1 complete!');
+            setTierPopup({ completedTier: 1, nextTier: 2 });
+            fetchKYCData();
+        } else {
+            setUpgradeMsg({ ok: false, text: res.error || 'Could not upgrade yet.' });
+        }
+    };
+
+    // Tier 2/3 don't need a manual "upgrade" click — both approval paths (the Smile ID webhook
+    // and an admin's manual verifyKYCDocument decision) already bump kyc_tier directly the
+    // moment the underlying document is approved, so the tier card just reflects that on the
+    // next fetch. Tier 1 is the only one with no async review step, hence handleSaveTier1 above
+    // calling /kyc/upgrade explicitly right after saving the profile.
+
+    // ── SmileID Camera (Tier 2 — liveness) ──────────────────────────────
     useEffect(() => {
         if (!showCameraModal || !smileCameraHostRef.current) return undefined;
         const host = smileCameraHostRef.current;
@@ -275,14 +370,16 @@ const KYC = () => {
         }
     };
 
-    // ── Submit all KYC data ──────────────────────────────────────────
-    const handleSubmitKYC = async () => {
-        if (!formData.documentType || !formData.documentFront) {
-            setError('Please complete all required fields'); return;
+    // ── Tier 2: submit ID + selfie (manual path) ─────────────────────
+    const isTier2FormValid = () =>
+        formData.documentType && formData.documentFront && formData.documentNumber.trim() && formData.selfie;
+
+    const handleSubmitTier2 = async () => {
+        if (!isTier2FormValid()) {
+            setError('Please complete the document type, number, upload, and selfie.'); return;
         }
         setSubmitting(true); setError(null);
         try {
-            // Submit ID document
             const idResult = await kycService.submitDocument({
                 document_type: formData.documentType,
                 document_number: formData.documentNumber.trim(),
@@ -290,33 +387,38 @@ const KYC = () => {
                 document_back: formData.documentBack,
                 selfie: formData.selfie,
             });
-
             if (!idResult.success) {
                 setError(idResult.error || 'ID submission failed');
-                setSubmitting(false);
                 return;
             }
-
             if (formData.documentNumber.trim()) {
                 rememberKycDocNumber(formData.documentType, formData.documentNumber.trim());
                 setDocNumberHistoryTick(t => t + 1);
             }
+            setSuccess('Identity verification submitted! This usually takes 24-48 hours.');
+            fetchKYCData();
+        } catch (e) {
+            setError(e?.message || 'Submission failed.');
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
-            // Submit address proof if provided
-            if (formData.addressDocument) {
-                const addrResult = await kycService.submitDocument({
-                    document_type: 'proof_of_address',
-                    document_number: '',
-                    document_front: formData.addressDocument,
-                });
-                if (!addrResult.success) {
-                    setError(addrResult.error || 'Address proof submission failed');
-                    setSubmitting(false);
-                    return;
-                }
+    // ── Tier 3: submit address proof ─────────────────────────────────
+    const handleSubmitTier3 = async () => {
+        if (!formData.addressDocument) { setError('Please upload a proof of address document.'); return; }
+        setSubmitting(true); setError(null);
+        try {
+            const addrResult = await kycService.submitDocument({
+                document_type: 'proof_of_address',
+                document_number: '',
+                document_front: formData.addressDocument,
+            });
+            if (!addrResult.success) {
+                setError(addrResult.error || 'Address proof submission failed');
+                return;
             }
-
-            setSuccess('All documents submitted! Verification usually takes 24-48 hours.');
+            setSuccess('Proof of address submitted! This usually takes 24-48 hours.');
             fetchKYCData();
         } catch (e) {
             setError(e?.message || 'Submission failed.');
@@ -334,75 +436,6 @@ const KYC = () => {
         const all = loadKycDocNumberHistory()[formData.documentType];
         return Array.isArray(all) ? all : [];
     }, [formData.documentType, docNumberHistoryTick]);
-
-    // ── Step validation ──────────────────────────────────────────────
-    const isStepValid = (step) => {
-        switch (step) {
-            case 1: return formData.fullName.trim().length >= 2 && formData.dateOfBirth && formData.nationality;
-            case 2: return formData.documentType && formData.documentFront && formData.documentNumber.trim();
-            case 3: return !!formData.selfie;
-            case 4: return true; // Address proof is optional for basic verification
-            default: return false;
-        }
-    };
-
-    const handleNext = () => {
-        if (currentStep < 4) setCurrentStep(currentStep + 1);
-    };
-
-    const handleBack = () => {
-        if (currentStep > 1) setCurrentStep(currentStep - 1);
-    };
-
-    const rawTier = kycStatus?.kyc_tier;
-    const currentTier = typeof rawTier === 'string' && rawTier.startsWith('tier_') ? rawTier : `tier_${Number(rawTier) || 0}`;
-    const tierNum = parseInt(currentTier.replace('tier_', '')) || 0;
-
-    // Already fully verified (Tier 3 — highest tier)
-    if (!loading && tierNum >= 3) {
-        return (
-            <div className="max-w-2xl mx-auto py-8 px-4">
-                <div className="bg-card border-2 border-success/30 rounded-2xl p-8 text-center">
-                    <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-5">
-                        <CheckCircle2 className="w-10 h-10 text-success" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-foreground mb-3">Fully Verified</h2>
-                    <p className="text-muted-foreground max-w-md mx-auto">
-                        Your identity has been verified. You have full access to all Jaxopay features including crypto trading, virtual cards, and maximum transaction limits.
-                    </p>
-                </div>
-
-                <div className="mt-6">
-                    <TierStatusCard currentTierNum={tierNum} tierLimits={tierLimits} onUpgrade={handleUpgrade} upgrading={upgrading} upgradeMsg={upgradeMsg} />
-                </div>
-
-                {/* Previous Submissions */}
-                {documents.length > 0 && <SubmittedDocuments documents={documents} />}
-            </div>
-        );
-    }
-
-    // Pending review
-    if (!loading && kycStatus?.kyc_status === 'pending') {
-        return (
-            <div className="max-w-2xl mx-auto py-8 px-4">
-                <div className="mb-6">
-                    <TierStatusCard currentTierNum={tierNum} tierLimits={tierLimits} onUpgrade={handleUpgrade} upgrading={upgrading} upgradeMsg={upgradeMsg} />
-                </div>
-                <div className="bg-card border-2 border-warning/30 rounded-2xl p-8 text-center">
-                    <div className="w-20 h-20 bg-warning/10 rounded-full flex items-center justify-center mx-auto mb-5">
-                        <Clock className="w-10 h-10 text-warning" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-foreground mb-3">Verification Under Review</h2>
-                    <p className="text-muted-foreground max-w-md mx-auto">
-                        Your documents are being reviewed. This typically takes 24-48 hours. We'll notify you once verification is complete.
-                    </p>
-                </div>
-
-                {documents.length > 0 && <SubmittedDocuments documents={documents} />}
-            </div>
-        );
-    }
 
     if (loading) {
         return (
@@ -435,413 +468,199 @@ const KYC = () => {
             </AnimatePresence>
 
             {/* Header */}
-            <div className="mb-8">
+            <div className="mb-6">
                 <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">Identity Verification</h1>
-                <p className="text-muted-foreground">Complete verification to unlock all features and higher limits</p>
+                <p className="text-muted-foreground">
+                    {tierNum >= 3
+                        ? "You're fully verified — highest limits and all features unlocked."
+                        : 'Complete each level below to unlock higher limits and more features. You can see every level up front — nothing is hidden.'}
+                </p>
             </div>
 
-            <TierStatusCard
-                currentTierNum={tierNum}
-                tierLimits={tierLimits}
-                onUpgrade={handleUpgrade}
-                upgrading={upgrading}
-                upgradeMsg={upgradeMsg}
-            />
-
-            {/* Progress Bar */}
-            <div className="mb-8">
-                <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-foreground">Step {currentStep} of 4</span>
-                    <span className="text-sm text-muted-foreground">{STEPS[currentStep - 1].label}</span>
+            {/* Current limits summary */}
+            {tierLimits && (
+                <div className="bg-card border border-border rounded-2xl p-5 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Your current level</p>
+                        <span className="text-xl font-bold text-foreground">
+                            {tierLimits.limits?.[currentTierLabel]?.name || `Tier ${tierNum}`}
+                        </span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                        Daily limits: <strong className="text-foreground">${Number(tierLimits.limits?.[currentTierLabel]?.daily_limit_crypto || 0).toLocaleString()}</strong> crypto
+                        {' · '}<strong className="text-foreground">${Number(tierLimits.limits?.[currentTierLabel]?.daily_limit_fiat || 0).toLocaleString()}</strong> fiat
+                    </div>
                 </div>
-                <div className="flex gap-2">
-                    {STEPS.map((step) => {
-                        const StepIcon = step.icon;
-                        const isCompleted = currentStep > step.id;
-                        const isCurrent = currentStep === step.id;
-                        return (
-                            <div key={step.id} className="flex-1 flex flex-col items-center gap-2">
-                                <div className={`w-full h-2 rounded-full transition-all duration-500 ${
-                                    isCompleted ? 'bg-primary' : isCurrent ? 'bg-primary/60' : 'bg-muted'
-                                }`} />
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                                    isCompleted ? 'bg-primary text-white' : isCurrent ? 'bg-primary/10 text-primary border-2 border-primary' : 'bg-muted text-muted-foreground'
+            )}
+
+            {/* ── KYC Levels — always visible, sequential ────────────────── */}
+            <div className="space-y-4 mb-8">
+                <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Verification Levels</h2>
+
+                {TIER_DEFS.map((tier) => {
+                    const status = tierStatus(tier.num);
+                    const locked = isLocked(tier.num);
+                    const isExpanded = expandedTier === tier.num && !locked;
+                    const nextLimits = tierLimits?.limits?.[`tier_${tier.num}`];
+
+                    return (
+                        <div key={tier.num}
+                            className={`bg-card border rounded-2xl overflow-hidden transition-colors ${
+                                status === 'approved' ? 'border-success/30' : status === 'rejected' ? 'border-danger/30' : 'border-border'
+                            }`}>
+                            <button
+                                type="button"
+                                disabled={locked}
+                                onClick={() => setExpandedTier(isExpanded ? null : tier.num)}
+                                className={`w-full flex items-center gap-4 p-5 text-left ${locked ? 'cursor-not-allowed opacity-60' : 'hover:bg-muted/40'}`}
+                            >
+                                <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${
+                                    status === 'approved' ? 'bg-success/10 text-success'
+                                        : status === 'rejected' ? 'bg-danger/10 text-danger'
+                                        : status === 'pending' ? 'bg-warning/10 text-warning'
+                                        : locked ? 'bg-muted text-muted-foreground'
+                                        : 'bg-primary/10 text-primary'
                                 }`}>
-                                    {isCompleted ? <Check className="w-4 h-4" /> : <StepIcon className="w-4 h-4" />}
+                                    {status === 'approved' ? <CheckCircle2 className="w-5 h-5" />
+                                        : status === 'rejected' ? <AlertTriangle className="w-5 h-5" />
+                                        : status === 'pending' ? <Clock className="w-5 h-5" />
+                                        : locked ? <Lock className="w-5 h-5" />
+                                        : <tier.icon className="w-5 h-5" />}
                                 </div>
-                                <span className={`text-[10px] font-medium text-center hidden sm:block ${
-                                    isCompleted || isCurrent ? 'text-foreground' : 'text-muted-foreground'
-                                }`}>{step.label}</span>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-
-            {/* Step Content Card */}
-            <div className="bg-card border border-border rounded-2xl overflow-hidden">
-                <AnimatePresence mode="wait">
-                    <Motion.div key={currentStep} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                        transition={{ duration: 0.2 }}>
-
-                        {/* Step 1: Personal Information */}
-                        {currentStep === 1 && (
-                            <div className="p-6 sm:p-8 space-y-6">
-                                <div>
-                                    <h2 className="text-xl font-bold text-foreground mb-1">Personal Information</h2>
-                                    <p className="text-sm text-muted-foreground">Enter your personal details as they appear on your official documents</p>
-                                </div>
-
-                                <div className="space-y-5">
-                                    <div>
-                                        <label className="block text-sm font-medium text-foreground mb-2">Full Legal Name</label>
-                                        <input value={formData.fullName}
-                                            onChange={e => updateField('fullName', e.target.value)}
-                                            placeholder="Enter your full name as it appears on your ID"
-                                            className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-foreground mb-2">Date of Birth</label>
-                                        <div className="relative">
-                                            <input type="date" value={formData.dateOfBirth}
-                                                onChange={e => updateField('dateOfBirth', e.target.value)}
-                                                className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none" />
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-foreground mb-2">Nationality</label>
-                                        <select value={formData.nationality}
-                                            onChange={e => updateField('nationality', e.target.value)}
-                                            className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none">
-                                            {SMILE_ISO2_COUNTRIES.map(c => (
-                                                <option key={c.code} value={c.code} className="bg-card text-foreground">{c.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-foreground mb-2">Residential Address</label>
-                                        <input value={formData.address}
-                                            onChange={e => updateField('address', e.target.value)}
-                                            placeholder="Enter your current residential address"
-                                            className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 2: ID Document */}
-                        {currentStep === 2 && (
-                            <div className="p-6 sm:p-8 space-y-6">
-                                <div>
-                                    <h2 className="text-xl font-bold text-foreground mb-1">Identity Document</h2>
-                                    <p className="text-sm text-muted-foreground">Upload a clear photo of your government-issued ID document</p>
-                                </div>
-
-                                {/* Document Type Selector */}
-                                <div>
-                                    <label className="block text-sm font-medium text-foreground mb-3">Document Type</label>
-                                    <div className="grid grid-cols-3 gap-3">
-                                        {ID_DOCUMENT_TYPES.map(doc => (
-                                            <button key={doc.id} onClick={() => updateField('documentType', doc.id)}
-                                                className={`p-4 rounded-xl border-2 text-center transition-all ${
-                                                    formData.documentType === doc.id
-                                                        ? 'border-primary bg-primary/10'
-                                                        : 'border-border hover:border-primary/30'
-                                                }`}>
-                                                <doc.icon className={`w-6 h-6 mx-auto mb-2 ${
-                                                    formData.documentType === doc.id ? 'text-primary' : 'text-muted-foreground'
-                                                }`} />
-                                                <p className="text-xs sm:text-sm font-medium text-foreground">{doc.name}</p>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Document Number */}
-                                <div>
-                                    <label className="block text-sm font-medium text-foreground mb-2">Document Number</label>
-                                    <input type="text" value={formData.documentNumber}
-                                        onChange={e => updateField('documentNumber', e.target.value)}
-                                        list={formData.documentType && docNumberSuggestions.length > 0 ? 'kyc-doc-suggestions' : undefined}
-                                        autoComplete="off"
-                                        placeholder="Enter your document number"
-                                        className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
-                                    {formData.documentType && docNumberSuggestions.length > 0 && (
-                                        <datalist id="kyc-doc-suggestions">
-                                            {docNumberSuggestions.map(v => <option key={v} value={v} />)}
-                                        </datalist>
-                                    )}
-                                </div>
-
-                                {/* Upload Areas */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-foreground mb-2">Front Side *</label>
-                                        <div onClick={() => frontInputRef.current?.click()}
-                                            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all hover:border-primary/50 ${
-                                                formData.documentFront ? 'border-primary bg-primary/5' : 'border-border'
-                                            }`}>
-                                            {formData.documentFront ? (
-                                                <div className="text-primary">
-                                                    <Check className="w-8 h-8 mx-auto mb-2" />
-                                                    <p className="text-sm font-medium truncate">{formData.documentFront.name}</p>
-                                                    <p className="text-xs text-muted-foreground mt-1">Click to replace</p>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                                                    <p className="text-sm font-medium text-foreground">Upload front</p>
-                                                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG or PDF up to 5MB</p>
-                                                </>
-                                            )}
-                                        </div>
-                                        <input ref={frontInputRef} type="file" accept="image/*,.pdf" onChange={e => handleFileChange(e, 'documentFront')} className="hidden" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-foreground mb-2">Back Side</label>
-                                        <div onClick={() => backInputRef.current?.click()}
-                                            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all hover:border-primary/50 ${
-                                                formData.documentBack ? 'border-primary bg-primary/5' : 'border-border'
-                                            }`}>
-                                            {formData.documentBack ? (
-                                                <div className="text-primary">
-                                                    <Check className="w-8 h-8 mx-auto mb-2" />
-                                                    <p className="text-sm font-medium truncate">{formData.documentBack.name}</p>
-                                                    <p className="text-xs text-muted-foreground mt-1">Click to replace</p>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                                                    <p className="text-sm font-medium text-foreground">Upload back</p>
-                                                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG or PDF up to 5MB</p>
-                                                </>
-                                            )}
-                                        </div>
-                                        <input ref={backInputRef} type="file" accept="image/*,.pdf" onChange={e => handleFileChange(e, 'documentBack')} className="hidden" />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 3: Selfie Verification */}
-                        {currentStep === 3 && (
-                            <div className="p-6 sm:p-8 space-y-6">
-                                <div>
-                                    <h2 className="text-xl font-bold text-foreground mb-1">Selfie Verification</h2>
-                                    <p className="text-sm text-muted-foreground">Take or upload a clear selfie for identity verification</p>
-                                </div>
-
-                                {/* SmileID Liveness option */}
-                                {smileConfigured && (
-                                    <div className="bg-primary/5 border border-primary/20 rounded-xl p-5">
-                                        <div className="flex items-start gap-3 mb-4">
-                                            <ScanFace className="w-6 h-6 text-primary shrink-0 mt-0.5" />
-                                            <div>
-                                                <h3 className="font-semibold text-foreground mb-1">Liveness Verification (Recommended)</h3>
-                                                <p className="text-sm text-muted-foreground">
-                                                    Use our guided camera to verify your identity in real-time. Results in minutes.
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <button onClick={() => setShowCameraModal(true)}
-                                            disabled={submitting || !formData.fullName.trim() || !formData.documentNumber.trim()}
-                                            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                                            <Camera className="w-5 h-5" />
-                                            Open Camera - Liveness Capture
-                                        </button>
-                                        {(!formData.fullName.trim() || !formData.documentNumber.trim()) && (
-                                            <p className="text-xs text-muted-foreground mt-2 text-center">Complete Steps 1 & 2 first to enable liveness verification</p>
-                                        )}
-                                    </div>
-                                )}
-
-                                <div className="relative flex items-center gap-3 text-muted-foreground">
-                                    <div className="flex-1 h-px bg-border" />
-                                    <span className="text-xs font-medium">OR upload manually</span>
-                                    <div className="flex-1 h-px bg-border" />
-                                </div>
-
-                                {/* Manual selfie upload */}
-                                <div className="space-y-4">
-                                    <div className="flex gap-3">
-                                        <button type="button" onClick={() => { setError(null); setShowManualSelfieCamera(true); }}
-                                            className="flex-1 py-3 bg-muted hover:bg-muted/80 border border-border rounded-xl font-medium text-foreground text-sm flex items-center justify-center gap-2 transition-colors">
-                                            <Camera className="w-4 h-4" /> Take Photo
-                                        </button>
-                                        <button type="button" onClick={() => selfieInputRef.current?.click()}
-                                            className="flex-1 py-3 bg-muted hover:bg-muted/80 border border-border rounded-xl font-medium text-foreground text-sm flex items-center justify-center gap-2 transition-colors">
-                                            <Upload className="w-4 h-4" /> Upload Photo
-                                        </button>
-                                    </div>
-
-                                    <div className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
-                                        formData.selfie ? 'border-primary bg-primary/5' : 'border-border'
-                                    }`}>
-                                        {formData.selfie ? (
-                                            <div className="text-primary">
-                                                <Check className="w-8 h-8 mx-auto mb-2" />
-                                                <p className="text-sm font-medium">{formData.selfie.name}</p>
-                                                <button type="button" onClick={() => updateField('selfie', null)}
-                                                    className="text-xs text-danger underline mt-2">Remove</button>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <Camera className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                                                <p className="text-sm font-medium text-foreground">No selfie captured yet</p>
-                                                <p className="text-xs text-muted-foreground mt-1">Take a photo or upload one above</p>
-                                            </>
-                                        )}
-                                    </div>
-                                    <input ref={selfieInputRef} type="file" accept="image/*" capture="user"
-                                        onChange={e => handleFileChange(e, 'selfie')} className="hidden" />
-
-                                    {/* Tips */}
-                                    <div className="bg-muted/50 rounded-xl p-4">
-                                        <p className="text-sm font-medium text-foreground mb-2">Tips for a good selfie:</p>
-                                        <ul className="space-y-1.5 text-xs text-muted-foreground">
-                                            <li className="flex items-start gap-2">
-                                                <Check className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                                                Ensure your face is clearly visible and well-lit
-                                            </li>
-                                            <li className="flex items-start gap-2">
-                                                <Check className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                                                Remove sunglasses, hats, or face coverings
-                                            </li>
-                                            <li className="flex items-start gap-2">
-                                                <Check className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                                                Look directly at the camera
-                                            </li>
-                                            <li className="flex items-start gap-2">
-                                                <Check className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                                                Use a plain background if possible
-                                            </li>
-                                        </ul>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 4: Address Proof */}
-                        {currentStep === 4 && (
-                            <div className="p-6 sm:p-8 space-y-6">
-                                <div>
-                                    <h2 className="text-xl font-bold text-foreground mb-1">Address Proof</h2>
-                                    <p className="text-sm text-muted-foreground">Upload a document that confirms your residential address</p>
-                                </div>
-
-                                {/* Upload area */}
-                                <div>
-                                    <div onClick={() => addressDocInputRef.current?.click()}
-                                        className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all hover:border-primary/50 ${
-                                            formData.addressDocument ? 'border-primary bg-primary/5' : 'border-border'
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-bold text-foreground">Tier {tier.num}: {tier.title}</span>
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                            status === 'approved' ? 'bg-success/10 text-success'
+                                                : status === 'rejected' ? 'bg-danger/10 text-danger'
+                                                : status === 'pending' ? 'bg-warning/10 text-warning'
+                                                : locked ? 'bg-muted text-muted-foreground'
+                                                : 'bg-primary/10 text-primary'
                                         }`}>
-                                        {formData.addressDocument ? (
-                                            <div className="text-primary">
-                                                <Check className="w-10 h-10 mx-auto mb-3" />
-                                                <p className="text-sm font-medium">{formData.addressDocument.name}</p>
-                                                <p className="text-xs text-muted-foreground mt-1">Click to replace</p>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                                                <p className="text-sm font-medium text-foreground mb-1">Upload address proof</p>
-                                                <p className="text-xs text-muted-foreground">PNG, JPG or PDF up to 5MB</p>
-                                            </>
-                                        )}
+                                            {status === 'approved' ? 'Verified' : status === 'rejected' ? 'Needs attention' : status === 'pending' ? 'Under review' : locked ? 'Locked' : 'Not started'}
+                                        </span>
                                     </div>
-                                    <input ref={addressDocInputRef} type="file" accept="image/*,.pdf"
-                                        onChange={e => handleFileChange(e, 'addressDocument')} className="hidden" />
+                                    <p className="text-sm text-muted-foreground mt-0.5">
+                                        {locked ? `Complete Tier ${tier.num - 1} first` : tier.subtitle}
+                                    </p>
                                 </div>
+                                {!locked && (isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />)}
+                            </button>
 
-                                {/* Accepted documents list */}
-                                <div className="bg-muted/50 rounded-xl p-4">
-                                    <p className="text-sm font-medium text-foreground mb-3">Accepted documents:</p>
-                                    <ul className="space-y-2">
-                                        {ADDRESS_DOCUMENT_TYPES.map((doc, i) => (
-                                            <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-                                                <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                                                {doc}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </div>
-                        )}
-                    </Motion.div>
-                </AnimatePresence>
+                            <AnimatePresence>
+                                {isExpanded && (
+                                    <Motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                                        <div className="px-5 pb-5 border-t border-border pt-5">
+                                            {/* Requirements checklist — always shown, per-item ticks */}
+                                            <div className="mb-5 space-y-2">
+                                                {tier.num === 1 && (
+                                                    <>
+                                                        <ReqRow label="Full name" done={!!(profile?.first_name && profile?.last_name) || tierNum >= 1} />
+                                                        <ReqRow label="Residential address" done={!!profile?.address || tierNum >= 1} />
+                                                        <ReqRow label="Verified email" done={!!profile?.is_email_verified} />
+                                                        <ReqRow label="Phone number" done={!!profile?.phone} />
+                                                    </>
+                                                )}
+                                                {tier.num === 2 && (
+                                                    <>
+                                                        <ReqRow label="Government ID / NIN" done={idDocStatus === 'approved'} pending={idDocStatus === 'pending'} />
+                                                        <ReqRow label="Liveness / facial verification" done={facialApproved} pending={facialDocStatus === 'pending'} />
+                                                    </>
+                                                )}
+                                                {tier.num === 3 && (
+                                                    <ReqRow label="Proof of address (utility bill or bank statement)" done={addressDocStatus === 'approved'} pending={addressDocStatus === 'pending'} />
+                                                )}
+                                            </div>
 
-                {/* Navigation Buttons */}
-                <div className="px-6 sm:px-8 py-5 border-t border-border flex items-center justify-between gap-4">
-                    {currentStep > 1 ? (
-                        <button onClick={handleBack}
-                            className="flex items-center gap-2 px-5 py-3 rounded-xl border border-border text-foreground font-medium hover:bg-muted transition-colors">
-                            <ChevronLeft className="w-4 h-4" /> Back
-                        </button>
-                    ) : (
-                        <div />
-                    )}
+                                            {nextLimits && status !== 'approved' && (
+                                                <p className="text-xs text-muted-foreground mb-4">
+                                                    Unlocks: <strong className="text-foreground">${Number(nextLimits.daily_limit_crypto).toLocaleString()}</strong> crypto / <strong className="text-foreground">${Number(nextLimits.daily_limit_fiat).toLocaleString()}</strong> fiat daily · {(nextLimits.features || []).join(', ')}
+                                                </p>
+                                            )}
 
-                    {currentStep < 4 ? (
-                        <button onClick={handleNext}
-                            disabled={!isStepValid(currentStep)}
-                            className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                            Continue <ChevronRight className="w-4 h-4" />
-                        </button>
-                    ) : (
-                        <button onClick={handleSubmitKYC}
-                            disabled={submitting || !isStepValid(2)}
-                            className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                            {submitting ? (
-                                <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Submitting...</>
-                            ) : (
-                                <>Submit Verification <ArrowRight className="w-4 h-4" /></>
-                            )}
-                        </button>
-                    )}
-                </div>
+                                            {status === 'approved' && (
+                                                <div className="flex items-center gap-2 text-success text-sm font-medium">
+                                                    <CheckCircle2 className="w-4 h-4" /> This level is verified.
+                                                </div>
+                                            )}
+
+                                            {status === 'pending' && (
+                                                <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 text-sm text-foreground">
+                                                    Your submission is being reviewed. This typically takes 24-48 hours (often much faster when processed automatically). We'll notify you the moment it's decided.
+                                                </div>
+                                            )}
+
+                                            {status === 'rejected' && (
+                                                <div className="bg-danger/10 border border-danger/20 rounded-xl p-4 text-sm text-foreground mb-4">
+                                                    <p className="font-medium text-danger mb-1">Verification didn't go through</p>
+                                                    <p>{latestRejectionReason(documents, tier.num === 2 ? [...ID_DOC_TYPE_VALUES, 'smile_biometric_kyc', 'smile_basic_kyc'] : ADDRESS_DOC_TYPE_VALUES) || 'Please try again — this can also happen due to a temporary provider issue.'}</p>
+                                                    <p className="mt-1 text-muted-foreground">Our compliance team can also review this manually — no need to do anything else if you'd rather wait.</p>
+                                                </div>
+                                            )}
+
+                                            {/* Action panels */}
+                                            {tier.num === 1 && status !== 'approved' && (
+                                                <Tier1Form formData={formData} updateField={updateField} onSave={handleSaveTier1} saving={upgrading} nationalities={SMILE_ISO2_COUNTRIES} />
+                                            )}
+                                            {tier.num === 2 && (status === 'none' || status === 'rejected') && (
+                                                <Tier2Form
+                                                    formData={formData} updateField={updateField} handleFileChange={handleFileChange}
+                                                    frontInputRef={frontInputRef} backInputRef={backInputRef} selfieInputRef={selfieInputRef}
+                                                    docNumberSuggestions={docNumberSuggestions}
+                                                    smileConfigured={smileConfigured}
+                                                    onOpenSmileCamera={() => setShowCameraModal(true)}
+                                                    onOpenManualSelfie={() => { setError(null); setShowManualSelfieCamera(true); }}
+                                                    onSubmit={handleSubmitTier2}
+                                                    submitting={submitting}
+                                                    isValid={isTier2FormValid()}
+                                                />
+                                            )}
+                                            {tier.num === 3 && (status === 'none' || status === 'rejected') && (
+                                                <Tier3Form formData={formData} addressDocInputRef={addressDocInputRef} handleFileChange={handleFileChange} onSubmit={handleSubmitTier3} submitting={submitting} />
+                                            )}
+                                        </div>
+                                    </Motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    );
+                })}
             </div>
+
+            {upgradeMsg && !upgradeMsg.ok && (
+                <p className="text-sm text-danger mb-6">{upgradeMsg.text}</p>
+            )}
 
             {/* Why Verify section */}
-            <div className="mt-8 bg-card border border-border rounded-2xl p-6 sm:p-8">
+            <div className="bg-card border border-border rounded-2xl p-6 sm:p-8">
                 <div className="flex items-start gap-3 mb-4">
                     <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                     <h3 className="text-lg font-bold text-foreground">Why verify your identity?</h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="flex items-start gap-3">
-                        <div className="p-2 bg-primary/10 rounded-lg shrink-0">
-                            <Shield className="w-4 h-4 text-primary" />
-                        </div>
+                        <div className="p-2 bg-primary/10 rounded-lg shrink-0"><Shield className="w-4 h-4 text-primary" /></div>
                         <div>
                             <p className="text-sm font-medium text-foreground">Account Security</p>
                             <p className="text-xs text-muted-foreground">Protect your account from unauthorized access</p>
                         </div>
                     </div>
                     <div className="flex items-start gap-3">
-                        <div className="p-2 bg-primary/10 rounded-lg shrink-0">
-                            <Unlock className="w-4 h-4 text-primary" />
-                        </div>
+                        <div className="p-2 bg-primary/10 rounded-lg shrink-0"><ArrowRight className="w-4 h-4 text-primary" /></div>
                         <div>
                             <p className="text-sm font-medium text-foreground">Higher Limits</p>
                             <p className="text-xs text-muted-foreground">Unlock higher transaction and withdrawal limits</p>
                         </div>
                     </div>
                     <div className="flex items-start gap-3">
-                        <div className="p-2 bg-primary/10 rounded-lg shrink-0">
-                            <CreditCard className="w-4 h-4 text-primary" />
-                        </div>
+                        <div className="p-2 bg-primary/10 rounded-lg shrink-0"><CreditCard className="w-4 h-4 text-primary" /></div>
                         <div>
                             <p className="text-sm font-medium text-foreground">Full Features</p>
                             <p className="text-xs text-muted-foreground">Access virtual cards, crypto trading, and more</p>
                         </div>
                     </div>
                     <div className="flex items-start gap-3">
-                        <div className="p-2 bg-primary/10 rounded-lg shrink-0">
-                            <Globe className="w-4 h-4 text-primary" />
-                        </div>
+                        <div className="p-2 bg-primary/10 rounded-lg shrink-0"><Globe className="w-4 h-4 text-primary" /></div>
                         <div>
                             <p className="text-sm font-medium text-foreground">Regulatory Compliance</p>
                             <p className="text-xs text-muted-foreground">Meet KYC/AML requirements for financial services</p>
@@ -903,55 +722,292 @@ const KYC = () => {
                     </div>
                 </div>
             )}
+
+            {/* Tier completion popup */}
+            <AnimatePresence>
+                {tierPopup && (
+                    <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+                        onClick={() => setTierPopup(null)}>
+                        <Motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-card border border-border rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center"
+                            onClick={(e) => e.stopPropagation()}>
+                            <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <PartyPopper className="w-8 h-8 text-success" />
+                            </div>
+                            <h3 className="text-xl font-bold text-foreground mb-2">Tier {tierPopup.completedTier} complete!</h3>
+                            {tierPopup.nextTier ? (
+                                <>
+                                    <p className="text-muted-foreground text-sm mb-6">
+                                        Continue to Tier {tierPopup.nextTier} from your dashboard any time to unlock even higher limits and more features.
+                                    </p>
+                                    <div className="flex gap-3">
+                                        <button onClick={() => setTierPopup(null)} className="flex-1 py-3 bg-muted text-foreground font-medium rounded-xl">
+                                            Later
+                                        </button>
+                                        <button
+                                            onClick={() => { setExpandedTier(tierPopup.nextTier); setTierPopup(null); }}
+                                            className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl"
+                                        >
+                                            Start Tier {tierPopup.nextTier}
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-muted-foreground text-sm mb-6">
+                                        You've completed every verification level. Enjoy the highest limits and full platform access.
+                                    </p>
+                                    <button onClick={() => setTierPopup(null)} className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl">
+                                        Done
+                                    </button>
+                                </>
+                            )}
+                        </Motion.div>
+                    </Motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };
 
-// ── Submitted Documents List ──────────────────────────────────────────
-// ── Tier status + upgrade CTA — always visible, no ambiguity about current tier or how to
-// reach the next one. Tier 1 = profile complete ($0 limit); Tier 2 = NIN + facial verification;
-// Tier 3 = + proof of address (highest limits). BVN is deliberately not part of this ladder —
-// it gates specific Nigeria-only transactions instead (see the withdrawal/deposit screens).
-const TierStatusCard = ({ currentTierNum, tierLimits, onUpgrade, upgrading, upgradeMsg }) => {
-    const limits = tierLimits?.limits || {};
-    const current = limits[`tier_${currentTierNum}`];
-    const nextNum = currentTierNum + 1;
-    const next = nextNum <= 3 ? limits[`tier_${nextNum}`] : null;
+// ── Small building blocks ─────────────────────────────────────────────
+const ReqRow = ({ label, done, pending }) => (
+    <div className="flex items-center gap-2 text-sm">
+        {done ? <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+            : pending ? <Clock className="w-4 h-4 text-warning shrink-0" />
+            : <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/30 shrink-0" />}
+        <span className={done ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
+    </div>
+);
 
-    return (
-        <div className="bg-card border border-border rounded-2xl p-5 mb-8">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Your current tier</p>
-                    <span className="text-2xl font-bold text-foreground">{current?.name || `Tier ${currentTierNum}`}</span>
-                    {current && (
-                        <p className="text-sm text-muted-foreground mt-1">
-                            Daily limits: <strong className="text-foreground">${Number(current.daily_limit_crypto).toLocaleString()}</strong> crypto
-                            {' · '}<strong className="text-foreground">${Number(current.daily_limit_fiat).toLocaleString()}</strong> fiat
-                        </p>
-                    )}
-                </div>
-                {next && (
-                    <div className="sm:text-right shrink-0">
-                        <p className="text-xs text-muted-foreground mb-2 max-w-xs sm:ml-auto">
-                            Tier {nextNum} needs: <strong className="text-foreground">{(next.required || []).join(', ')}</strong>
-                        </p>
-                        <button
-                            onClick={() => onUpgrade(nextNum)}
-                            disabled={upgrading}
-                            className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl text-sm disabled:opacity-50 whitespace-nowrap"
-                        >
-                            {upgrading ? 'Upgrading...' : `Upgrade to Tier ${nextNum}`}
-                        </button>
-                    </div>
-                )}
+const Tier1Form = ({ formData, updateField, onSave, saving, nationalities }) => (
+    <div className="space-y-4">
+        <div>
+            <label className="block text-sm font-medium text-foreground mb-2">Full Legal Name</label>
+            <input value={formData.fullName}
+                onChange={e => updateField('fullName', e.target.value)}
+                placeholder="Enter your full name as it appears on your ID"
+                className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
+        </div>
+        <div>
+            <label className="block text-sm font-medium text-foreground mb-2">Date of Birth</label>
+            <input type="date" value={formData.dateOfBirth}
+                onChange={e => updateField('dateOfBirth', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none" />
+        </div>
+        <div>
+            <label className="block text-sm font-medium text-foreground mb-2">Nationality</label>
+            <select value={formData.nationality}
+                onChange={e => updateField('nationality', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none">
+                {nationalities.map(c => (
+                    <option key={c.code} value={c.code} className="bg-card text-foreground">{c.name}</option>
+                ))}
+            </select>
+        </div>
+        <div>
+            <label className="block text-sm font-medium text-foreground mb-2">Residential Address</label>
+            <input value={formData.address}
+                onChange={e => updateField('address', e.target.value)}
+                placeholder="Enter your current residential address"
+                className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
+        </div>
+        <button onClick={onSave} disabled={saving}
+            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+            {saving ? (<><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</>) : (<>Complete Tier 1 <ArrowRight className="w-4 h-4" /></>)}
+        </button>
+    </div>
+);
+
+const Tier2Form = ({
+    formData, updateField, handleFileChange, frontInputRef, backInputRef, selfieInputRef,
+    docNumberSuggestions, smileConfigured, onOpenSmileCamera, onOpenManualSelfie, onSubmit, submitting, isValid,
+}) => (
+    <div className="space-y-6">
+        {/* Document Type Selector */}
+        <div>
+            <label className="block text-sm font-medium text-foreground mb-3">Document Type</label>
+            <div className="grid grid-cols-3 gap-3">
+                {ID_DOCUMENT_TYPES.map(doc => (
+                    <button key={doc.id} type="button" onClick={() => updateField('documentType', doc.id)}
+                        className={`p-4 rounded-xl border-2 text-center transition-all ${
+                            formData.documentType === doc.id ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'
+                        }`}>
+                        <doc.icon className={`w-6 h-6 mx-auto mb-2 ${formData.documentType === doc.id ? 'text-primary' : 'text-muted-foreground'}`} />
+                        <p className="text-xs sm:text-sm font-medium text-foreground">{doc.name}</p>
+                    </button>
+                ))}
             </div>
-            {upgradeMsg && (
-                <p className={`text-xs mt-3 ${upgradeMsg.ok ? 'text-success' : 'text-danger'}`}>{upgradeMsg.text}</p>
+        </div>
+
+        {/* Document Number */}
+        <div>
+            <label className="block text-sm font-medium text-foreground mb-2">Document Number</label>
+            <input type="text" value={formData.documentNumber}
+                onChange={e => updateField('documentNumber', e.target.value)}
+                list={formData.documentType && docNumberSuggestions.length > 0 ? 'kyc-doc-suggestions' : undefined}
+                autoComplete="off"
+                placeholder="Enter your document number"
+                className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
+            {formData.documentType && docNumberSuggestions.length > 0 && (
+                <datalist id="kyc-doc-suggestions">
+                    {docNumberSuggestions.map(v => <option key={v} value={v} />)}
+                </datalist>
             )}
         </div>
-    );
-};
+
+        {/* Upload Areas */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label className="block text-sm font-medium text-foreground mb-2">Front Side *</label>
+                <div onClick={() => frontInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all hover:border-primary/50 ${
+                        formData.documentFront ? 'border-primary bg-primary/5' : 'border-border'
+                    }`}>
+                    {formData.documentFront ? (
+                        <div className="text-primary">
+                            <Check className="w-8 h-8 mx-auto mb-2" />
+                            <p className="text-sm font-medium truncate">{formData.documentFront.name}</p>
+                            <p className="text-xs text-muted-foreground mt-1">Click to replace</p>
+                        </div>
+                    ) : (
+                        <>
+                            <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                            <p className="text-sm font-medium text-foreground">Upload front</p>
+                        </>
+                    )}
+                </div>
+                <input ref={frontInputRef} type="file" accept="image/*" onChange={e => handleFileChange(e, 'documentFront')} className="hidden" />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-foreground mb-2">Back Side (optional)</label>
+                <div onClick={() => backInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all hover:border-primary/50 ${
+                        formData.documentBack ? 'border-primary bg-primary/5' : 'border-border'
+                    }`}>
+                    {formData.documentBack ? (
+                        <div className="text-primary">
+                            <Check className="w-8 h-8 mx-auto mb-2" />
+                            <p className="text-sm font-medium truncate">{formData.documentBack.name}</p>
+                            <p className="text-xs text-muted-foreground mt-1">Click to replace</p>
+                        </div>
+                    ) : (
+                        <>
+                            <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                            <p className="text-sm font-medium text-foreground">Upload back</p>
+                        </>
+                    )}
+                </div>
+                <input ref={backInputRef} type="file" accept="image/*" onChange={e => handleFileChange(e, 'documentBack')} className="hidden" />
+            </div>
+        </div>
+
+        {/* Selfie / Liveness */}
+        <div>
+            <h3 className="text-sm font-bold text-foreground mb-1">Liveness / Selfie Verification</h3>
+            {smileConfigured && (
+                <div className="bg-primary/5 border border-primary/20 rounded-xl p-5 mb-3">
+                    <div className="flex items-start gap-3 mb-4">
+                        <ScanFace className="w-6 h-6 text-primary shrink-0 mt-0.5" />
+                        <div>
+                            <h4 className="font-semibold text-foreground mb-1">Liveness Verification (Recommended)</h4>
+                            <p className="text-sm text-muted-foreground">Use our guided camera to verify your identity in real-time. Results in minutes.</p>
+                        </div>
+                    </div>
+                    <button type="button" onClick={onOpenSmileCamera}
+                        disabled={submitting || !formData.fullName.trim() || !formData.documentNumber.trim()}
+                        className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                        <Camera className="w-5 h-5" /> Open Camera - Liveness Capture
+                    </button>
+                    {(!formData.fullName.trim() || !formData.documentNumber.trim()) && (
+                        <p className="text-xs text-muted-foreground mt-2 text-center">Enter your name and document number above first</p>
+                    )}
+                </div>
+            )}
+
+            <div className="relative flex items-center gap-3 text-muted-foreground my-3">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-xs font-medium">OR upload manually</span>
+                <div className="flex-1 h-px bg-border" />
+            </div>
+
+            <div className="flex gap-3 mb-3">
+                <button type="button" onClick={onOpenManualSelfie}
+                    className="flex-1 py-3 bg-muted hover:bg-muted/80 border border-border rounded-xl font-medium text-foreground text-sm flex items-center justify-center gap-2 transition-colors">
+                    <Camera className="w-4 h-4" /> Take Photo
+                </button>
+                <button type="button" onClick={() => selfieInputRef.current?.click()}
+                    className="flex-1 py-3 bg-muted hover:bg-muted/80 border border-border rounded-xl font-medium text-foreground text-sm flex items-center justify-center gap-2 transition-colors">
+                    <Upload className="w-4 h-4" /> Upload Photo
+                </button>
+            </div>
+
+            <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${formData.selfie ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                {formData.selfie ? (
+                    <div className="text-primary">
+                        <Check className="w-8 h-8 mx-auto mb-2" />
+                        <p className="text-sm font-medium">{formData.selfie.name}</p>
+                        <button type="button" onClick={() => updateField('selfie', null)} className="text-xs text-danger underline mt-2">Remove</button>
+                    </div>
+                ) : (
+                    <>
+                        <Camera className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                        <p className="text-sm font-medium text-foreground">No selfie captured yet</p>
+                    </>
+                )}
+            </div>
+            <input ref={selfieInputRef} type="file" accept="image/*" capture="user" onChange={e => handleFileChange(e, 'selfie')} className="hidden" />
+        </div>
+
+        <button onClick={onSubmit} disabled={submitting || !isValid}
+            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            {submitting ? (<><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Submitting...</>) : (<>Submit Manual Verification <ArrowRight className="w-4 h-4" /></>)}
+        </button>
+    </div>
+);
+
+const Tier3Form = ({ formData, addressDocInputRef, handleFileChange, onSubmit, submitting }) => (
+    <div className="space-y-6">
+        <div>
+            <div onClick={() => addressDocInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all hover:border-primary/50 ${
+                    formData.addressDocument ? 'border-primary bg-primary/5' : 'border-border'
+                }`}>
+                {formData.addressDocument ? (
+                    <div className="text-primary">
+                        <Check className="w-10 h-10 mx-auto mb-3" />
+                        <p className="text-sm font-medium">{formData.addressDocument.name}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Click to replace</p>
+                    </div>
+                ) : (
+                    <>
+                        <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                        <p className="text-sm font-medium text-foreground mb-1">Upload address proof</p>
+                        <p className="text-xs text-muted-foreground">PNG, JPG or PDF up to 5MB</p>
+                    </>
+                )}
+            </div>
+            <input ref={addressDocInputRef} type="file" accept="image/*,.pdf" onChange={e => handleFileChange(e, 'addressDocument')} className="hidden" />
+        </div>
+
+        <div className="bg-muted/50 rounded-xl p-4">
+            <p className="text-sm font-medium text-foreground mb-3">Accepted documents:</p>
+            <ul className="space-y-2">
+                {ADDRESS_DOCUMENT_TYPES.map((doc, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" /> {doc}
+                    </li>
+                ))}
+            </ul>
+        </div>
+
+        <button onClick={onSubmit} disabled={submitting || !formData.addressDocument}
+            className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            {submitting ? (<><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Submitting...</>) : (<>Submit Address Proof <ArrowRight className="w-4 h-4" /></>)}
+        </button>
+    </div>
+);
 
 const SubmittedDocuments = ({ documents }) => (
     <div className="mt-6 bg-card border border-border rounded-2xl overflow-hidden">
@@ -978,11 +1034,11 @@ const SubmittedDocuments = ({ documents }) => (
                         </div>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                        doc.status === 'approved' ? 'bg-success/10 text-success'
-                        : doc.status === 'rejected' ? 'bg-danger/10 text-danger'
+                        doc.verification_status === 'approved' ? 'bg-success/10 text-success'
+                        : doc.verification_status === 'rejected' ? 'bg-danger/10 text-danger'
                         : 'bg-warning/10 text-warning'
                     }`}>
-                        {doc.status}
+                        {doc.verification_status}
                     </span>
                 </div>
             ))}

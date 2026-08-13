@@ -12,6 +12,7 @@ import {
   getSystemStats,
   getPendingKYC,
   getApprovedKYC,
+  getRejectedKYC,
   getFeatureToggles,
   updateFeatureToggle,
   getAuditLogs,
@@ -106,6 +107,16 @@ router.get(
   query('limit').optional().isInt({ min: 1, max: 100 }),
   validate,
   getApprovedKYC
+);
+
+// Rejected/needs-review KYC (includes Smile ID auto-rejections — see getRejectedKYC comment)
+router.get(
+  '/kyc/rejected',
+  restrictTo(...COMPLIANCE_ACCESS),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 }),
+  validate,
+  getRejectedKYC
 );
 
 // Get all users

@@ -4,7 +4,7 @@ import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import * as smileId from '../services/smileId.service.js';
 import * as kycNotify from '../services/kycNotification.service.js';
-import { auditFromReq } from '../services/audit.service.js';
+import { auditFromReq, recordAudit } from '../services/audit.service.js';
 
 /** DB column is `document_url` (not document_front_url). Optional back image stored as JSON in same column. */
 function buildKycDocumentUrl(frontUrl, backUrl) {
@@ -34,7 +34,7 @@ export const getKYCStatus = catchAsync(async (req, res) => {
     `SELECT u.kyc_tier, u.kyc_status,
             kd.id as document_id, kd.document_type, kd.document_number,
             kd.status as verification_status, kd.rejection_reason, kd.reviewed_at as verified_at,
-            kd.created_at, kd.updated_at
+            kd.created_at, kd.updated_at, kd.selfie_url
      FROM users u
      LEFT JOIN kyc_documents kd ON u.id = kd.user_id
      WHERE u.id = $1
@@ -60,6 +60,9 @@ export const getKYCStatus = catchAsync(async (req, res) => {
         verified_at: doc.verified_at,
         created_at: doc.created_at,
         updated_at: doc.updated_at,
+        // Not the image itself — just whether a selfie was attached, so the client can tell
+        // facial verification apart from a bare ID upload without guessing.
+        has_selfie: !!doc.selfie_url,
       })),
     },
   });
@@ -106,9 +109,12 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
     [req.user.id, document_type, docNumber, documentUrl, selfie_url || null, tier]
   );
 
-  // Update user KYC status
+  // Update user KYC status. 'pending' is the untouched default every account starts with (see
+  // users.kyc_status column default) — using it here too would make a fresh signup indistinguishable
+  // from someone with a real submission awaiting review, so an actual submission moves to
+  // 'under_review' instead.
   await query(
-    `UPDATE users SET kyc_status = 'pending', updated_at = NOW() WHERE id = $1`,
+    `UPDATE users SET kyc_status = 'under_review', updated_at = NOW() WHERE id = $1`,
     [req.user.id]
   );
 
@@ -378,7 +384,7 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
     [req.user.id, `SMILE:${jobId}`, 'https://jaxopay.com/kyc/smile-id-async']
   );
 
-  await query(`UPDATE users SET kyc_status = 'pending', updated_at = NOW() WHERE id = $1`, [req.user.id]);
+  await query(`UPDATE users SET kyc_status = 'under_review', updated_at = NOW() WHERE id = $1`, [req.user.id]);
 
   logger.info('[KYC] Smile Basic KYC submitted', { userId: req.user.id, jobId });
   auditFromReq(req, { action: 'kyc_submitted', entityType: 'kyc_document', newValues: { method: 'smile_basic', job_id: jobId } });
@@ -446,7 +452,13 @@ export const submitRampIdVerification = catchAsync(async (req, res) => {
       const callbackUrl = buildCallbackUrl('/webhooks/smile_identity');
       const out = await smileId.submitBasicKycAsync({
         userId: req.user.id, callbackUrl, country: 'NG',
-        id_type: id_type || docType.toUpperCase(), id_number: num,
+        // Always use the normalized, uppercase docType — NOT the raw client-supplied id_type.
+        // The frontend (NigerianIdGate.jsx) sends lowercase 'bvn'/'nin', which is truthy, so the
+        // old `id_type || docType.toUpperCase()` fallback never actually fired and Smile ID
+        // received a lowercase value on every real request. Smile's API is case-sensitive here —
+        // this was silently failing every single BVN/NIN submission in production with
+        // "valid id_type is required" (confirmed from audit_logs on live attempts).
+        id_type: docType.toUpperCase(), id_number: num,
         first_name: fn, last_name: ln, middle_name,
         dob: dob || prof.date_of_birth, gender: gender || prof.gender, phone_number: phone_number || prof.phone,
       });
@@ -564,7 +576,7 @@ export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
     [req.user.id, docNumber, 'https://jaxopay.com/kyc/smile-biometric']
   );
 
-  await query(`UPDATE users SET kyc_status = 'pending', updated_at = NOW() WHERE id = $1`, [req.user.id]);
+  await query(`UPDATE users SET kyc_status = 'under_review', updated_at = NOW() WHERE id = $1`, [req.user.id]);
 
   logger.info('[KYC] Smile Biometric KYC record created; submitting to provider async', {
     userId: req.user.id,
@@ -600,31 +612,46 @@ export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
       .catch((e) => {
         const msg = e?.message || String(e);
         logger.error('[KYC] Smile Biometric submit failed (async):', msg);
+        // This failure happens inside a setImmediate (no req available) and previously only
+        // went to the server log file — the exact same class of failure on the ramp-verification
+        // path (submitRampIdVerification) is what made the id_type case-sensitivity bug findable
+        // at all, because THAT path records the raw provider error in audit_logs. Doing the same
+        // here means a future failure can be diagnosed from the database instead of needing raw
+        // server log access.
+        recordAudit({
+          userId,
+          action: 'kyc_submitted',
+          entityType: 'kyc_document',
+          newValues: { method: 'smile_biometric', job_id: jobId, submit_failed: true, smile_error: msg },
+        }).catch(() => {});
+        // This is a failure to reach/submit to the PROVIDER (network/API/config issue) — not a
+        // verification result — so it must NOT be marked 'rejected' (that means "we checked and
+        // it didn't pass," which is misleading and dead-ends the user). Leaving it 'pending'
+        // keeps it in the admin's existing KYC review queue for manual approval, exactly like a
+        // manually-uploaded document, and the compliance team gets an alert so it doesn't just
+        // sit there unnoticed.
         query(
           `UPDATE kyc_documents
-           SET status = 'rejected',
-               rejection_reason = $1,
+           SET rejection_reason = $1,
                updated_at = NOW()
            WHERE user_id = $2 AND document_type = 'smile_biometric_kyc' AND document_number = $3`,
           [
-            'Identity verification could not be submitted to the provider. Please try again or contact support.',
+            'Automated verification could not reach the provider — queued for manual review.',
             userId,
             docNumber,
           ]
         )
           .then((upd) => {
             if (upd.rowCount > 0) {
-              return kycNotify.notifySmileKycWebhookResult({
+              return kycNotify.notifySmileProviderUnreachable({
                 userId,
                 jobId,
                 documentType: 'smile_biometric_kyc',
-                approved: false,
-                resultText:
-                  'Identity verification could not be submitted to the provider. Please try again or contact support.',
+                error: msg,
               });
             }
           })
-          .catch((dbErr) => logger.error('[KYC] Failed to mark biometric job failed:', dbErr.message || dbErr));
+          .catch((dbErr) => logger.error('[KYC] Failed to flag biometric job for manual review:', dbErr.message || dbErr));
       });
   });
 });
