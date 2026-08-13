@@ -19,6 +19,11 @@ import {
     Archive,
     UserPlus,
     LineChart as LineChartIcon,
+    Landmark,
+    Coins,
+    Percent,
+    LifeBuoy,
+    Mail,
 } from 'lucide-react';
 import {
     ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis,
@@ -67,8 +72,17 @@ const StatCard = ({ title, value, icon: Icon, trend, trendValue, color, linkTo }
     return linkTo ? <Link to={linkTo}>{Content}</Link> : Content;
 };
 
+// Role-based access mirrors the backend restrictTo lists (see admin.routes.js) so
+// Quick Actions / stat-card links never point a role at a page it will get bounced from.
+const canAccessKyc = (role) => ['admin', 'super_admin', 'compliance_officer'].includes(role);
+const canAccessTransactions = (role) => ['admin', 'super_admin', 'compliance_officer', 'finance'].includes(role);
+const canAccessWallets = (role) => ['admin', 'super_admin', 'finance'].includes(role);
+const canAccessCards = (role) => ['admin', 'super_admin'].includes(role);
+const canAccessAml = (role) => ['admin', 'super_admin', 'compliance_officer'].includes(role);
+
 const AdminDashboard = () => {
     const { user } = useAuthStore();
+    const role = user?.role;
     const [stats, setStats] = useState({
         total_users: 0,
         total_wallets: 0,
@@ -134,14 +148,18 @@ const AdminDashboard = () => {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                        {user?.role === 'super_admin' ? 'Super Admin Dashboard Overview'
-                            : user?.role === 'compliance_officer' ? 'Compliance Dashboard Overview'
-                                : 'Dashboard Overview'}
+                        {role === 'super_admin' ? 'Super Admin Dashboard Overview'
+                            : role === 'compliance_officer' ? 'Compliance Dashboard Overview'
+                                : role === 'finance' ? 'Finance Dashboard Overview'
+                                    : role === 'support' ? 'Support Dashboard Overview'
+                                        : 'Dashboard Overview'}
                     </h1>
                     <p className="text-gray-600 dark:text-gray-400">
-                        {user?.role === 'super_admin' ? 'Monitor and manage the entire platform'
-                            : user?.role === 'compliance_officer' ? 'Monitor compliance, KYC, and risk activity across the platform'
-                                : 'Monitor platform performance'}
+                        {role === 'super_admin' ? 'Monitor and manage the entire platform'
+                            : role === 'compliance_officer' ? 'Monitor compliance, KYC, and risk activity across the platform'
+                                : role === 'finance' ? 'Monitor treasury, wallets, rates, fees and transaction volume'
+                                    : role === 'support' ? 'Manage support tickets, contact messages and announcements'
+                                        : 'Monitor platform performance'}
                     </p>
                 </div>
                 <button
@@ -167,14 +185,14 @@ const AdminDashboard = () => {
                     value={formatNumber(stats.total_wallets)}
                     icon={Wallet}
                     color="bg-accent-500 transition-all duration-300"
-                    linkTo="/admin/wallets"
+                    linkTo={canAccessWallets(role) ? '/admin/wallets' : undefined}
                 />
                 <StatCard
                     title="Active Cards"
                     value={formatNumber(stats.total_cards)}
                     icon={CreditCard}
                     color="bg-purple-500"
-                    linkTo="/admin/cards"
+                    linkTo={canAccessCards(role) ? '/admin/cards' : undefined}
                 />
                 <StatCard
                     title="Total Volume"
@@ -191,14 +209,14 @@ const AdminDashboard = () => {
                     value={formatNumber(stats.total_transactions)}
                     icon={Activity}
                     color="bg-cyan-500"
-                    linkTo="/admin/transactions"
+                    linkTo={canAccessTransactions(role) ? '/admin/transactions' : undefined}
                 />
                 <StatCard
                     title="Pending KYC"
                     value={stats.pending_kyc}
                     icon={Shield}
                     color="bg-yellow-500"
-                    linkTo="/admin/kyc"
+                    linkTo={canAccessKyc(role) ? '/admin/kyc' : undefined}
                 />
                 <StatCard
                     title="Suspended Users"
@@ -309,45 +327,51 @@ const AdminDashboard = () => {
                                 <p className="text-xs text-gray-500">View and edit users</p>
                             </div>
                         </Link>
-                        <Link
-                            to="/admin/kyc"
-                            className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                        >
-                            <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                                <Shield className="w-5 h-5 text-yellow-600" />
-                            </div>
-                            <div>
-                                <p className="font-medium text-gray-900 dark:text-white">Review KYC</p>
-                                <p className="text-xs text-gray-500">{stats.pending_kyc} pending</p>
-                            </div>
-                        </Link>
-                        <Link
-                            to="/admin/kyc?tab=approved"
-                            className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                        >
-                            <div className="p-2 bg-accent-100 dark:bg-accent-900/30 rounded-lg">
-                                <Archive className="w-5 h-5 text-accent-600" />
-                            </div>
-                            <div>
-                                <p className="font-medium text-gray-900 dark:text-white">Approved KYC archive</p>
-                                <p className="text-xs text-gray-500">Past submissions and documents</p>
-                            </div>
-                        </Link>
-                        <Link
-                            to="/admin/transactions"
-                            className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                        >
-                            <div className="p-2 bg-accent-100 dark:bg-accent-900/30 rounded-lg">
-                                <Activity className="w-5 h-5 text-accent-600" />
-                            </div>
-                            <div>
-                                <p className="font-medium text-gray-900 dark:text-white">Transactions</p>
-                                <p className="text-xs text-gray-500">Monitor activity</p>
-                            </div>
-                        </Link>
+                        {canAccessKyc(role) && (
+                            <>
+                                <Link
+                                    to="/admin/kyc"
+                                    className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                >
+                                    <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                                        <Shield className="w-5 h-5 text-yellow-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-900 dark:text-white">Review KYC</p>
+                                        <p className="text-xs text-gray-500">{stats.pending_kyc} pending</p>
+                                    </div>
+                                </Link>
+                                <Link
+                                    to="/admin/kyc?tab=approved"
+                                    className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                >
+                                    <div className="p-2 bg-accent-100 dark:bg-accent-900/30 rounded-lg">
+                                        <Archive className="w-5 h-5 text-accent-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-900 dark:text-white">Approved KYC archive</p>
+                                        <p className="text-xs text-gray-500">Past submissions and documents</p>
+                                    </div>
+                                </Link>
+                            </>
+                        )}
+                        {canAccessTransactions(role) && (
+                            <Link
+                                to="/admin/transactions"
+                                className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                            >
+                                <div className="p-2 bg-accent-100 dark:bg-accent-900/30 rounded-lg">
+                                    <Activity className="w-5 h-5 text-accent-600" />
+                                </div>
+                                <div>
+                                    <p className="font-medium text-gray-900 dark:text-white">Transactions</p>
+                                    <p className="text-xs text-gray-500">Monitor activity</p>
+                                </div>
+                            </Link>
+                        )}
 
-                        {/* Restricted Actions */}
-                        {user?.role !== 'compliance_officer' && (
+                        {/* Restricted Actions - Admin & Super Admin only */}
+                        {(role === 'admin' || role === 'super_admin') && (
                             <>
                                 <Link
                                     to="/admin/cards"
@@ -376,8 +400,80 @@ const AdminDashboard = () => {
                             </>
                         )}
 
+                        {/* Finance specific actions */}
+                        {role === 'finance' && (
+                            <>
+                                <Link
+                                    to="/admin/treasury"
+                                    className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                >
+                                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                                        <Landmark className="w-5 h-5 text-emerald-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-900 dark:text-white">Treasury</p>
+                                        <p className="text-xs text-gray-500">Financial products & reconciliation</p>
+                                    </div>
+                                </Link>
+                                <Link
+                                    to="/admin/ramps"
+                                    className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                >
+                                    <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+                                        <Coins className="w-5 h-5 text-amber-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-900 dark:text-white">Crypto Ramps</p>
+                                        <p className="text-xs text-gray-500">Settlement queue</p>
+                                    </div>
+                                </Link>
+                                <Link
+                                    to="/admin/system?tab=rates_fees"
+                                    className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                >
+                                    <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                                        <Percent className="w-5 h-5 text-red-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-900 dark:text-white">Rates & Fees</p>
+                                        <p className="text-xs text-gray-500">FX rates & fee configs</p>
+                                    </div>
+                                </Link>
+                            </>
+                        )}
+
+                        {/* Support specific actions */}
+                        {role === 'support' && (
+                            <>
+                                <Link
+                                    to="/admin/support"
+                                    className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                >
+                                    <div className="p-2 bg-sky-100 dark:bg-sky-900/30 rounded-lg">
+                                        <LifeBuoy className="w-5 h-5 text-sky-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-900 dark:text-white">Support Tickets</p>
+                                        <p className="text-xs text-gray-500">Respond to users</p>
+                                    </div>
+                                </Link>
+                                <Link
+                                    to="/admin/public-forms"
+                                    className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                >
+                                    <div className="p-2 bg-sky-100 dark:bg-sky-900/30 rounded-lg">
+                                        <Mail className="w-5 h-5 text-sky-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-900 dark:text-white">Contact Messages</p>
+                                        <p className="text-xs text-gray-500">Public form submissions</p>
+                                    </div>
+                                </Link>
+                            </>
+                        )}
+
                         {/* Compliance specific actions */}
-                        {user?.role === 'compliance_officer' && (
+                        {role === 'compliance_officer' && (
                             <>
                                 <Link
                                     to="/admin/aml"
@@ -406,8 +502,8 @@ const AdminDashboard = () => {
                             </>
                         )}
 
-                        {/* Announcements for Admin/Superadmin */}
-                        {(user?.role === 'admin' || user?.role === 'super_admin') && (
+                        {/* Announcements for Admin/Superadmin/Support */}
+                        {(role === 'admin' || role === 'super_admin' || role === 'support') && (
                             <Link
                                 to="/admin/announcements"
                                 className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -425,21 +521,23 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* High Risk Users Alerts */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">AML High Risk Alerts</h3>
-                        <Link to="/admin/aml" className="text-sm text-accent-600 hover:text-accent-700 font-medium">View All</Link>
+                {canAccessAml(role) && (
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">AML High Risk Alerts</h3>
+                            <Link to="/admin/aml" className="text-sm text-accent-600 hover:text-accent-700 font-medium">View All</Link>
+                        </div>
+                        <div className="space-y-3">
+                            <HighRiskWidget />
+                        </div>
                     </div>
-                    <div className="space-y-3">
-                        <HighRiskWidget />
-                    </div>
-                </div>
+                )}
 
                 {/* System Alerts */}
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Alerts</h3>
                     <div className="space-y-3">
-                        {stats.pending_kyc > 0 && (
+                        {stats.pending_kyc > 0 && canAccessKyc(role) && (
                             <div className="flex items-center justify-between p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl">
                                 <div className="flex items-center gap-3">
                                     <Shield className="w-5 h-5 text-yellow-600" />

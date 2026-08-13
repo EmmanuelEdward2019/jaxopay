@@ -29,23 +29,23 @@ import NotificationDropdown from '../../components/notifications/NotificationDro
 import AnnouncementBanner from '../../components/notifications/AnnouncementBanner';
 
 const navItems = [
-    { path: '/admin', icon: LayoutDashboard, label: 'Dashboard', exact: true, roles: ['admin', 'super_admin', 'compliance_officer'] },
-    { path: '/admin/users', icon: Users, label: 'Users', roles: ['admin', 'super_admin', 'compliance_officer'] },
+    { path: '/admin', icon: LayoutDashboard, label: 'Dashboard', exact: true, roles: ['admin', 'super_admin', 'compliance_officer', 'finance', 'support'] },
+    { path: '/admin/users', icon: Users, label: 'Users', roles: ['admin', 'super_admin', 'compliance_officer', 'finance', 'support'] },
     { path: '/admin/kyc', icon: Shield, label: 'KYC Review', roles: ['admin', 'super_admin', 'compliance_officer'] },
-    { path: '/admin/transactions', icon: Activity, label: 'Transactions', roles: ['admin', 'super_admin', 'compliance_officer'] },
+    { path: '/admin/transactions', icon: Activity, label: 'Transactions', roles: ['admin', 'super_admin', 'compliance_officer', 'finance'] },
     { path: '/admin/aml', icon: ShieldAlert, label: 'Compliance & AML', roles: ['super_admin', 'compliance_officer'] },
-    { path: '/admin/treasury', icon: Landmark, label: 'Treasury', roles: ['admin', 'super_admin'] },
-    { path: '/admin/ramps', icon: Coins, label: 'Crypto Ramps', roles: ['admin', 'super_admin'] },
-    { path: '/admin/wallets', icon: Wallet, label: 'Wallets', roles: ['admin', 'super_admin'] },
+    { path: '/admin/treasury', icon: Landmark, label: 'Treasury', roles: ['admin', 'super_admin', 'finance'] },
+    { path: '/admin/ramps', icon: Coins, label: 'Crypto Ramps', roles: ['admin', 'super_admin', 'finance'] },
+    { path: '/admin/wallets', icon: Wallet, label: 'Wallets', roles: ['admin', 'super_admin', 'finance'] },
     { path: '/admin/cards', icon: CreditCard, label: 'Cards', roles: ['admin', 'super_admin'] },
     { path: '/admin/crypto', icon: TrendingUp, label: 'Crypto Assets', roles: ['admin', 'super_admin'] },
     { path: '/admin/features', icon: Settings, label: 'Platform Features', roles: ['super_admin'] },
-    { path: '/admin/system?tab=rates_fees', icon: Percent, label: 'Rates & Fees', roles: ['admin', 'super_admin'] },
+    { path: '/admin/system?tab=rates_fees', icon: Percent, label: 'Rates & Fees', roles: ['admin', 'super_admin', 'finance'] },
     { path: '/admin/system', icon: ShieldAlert, label: 'System Configurations', roles: ['admin', 'super_admin'] },
     { path: '/admin/audit', icon: Activity, label: 'Audit Logs', roles: ['super_admin', 'compliance_officer'] },
-    { path: '/admin/announcements', icon: Megaphone, label: 'Announcements', roles: ['admin', 'super_admin', 'compliance_officer'] },
-    { path: '/admin/support', icon: LifeBuoy, label: 'Support Tickets', roles: ['admin', 'super_admin', 'compliance_officer'] },
-    { path: '/admin/public-forms', icon: Mail, label: 'Contact Messages', roles: ['admin', 'super_admin'] },
+    { path: '/admin/announcements', icon: Megaphone, label: 'Announcements', roles: ['admin', 'super_admin', 'compliance_officer', 'support'] },
+    { path: '/admin/support', icon: LifeBuoy, label: 'Support Tickets', roles: ['admin', 'super_admin', 'compliance_officer', 'support'] },
+    { path: '/admin/public-forms', icon: Mail, label: 'Contact Messages', roles: ['admin', 'super_admin', 'support'] },
 ];
 
 const AdminLayout = () => {
@@ -72,6 +72,8 @@ const AdminLayout = () => {
         switch (role) {
             case 'super_admin': return 'Super Admin Panel';
             case 'compliance_officer': return 'Compliance Panel';
+            case 'finance': return 'Finance Panel';
+            case 'support': return 'Support Panel';
             default: return 'Admin Panel';
         }
     };
@@ -80,6 +82,8 @@ const AdminLayout = () => {
         switch (role) {
             case 'super_admin': return 'text-red-400';
             case 'compliance_officer': return 'text-orange-400';
+            case 'finance': return 'text-emerald-400';
+            case 'support': return 'text-sky-400';
             default: return 'text-accent-400';
         }
     };
@@ -88,6 +92,8 @@ const AdminLayout = () => {
         switch (role) {
             case 'super_admin': return 'Super Admin Dashboard';
             case 'compliance_officer': return 'Compliance Dashboard';
+            case 'finance': return 'Finance Dashboard';
+            case 'support': return 'Support Dashboard';
             default: return 'Admin Dashboard';
         }
     };

@@ -20,9 +20,15 @@ import { formatCurrency } from '../../utils/formatters';
 
 const SystemManagement = () => {
     const [searchParams] = useSearchParams();
+    const { user } = useAuthStore();
+    // Finance has no backend access to /system/orchestration or /system/shutdown (both are
+    // admin/super_admin-only — see admin.routes.js), so they're locked to Rates & Fees.
+    const isFinanceOnly = user?.role === 'finance';
     // Allows deep-linking straight into the Rates & Fees tab (e.g. from the sidebar) instead of
     // always landing on 'general' and requiring an extra click to find fee configuration.
-    const [activeTab, setActiveTab] = useState(searchParams.get('tab') === 'rates_fees' ? 'rates_fees' : 'general');
+    const [activeTab, setActiveTab] = useState(
+        isFinanceOnly || searchParams.get('tab') === 'rates_fees' ? 'rates_fees' : 'general'
+    );
     const [exchangeRates, setExchangeRates] = useState([]);
     const [feeConfigs, setFeeConfigs] = useState([]);
     const [isGlobalShutdown, setIsGlobalShutdown] = useState(false);
@@ -37,8 +43,6 @@ const SystemManagement = () => {
     const [showFeeModal, setShowFeeModal] = useState(false);
     const [newFX, setNewFX] = useState({ from_currency: 'USD', to_currency: 'NGN', rate: 0, markup_percentage: 0 });
     const [newFee, setNewFee] = useState({ transaction_type: 'transfer', fee_type: 'fixed', fee_value: 0, min_fee: 0, max_fee: 0, currency: 'USD', country: '' });
-
-    const { user } = useAuthStore();
 
     useEffect(() => {
         fetchData();
@@ -58,7 +62,7 @@ const SystemManagement = () => {
         const platformToggle = toggleRes.data?.find(t => t.feature_name === 'PLATFORM_GLOBAL');
         setIsGlobalShutdown(platformToggle ? !platformToggle.is_enabled : false);
 
-        fetchOrchestrationStatus();
+        if (!isFinanceOnly) fetchOrchestrationStatus();
         setLoading(false);
     };
 
@@ -169,15 +173,17 @@ const SystemManagement = () => {
 
                 {/* Tab Navigation */}
                 <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
-                    <button
-                        onClick={() => setActiveTab('general')}
-                        className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${activeTab === 'general'
-                            ? 'bg-white dark:bg-gray-700 text-primary-600 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-                            }`}
-                    >
-                        General Status
-                    </button>
+                    {!isFinanceOnly && (
+                        <button
+                            onClick={() => setActiveTab('general')}
+                            className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${activeTab === 'general'
+                                ? 'bg-white dark:bg-gray-700 text-primary-600 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                                }`}
+                        >
+                            General Status
+                        </button>
+                    )}
                     <button
                         onClick={() => setActiveTab('rates_fees')}
                         className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${activeTab === 'rates_fees'

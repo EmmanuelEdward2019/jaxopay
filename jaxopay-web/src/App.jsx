@@ -150,8 +150,8 @@ const AdminRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
-  // Check for admin role
-  if (!['admin', 'super_admin', 'compliance_officer'].includes(user?.role)) {
+  // Check for admin/staff role
+  if (!['admin', 'super_admin', 'compliance_officer', 'finance', 'support'].includes(user?.role)) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -331,9 +331,9 @@ function App() {
               </RoleProtectedRoute>
             } />
 
-            {/* Transactions - Admin, Super Admin, Compliance */}
+            {/* Transactions - Admin, Super Admin, Compliance, Finance (backend: FINANCE_ACCESS) */}
             <Route path="transactions" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer']}>
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer', 'finance']}>
                 <TransactionMonitor />
               </RoleProtectedRoute>
             } />
@@ -352,9 +352,9 @@ function App() {
               </RoleProtectedRoute>
             } />
 
-            {/* Announcements - Admin & Compliance */}
+            {/* Announcements - Admin, Compliance, Support (backend also allows 'support') */}
             <Route path="announcements" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer']}>
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer', 'support']}>
                 <AnnouncementManagement />
               </RoleProtectedRoute>
             } />
@@ -366,33 +366,35 @@ function App() {
               </RoleProtectedRoute>
             } />
 
-            {/* Support Tickets - Admin, Super Admin, Compliance */}
+            {/* Support Tickets - Admin, Super Admin, Compliance, Support (backend also allows 'support') */}
             <Route path="support" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer']}>
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer', 'support']}>
                 <AdminSupport />
               </RoleProtectedRoute>
             } />
 
-            {/* System Management - Admin, Super Admin */}
+            {/* System Management - Admin, Super Admin, Finance (Rates & Fees tab only — backend:
+                FINANCE_ACCESS on /fees/configs and /fx/rates; SystemManagement hides the General
+                Status tab for finance) */}
             <Route path="system" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'finance']}>
                 <SystemManagement />
               </RoleProtectedRoute>
             } />
 
-            {/* Financial Products - Admin, Super Admin */}
+            {/* Financial Products - Admin, Super Admin, Finance (backend: FINANCE_ACCESS) */}
             <Route path="treasury" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'finance']}>
                 <Treasury />
               </RoleProtectedRoute>
             } />
             <Route path="ramps" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'finance']}>
                 <RampQueue />
               </RoleProtectedRoute>
             } />
             <Route path="wallets" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'finance']}>
                 <WalletManagement />
               </RoleProtectedRoute>
             } />
@@ -406,8 +408,9 @@ function App() {
                 <ProductManagement />
               </RoleProtectedRoute>
             } />
+            {/* Contact Messages - Admin, Super Admin, Support (backend: SUPPORT_ACCESS) */}
             <Route path="public-forms" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin']}>
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'support']}>
                 <PublicFormSubmissions />
               </RoleProtectedRoute>
             } />
