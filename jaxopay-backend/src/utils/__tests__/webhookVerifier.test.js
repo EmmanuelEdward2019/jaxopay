@@ -105,15 +105,15 @@ describe('WebhookVerifier', () => {
     });
 
     test('should handle object payload', () => {
+      // Fincra's scheme (_verifyFincra) is a direct shared-secret comparison, not HMAC —
+      // the signature header must equal the configured secret verbatim.
       const secret = 'test_secret_key';
       const payload = { event: 'test' };
-      const payloadStr = JSON.stringify(payload);
-      const signature = crypto.createHmac('sha256', secret).update(payloadStr).digest('hex');
 
       process.env.FINCRA_SECRET_KEY = secret;
 
       const result = verifier.verify('fincra', {
-        'x-fincra-signature': signature
+        'x-fincra-signature': secret
       }, payload);
 
       expect(result).toBe(true);

@@ -56,7 +56,7 @@ describe('Quidax webhook service', () => {
         'wallet-trx',
         12.5,
         'TRX',
-        'Crypto deposit via Quidax (trx-deposit-1)',
+        'Crypto deposit (trx-deposit-1)',
         expect.stringContaining('"quidax_user_refs":["ejzs9qe5"]'),
       ]
     );
@@ -120,7 +120,7 @@ describe('Quidax webhook service', () => {
         'wallet-trx',
         3,
         'TRX',
-        'Crypto deposit via Quidax (trx-deposit-2)',
+        'Crypto deposit (trx-deposit-2)',
         expect.stringContaining('"address":"TKipGdUmft8UsHQsmLi8eaAX63RxxQt3cN"'),
       ]
     );

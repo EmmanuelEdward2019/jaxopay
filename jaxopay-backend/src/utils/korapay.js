@@ -70,7 +70,7 @@ export function getKorapayTransferFailureMessage(error, currency) {
     }
 
     if (isKorapayAuthError(error)) {
-        return 'Bank transfers are temporarily unavailable while this payout request is being authorized. Your funds have been returned.';
+        return 'Bank transfers are temporarily unavailable because Korapay did not authorize this payout request. Your funds have been returned.';
     }
 
     if (isKorapayChannelDisabledError(error)) {
