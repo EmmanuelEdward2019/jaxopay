@@ -221,9 +221,15 @@ export const useAuthStore = create(
       resendVerificationEmail: async (email) => {
         set({ isLoading: true, error: null });
         try {
-          // Note: This endpoint needs to be added to the backend
-          const result = await authService.requestPasswordReset(email); // Reusing as placeholder
+          // POST /auth/resend-verification — a real, already-implemented backend endpoint.
+          // This used to call requestPasswordReset() as a "placeholder", which meant every
+          // "Request New Link" click sent a password-reset email instead of a verification one.
+          const result = await authService.resendVerification(email);
           set({ isLoading: false });
+          if (!result.success) {
+            set({ error: result.message });
+            return { success: false, error: result.message };
+          }
           return { success: true };
         } catch (error) {
           set({ error: error.message, isLoading: false });

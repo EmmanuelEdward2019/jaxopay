@@ -808,14 +808,23 @@ export const changePassword = catchAsync(async (req, res) => {
 });
 
 // Verify email
+//
+// Idempotent by design. Real-world verification links are routinely visited before the actual
+// user ever clicks them — corporate "safe links" email scanners (Microsoft Defender, Proofpoint,
+// Mimecast) and some email clients' link-preview features fetch and execute the destination page
+// to check it isn't a phishing site, which fires this exact same request. If that already
+// consumed the token, the real user's own click must still succeed — their email genuinely is
+// verified — instead of showing a confusing "invalid or expired" failure for a token that in
+// fact worked. This was reported live in production: users hitting "Verification Failed" the
+// moment they clicked, with no realistic delay for the token to have actually expired.
 export const verifyEmail = catchAsync(async (req, res) => {
   const { token } = req.params;
 
-  // Find verification record
+  // Look up the token regardless of verified_at — already-verified is not an error case here.
   const result = await query(
-    `SELECT ev.id, ev.user_id, ev.expires_at
+    `SELECT ev.id, ev.user_id, ev.expires_at, ev.verified_at
      FROM email_verifications ev
-     WHERE ev.token = $1 AND ev.verified_at IS NULL`,
+     WHERE ev.token = $1`,
     [token]
   );
 
@@ -825,20 +834,26 @@ export const verifyEmail = catchAsync(async (req, res) => {
 
   const verification = result.rows[0];
 
-  // Check if expired
+  // Already claimed by this exact token — idempotent success.
+  if (verification.verified_at) {
+    return res.status(200).json({ success: true, message: 'Email verified successfully' });
+  }
+
+  // Check if expired (only matters for a token that was never actually used to verify).
   if (new Date(verification.expires_at) < new Date()) {
     throw new AppError('Verification token has expired', 400);
   }
 
-  // Mark email as verified
+  // Mark email as verified (idempotent — safe even if a concurrent request gets here first).
   await query(
     'UPDATE users SET is_email_verified = true WHERE id = $1',
     [verification.user_id]
   );
 
-  // Mark verification as complete
+  // Atomic claim: only the request that actually flips verified_at from NULL "wins" the log
+  // line below, but every concurrent caller still gets a success response either way.
   await query(
-    'UPDATE email_verifications SET verified_at = NOW() WHERE id = $1',
+    'UPDATE email_verifications SET verified_at = NOW() WHERE id = $1 AND verified_at IS NULL',
     [verification.id]
   );
 
