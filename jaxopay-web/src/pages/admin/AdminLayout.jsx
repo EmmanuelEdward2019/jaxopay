@@ -43,8 +43,8 @@ const navItems = [
     { path: '/admin/system?tab=rates_fees', icon: Percent, label: 'Rates & Fees', roles: ['admin', 'super_admin', 'finance'] },
     { path: '/admin/system', icon: ShieldAlert, label: 'System Configurations', roles: ['admin', 'super_admin'] },
     { path: '/admin/audit', icon: Activity, label: 'Audit Logs', roles: ['super_admin', 'compliance_officer'] },
-    { path: '/admin/announcements', icon: Megaphone, label: 'Announcements', roles: ['admin', 'super_admin', 'compliance_officer', 'support'] },
-    { path: '/admin/support', icon: LifeBuoy, label: 'Support Tickets', roles: ['admin', 'super_admin', 'compliance_officer', 'support'] },
+    { path: '/admin/announcements', icon: Megaphone, label: 'Announcements', roles: ['admin', 'super_admin', 'support'] },
+    { path: '/admin/support', icon: LifeBuoy, label: 'Support Tickets', roles: ['admin', 'super_admin', 'support'] },
     { path: '/admin/public-forms', icon: Mail, label: 'Contact Messages', roles: ['admin', 'super_admin', 'support'] },
 ];
 

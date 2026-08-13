@@ -68,6 +68,8 @@ const UserManagement = () => {
     const [showDeletionRequestsModal, setShowDeletionRequestsModal] = useState(false);
     const { user: currentUser } = useAuthStore();
     const isSuperAdmin = (currentUser?.roles || [currentUser?.role]).includes('super_admin');
+    // Backend: POST /admin/users (create) and POST /admin/messages are both admin/super_admin only.
+    const isAdminOrSuperAdmin = ['admin', 'super_admin'].includes(currentUser?.role);
 
     const isSelected = (id) => selectedRecipients.some((r) => r.id === id);
     const toggleRecipient = (user) => {
@@ -179,20 +181,24 @@ const UserManagement = () => {
                             Deletion Requests
                         </button>
                     )}
-                    <button
-                        onClick={() => setShowMessageModal(true)}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg"
-                    >
-                        <Mail className="w-4 h-4" />
-                        Message{selectedRecipients.length > 0 ? ` (${selectedRecipients.length})` : ''}
-                    </button>
-                    <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 dark:bg-gray-700 text-white font-medium rounded-lg"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add User
-                    </button>
+                    {isAdminOrSuperAdmin && (
+                        <button
+                            onClick={() => setShowMessageModal(true)}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg"
+                        >
+                            <Mail className="w-4 h-4" />
+                            Message{selectedRecipients.length > 0 ? ` (${selectedRecipients.length})` : ''}
+                        </button>
+                    )}
+                    {isAdminOrSuperAdmin && (
+                        <button
+                            onClick={() => setShowCreateModal(true)}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 dark:bg-gray-700 text-white font-medium rounded-lg"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add User
+                        </button>
+                    )}
                     <button
                         onClick={fetchUsers}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg"
@@ -267,15 +273,17 @@ const UserManagement = () => {
                         <table className="w-full">
                             <thead className="bg-gray-50 dark:bg-gray-700/50">
                                 <tr>
-                                    <th className="px-4 py-4 w-10">
-                                        <input
-                                            type="checkbox"
-                                            aria-label="Select all on this page"
-                                            checked={users.length > 0 && users.every((u) => isSelected(u.id))}
-                                            onChange={togglePage}
-                                            className="w-4 h-4 accent-green-600 cursor-pointer"
-                                        />
-                                    </th>
+                                    {isAdminOrSuperAdmin && (
+                                        <th className="px-4 py-4 w-10">
+                                            <input
+                                                type="checkbox"
+                                                aria-label="Select all on this page"
+                                                checked={users.length > 0 && users.every((u) => isSelected(u.id))}
+                                                onChange={togglePage}
+                                                className="w-4 h-4 accent-green-600 cursor-pointer"
+                                            />
+                                        </th>
+                                    )}
                                     <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                         User
                                     </th>
@@ -299,15 +307,17 @@ const UserManagement = () => {
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                 {users.map((user) => (
                                     <tr key={user.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/30 ${isSelected(user.id) ? 'bg-green-50/60 dark:bg-green-900/10' : ''}`}>
-                                        <td className="px-4 py-4">
-                                            <input
-                                                type="checkbox"
-                                                aria-label={`Select ${user.email}`}
-                                                checked={isSelected(user.id)}
-                                                onChange={() => toggleRecipient(user)}
-                                                className="w-4 h-4 accent-green-600 cursor-pointer"
-                                            />
-                                        </td>
+                                        {isAdminOrSuperAdmin && (
+                                            <td className="px-4 py-4">
+                                                <input
+                                                    type="checkbox"
+                                                    aria-label={`Select ${user.email}`}
+                                                    checked={isSelected(user.id)}
+                                                    onChange={() => toggleRecipient(user)}
+                                                    className="w-4 h-4 accent-green-600 cursor-pointer"
+                                                />
+                                            </td>
+                                        )}
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center text-white font-medium">
@@ -1087,6 +1097,10 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
     const [depositLimitInput, setDepositLimitInput] = useState('');
     const [withdrawalLimitInput, setWithdrawalLimitInput] = useState('');
     const { user: currentUser } = useAuthStore();
+    // Backend: PATCH /admin/users/:userId (kyc_tier/status/roles) is admin/super_admin only;
+    // POST /admin/users/:userId/suspend is COMPLIANCE_ACCESS (admin/super_admin/compliance_officer).
+    const canEditUser = ['admin', 'super_admin'].includes(currentUser?.role);
+    const canSuspendUser = ['admin', 'super_admin', 'compliance_officer'].includes(currentUser?.role);
 
     const availableProducts = [
         'crypto', 'virtual_cards', 'utilities', 'bill_payments', 'cross_border', 'wallet_transfers'
@@ -1216,7 +1230,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                     <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="font-semibold text-gray-900 dark:text-white">Account Settings</h3>
-                            {!editMode && user.status !== 'deleted' && (
+                            {!editMode && user.status !== 'deleted' && canEditUser && (
                                 <button
                                     onClick={() => setEditMode(true)}
                                     className="text-sm text-primary-600 hover:text-primary-700"
@@ -1431,7 +1445,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                     )}
 
                     {/* Suspend User Section */}
-                    {user.status !== 'suspended' && user.status !== 'deleted' && (
+                    {user.status !== 'suspended' && user.status !== 'deleted' && canSuspendUser && (
                         <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
                             {!showSuspendForm ? (
                                 <button

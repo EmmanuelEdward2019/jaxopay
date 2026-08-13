@@ -77,7 +77,14 @@ router.use(restrictTo(...STAFF_ROLES));
 
 // Get system statistics - Available to all
 router.get('/stats', getSystemStats);
-router.get('/analytics/growth', getGrowthAnalytics);
+// ?start=YYYY-MM-DD&end=YYYY-MM-DD — custom trend range; defaults to the last 30 days
+router.get(
+  '/analytics/growth',
+  query('start').optional().isISO8601(),
+  query('end').optional().isISO8601(),
+  validate,
+  getGrowthAnalytics
+);
 
 // Treasury / reconciliation overview (finance)
 router.get('/treasury', restrictTo(...FINANCE_ACCESS), getTreasuryOverview);
@@ -253,7 +260,10 @@ router.patch(
 );
 router.get('/cards', getAllCards);
 router.patch('/cards/:cardId/status', restrictTo('admin', 'super_admin'), updateCardStatus);
-router.get('/transactions', restrictTo(...FINANCE_ACCESS), getAllTransactions);
+// Read-only transaction monitoring is a genuine compliance/AML need (investigating suspicious
+// activity), so compliance_officer gets this specific GET alongside finance — it is NOT added to
+// FINANCE_ACCESS itself, which would also open treasury/wallets/fees/ramps to compliance.
+router.get('/transactions', restrictTo(...FINANCE_ACCESS, 'compliance_officer'), getAllTransactions);
 
 // Admin SMS
 router.post('/sms/bulk', restrictTo('admin', 'super_admin'), sendAdminBulkSMS);

@@ -24,6 +24,7 @@ import {
     Percent,
     LifeBuoy,
     Mail,
+    Calendar,
 } from 'lucide-react';
 import {
     ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis,
@@ -80,6 +81,25 @@ const canAccessWallets = (role) => ['admin', 'super_admin', 'finance'].includes(
 const canAccessCards = (role) => ['admin', 'super_admin'].includes(role);
 const canAccessAml = (role) => ['admin', 'super_admin', 'compliance_officer'].includes(role);
 
+// Growth Analytics trend range presets — each resolves to a `start` date sent to
+// GET /admin/analytics/growth (server defaults `end` to today, granularity adapts server-side).
+const RANGE_PRESETS = [
+    { key: '30d', label: '30 Days', days: 30 },
+    { key: '3m', label: '3 Months', days: 91 },
+    { key: '6m', label: '6 Months', days: 182 },
+    { key: '1y', label: '1 Year', days: 365 },
+    { key: '2y', label: '2 Years', days: 730 },
+    { key: 'custom', label: 'Custom Range' },
+];
+
+const presetToParams = (presetKey) => {
+    const preset = RANGE_PRESETS.find((p) => p.key === presetKey);
+    if (!preset || preset.days == null) return {};
+    const start = new Date();
+    start.setDate(start.getDate() - (preset.days - 1));
+    return { start: start.toISOString().slice(0, 10) };
+};
+
 const AdminDashboard = () => {
     const { user } = useAuthStore();
     const role = user?.role;
@@ -98,20 +118,58 @@ const AdminDashboard = () => {
 
     const [growth, setGrowth] = useState(null);
     const [growthLoading, setGrowthLoading] = useState(true);
+    const [rangePreset, setRangePreset] = useState('30d');
+    const [customStart, setCustomStart] = useState('');
+    const [customEnd, setCustomEnd] = useState('');
+    const [showCustomPicker, setShowCustomPicker] = useState(false);
 
     useEffect(() => {
         fetchStats();
-        fetchGrowth();
+        fetchGrowth({ preset: '30d' });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const fetchGrowth = async () => {
+    const fetchGrowth = async (opts = {}) => {
+        const params = opts.params || presetToParams(opts.preset || rangePreset);
         setGrowthLoading(true);
         try {
-            const result = await adminService.getGrowthAnalytics();
+            const result = await adminService.getGrowthAnalytics(params);
             if (result.success) setGrowth(result.data);
         } finally {
             setGrowthLoading(false);
         }
+    };
+
+    // Re-runs the currently active preset/custom range — used by both the Refresh button and
+    // after editing custom dates, so it always reflects whatever the admin has selected.
+    const refetchGrowth = () => {
+        if (rangePreset === 'custom' && customStart && customEnd) {
+            fetchGrowth({ params: { start: customStart, end: customEnd } });
+        } else {
+            fetchGrowth({ preset: rangePreset });
+        }
+    };
+
+    const handlePresetClick = (key) => {
+        setRangePreset(key);
+        if (key === 'custom') {
+            setShowCustomPicker(true);
+            if (!customStart || !customEnd) {
+                const end = new Date();
+                const start = new Date();
+                start.setDate(start.getDate() - 29);
+                setCustomStart(start.toISOString().slice(0, 10));
+                setCustomEnd(end.toISOString().slice(0, 10));
+            }
+            return;
+        }
+        setShowCustomPicker(false);
+        fetchGrowth({ preset: key });
+    };
+
+    const handleApplyCustomRange = () => {
+        if (!customStart || !customEnd) return;
+        fetchGrowth({ params: { start: customStart, end: customEnd } });
     };
 
     const fetchStats = async () => {
@@ -163,7 +221,7 @@ const AdminDashboard = () => {
                     </p>
                 </div>
                 <button
-                    onClick={() => { fetchStats(); fetchGrowth(); }}
+                    onClick={() => { fetchStats(); refetchGrowth(); }}
                     className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-gray-900 font-medium rounded-lg"
                 >
                     <RefreshCw className="w-4 h-4" />
@@ -280,21 +338,88 @@ const AdminDashboard = () => {
                             </div>
                         </div>
 
-                        {/* 30-day daily trend */}
+                        {/* Trend range filter */}
+                        <div className="border-t border-gray-100 dark:border-gray-700 pt-5 mb-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Calendar className="w-4 h-4 text-gray-400 shrink-0" />
+                                {RANGE_PRESETS.map((p) => (
+                                    <button
+                                        key={p.key}
+                                        onClick={() => handlePresetClick(p.key)}
+                                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${rangePreset === p.key
+                                            ? 'bg-accent-600 text-gray-900'
+                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                            }`}
+                                    >
+                                        {p.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {showCustomPicker && (
+                                <div className="flex flex-wrap items-end gap-3 mt-3">
+                                    <div>
+                                        <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">From</label>
+                                        <input
+                                            type="date"
+                                            value={customStart}
+                                            max={customEnd || undefined}
+                                            onChange={(e) => setCustomStart(e.target.value)}
+                                            className="px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">To</label>
+                                        <input
+                                            type="date"
+                                            value={customEnd}
+                                            min={customStart || undefined}
+                                            max={new Date().toISOString().slice(0, 10)}
+                                            onChange={(e) => setCustomEnd(e.target.value)}
+                                            className="px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={handleApplyCustomRange}
+                                        disabled={!customStart || !customEnd || growthLoading}
+                                        className="px-4 py-1.5 text-sm font-semibold bg-accent-600 hover:bg-accent-700 text-gray-900 rounded-lg disabled:opacity-50"
+                                    >
+                                        Apply
+                                    </button>
+                                </div>
+                            )}
+
+                            {growth.range && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
+                                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                                        {new Date(`${growth.range.start}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                        {' – '}
+                                        {new Date(`${growth.range.end}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </span>
+                                    {': '}
+                                    {formatNumber(growth.range.new_users)} new users · {formatNumber(growth.range.transactions.count)} transactions · {formatCurrency(growth.range.transactions.volume_usd, 'USD')} volume
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Trend chart — bucketed by day/week/month server-side depending on the
+                            selected range's length (see growth.range.granularity). */}
                         <div className="h-64">
                             <ResponsiveContainer width="100%" height="100%">
-                                <ComposedChart data={growth.daily_trend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                                <ComposedChart data={growth.trend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
                                     <XAxis
                                         dataKey="date"
-                                        tickFormatter={(d) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                        tickFormatter={(d) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined,
+                                            growth.range?.granularity === 'month' ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' }
+                                        )}
                                         tick={{ fontSize: 11 }}
-                                        interval={Math.max(0, Math.floor(growth.daily_trend.length / 8) - 1)}
+                                        interval={Math.max(0, Math.floor(growth.trend.length / 8) - 1)}
                                     />
                                     <YAxis yAxisId="left" tick={{ fontSize: 11 }} allowDecimals={false} />
                                     <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
                                     <Tooltip
-                                        labelFormatter={(d) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                        labelFormatter={(d) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                                         contentStyle={{ borderRadius: 12, fontSize: 12 }}
                                     />
                                     <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -488,15 +613,15 @@ const AdminDashboard = () => {
                                     </div>
                                 </Link>
                                 <Link
-                                    to="/admin/announcements"
+                                    to="/admin/audit"
                                     className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                                 >
                                     <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                                        <Megaphone className="w-5 h-5 text-purple-600" />
+                                        <Activity className="w-5 h-5 text-purple-600" />
                                     </div>
                                     <div>
-                                        <p className="font-medium text-gray-900 dark:text-white">Announcements</p>
-                                        <p className="text-xs text-gray-500">Platform updates</p>
+                                        <p className="font-medium text-gray-900 dark:text-white">Audit Logs</p>
+                                        <p className="text-xs text-gray-500">Platform activity trail</p>
                                     </div>
                                 </Link>
                             </>

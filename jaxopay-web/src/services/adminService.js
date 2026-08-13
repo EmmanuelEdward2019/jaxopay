@@ -11,14 +11,15 @@ const adminService = {
         }
     },
 
-    // New users / transactions over rolling 24h/7d/30d windows, plus a 30-day daily trend —
+    // New users / transactions over rolling 24h/7d/30d windows, plus a range-filterable trend
+    // (params: { start, end } as YYYY-MM-DD; defaults server-side to the last 30 days) —
     // for monitoring platform growth (distinct from getStats' all-time totals).
-    getGrowthAnalytics: async () => {
+    getGrowthAnalytics: async (params = {}) => {
         try {
-            const response = await apiClient.get('/admin/analytics/growth');
+            const response = await apiClient.get('/admin/analytics/growth', { params });
             return { success: true, data: response.data };
         } catch (error) {
-            return { success: false, error: error.message };
+            return { success: false, error: error?.response?.data?.message || error.message };
         }
     },
 

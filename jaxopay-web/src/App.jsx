@@ -331,7 +331,7 @@ function App() {
               </RoleProtectedRoute>
             } />
 
-            {/* Transactions - Admin, Super Admin, Compliance, Finance (backend: FINANCE_ACCESS) */}
+            {/* Transactions - Admin, Super Admin, Finance, Compliance (backend: FINANCE_ACCESS + compliance_officer, read-only) */}
             <Route path="transactions" element={
               <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer', 'finance']}>
                 <TransactionMonitor />
@@ -352,9 +352,10 @@ function App() {
               </RoleProtectedRoute>
             } />
 
-            {/* Announcements - Admin, Compliance, Support (backend also allows 'support') */}
+            {/* Announcements - Admin, Support (backend: 'admin','super_admin','support' — this page
+                is create/deactivate only, compliance_officer has no backend grant and no need for it) */}
             <Route path="announcements" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer', 'support']}>
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'support']}>
                 <AnnouncementManagement />
               </RoleProtectedRoute>
             } />
@@ -366,9 +367,10 @@ function App() {
               </RoleProtectedRoute>
             } />
 
-            {/* Support Tickets - Admin, Super Admin, Compliance, Support (backend also allows 'support') */}
+            {/* Support Tickets - Admin, Super Admin, Support (backend: ticket.routes.js restrictTo
+                'admin','super_admin','support' — compliance_officer has no backend grant here) */}
             <Route path="support" element={
-              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'compliance_officer', 'support']}>
+              <RoleProtectedRoute allowedRoles={['admin', 'super_admin', 'support']}>
                 <AdminSupport />
               </RoleProtectedRoute>
             } />

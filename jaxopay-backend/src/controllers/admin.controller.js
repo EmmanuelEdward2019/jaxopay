@@ -795,6 +795,28 @@ export const getSystemStats = catchAsync(async (req, res) => {
 // transactions + bill payments + wallet/crypto activity + fx swaps/transfers) — reusing
 // ADMIN_TX_COMBINED rather than just the `transactions` table keeps this number consistent with
 // what an admin sees if they click through, instead of a narrower, confusingly different count.
+// Aligns a UTC date down to the start of its bucket ('day' | 'week' | 'month'). Week buckets
+// start Monday to match Postgres' date_trunc('week', ...) (ISO 8601), so the JS-built zero-filled
+// series lines up exactly with the SQL-side bucket keys.
+function alignToBucketStart(date, granularity) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  if (granularity === 'week') {
+    const day = d.getUTCDay(); // 0=Sun..6=Sat
+    d.setUTCDate(d.getUTCDate() + ((day === 0 ? -6 : 1) - day));
+  } else if (granularity === 'month') {
+    d.setUTCDate(1);
+  }
+  return d;
+}
+
+function stepBucket(date, granularity) {
+  const d = new Date(date);
+  if (granularity === 'day') d.setUTCDate(d.getUTCDate() + 1);
+  else if (granularity === 'week') d.setUTCDate(d.getUTCDate() + 7);
+  else d.setUTCMonth(d.getUTCMonth() + 1);
+  return d;
+}
+
 export const getGrowthAnalytics = catchAsync(async (req, res) => {
   const windows = [
     ['last_24h', '24 hours'],
@@ -841,31 +863,76 @@ export const getGrowthAnalytics = catchAsync(async (req, res) => {
     volumeUsd.last_30d += Number(row.vol_30d || 0) * rate;
   }
 
-  // Daily trend, last 30 days — counts only (a historically-accurate daily USD volume would need
-  // that day's exchange rate, not today's; out of scope for a growth-monitoring chart).
-  const dailyUsers = await query(
-    `SELECT DATE(created_at) AS day, COUNT(*) AS count
-     FROM users
-     WHERE created_at >= NOW() - INTERVAL '30 days' AND deleted_at IS NULL
-     GROUP BY 1 ORDER BY 1`
-  );
-  const dailyTx = await query(
-    `${ADMIN_TX_COMBINED}
-     SELECT DATE(c.created_at) AS day, COUNT(*) AS count
-     FROM combined c
-     WHERE c.created_at >= NOW() - INTERVAL '30 days'
-     GROUP BY 1 ORDER BY 1`
-  );
+  // Flexible trend range — defaults to the last 30 days (matching the old fixed behavior) but
+  // accepts ?start=YYYY-MM-DD&end=YYYY-MM-DD so the dashboard can filter by a custom range or a
+  // preset (3m/6m/1y/2y/etc, computed client-side into a start/end pair). Bucket granularity
+  // adapts to the range so a 2-year window doesn't render 700+ daily points.
+  const now = new Date();
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
-  const usersByDay = Object.fromEntries(dailyUsers.rows.map((r) => [r.day.toISOString().slice(0, 10), parseInt(r.count)]));
-  const txByDay = Object.fromEntries(dailyTx.rows.map((r) => [r.day.toISOString().slice(0, 10), parseInt(r.count)]));
-  const dailyTrend = [];
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    dailyTrend.push({ date: key, new_users: usersByDay[key] || 0, transactions: txByDay[key] || 0 });
+  let endDate = req.query.end ? new Date(`${req.query.end}T00:00:00Z`) : todayUTC;
+  let startDate = req.query.start
+    ? new Date(`${req.query.start}T00:00:00Z`)
+    : new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth(), todayUTC.getUTCDate() - 29));
+
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    throw new AppError('Invalid start/end date', 400);
   }
+  if (endDate > todayUTC) endDate = todayUTC;
+  // Clamp to a 10-year lookback — plenty for this platform's lifetime, and keeps the query/series
+  // bounded against an accidental or malicious far-past `start`.
+  const earliestAllowed = new Date(Date.UTC(todayUTC.getUTCFullYear() - 10, todayUTC.getUTCMonth(), todayUTC.getUTCDate()));
+  if (startDate < earliestAllowed) startDate = earliestAllowed;
+  if (startDate > endDate) throw new AppError('start date must be before end date', 400);
+
+  const rangeDays = Math.round((endDate - startDate) / 86400000) + 1;
+  const granularity = rangeDays <= 92 ? 'day' : rangeDays <= 731 ? 'week' : 'month';
+  const startStr = startDate.toISOString().slice(0, 10);
+  const endStr = endDate.toISOString().slice(0, 10);
+
+  const bucketedUsers = await query(
+    `SELECT date_trunc($3, created_at)::date AS bucket, COUNT(*) AS count
+     FROM users
+     WHERE created_at >= $1::date AND created_at < ($2::date + INTERVAL '1 day') AND deleted_at IS NULL
+     GROUP BY 1 ORDER BY 1`,
+    [startStr, endStr, granularity]
+  );
+  const bucketedTx = await query(
+    `${ADMIN_TX_COMBINED}
+     SELECT date_trunc($3, c.created_at)::date AS bucket, COUNT(*) AS count
+     FROM combined c
+     WHERE c.created_at >= $1::date AND c.created_at < ($2::date + INTERVAL '1 day')
+     GROUP BY 1 ORDER BY 1`,
+    [startStr, endStr, granularity]
+  );
+  // Range volume — completed transactions only, same convention as the 24h/7d/30d figures above.
+  const rangeCurrencyBreakdown = await query(
+    `${ADMIN_TX_COMBINED}
+     SELECT c.currency, SUM(c.amount) AS vol
+     FROM combined c
+     WHERE c.created_at >= $1::date AND c.created_at < ($2::date + INTERVAL '1 day') AND c.status = 'completed'
+     GROUP BY c.currency`,
+    [startStr, endStr]
+  );
+  let rangeVolumeUsd = 0;
+  for (const row of rangeCurrencyBreakdown.rows) {
+    rangeVolumeUsd += Number(row.vol || 0) * ((await usdRate(row.currency)) || 0);
+  }
+
+  const usersByBucket = Object.fromEntries(bucketedUsers.rows.map((r) => [r.bucket.toISOString().slice(0, 10), parseInt(r.count)]));
+  const txByBucket = Object.fromEntries(bucketedTx.rows.map((r) => [r.bucket.toISOString().slice(0, 10), parseInt(r.count)]));
+
+  const trend = [];
+  let cursor = alignToBucketStart(startDate, granularity);
+  while (cursor <= endDate) {
+    const key = cursor.toISOString().slice(0, 10);
+    trend.push({ date: key, new_users: usersByBucket[key] || 0, transactions: txByBucket[key] || 0 });
+    cursor = stepBucket(cursor, granularity);
+  }
+  const rangeTotals = trend.reduce(
+    (acc, d) => ({ new_users: acc.new_users + d.new_users, transactions: acc.transactions + d.transactions }),
+    { new_users: 0, transactions: 0 }
+  );
 
   res.status(200).json({
     success: true,
@@ -880,7 +947,15 @@ export const getGrowthAnalytics = catchAsync(async (req, res) => {
         last_7d: { count: parseInt(txCounts.rows[0].last_7d), volume_usd: Math.round(volumeUsd.last_7d * 100) / 100 },
         last_30d: { count: parseInt(txCounts.rows[0].last_30d), volume_usd: Math.round(volumeUsd.last_30d * 100) / 100 },
       },
-      daily_trend: dailyTrend,
+      range: {
+        start: startStr,
+        end: endStr,
+        days: rangeDays,
+        granularity,
+        new_users: rangeTotals.new_users,
+        transactions: { count: rangeTotals.transactions, volume_usd: Math.round(rangeVolumeUsd * 100) / 100 },
+      },
+      trend,
     },
   });
 });
