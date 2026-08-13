@@ -617,9 +617,9 @@ const InstantSwap = () => {
               </div>
 
               {/* Flip button */}
-              <div className="flex justify-center -my-1 relative z-10">
+              <div className="flex justify-center -my-1 relative z-10 pointer-events-none">
                 <button onClick={handleFlip} disabled={isWorking}
-                  className="w-10 h-10 rounded-full bg-muted border-4 border-background flex items-center justify-center hover:bg-muted dark:hover:bg-muted transition-colors disabled:opacity-40">
+                  className="w-10 h-10 rounded-full bg-muted border-4 border-background flex items-center justify-center hover:bg-muted dark:hover:bg-muted transition-colors disabled:opacity-40 pointer-events-auto">
                   <ArrowDown className="w-4 h-4 text-primary" />
                 </button>
               </div>

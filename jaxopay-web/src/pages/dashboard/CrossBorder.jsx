@@ -441,7 +441,7 @@ const CrossBorder = () => {
                                                 </div>
                                             </div>
 
-                                            <div className="md:col-span-11 flex justify-center -my-6 relative z-10">
+                                            <div className="md:col-span-11 flex justify-center -my-6 relative z-10 pointer-events-none">
                                                 <button
                                                     onClick={() => setSwapData(prev => ({
                                                         ...prev,
@@ -451,7 +451,7 @@ const CrossBorder = () => {
                                                         receiveAmount: prev.amount,
                                                         lastEdited: 'pay',
                                                     }))}
-                                                    className="w-12 h-12 bg-card border border-border rounded-2xl shadow-lg flex items-center justify-center text-primary hover:rotate-180 transition-transform duration-500"
+                                                    className="w-12 h-12 bg-card border border-border rounded-2xl shadow-lg flex items-center justify-center text-primary hover:rotate-180 transition-transform duration-500 pointer-events-auto"
                                                 >
                                                     <ArrowLeftRight className="w-5 h-5" />
                                                 </button>
