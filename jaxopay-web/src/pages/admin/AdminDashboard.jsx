@@ -17,10 +17,26 @@ import {
     ShieldAlert,
     Megaphone,
     Archive,
+    UserPlus,
+    LineChart as LineChartIcon,
 } from 'lucide-react';
+import {
+    ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis,
+    CartesianGrid, Tooltip, Legend,
+} from 'recharts';
 import adminService from '../../services/adminService';
 import { useAuthStore } from '../../store/authStore';
 import { formatCurrency, formatNumber } from '../../utils/formatters';
+
+// Compact stat used inside the Growth Analytics card — smaller/denser than the top-level
+// StatCard since three of these sit side by side per metric (24h / 7d / 30d).
+const GrowthStat = ({ label, value, sub }) => (
+    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{label}</p>
+        <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
+        {sub && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+);
 
 const StatCard = ({ title, value, icon: Icon, trend, trendValue, color, linkTo }) => {
     const Content = (
@@ -66,9 +82,23 @@ const AdminDashboard = () => {
     const [recentActivity, setRecentActivity] = useState([]);
     const [error, setError] = useState(null);
 
+    const [growth, setGrowth] = useState(null);
+    const [growthLoading, setGrowthLoading] = useState(true);
+
     useEffect(() => {
         fetchStats();
+        fetchGrowth();
     }, []);
+
+    const fetchGrowth = async () => {
+        setGrowthLoading(true);
+        try {
+            const result = await adminService.getGrowthAnalytics();
+            if (result.success) setGrowth(result.data);
+        } finally {
+            setGrowthLoading(false);
+        }
+    };
 
     const fetchStats = async () => {
         setLoading(true);
@@ -115,7 +145,7 @@ const AdminDashboard = () => {
                     </p>
                 </div>
                 <button
-                    onClick={fetchStats}
+                    onClick={() => { fetchStats(); fetchGrowth(); }}
                     className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-gray-900 font-medium rounded-lg"
                 >
                     <RefreshCw className="w-4 h-4" />
@@ -177,6 +207,88 @@ const AdminDashboard = () => {
                     color="bg-red-500"
                     linkTo="/admin/users?status=suspended"
                 />
+            </div>
+
+            {/* Growth Analytics — new signups & transaction activity over rolling windows,
+                distinct from the all-time totals above, for tracking platform growth. */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                        <LineChartIcon className="w-5 h-5 text-accent-600" />
+                        Growth Analytics
+                    </h3>
+                </div>
+
+                {growthLoading && !growth ? (
+                    <div className="flex items-center justify-center h-40">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent-500"></div>
+                    </div>
+                ) : growth ? (
+                    <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                            {/* New Users */}
+                            <div>
+                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
+                                    <UserPlus className="w-4 h-4 text-blue-500" /> New Users
+                                </p>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <GrowthStat label="24h" value={formatNumber(growth.new_users.last_24h)} />
+                                    <GrowthStat label="7d" value={formatNumber(growth.new_users.last_7d)} />
+                                    <GrowthStat label="30d" value={formatNumber(growth.new_users.last_30d)} />
+                                </div>
+                            </div>
+                            {/* Transactions */}
+                            <div>
+                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
+                                    <Activity className="w-4 h-4 text-cyan-500" /> Transactions
+                                </p>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <GrowthStat
+                                        label="24h"
+                                        value={formatNumber(growth.transactions.last_24h.count)}
+                                        sub={formatCurrency(growth.transactions.last_24h.volume_usd, 'USD')}
+                                    />
+                                    <GrowthStat
+                                        label="7d"
+                                        value={formatNumber(growth.transactions.last_7d.count)}
+                                        sub={formatCurrency(growth.transactions.last_7d.volume_usd, 'USD')}
+                                    />
+                                    <GrowthStat
+                                        label="30d"
+                                        value={formatNumber(growth.transactions.last_30d.count)}
+                                        sub={formatCurrency(growth.transactions.last_30d.volume_usd, 'USD')}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 30-day daily trend */}
+                        <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <ComposedChart data={growth.daily_trend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+                                    <XAxis
+                                        dataKey="date"
+                                        tickFormatter={(d) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                        tick={{ fontSize: 11 }}
+                                        interval={Math.max(0, Math.floor(growth.daily_trend.length / 8) - 1)}
+                                    />
+                                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} allowDecimals={false} />
+                                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
+                                    <Tooltip
+                                        labelFormatter={(d) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                        contentStyle={{ borderRadius: 12, fontSize: 12 }}
+                                    />
+                                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                                    <Bar yAxisId="right" dataKey="transactions" name="Transactions" fill="#22d3ee" radius={[4, 4, 0, 0]} barSize={10} />
+                                    <Line yAxisId="left" type="monotone" dataKey="new_users" name="New Users" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
+                                </ComposedChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </>
+                ) : (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Unable to load growth analytics.</p>
+                )}
             </div>
 
             {/* Quick Actions & Recent Activity */}

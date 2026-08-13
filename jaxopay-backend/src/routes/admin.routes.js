@@ -10,6 +10,7 @@ import {
   suspendUser,
   verifyKYCDocument,
   getSystemStats,
+  getGrowthAnalytics,
   getPendingKYC,
   getApprovedKYC,
   getRejectedKYC,
@@ -76,6 +77,7 @@ router.use(restrictTo(...STAFF_ROLES));
 
 // Get system statistics - Available to all
 router.get('/stats', getSystemStats);
+router.get('/analytics/growth', getGrowthAnalytics);
 
 // Treasury / reconciliation overview (finance)
 router.get('/treasury', restrictTo(...FINANCE_ACCESS), getTreasuryOverview);

@@ -11,6 +11,17 @@ const adminService = {
         }
     },
 
+    // New users / transactions over rolling 24h/7d/30d windows, plus a 30-day daily trend —
+    // for monitoring platform growth (distinct from getStats' all-time totals).
+    getGrowthAnalytics: async () => {
+        try {
+            const response = await apiClient.get('/admin/analytics/growth');
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
     // Get all users
     getUsers: async (params = {}) => {
         try {

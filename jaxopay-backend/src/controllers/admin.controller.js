@@ -787,6 +787,104 @@ export const getSystemStats = catchAsync(async (req, res) => {
   });
 });
 
+// Growth analytics — new signups and transaction activity over rolling windows, for admins to
+// monitor platform growth at a glance (not previously available; the only signup/transaction
+// numbers on the dashboard were all-time totals with no time dimension at all).
+//
+// Transactions here means the SAME combined view the admin Transactions page shows (fiat
+// transactions + bill payments + wallet/crypto activity + fx swaps/transfers) — reusing
+// ADMIN_TX_COMBINED rather than just the `transactions` table keeps this number consistent with
+// what an admin sees if they click through, instead of a narrower, confusingly different count.
+export const getGrowthAnalytics = catchAsync(async (req, res) => {
+  const windows = [
+    ['last_24h', '24 hours'],
+    ['last_7d', '7 days'],
+    ['last_30d', '30 days'],
+  ];
+
+  const userCounts = await query(
+    `SELECT
+       COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours') AS last_24h,
+       COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS last_7d,
+       COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS last_30d
+     FROM users
+     WHERE deleted_at IS NULL`
+  );
+
+  const txCounts = await query(
+    `${ADMIN_TX_COMBINED}
+     SELECT
+       COUNT(*) FILTER (WHERE c.created_at >= NOW() - INTERVAL '24 hours') AS last_24h,
+       COUNT(*) FILTER (WHERE c.created_at >= NOW() - INTERVAL '7 days') AS last_7d,
+       COUNT(*) FILTER (WHERE c.created_at >= NOW() - INTERVAL '30 days') AS last_30d
+     FROM combined c`
+  );
+
+  // Volume needs a per-currency breakdown (amounts across different currencies can't just be
+  // added together) — only completed transactions count as real money moved, same convention
+  // getSystemStats already uses for its 30-day volume figure.
+  const currencyBreakdown = await query(
+    `${ADMIN_TX_COMBINED}
+     SELECT c.currency,
+       SUM(c.amount) FILTER (WHERE c.created_at >= NOW() - INTERVAL '24 hours' AND c.status = 'completed') AS vol_24h,
+       SUM(c.amount) FILTER (WHERE c.created_at >= NOW() - INTERVAL '7 days' AND c.status = 'completed') AS vol_7d,
+       SUM(c.amount) FILTER (WHERE c.created_at >= NOW() - INTERVAL '30 days' AND c.status = 'completed') AS vol_30d
+     FROM combined c
+     GROUP BY c.currency`
+  );
+
+  const volumeUsd = { last_24h: 0, last_7d: 0, last_30d: 0 };
+  for (const row of currencyBreakdown.rows) {
+    const rate = (await usdRate(row.currency)) || 0;
+    volumeUsd.last_24h += Number(row.vol_24h || 0) * rate;
+    volumeUsd.last_7d += Number(row.vol_7d || 0) * rate;
+    volumeUsd.last_30d += Number(row.vol_30d || 0) * rate;
+  }
+
+  // Daily trend, last 30 days — counts only (a historically-accurate daily USD volume would need
+  // that day's exchange rate, not today's; out of scope for a growth-monitoring chart).
+  const dailyUsers = await query(
+    `SELECT DATE(created_at) AS day, COUNT(*) AS count
+     FROM users
+     WHERE created_at >= NOW() - INTERVAL '30 days' AND deleted_at IS NULL
+     GROUP BY 1 ORDER BY 1`
+  );
+  const dailyTx = await query(
+    `${ADMIN_TX_COMBINED}
+     SELECT DATE(c.created_at) AS day, COUNT(*) AS count
+     FROM combined c
+     WHERE c.created_at >= NOW() - INTERVAL '30 days'
+     GROUP BY 1 ORDER BY 1`
+  );
+
+  const usersByDay = Object.fromEntries(dailyUsers.rows.map((r) => [r.day.toISOString().slice(0, 10), parseInt(r.count)]));
+  const txByDay = Object.fromEntries(dailyTx.rows.map((r) => [r.day.toISOString().slice(0, 10), parseInt(r.count)]));
+  const dailyTrend = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    dailyTrend.push({ date: key, new_users: usersByDay[key] || 0, transactions: txByDay[key] || 0 });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      new_users: {
+        last_24h: parseInt(userCounts.rows[0].last_24h),
+        last_7d: parseInt(userCounts.rows[0].last_7d),
+        last_30d: parseInt(userCounts.rows[0].last_30d),
+      },
+      transactions: {
+        last_24h: { count: parseInt(txCounts.rows[0].last_24h), volume_usd: Math.round(volumeUsd.last_24h * 100) / 100 },
+        last_7d: { count: parseInt(txCounts.rows[0].last_7d), volume_usd: Math.round(volumeUsd.last_7d * 100) / 100 },
+        last_30d: { count: parseInt(txCounts.rows[0].last_30d), volume_usd: Math.round(volumeUsd.last_30d * 100) / 100 },
+      },
+      daily_trend: dailyTrend,
+    },
+  });
+});
+
 // Get pending KYC documents (admin only)
 export const getPendingKYC = catchAsync(async (req, res) => {
   const { page = 1, limit = 20 } = req.query;
