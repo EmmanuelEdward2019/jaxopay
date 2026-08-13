@@ -66,16 +66,22 @@ router.post(
   authController.refreshToken
 );
 
+// 6-digit code, not a link — see verifyEmailCode's own comment for why. authRateLimiter guards
+// brute-force attempts at the route level on top of the per-code attempt lockout in the
+// controller (5 wrong guesses kills the code even within the rate-limit window).
 router.post(
-  '/verify-email/:token',
-  authController.verifyEmail
+  '/verify-email-code',
+  authRateLimiter,
+  authController.verifyEmailCode
 );
 
 // Public — must be reachable by a user who hasn't verified their email yet, so isn't logged in
-// (login is now blocked until email is verified). Takes `email` in the body.
+// (login is now blocked until email is verified). Takes `email` in the body. otpRateLimiter (not
+// authRateLimiter) specifically because this route always returns 200 regardless of outcome —
+// authRateLimiter's skipSuccessfulRequests would never actually count a call against the limit.
 router.post(
   '/resend-verification',
-  authRateLimiter,
+  otpRateLimiter,
   authController.resendVerificationEmail
 );
 

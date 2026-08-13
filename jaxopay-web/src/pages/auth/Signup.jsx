@@ -13,17 +13,15 @@ import {
     AlertCircle,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
-import authService from '../../services/authService';
 
 const Signup = () => {
     const navigate = useNavigate();
     const { register, isLoading } = useAuthStore();
 
-    const [step, setStep] = useState(1); // 1: Account, 2: Personal, 3: Verify
+    const [step, setStep] = useState(1); // 1: Account, 2: Personal — verification happens on its own page
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [error, setError] = useState('');
-    const [success, setSuccess] = useState(false);
 
     const [formData, setFormData] = useState({
         email: '',
@@ -36,15 +34,6 @@ const Signup = () => {
     });
 
     const [passwordStrength, setPasswordStrength] = useState(0);
-    const [resending, setResending] = useState(false);
-    const [resendSent, setResendSent] = useState(false);
-
-    const handleResend = async () => {
-        setResending(true);
-        await authService.resendVerification(formData.email);
-        setResending(false);
-        setResendSent(true);
-    };
 
     const checkPasswordStrength = (password) => {
         let strength = 0;
@@ -119,8 +108,9 @@ const Signup = () => {
         });
 
         if (result.success) {
-            setSuccess(true);
-            setStep(3);
+            // Signup no longer auto-logs in (a fresh account can't log in until the email is
+            // verified) — hand off to the 6-digit code entry page with the email pre-filled.
+            navigate('/verify-email', { state: { email: formData.email } });
         } else {
             setError(result.error || 'Registration failed. Please try again.');
         }
@@ -169,7 +159,7 @@ const Signup = () => {
                 <div className="w-full max-w-md">
                     {/* Progress Steps */}
                     <div className="flex items-center justify-center gap-4 mb-8">
-                        {[1, 2, 3].map((s) => (
+                        {[1, 2].map((s) => (
                             <div key={s} className="flex items-center gap-2">
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center font-medium ${step > s ? 'bg-accent-600 text-white' :
                                     step === s ? 'bg-accent-600 text-white' :
@@ -177,7 +167,7 @@ const Signup = () => {
                                     }`}>
                                     {step > s ? <Check className="w-5 h-5" /> : s}
                                 </div>
-                                {s < 3 && (
+                                {s < 2 && (
                                     <div className={`w-8 h-0.5 ${step > s ? 'bg-accent-600' : 'bg-gray-200 dark:bg-gray-700'}`} />
                                 )}
                             </div>
@@ -454,52 +444,6 @@ const Signup = () => {
                         </motion.div>
                     )}
 
-                    {/* Step 3: Verification */}
-                    {step === 3 && (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="text-center"
-                        >
-                            <div className="w-20 h-20 bg-accent-100 dark:bg-accent-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <Mail className="w-10 h-10 text-accent-600" />
-                            </div>
-                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                                Check your email
-                            </h2>
-                            <p className="text-gray-600 dark:text-gray-400 mb-6">
-                                We've sent a verification link to<br />
-                                <span className="font-medium text-gray-900 dark:text-white">{formData.email}</span>
-                            </p>
-                            <p className="text-sm text-gray-500 mb-8">
-                                Click the link in the email to verify your account and start using JAXOPAY.
-                            </p>
-                            <div className="space-y-4">
-                                <button
-                                    onClick={() => navigate('/login')}
-                                    className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl"
-                                >
-                                    Go to Login
-                                </button>
-                                <p className="text-sm text-gray-500">
-                                    {resendSent ? (
-                                        'Sent! Check your inbox (and spam folder).'
-                                    ) : (
-                                        <>
-                                            Didn't receive the email?{' '}
-                                            <button
-                                                onClick={handleResend}
-                                                disabled={resending}
-                                                className="text-accent-600 hover:text-accent-700 font-medium disabled:opacity-50"
-                                            >
-                                                {resending ? 'Sending...' : 'Resend'}
-                                            </button>
-                                        </>
-                                    )}
-                                </p>
-                            </div>
-                        </motion.div>
-                    )}
                 </div>
             </div>
         </div>

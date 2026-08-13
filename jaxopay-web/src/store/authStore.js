@@ -205,16 +205,30 @@ export const useAuthStore = create(
         return { success: true, data: result.data };
       },
 
-      verifyEmail: async (token) => {
+      // On success the backend returns a session (same shape as login) so the user lands
+      // straight in the dashboard instead of being sent back to a separate login step.
+      verifyEmailCode: async (email, code) => {
         set({ isLoading: true, error: null });
-        const result = await authService.verifyEmail(token);
+        const result = await authService.verifyEmailCode(email, code);
 
         if (!result.success) {
           set({ error: result.message, isLoading: false });
           return { success: false, error: result.message };
         }
 
-        set({ isLoading: false });
+        const { user, session: sessionData } = result.data;
+        if (sessionData?.access_token) {
+          const session = {
+            access_token: sessionData.access_token,
+            refresh_token: sessionData.refresh_token,
+            user,
+          };
+          set({ user, session, isAuthenticated: true, isLoading: false, error: null });
+        } else {
+          // Verified but no session (e.g. deactivated account) — nothing to auto-login into.
+          set({ isLoading: false });
+        }
+
         return { success: true, data: result.data };
       },
 

@@ -101,30 +101,26 @@ const storeDeviceInfo = async (userId, deviceInfo, executor = query) => {
   }
 };
 
-// Issues a verification email, re-sending the same still-valid token if one was already issued
-// within the cooldown window (avoids spamming the inbox if a user retries a blocked login
-// several times in a row) instead of silently sending nothing. The previous version bailed out
-// on a recent token without emailing it again — resendVerificationEmail always reports success
-// regardless (by design, to avoid leaking whether an account exists), so within 2 minutes of
-// signup a "Request New Link" click looked like it worked but delivered no email at all.
-const VERIFICATION_RESEND_COOLDOWN_MINUTES = 2;
-const issueVerificationEmail = async (user, name) => {
-  const recent = await query(
-    `SELECT token FROM email_verifications
-     WHERE user_id = $1 AND verified_at IS NULL AND expires_at > NOW()
-       AND created_at > NOW() - INTERVAL '${VERIFICATION_RESEND_COOLDOWN_MINUTES} minutes'
-     ORDER BY created_at DESC LIMIT 1`,
-    [user.id]
-  );
+// 6-digit numeric code — same format already used for 2FA login OTPs (otp_codes.purpose =
+// '2fa_login'). Signup verification reuses that same table/mechanism with purpose =
+// 'email_verification' instead of a clickable link. The link-based flow was replaced entirely:
+// real verification links routinely got hit by corporate "safe links" email scanners and
+// link-preview features before the actual user ever clicked, silently consuming the one-shot
+// token — a code the user has to read and type in manually can't be "clicked" by a bot.
+const generateNumericCode = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-  const verificationToken = recent.rows[0]?.token || crypto.randomBytes(32).toString('hex');
-  if (recent.rows.length === 0) {
-    await query(
-      `INSERT INTO email_verifications (user_id, token, expires_at)
-       VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
-      [user.id, verificationToken]
-    );
-  }
+// Issues a verification code email. Always sends a fresh code and always actually delivers it —
+// abuse is throttled by otpRateLimiter on the route, not by silently skipping the send (that was
+// the previous link-based version's bug: a "cooldown" check that bailed out without emailing
+// anything, while the caller always reported success regardless).
+const issueVerificationEmail = async (user, name) => {
+  const verificationCode = generateNumericCode();
+  const codeHash = await bcrypt.hash(verificationCode, 10);
+  await query(
+    `INSERT INTO otp_codes (user_id, code_hash, purpose, expires_at)
+     VALUES ($1, $2, 'email_verification', NOW() + INTERVAL '15 minutes')`,
+    [user.id, codeHash]
+  );
 
   await sendEmail({
     to: user.email,
@@ -132,7 +128,7 @@ const issueVerificationEmail = async (user, name) => {
     template: 'email-verification',
     data: {
       name: name || 'User',
-      verificationLink: `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`,
+      verificationCode,
     },
   });
 };
@@ -205,14 +201,6 @@ export const signup = catchAsync(async (req, res) => {
     // info now anyway since we already have the fingerprint from this request.
     await storeDeviceInfo(user.id, req.deviceInfo, (...args) => client.query(...args));
 
-    // Send verification email (generate token)
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    await client.query(
-      `INSERT INTO email_verifications (user_id, token, expires_at)
-       VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
-      [user.id, verificationToken]
-    );
-
     // OPTIONAL: Sync with Supabase Auth (if service role key is provided)
     if (supabaseAdmin) {
       try {
@@ -235,7 +223,18 @@ export const signup = catchAsync(async (req, res) => {
       }
     }
 
-    return { user, verificationToken };
+    // Verification code — generated after the Supabase sync above so it's tied to the final,
+    // real user_id in all cases (previously generated before it, so a ever-active Supabase sync
+    // would have orphaned the row against the pre-swap id).
+    const verificationCode = generateNumericCode();
+    const codeHash = await bcrypt.hash(verificationCode, 10);
+    await client.query(
+      `INSERT INTO otp_codes (user_id, code_hash, purpose, expires_at)
+       VALUES ($1, $2, 'email_verification', NOW() + INTERVAL '15 minutes')`,
+      [user.id, codeHash]
+    );
+
+    return { user, verificationCode };
   });
 
   // Send verification email (async, outside transaction)
@@ -245,7 +244,7 @@ export const signup = catchAsync(async (req, res) => {
     template: 'email-verification',
     data: {
       name: metadata?.first_name || 'User',
-      verificationLink: `${process.env.FRONTEND_URL}/verify-email/${result.verificationToken}`,
+      verificationCode: result.verificationCode,
     },
   }).catch(err => logger.error('Error sending verification email:', err));
 
@@ -253,7 +252,7 @@ export const signup = catchAsync(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: 'Account created successfully. Please check your email to verify your account before logging in.',
+    message: 'Account created successfully. Please check your email for a 6-digit code to verify your account.',
     data: {
       user: {
         id: result.user.id,
@@ -313,7 +312,7 @@ export const login = catchAsync(async (req, res) => {
       logger.error('Failed to auto-send verification email on blocked login:', err.message)
     );
     throw new AppError(
-      'Please verify your email before logging in. Check your inbox for the verification link.',
+      'Please verify your email before logging in. Check your inbox for the 6-digit verification code.',
       403,
       'EMAIL_NOT_VERIFIED'
     );
@@ -813,61 +812,119 @@ export const changePassword = catchAsync(async (req, res) => {
   });
 });
 
-// Verify email
+// Verify email — 6-digit code, not a clickable link.
 //
-// Idempotent by design. Real-world verification links are routinely visited before the actual
-// user ever clicks them — corporate "safe links" email scanners (Microsoft Defender, Proofpoint,
-// Mimecast) and some email clients' link-preview features fetch and execute the destination page
-// to check it isn't a phishing site, which fires this exact same request. If that already
-// consumed the token, the real user's own click must still succeed — their email genuinely is
-// verified — instead of showing a confusing "invalid or expired" failure for a token that in
-// fact worked. This was reported live in production: users hitting "Verification Failed" the
-// moment they clicked, with no realistic delay for the token to have actually expired.
-export const verifyEmail = catchAsync(async (req, res) => {
-  const { token } = req.params;
+// The previous link-based flow had a decisive, unfixable problem: real verification links are
+// routinely visited before the actual user ever clicks them — corporate "safe links" email
+// scanners (Microsoft Defender, Proofpoint, Mimecast) and some email clients' link-preview
+// features fetch and execute the destination page to check it isn't a phishing site, silently
+// consuming a one-shot token. No amount of DNS/SPF/DKIM correctness prevents that (confirmed
+// live — domain auth was fully verified and it still happened). A code the user has to read out
+// of their inbox and type in by hand can't be "clicked" by an automated scanner.
+//
+// On success, logs the user straight in (same session shape as login()) — the frontend goes
+// directly from "enter your code" to the dashboard instead of a separate login step.
+export const verifyEmailCode = catchAsync(async (req, res) => {
+  const { email, code } = req.body;
+  if (!email || !code) throw new AppError('email and code are required', 400);
 
-  // Look up the token regardless of verified_at — already-verified is not an error case here.
-  const result = await query(
-    `SELECT ev.id, ev.user_id, ev.expires_at, ev.verified_at
-     FROM email_verifications ev
-     WHERE ev.token = $1`,
-    [token]
+  const userResult = await query(
+    `SELECT u.id, u.email, u.role, u.kyc_tier, u.is_email_verified, u.is_active,
+            up.first_name, up.last_name, up.avatar_url
+     FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id
+     WHERE u.email = $1 AND u.deleted_at IS NULL`,
+    [email]
   );
+  if (userResult.rows.length === 0) {
+    throw new AppError('Invalid verification code', 400);
+  }
+  const user = userResult.rows[0];
 
-  if (result.rows.length === 0) {
-    throw new AppError('Invalid or expired verification token', 400);
+  // Already verified (e.g. a second submit after success, or a scanner beat them to a click on
+  // the old link-based flow during the transition) — idempotent success, still logs them in.
+  if (!user.is_email_verified) {
+    const otpResult = await query(
+      `SELECT id, code_hash, expires_at, attempts FROM otp_codes
+       WHERE user_id = $1 AND purpose = 'email_verification' AND used_at IS NULL
+       ORDER BY created_at DESC LIMIT 1`,
+      [user.id]
+    );
+
+    if (otpResult.rows.length === 0) {
+      throw new AppError('Invalid or expired verification code. Please request a new one.', 400);
+    }
+    const otp = otpResult.rows[0];
+
+    if (new Date(otp.expires_at) < new Date()) {
+      throw new AppError('Verification code has expired. Please request a new one.', 400);
+    }
+    if (otp.attempts >= 5) {
+      throw new AppError('Too many incorrect attempts. Please request a new code.', 429);
+    }
+
+    const isValid = await bcrypt.compare(String(code).trim(), otp.code_hash);
+    if (!isValid) {
+      await query('UPDATE otp_codes SET attempts = attempts + 1 WHERE id = $1', [otp.id]);
+      const remaining = 5 - (otp.attempts + 1);
+      throw new AppError(
+        remaining > 0 ? `Incorrect code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` : 'Too many incorrect attempts. Please request a new code.',
+        400
+      );
+    }
+
+    await query('UPDATE otp_codes SET used_at = NOW() WHERE id = $1', [otp.id]);
+    await query('UPDATE users SET is_email_verified = true WHERE id = $1', [user.id]);
+    user.is_email_verified = true;
+    logger.info('Email verified via code:', { userId: user.id });
   }
 
-  const verification = result.rows[0];
-
-  // Already claimed by this exact token — idempotent success.
-  if (verification.verified_at) {
+  if (!user.is_active) {
+    // Verified but deactivated — don't hand out a session.
     return res.status(200).json({ success: true, message: 'Email verified successfully' });
   }
 
-  // Check if expired (only matters for a token that was never actually used to verify).
-  if (new Date(verification.expires_at) < new Date()) {
-    throw new AppError('Verification token has expired', 400);
+  // Log the user straight in — same shape/side-effects as login().
+  const accessToken = generateToken(user.id);
+  const refreshToken = generateRefreshToken(user.id);
+  try {
+    await Promise.race([
+      createSession(user.id, accessToken, req.deviceInfo),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Session creation timeout')), 5000)),
+    ]);
+  } catch (error) {
+    logger.warn('Session creation failed or timed out (non-critical):', error.message);
   }
-
-  // Mark email as verified (idempotent — safe even if a concurrent request gets here first).
-  await query(
-    'UPDATE users SET is_email_verified = true WHERE id = $1',
-    [verification.user_id]
-  );
-
-  // Atomic claim: only the request that actually flips verified_at from NULL "wins" the log
-  // line below, but every concurrent caller still gets a success response either way.
-  await query(
-    'UPDATE email_verifications SET verified_at = NOW() WHERE id = $1 AND verified_at IS NULL',
-    [verification.id]
-  );
-
-  logger.info('Email verified:', { userId: verification.user_id });
+  try {
+    await Promise.race([
+      storeDeviceInfo(user.id, req.deviceInfo),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Device storage timeout')), 5000)),
+    ]);
+  } catch (error) {
+    logger.warn('Device info storage failed or timed out (non-critical):', error.message);
+  }
+  await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
+  auditFromReq(req, { userId: user.id, action: 'login', entityType: 'user', entityId: user.id, newValues: { method: 'email_verification' } });
 
   res.status(200).json({
     success: true,
     message: 'Email verified successfully',
+    data: {
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        kyc_tier: user.kyc_tier,
+        is_email_verified: user.is_email_verified,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        avatar_url: user.avatar_url,
+      },
+      session: {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_in: '15m',
+      },
+    },
   });
 });
 
@@ -880,7 +937,7 @@ export const resendVerificationEmail = catchAsync(async (req, res) => {
   const { email } = req.body;
   if (!email) throw new AppError('email is required', 400);
 
-  const generic = { success: true, message: 'If that account exists and needs verification, a new link has been sent.' };
+  const generic = { success: true, message: 'If that account exists and needs verification, a new code has been sent.' };
 
   const result = await query(
     `SELECT id, email, is_email_verified FROM users WHERE email = $1 AND deleted_at IS NULL`,

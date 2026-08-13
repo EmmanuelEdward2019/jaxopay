@@ -3,9 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Mail, Lock, Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
-import authService from '../../services/authService';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -17,8 +16,6 @@ const Login = () => {
   const [otp, setOtp] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [resendSent, setResendSent] = useState(false);
   const [lastEmail, setLastEmail] = useState('');
   const { login, verifyOTP, isLoading, error, tempUserId, twoFAMethod } = useAuthStore();
   const navigate = useNavigate();
@@ -33,7 +30,6 @@ const Login = () => {
 
   const onSubmit = async (data) => {
     setNeedsVerification(false);
-    setResendSent(false);
     setLastEmail(data.email);
     const result = await login(data.email, data.password);
     if (result.success) {
@@ -45,13 +41,6 @@ const Login = () => {
     } else if (result.code === 'EMAIL_NOT_VERIFIED') {
       setNeedsVerification(true);
     }
-  };
-
-  const handleResend = async () => {
-    setResending(true);
-    await authService.resendVerification(lastEmail);
-    setResending(false);
-    setResendSent(true);
   };
 
   const handleVerifyOTP = async (e) => {
@@ -134,24 +123,18 @@ const Login = () => {
               </div>
             )}
 
-            {/* Unverified email — offer to resend the verification link right here */}
+            {/* Unverified email — login() already fires off a fresh 6-digit code (best-effort)
+                the moment this happens, so send them straight to enter it. */}
             {needsVerification && (
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-4 py-3 rounded-lg space-y-2">
                 <p>{error}</p>
-                {resendSent ? (
-                  <p className="flex items-center gap-2 text-sm font-medium text-accent-600 dark:text-accent-400">
-                    <CheckCircle2 className="w-4 h-4" /> If that account needs verification, a new link is on its way.
-                  </p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleResend}
-                    disabled={resending}
-                    className="text-sm font-semibold text-accent-600 hover:text-accent-500 dark:text-accent-400 underline disabled:opacity-50"
-                  >
-                    {resending ? 'Sending...' : 'Resend verification email'}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => navigate('/verify-email', { state: { email: lastEmail } })}
+                  className="text-sm font-semibold text-accent-600 hover:text-accent-500 dark:text-accent-400 underline"
+                >
+                  Enter verification code
+                </button>
               </div>
             )}
 

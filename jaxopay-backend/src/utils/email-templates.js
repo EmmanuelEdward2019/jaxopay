@@ -62,6 +62,18 @@ const infoBox = (rowsHtml) => `
 const divider = () =>
   `<div style="height:1px;line-height:1px;font-size:0;background:#eef2f6;margin:28px 0;">&nbsp;</div>`;
 
+/** Large, centered, letter-spaced code display — for OTP-style codes the user reads and types
+ *  in by hand (not a link), e.g. signup verification. Table-based for Outlook, monospace with
+ *  wide letter-spacing so digits are unambiguous at a glance. */
+const codeBlock = (code) => `
+  <table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="margin:28px auto;">
+    <tr>
+      <td align="center" bgcolor="${SOFT}" style="border:1px solid ${BORDER};border-radius:10px;padding:20px 36px;">
+        <span style="font-family:'Courier New',Courier,monospace;font-size:34px;font-weight:700;letter-spacing:10px;color:${INK};">${code}</span>
+      </td>
+    </tr>
+  </table>`;
+
 const p = (text, extra = '') =>
   `<p style="margin:0 0 16px;font-family:${FONT};font-size:16px;line-height:1.65;color:${BODY_TEXT};${extra}">${text}</p>`;
 
@@ -137,10 +149,9 @@ export const templates = {
   signup: (data) => layout(`
     ${heading('Welcome to JAXOPAY! 🚀')}
     ${p(`Hi ${data.name},`)}
-    ${p(`We're excited to have you join our global fintech community. To get started, please confirm your email address.`)}
-    ${button(data.verificationLink, 'Verify Email Address')}
-    ${p(`If the button doesn't work, copy and paste this link into your browser:`)}
-    ${p(`<span style="word-break:break-all;font-size:14px;color:${MUTED};">${data.verificationLink}</span>`)}
+    ${p(`We're excited to have you join our global fintech community. Enter this code in the app to confirm your email address:`)}
+    ${codeBlock(data.verificationCode)}
+    ${p(`This code expires in 15 minutes. If you didn't create a JAXOPAY account, you can safely ignore this email.`, `text-align:center;color:${MUTED};font-size:14px;`)}
     ${divider()}
     ${p('Need help? Our support team is always here for you.')}
   `),
