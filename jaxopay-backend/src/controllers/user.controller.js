@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { query, transaction } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
@@ -323,6 +324,13 @@ export async function performAccountDeletion(userId) {
     );
   }
 
+  // password_hash is NOT NULL on users — can't blank it, so overwrite it with a random, unusable
+  // bcrypt hash instead (same effect: nobody can ever log in with it, but it satisfies the
+  // constraint). This previously set it to NULL, which threw a "not-null constraint" error and
+  // rolled back the ENTIRE deletion — every approval attempt failed with a generic error because
+  // of this single line.
+  const unusablePasswordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+
   await transaction(async (client) => {
     // Core identity + credentials — mangle email/username so the address can never be
     // re-derived or logged in with again, wipe every secret/auth field.
@@ -333,7 +341,7 @@ export async function performAccountDeletion(userId) {
            email = CONCAT(email, '_deleted_', id),
            username = NULL,
            phone = NULL,
-           password_hash = NULL,
+           password_hash = $2,
            two_fa_secret = NULL,
            two_fa_enabled = false,
            transaction_pin = NULL,
@@ -343,7 +351,7 @@ export async function performAccountDeletion(userId) {
            quidax_user_id = NULL,
            quidax_user_sn = NULL
        WHERE id = $1`,
-      [userId]
+      [userId, unusablePasswordHash]
     );
 
     // Profile PII — replaced with a placeholder rather than left NULL so any admin UI that
@@ -366,10 +374,12 @@ export async function performAccountDeletion(userId) {
     );
 
     // KYC documents — keep the review trail (status/tier/reviewed_by/rejection_reason) for
-    // compliance, erase the actual ID number and document/selfie images.
+    // compliance, erase the actual ID number and document/selfie images. document_url is
+    // NOT NULL, so it gets a placeholder rather than NULL (same class of bug as password_hash
+    // above — this one would only surface for a user who actually had KYC documents on file).
     await client.query(
       `UPDATE kyc_documents
-       SET document_number = NULL, document_url = NULL, selfie_url = NULL
+       SET document_number = NULL, document_url = 'REDACTED', selfie_url = NULL
        WHERE user_id = $1`,
       [userId]
     );
