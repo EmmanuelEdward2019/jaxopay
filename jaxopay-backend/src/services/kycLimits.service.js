@@ -2,10 +2,25 @@ import { query } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { kycTierLevel } from '../middleware/auth.js';
 import yellowCard from '../orchestration/adapters/fx/YellowCardService.js';
+import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
+import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
 import logger from '../utils/logger.js';
 import { getCustomWithdrawalLimitUsd } from './financialControls.service.js';
 
-// Fiat vs crypto — determines which half of a tier's split cap applies to a transaction.
+// Same provider selection crypto.controller.js uses for real money-moving crypto operations —
+// mirrored here (rather than imported from a controller) so rate lookups use the SAME exchange
+// the coin actually trades on.
+const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() === 'quidax' ? 'quidax' : 'obiex';
+const cryptoFx = CRYPTO_PROVIDER === 'quidax' ? quidax : obiex;
+
+// Fiat vs crypto — determines which half of a tier's split cap applies to a transaction, AND
+// which provider usdRate() below asks for a price: Yellow Card only knows fiat/stablecoin pairs
+// (NGN, GHS, KES, USD, USDT, USDC, ...) — asking it for a crypto coin like BNB throws, which
+// usdRate() was silently swallowing into a $0 rate. That $0 then multiplied through every USD
+// valuation of a crypto balance: the admin System Wallets page showed a real BNB holding as
+// $0.00, and — more seriously — usdOutflowSince() below skips any currency with no resolvable
+// rate when totaling a user's spend against their KYC tier limit, so crypto transactions in any
+// coin Yellow Card doesn't know could go completely uncounted against that limit.
 const FIAT_CURRENCIES = new Set(['NGN', 'USD', 'EUR', 'GBP', 'GHS', 'KES', 'ZAR', 'CAD', 'CNY', 'AUD', 'JPY']);
 const isFiat = (currency) => FIAT_CURRENCIES.has(String(currency || '').toUpperCase());
 
@@ -41,8 +56,11 @@ export async function usdRate(currency) {
   const hit = rateCache.get(cur);
   if (hit && Date.now() - hit.at < RATE_TTL_MS) return hit.rate;
   try {
-    const r = await yellowCard.getExchangeRate(cur, 'USD');
-    const rate = Number(r?.rate) || 0;
+    // Crypto coins price against the crypto provider (Quidax/Obiex — whichever actually trades
+    // them), not Yellow Card, which only knows fiat/stablecoin pairs and throws on anything else.
+    const rate = isFiat(cur)
+      ? Number((await yellowCard.getExchangeRate(cur, 'USD'))?.rate) || 0
+      : Number(await cryptoFx.getExchangeRate(cur, 'USDT')) || 0;
     if (rate > 0) { rateCache.set(cur, { rate, at: Date.now() }); return rate; }
   } catch (e) {
     logger.warn(`[KYCLimits] USD rate for ${cur} unavailable: ${e.message}`);
