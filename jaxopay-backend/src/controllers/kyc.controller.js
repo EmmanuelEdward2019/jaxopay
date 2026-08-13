@@ -367,7 +367,9 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
     userId: req.user.id,
     callbackUrl,
     country,
-    id_type,
+    // Smile's API is case-sensitive on id_type (see submitRampIdVerification for the confirmed
+    // production failure this caused there) — normalize here too rather than trust the caller.
+    id_type: String(id_type || '').toUpperCase(),
     id_number,
     first_name,
     last_name,
