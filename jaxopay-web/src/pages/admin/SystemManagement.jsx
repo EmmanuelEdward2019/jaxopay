@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -15,8 +15,51 @@ import {
     Plus
 } from 'lucide-react';
 import adminService from '../../services/adminService';
+import cryptoService from '../../services/cryptoService';
 import { useAuthStore } from '../../store/authStore';
 import { formatCurrency } from '../../utils/formatters';
+
+// Last-resort list if /crypto/supported can't be reached — mirrors the fallback the backend
+// itself uses in getSupportedCryptos, so the modal never ends up with an empty dropdown.
+const FALLBACK_CURRENCIES = [
+    { code: 'USD', name: 'US Dollar', type: 'fiat' },
+    { code: 'EUR', name: 'Euro', type: 'fiat' },
+    { code: 'GBP', name: 'British Pound', type: 'fiat' },
+    { code: 'NGN', name: 'Nigerian Naira', type: 'fiat' },
+    { code: 'GHS', name: 'Ghanaian Cedi', type: 'fiat' },
+    { code: 'KES', name: 'Kenyan Shilling', type: 'fiat' },
+    { code: 'ZAR', name: 'South African Rand', type: 'fiat' },
+    { code: 'CNY', name: 'Chinese Yuan', type: 'fiat' },
+    { code: 'BTC', name: 'Bitcoin', type: 'crypto' },
+    { code: 'ETH', name: 'Ethereum', type: 'crypto' },
+    { code: 'USDT', name: 'Tether', type: 'crypto' },
+];
+
+// "Base" is always quoted as the price of whichever side of the pair is crypto, expressed in the
+// other currency (e.g. USDT/NGN and NGN/USDT both show "1 USDT = X NGN") — mirrors the convention
+// in swapMarkup.service.js's getSwapBaseRate/isInverseDirection so the admin preview always matches
+// what the live swap engine actually does with the rate.
+const isInverseDirection = (from, to, fiatCodes) =>
+    fiatCodes.has(String(from || '').toUpperCase()) && !fiatCodes.has(String(to || '').toUpperCase());
+
+const priceOfCode = (from, to, fiatCodes) => (isInverseDirection(from, to, fiatCodes) ? to : from);
+const priceInCode = (from, to, fiatCodes) => (isInverseDirection(from, to, fiatCodes) ? from : to);
+
+const computeCustomerRate = (rate, markupPct) => {
+    const r = Number(rate);
+    if (!r || Number.isNaN(r)) return null;
+    const m = Number(markupPct) || 0;
+    return r * (1 + m / 100);
+};
+
+// True when the configured markup would make the customer's rate BETTER than Obiex's raw rate
+// (JAXOPAY losing money) — mirrors isMarkupBackwards in swapMarkup.service.js, used here only to
+// warn the admin before they save a backwards-signed pair.
+const isBackwardsMarkup = (from, to, markupPct, fiatCodes) => {
+    const m = Number(markupPct) || 0;
+    if (!m || !from || !to || from === to) return false;
+    return isInverseDirection(from, to, fiatCodes) ? m < 0 : m > 0;
+};
 
 const SystemManagement = () => {
     const [searchParams] = useSearchParams();
@@ -31,6 +74,7 @@ const SystemManagement = () => {
     );
     const [exchangeRates, setExchangeRates] = useState([]);
     const [feeConfigs, setFeeConfigs] = useState([]);
+    const [supportedCurrencies, setSupportedCurrencies] = useState([]);
     const [isGlobalShutdown, setIsGlobalShutdown] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(null); // 'fx', 'fees', 'system'
@@ -41,8 +85,12 @@ const SystemManagement = () => {
     // Create Modal States
     const [showFXModal, setShowFXModal] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
-    const [newFX, setNewFX] = useState({ from_currency: 'USD', to_currency: 'NGN', rate: 0, markup_percentage: 0 });
+    const [newFX, setNewFX] = useState({ from_currency: 'USDT', to_currency: 'NGN', rate: 0, markup_percentage: 0 });
     const [newFee, setNewFee] = useState({ transaction_type: 'transfer', fee_type: 'fixed', fee_value: 0, min_fee: 0, max_fee: 0, currency: 'USD', country: '' });
+    // Live "Base" rate fetch state for the Add Exchange Rate modal — refetched whenever the
+    // selected pair changes so the admin always sees what Obiex is quoting right now.
+    const [liveBase, setLiveBase] = useState({ loading: false, error: null });
+    const [liveBaseRefreshKey, setLiveBaseRefreshKey] = useState(0);
 
     useEffect(() => {
         fetchData();
@@ -50,14 +98,16 @@ const SystemManagement = () => {
 
     const fetchData = async () => {
         setLoading(true);
-        const [fxRes, feeRes, toggleRes] = await Promise.all([
+        const [fxRes, feeRes, toggleRes, cryptoRes] = await Promise.all([
             adminService.getExchangeRates(),
             adminService.getFeeConfigs(),
-            adminService.getFeatureToggles()
+            adminService.getFeatureToggles(),
+            cryptoService.getSupportedCryptos()
         ]);
 
         if (fxRes.success) setExchangeRates(fxRes.data || []);
         if (feeRes.success) setFeeConfigs(feeRes.data || []);
+        if (cryptoRes.success) setSupportedCurrencies(cryptoRes.data || []);
 
         const platformToggle = toggleRes.data?.find(t => t.feature_name === 'PLATFORM_GLOBAL');
         setIsGlobalShutdown(platformToggle ? !platformToggle.is_enabled : false);
@@ -65,6 +115,49 @@ const SystemManagement = () => {
         if (!isFinanceOnly) fetchOrchestrationStatus();
         setLoading(false);
     };
+
+    // All swap-supported currencies (crypto + fiat), sorted crypto-first so the admin sees the
+    // coins that actually matter for swap markup at the top of each dropdown.
+    const currencyOptions = useMemo(() => {
+        const list = supportedCurrencies.length ? supportedCurrencies : FALLBACK_CURRENCIES;
+        const dedup = Array.from(new Map(list.map(c => [c.code, c])).values());
+        return dedup.sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'crypto' ? -1 : 1;
+            return a.code.localeCompare(b.code);
+        });
+    }, [supportedCurrencies]);
+
+    const fiatCodes = useMemo(
+        () => new Set(currencyOptions.filter(c => c.type === 'fiat').map(c => c.code)),
+        [currencyOptions]
+    );
+
+    // Auto-fetch the live Obiex "Base" rate whenever the modal is open and a valid, distinct
+    // pair is selected — this is what lets the admin just type a markup instead of hand-entering
+    // a rate that's already changing by the second.
+    useEffect(() => {
+        if (!showFXModal) return;
+        const from = newFX.from_currency;
+        const to = newFX.to_currency;
+        // Same-currency pair: nothing to fetch. The modal already hides the Base Rate section in
+        // this case (see `samePair` below), so there's no stale loading/error state to clear.
+        if (!from || !to || from === to) return;
+        let cancelled = false;
+        const fetchLiveBase = async () => {
+            setLiveBase({ loading: true, error: null });
+            const result = await adminService.getLiveFxBaseRate(from, to);
+            if (cancelled) return;
+            if (result.success) {
+                const base = result.data?.base_rate;
+                setLiveBase({ loading: false, error: null });
+                setNewFX(prev => ({ ...prev, rate: base }));
+            } else {
+                setLiveBase({ loading: false, error: result.error });
+            }
+        };
+        fetchLiveBase();
+        return () => { cancelled = true; };
+    }, [showFXModal, newFX.from_currency, newFX.to_currency, liveBaseRefreshKey]);
 
     const fetchOrchestrationStatus = async () => {
         setStatusLoading(true);
@@ -123,7 +216,7 @@ const SystemManagement = () => {
         if (result.success) {
             setMessage({ type: 'success', text: 'New FX rate created successfully' });
             setShowFXModal(false);
-            setNewFX({ from_currency: 'USD', to_currency: 'NGN', rate: 0, markup_percentage: 0 }); // Reset
+            setNewFX({ from_currency: 'USDT', to_currency: 'NGN', rate: 0, markup_percentage: 0 }); // Reset
             fetchData();
         } else {
             setMessage({ type: 'error', text: result.error });
@@ -320,7 +413,10 @@ const SystemManagement = () => {
                                 <div className="p-8 text-center text-gray-500 bg-gray-50 dark:bg-gray-900/20 rounded-xl border border-dashed border-gray-200">
                                     No FX rates configured.
                                 </div>
-                            ) : exchangeRates.map(rate => (
+                            ) : exchangeRates.map(rate => {
+                                const backwards = isBackwardsMarkup(rate.from_currency, rate.to_currency, rate.markup_percentage, fiatCodes);
+                                const customerRate = rate.final_rate ?? computeCustomerRate(rate.rate, rate.markup_percentage);
+                                return (
                                 <div key={rate.id} className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
                                     <div className="flex items-center justify-between mb-3">
                                         <span className="font-bold text-gray-900 dark:text-white uppercase">{rate.from_currency} → {rate.to_currency}</span>
@@ -334,6 +430,18 @@ const SystemManagement = () => {
                                             </button>
                                         </div>
                                     </div>
+                                    <div className="flex items-center justify-between mb-3 px-3 py-2 bg-primary-50 dark:bg-primary-900/10 rounded-lg border border-primary-100 dark:border-primary-900/20">
+                                        <span className="text-xs font-bold text-primary-700 dark:text-primary-300 uppercase">Customer Rate</span>
+                                        <span className="text-sm font-bold text-primary-800 dark:text-primary-200">
+                                            {customerRate != null ? `1 ${priceOfCode(rate.from_currency, rate.to_currency, fiatCodes)} = ${Number(customerRate).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${priceInCode(rate.from_currency, rate.to_currency, fiatCodes)}` : '—'}
+                                        </span>
+                                    </div>
+                                    {backwards && (
+                                        <div className="flex items-center gap-1.5 mb-3 text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                                            Markup sign looks backwards — this pair gives customers a better rate than Obiex.
+                                        </div>
+                                    )}
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="relative">
                                             <label className="text-xs text-gray-500 uppercase font-bold mb-1 block">Base Rate</label>
@@ -349,6 +457,7 @@ const SystemManagement = () => {
                                             <label className="text-xs text-gray-500 uppercase font-bold mb-1 block">Markup (%)</label>
                                             <input
                                                 type="number"
+                                                step="0.0001"
                                                 defaultValue={rate.markup_percentage}
                                                 className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-2 text-sm pr-10 focus:ring-2 focus:ring-primary-500 outline-none"
                                                 onBlur={(e) => handleUpdateFX(rate.id, { markup_percentage: parseFloat(e.target.value) })}
@@ -357,7 +466,8 @@ const SystemManagement = () => {
                                         </div>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </section>
 
@@ -432,62 +542,131 @@ const SystemManagement = () => {
             )}
 
             {/* Create FX Modal */}
-            {showFXModal && (
+            {showFXModal && (() => {
+                const from = newFX.from_currency;
+                const to = newFX.to_currency;
+                const samePair = from === to;
+                const customerRatePreview = computeCustomerRate(newFX.rate, newFX.markup_percentage);
+                const backwards = isBackwardsMarkup(from, to, newFX.markup_percentage, fiatCodes);
+                const buyingCryptoWithFiat = isInverseDirection(from, to, fiatCodes);
+                return (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowFXModal(false)}>
                     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <h3 className="text-lg font-bold mb-4 dark:text-white">Add Exchange Rate</h3>
+                        <h3 className="text-lg font-bold mb-1 dark:text-white">Add Exchange Rate</h3>
+                        <p className="text-xs text-gray-500 mb-4">Pick any swap-supported pair — the Base rate is fetched live from Obiex, you just set the markup.</p>
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">From</label>
                                     <select
                                         className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2.5 text-gray-900 dark:text-white"
-                                        value={newFX.from_currency}
+                                        value={from}
                                         onChange={e => setNewFX({ ...newFX, from_currency: e.target.value })}
                                     >
-                                        {['USD', 'EUR', 'GBP'].map(c => <option key={c} value={c}>{c}</option>)}
+                                        <optgroup label="Crypto">
+                                            {currencyOptions.filter(c => c.type === 'crypto').map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                                        </optgroup>
+                                        <optgroup label="Fiat">
+                                            {currencyOptions.filter(c => c.type === 'fiat').map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                                        </optgroup>
                                     </select>
                                 </div>
                                 <div>
                                     <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">To</label>
                                     <select
                                         className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2.5 text-gray-900 dark:text-white"
-                                        value={newFX.to_currency}
+                                        value={to}
                                         onChange={e => setNewFX({ ...newFX, to_currency: e.target.value })}
                                     >
-                                        {['NGN', 'GHS', 'KES', 'ZAR', 'CNY'].map(c => <option key={c} value={c}>{c}</option>)}
+                                        <optgroup label="Crypto">
+                                            {currencyOptions.filter(c => c.type === 'crypto').map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                                        </optgroup>
+                                        <optgroup label="Fiat">
+                                            {currencyOptions.filter(c => c.type === 'fiat').map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                                        </optgroup>
                                     </select>
                                 </div>
                             </div>
-                            <div>
-                                <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">Base Rate</label>
-                                <input
-                                    type="number"
-                                    className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2.5 text-gray-900 dark:text-white"
-                                    value={newFX.rate}
-                                    onChange={e => setNewFX({ ...newFX, rate: parseFloat(e.target.value) })}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">Markup (%)</label>
-                                <input
-                                    type="number"
-                                    className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2.5 text-gray-900 dark:text-white"
-                                    value={newFX.markup_percentage}
-                                    onChange={e => setNewFX({ ...newFX, markup_percentage: parseFloat(e.target.value) })}
-                                />
-                            </div>
+
+                            {samePair ? (
+                                <div className="text-xs text-amber-600 font-medium">From and To must be different currencies.</div>
+                            ) : (
+                                <>
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="text-xs uppercase font-bold text-gray-500 block">
+                                                Base Rate {liveBase.loading ? '(fetching from Obiex…)' : !liveBase.error ? '(live from Obiex)' : ''}
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setLiveBaseRefreshKey(k => k + 1)}
+                                                disabled={liveBase.loading}
+                                                className="text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                                                title="Refresh live rate"
+                                            >
+                                                <RefreshCw className={`w-3.5 h-3.5 ${liveBase.loading ? 'animate-spin' : ''}`} />
+                                            </button>
+                                        </div>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2.5 text-gray-900 dark:text-white"
+                                            value={newFX.rate}
+                                            onChange={e => setNewFX({ ...newFX, rate: parseFloat(e.target.value) })}
+                                        />
+                                        <p className="text-[10px] text-gray-400 mt-1">
+                                            1 {priceOfCode(from, to, fiatCodes)} = X {priceInCode(from, to, fiatCodes)}. Auto-filled, but you can override manually.
+                                        </p>
+                                        {liveBase.error && (
+                                            <p className="text-[10px] text-red-500 mt-1">Live fetch failed: {liveBase.error}. Enter the Base rate manually.</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">Markup (%)</label>
+                                        <input
+                                            type="number"
+                                            step="0.0001"
+                                            className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2.5 text-gray-900 dark:text-white"
+                                            value={newFX.markup_percentage}
+                                            onChange={e => setNewFX({ ...newFX, markup_percentage: parseFloat(e.target.value) })}
+                                        />
+                                        <p className="text-[10px] text-gray-400 mt-1">
+                                            {buyingCryptoWithFiat
+                                                ? `Customer is buying ${priceOfCode(from, to, fiatCodes)} with ${from} — use a positive markup to earn margin.`
+                                                : `Customer is selling ${priceOfCode(from, to, fiatCodes)} — use a negative markup to earn margin.`}
+                                        </p>
+                                    </div>
+
+                                    <div className="p-3 bg-primary-50 dark:bg-primary-900/10 rounded-xl border border-primary-100 dark:border-primary-900/20">
+                                        <span className="text-xs font-bold text-primary-700 dark:text-primary-300 uppercase block mb-1">JAXOPAY Customer Rate</span>
+                                        <span className="text-lg font-bold text-primary-800 dark:text-primary-200">
+                                            {customerRatePreview != null
+                                                ? `1 ${priceOfCode(from, to, fiatCodes)} = ${customerRatePreview.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${priceInCode(from, to, fiatCodes)}`
+                                                : '—'}
+                                        </span>
+                                    </div>
+                                    {backwards && (
+                                        <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/20 rounded-xl">
+                                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                            <p className="text-xs text-amber-700 dark:text-amber-400">
+                                                This markup sign looks backwards — it would give customers a better rate than Obiex, meaning JAXOPAY loses money on this pair. Double-check the sign before saving.
+                                            </p>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
                             <button
                                 onClick={handleCreateFX}
-                                disabled={saving === 'create-fx'}
-                                className="w-full py-3 bg-primary-600 text-gray-900 font-bold rounded-xl hover:bg-primary-700 transition-colors"
+                                disabled={saving === 'create-fx' || samePair}
+                                className="w-full py-3 bg-primary-600 text-gray-900 font-bold rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50"
                             >
                                 {saving === 'create-fx' ? 'Creating...' : 'Create Rate'}
                             </button>
                         </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
 
             {/* Create Fee Modal */}
             {showFeeModal && (

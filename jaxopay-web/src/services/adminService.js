@@ -200,6 +200,18 @@ const adminService = {
     },
 
     // FX Management
+    // Live "Base" rate for a pair — a fresh provider quote, not anything from the exchange_rates
+    // table. Used by the Add/Edit Exchange Rate modal so the admin sees what Obiex is actually
+    // quoting right now before deciding on a markup.
+    getLiveFxBaseRate: async (from, to) => {
+        try {
+            const response = await apiClient.get('/admin/fx/live-rate', { params: { from, to } });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error?.response?.data?.message || error.message };
+        }
+    },
+
     getExchangeRates: async () => {
         try {
             const response = await apiClient.get('/admin/fx/rates');
@@ -214,7 +226,7 @@ const adminService = {
             const response = await apiClient.post('/admin/fx/rates', data);
             return { success: true, data: response.data };
         } catch (error) {
-            return { success: false, error: error.message };
+            return { success: false, error: error?.response?.data?.message || error.message };
         }
     },
 
@@ -223,7 +235,7 @@ const adminService = {
             const response = await apiClient.patch(`/admin/fx/rates/${rateId}`, data);
             return { success: true, data: response.data };
         } catch (error) {
-            return { success: false, error: error.message };
+            return { success: false, error: error?.response?.data?.message || error.message };
         }
     },
 

@@ -17,6 +17,7 @@ import emailService from '../services/email.service.js';
 import { notifyUser, notifyWithdrawal, notifyDeposit } from '../services/notification.service.js';
 import { assertDepositsAllowed, assertWithdrawalsAllowed } from '../services/financialControls.service.js';
 import { getFeeConfig, computeFee } from '../services/feeConfig.service.js';
+import { getSwapMarkupPercentage, markDownDelivered, inflateTarget } from '../services/swapMarkup.service.js';
 
 // Crypto deposit/withdrawal/swap provider — Obiex by default; set CRYPTO_PROVIDER=quidax to
 // fall back (e.g. during an Obiex outage). Order-book spot trading (createOrder, getOrderBook,
@@ -1627,6 +1628,39 @@ export const getWithdrawFee = catchAsync(async (req, res) => {
 const FIAT_CURRENCIES = new Set(['NGN', 'USD', 'EUR', 'GBP', 'GHS', 'KES', 'ZAR', 'CAD', 'CNY', 'AUD', 'JPY']);
 const getWalletType = (currency) => FIAT_CURRENCIES.has(currency.toUpperCase()) ? 'fiat' : 'crypto';
 
+// Applies the admin-configured FX markup (exchange_rates.markup_percentage for this FROM->TO
+// pair, see swapMarkup.service.js) to a provider quotation object before it reaches the
+// customer, so the price shown throughout the quote/confirm flow is JAXOPAY's rate, never
+// Obiex's raw one. side='from': the customer's input amount is fixed, so only the delivered
+// to_amount is marked down. side='to': the customer's desired output is fixed, so to_amount is
+// restored to exactly what they asked for and only the required from_amount (already computed
+// by the provider against an inflated target — see requestAmountForSide below) is left adjusted.
+async function applyMarkupToQuotation(quotation, { from_currency, to_currency, side, originalToAmount }) {
+  const markupPct = await getSwapMarkupPercentage(from_currency, to_currency);
+  if (!markupPct || !quotation) return { quotation, markupPct: 0 };
+
+  const adjusted = { ...quotation };
+  if (side === 'from') {
+    const raw = parseFloat(quotation.to_amount) || 0;
+    // Same never-exceed-raw clamp as confirmSwapQuotation, applied here too so the quote the
+    // customer sees never disagrees with what they'll actually be credited at confirm time.
+    adjusted.to_amount = String(Math.min(markDownDelivered(raw, from_currency, to_currency, markupPct), raw));
+  } else {
+    adjusted.to_amount = String(originalToAmount);
+  }
+  return { quotation: adjusted, markupPct };
+}
+
+// For side='to' requests, inflates the target amount asked of the provider so that, once the
+// delivered amount is marked down by applyMarkupToQuotation, the customer nets exactly what they
+// requested. No-op (returns the amount unchanged) for side='from' or when no markup is configured.
+async function requestAmountForSide({ from_currency, to_currency, from_amount, to_amount }) {
+  if (from_amount != null) return { amount: from_amount, side: 'from' };
+  const markupPct = await getSwapMarkupPercentage(from_currency, to_currency);
+  const amount = markupPct ? inflateTarget(to_amount, from_currency, to_currency, markupPct) : to_amount;
+  return { amount, side: 'to' };
+}
+
 // Step 2 — Create a real swap quotation (15-second window)
 // POST /crypto/swap/quotation
 export const createSwapQuotation = catchAsync(async (req, res) => {
@@ -1638,18 +1672,16 @@ export const createSwapQuotation = catchAsync(async (req, res) => {
   if (from_amount == null && to_amount == null) throw new AppError('Exactly one of from_amount or to_amount is required', 400);
 
   if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
-  const quotation = await cryptoFx.getSwapQuote({
-    from: from_currency,
-    to: to_currency,
-    amount: from_amount != null ? from_amount : to_amount,
-    side: from_amount != null ? 'from' : 'to'
-  });
+  const { amount: requestAmount, side } = await requestAmountForSide({ from_currency, to_currency, from_amount, to_amount });
+  const quotation = await cryptoFx.getSwapQuote({ from: from_currency, to: to_currency, amount: requestAmount, side });
 
   if (!quotation?.id || parseFloat(quotation.to_amount) <= 0) {
     throw new AppError('Could not create a live swap quotation. Please try again.', 503);
   }
 
-  res.status(200).json({ success: true, data: quotation });
+  const { quotation: markedUp } = await applyMarkupToQuotation(quotation, { from_currency, to_currency, side, originalToAmount: to_amount });
+
+  res.status(200).json({ success: true, data: markedUp });
 });
 
 // Step 3 — Refresh an existing quotation before it expires
@@ -1660,19 +1692,33 @@ export const refreshSwapQuotation = catchAsync(async (req, res) => {
 
   if (!id) throw new AppError('Quotation ID is required', 400);
 
+  const side = from_amount != null ? 'from' : (to_amount != null ? 'to' : null);
+  // Same inflate-then-restore markup treatment as createSwapQuotation, kept in sync with it —
+  // a refresh re-asks the provider for a live quote and must show the same JAXOPAY rate.
+  let requestToAmount = to_amount;
+  if (side === 'to' && from_currency && to_currency) {
+    const markupPct = await getSwapMarkupPercentage(from_currency, to_currency);
+    if (markupPct) requestToAmount = inflateTarget(to_amount, from_currency, to_currency, markupPct);
+  }
+
   // Build refresh body — the provider requires the same params as the original quote
   const body = {};
   if (from_currency) body.from_currency = from_currency.toLowerCase();
   if (to_currency)   body.to_currency   = to_currency.toLowerCase();
   if (from_amount != null) body.from_amount = String(from_amount);
-  else if (to_amount != null) body.to_amount = String(to_amount);
+  else if (requestToAmount != null) body.to_amount = String(requestToAmount);
 
   if (CRYPTO_PROVIDER === 'quidax') await getQuidaxSubUserIdForRequest(req);
   const quotation = await cryptoFx.refreshSwapQuotation(id, body);
 
   if (!quotation?.id) throw new AppError('Could not refresh swap quotation. Please try again.', 503);
 
-  res.status(200).json({ success: true, data: quotation });
+  let markedUp = quotation;
+  if (side && from_currency && to_currency) {
+    ({ quotation: markedUp } = await applyMarkupToQuotation(quotation, { from_currency, to_currency, side, originalToAmount: to_amount }));
+  }
+
+  res.status(200).json({ success: true, data: markedUp });
 });
 
 // Step 4 — Confirm a quotation, execute the swap, and record in DB
@@ -1716,9 +1762,21 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
   const fromCurrency = (confirmed.from_currency || confirmed.swap_quotation?.from_currency || '').toUpperCase();
   const toCurrency   = (confirmed.to_currency   || confirmed.swap_quotation?.to_currency   || '').toUpperCase();
   const fromAmount   = parseFloat(confirmed.from_amount || confirmed.swap_quotation?.from_amount || 0);
-  const toAmount     = parseFloat(confirmed.received_amount || confirmed.swap_quotation?.to_amount || 0);
+  // Raw amount the provider actually delivered — NOT what the customer is credited. The
+  // quote/refresh steps already showed the customer JAXOPAY's marked-down rate (see
+  // applyMarkupToQuotation above), so crediting anything other than that same markdown here
+  // would silently disagree with what they were shown before confirming.
+  const rawToAmount  = parseFloat(confirmed.received_amount || confirmed.swap_quotation?.to_amount || 0);
   const fromType     = getWalletType(fromCurrency);
   const toType       = getWalletType(toCurrency);
+  const swapMarkupPct = fromCurrency && toCurrency ? await getSwapMarkupPercentage(fromCurrency, toCurrency) : 0;
+  // Hard financial safety net, independent of the admin UI's own backwards-sign warning
+  // (isMarkupBackwards): no matter what markup_percentage is configured, NEVER credit the
+  // customer more than the provider actually delivered — a misconfigured or wrong-signed markup
+  // can shrink JAXOPAY's margin to zero, but must never be able to create a loss on a swap.
+  const toAmount = swapMarkupPct
+    ? Math.min(markDownDelivered(rawToAmount, fromCurrency, toCurrency, swapMarkupPct), rawToAmount)
+    : rawToAmount;
 
   // Update our local wallets. The swap is already executed (and irreversible) on the provider
   // at this point, so a failure here must NOT be swallowed as a false "success" — the user's
@@ -1763,7 +1821,12 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
           [toAmount, toWallet.rows[0].id]
         );
 
-        const meta = JSON.stringify({ provider: CRYPTO_PROVIDER, provider_swap_id: confirmed.id, quotation_id: id });
+        // raw_to_amount/markup_percentage let Treasury reconcile provider float vs. what was
+        // actually credited — the gap between them is JAXOPAY's captured margin on this swap.
+        const meta = JSON.stringify({
+          provider: CRYPTO_PROVIDER, provider_swap_id: confirmed.id, quotation_id: id,
+          ...(swapMarkupPct ? { markup_percentage: swapMarkupPct, raw_to_amount: rawToAmount } : {}),
+        });
 
         await client.query(
           `INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, currency, status, description, metadata)

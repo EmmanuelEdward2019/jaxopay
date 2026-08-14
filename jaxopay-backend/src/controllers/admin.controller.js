@@ -14,6 +14,7 @@ import { auditFromReq } from '../services/audit.service.js';
 import { performAccountDeletion } from './user.controller.js';
 import { getUserFinancialControls, upsertUserFinancialControls } from '../services/financialControls.service.js';
 import { usdRate } from '../services/kycLimits.service.js';
+import { getSwapBaseRate } from '../services/swapMarkup.service.js';
 
 // Highest-privilege-first — used to pick the legacy single `role` column value from a
 // multi-role assignment, so old single-role checks (req.user.role === 'super_admin', etc.)
@@ -1177,6 +1178,28 @@ export const getAuditLogs = catchAsync(async (req, res) => {
   });
 });
 
+// Live "Base" rate preview for the Add/Edit Exchange Rate modal — a fresh provider quote, not
+// anything read from the exchange_rates table. Lets the admin see Obiex's current executable
+// rate for a pair before deciding on a markup, and re-check it any time after (rates move).
+export const getLiveFxBaseRate = catchAsync(async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) throw new AppError('from and to are required', 400);
+
+  const base = await getSwapBaseRate(from, to);
+  if (base == null) {
+    throw new AppError(`Live rate unavailable for ${from.toUpperCase()}/${to.toUpperCase()} right now — try again shortly.`, 503);
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      from_currency: from.toUpperCase(),
+      to_currency: to.toUpperCase(),
+      base_rate: base,
+    },
+  });
+});
+
 // Get all exchange rates (admin only)
 export const getExchangeRates = catchAsync(async (req, res) => {
   const result = await query(
@@ -1187,7 +1210,9 @@ export const getExchangeRates = catchAsync(async (req, res) => {
 
 // Create exchange rate (admin only)
 export const createExchangeRate = catchAsync(async (req, res) => {
-  const { from_currency, to_currency, rate, markup_percentage, source } = req.body;
+  const from_currency = String(req.body.from_currency).toUpperCase();
+  const to_currency = String(req.body.to_currency).toUpperCase();
+  const { rate, markup_percentage, source } = req.body;
 
   // Check if exists
   const existing = await query(
@@ -1226,24 +1251,49 @@ export const updateExchangeRate = catchAsync(async (req, res) => {
 
   const updates = [];
   const params = [rateId];
+  let rateParamIdx = null;
+  let markupParamIdx = null;
 
   if (rate !== undefined) {
     params.push(rate);
-    updates.push(`rate = $${params.length}`);
+    rateParamIdx = params.length;
+    updates.push(`rate = $${rateParamIdx}`);
   }
   if (markup_percentage !== undefined) {
     params.push(markup_percentage);
-    updates.push(`markup_percentage = $${params.length}`);
+    markupParamIdx = params.length;
+    updates.push(`markup_percentage = $${markupParamIdx}`);
   }
   if (is_active !== undefined) {
     params.push(is_active);
     updates.push(`is_active = $${params.length}`);
   }
 
+  // final_rate is purely informational (the live swap flow always recomputes off a fresh
+  // provider quote + markup_percentage, never this column) but must stay in sync with whichever
+  // of rate/markup_percentage was actually edited — a partial PATCH previously left it stale,
+  // showing a customer rate that no longer matched the saved markup. A bare column reference
+  // here would read the row's OLD value even for the field THIS statement is also setting
+  // (Postgres SET clauses don't see each other's new values), so the just-updated field must be
+  // referenced by its own parameter placeholder, falling back to a subquery of the current row
+  // only for whichever field isn't part of this particular PATCH.
+  if (rate !== undefined || markup_percentage !== undefined) {
+    const rateExpr = rateParamIdx ? `$${rateParamIdx}` : `(SELECT rate FROM exchange_rates WHERE id = $1)`;
+    const markupExpr = markupParamIdx ? `$${markupParamIdx}` : `(SELECT markup_percentage FROM exchange_rates WHERE id = $1)`;
+    updates.push(`final_rate = ${rateExpr} * (1 + ${markupExpr} / 100)`);
+  }
+
+  if (updates.length === 0) {
+    throw new AppError('No fields to update', 400);
+  }
+
   const result = await query(
     `UPDATE exchange_rates SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
     params
   );
+  if (result.rows.length === 0) {
+    throw new AppError('Exchange rate not found', 404);
+  }
 
   await logAdminAction({
     adminId: req.user.id,

@@ -20,6 +20,7 @@ import {
   getExchangeRates,
   createExchangeRate,
   updateExchangeRate,
+  getLiveFxBaseRate,
   getFeeConfigs,
   createFeeConfig,
   updateFeeConfig,
@@ -232,9 +233,35 @@ router.post('/users/:userId/aml-refresh', restrictTo(...COMPLIANCE_ACCESS), para
 router.get('/audit-logs', getAuditLogs);
 
 // FX & Fee Management (finance)
+router.get(
+  '/fx/live-rate',
+  restrictTo(...FINANCE_ACCESS),
+  query('from').notEmpty().isLength({ min: 2, max: 10 }),
+  query('to').notEmpty().isLength({ min: 2, max: 10 }),
+  validate,
+  getLiveFxBaseRate
+);
 router.get('/fx/rates', restrictTo(...FINANCE_ACCESS), getExchangeRates);
-router.post('/fx/rates', restrictTo(...FINANCE_ACCESS), createExchangeRate);
-router.patch('/fx/rates/:rateId', restrictTo(...FINANCE_ACCESS), updateExchangeRate);
+router.post(
+  '/fx/rates',
+  restrictTo(...FINANCE_ACCESS),
+  body('from_currency').notEmpty().isLength({ min: 2, max: 10 }),
+  body('to_currency').notEmpty().isLength({ min: 2, max: 10 }),
+  body('rate').isFloat({ gt: 0 }),
+  body('markup_percentage').optional().isFloat({ min: -50, max: 50 }),
+  validate,
+  createExchangeRate
+);
+router.patch(
+  '/fx/rates/:rateId',
+  restrictTo(...FINANCE_ACCESS),
+  param('rateId').isUUID(),
+  body('rate').optional().isFloat({ gt: 0 }),
+  body('markup_percentage').optional().isFloat({ min: -50, max: 50 }),
+  body('is_active').optional().isBoolean(),
+  validate,
+  updateExchangeRate
+);
 router.get('/fees/configs', restrictTo(...FINANCE_ACCESS), getFeeConfigs);
 router.post('/fees/configs', restrictTo(...FINANCE_ACCESS), createFeeConfig);
 router.patch('/fees/configs/:feeId', restrictTo(...FINANCE_ACCESS), updateFeeConfig);
