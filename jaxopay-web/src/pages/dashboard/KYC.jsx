@@ -20,13 +20,16 @@ const TIER_DEFS = [
     { num: 3, title: 'Address Verification', subtitle: 'Proof of residence', icon: Home },
 ];
 
+// Passport and Driver's License are no longer offered — Tier 2 only accepts NIN or National ID
+// (number + liveness/selfie, no document photo). Kept out of the selector entirely per product
+// decision, not just hidden.
 const ID_DOCUMENT_TYPES = [
     { id: 'nin', name: 'NIN (Nigeria)', icon: Fingerprint },
-    { id: 'passport', name: 'Passport', icon: Globe },
     { id: 'national_id', name: 'National ID', icon: CreditCard },
-    { id: 'drivers_license', name: "Driver's License", icon: CreditCard },
 ];
-const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card']);
+// Legacy types (passport, drivers_license) are no longer selectable for new submissions, but kept
+// here so status/rejection-reason lookups still recognize documents submitted before this change.
+const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card', 'passport', 'drivers_license']);
 const ADDRESS_DOC_TYPE_VALUES = ['proof_of_address', 'utility_bill'];
 
 const ADDRESS_DOCUMENT_TYPES = [
@@ -128,9 +131,7 @@ const KYC = () => {
             first_name: first || '',
             last_name: rest.join(' ') || '',
             country: formData.nationality,
-            id_type: formData.documentType === 'passport' ? 'PASSPORT'
-                : formData.documentType === 'drivers_license' ? 'DRIVERS_LICENSE'
-                : 'NIN_V2',
+            id_type: formData.documentType === 'national_id' ? 'NATIONAL_ID' : 'NIN_V2',
             id_number: formData.documentNumber || '',
             dob: formData.dateOfBirth || '',
         };

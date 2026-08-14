@@ -19,17 +19,28 @@ import cryptoService from '../../services/cryptoService';
 import { useAuthStore } from '../../store/authStore';
 import { formatCurrency } from '../../utils/formatters';
 
-// Last-resort list if /crypto/supported can't be reached — mirrors the fallback the backend
-// itself uses in getSupportedCryptos, so the modal never ends up with an empty dropdown.
-const FALLBACK_CURRENCIES = [
-    { code: 'USD', name: 'US Dollar', type: 'fiat' },
-    { code: 'EUR', name: 'Euro', type: 'fiat' },
-    { code: 'GBP', name: 'British Pound', type: 'fiat' },
-    { code: 'NGN', name: 'Nigerian Naira', type: 'fiat' },
-    { code: 'GHS', name: 'Ghanaian Cedi', type: 'fiat' },
-    { code: 'KES', name: 'Kenyan Shilling', type: 'fiat' },
-    { code: 'ZAR', name: 'South African Rand', type: 'fiat' },
-    { code: 'CNY', name: 'Chinese Yuan', type: 'fiat' },
+// Fiat currencies JAXOPAY actually settles in — mirrors FIAT_CURRENCIES in swapMarkup.service.js
+// exactly, since this drives the same buy/sell direction math client-side (isInverseDirection
+// below). Deliberately NOT sourced from /crypto/supported: that endpoint reflects Obiex's
+// tradeable *token* catalog (e.g. it lists a synthetic "NGNX" token, not the real NGN fiat rail —
+// pulling fiat options from it silently dropped plain NGN/USD/etc. from the dropdown). Only the
+// crypto side of the dropdown comes from the live API; fiat is always this fixed list.
+const FIAT_CURRENCIES = [
+    { code: 'NGN', name: 'Nigerian Naira' },
+    { code: 'USD', name: 'US Dollar' },
+    { code: 'EUR', name: 'Euro' },
+    { code: 'GBP', name: 'British Pound' },
+    { code: 'GHS', name: 'Ghanaian Cedi' },
+    { code: 'KES', name: 'Kenyan Shilling' },
+    { code: 'ZAR', name: 'South African Rand' },
+    { code: 'CAD', name: 'Canadian Dollar' },
+    { code: 'CNY', name: 'Chinese Yuan' },
+    { code: 'AUD', name: 'Australian Dollar' },
+    { code: 'JPY', name: 'Japanese Yen' },
+];
+
+// Last-resort crypto list if /crypto/supported can't be reached.
+const FALLBACK_CRYPTOS = [
     { code: 'BTC', name: 'Bitcoin', type: 'crypto' },
     { code: 'ETH', name: 'Ethereum', type: 'crypto' },
     { code: 'USDT', name: 'Tether', type: 'crypto' },
@@ -116,21 +127,22 @@ const SystemManagement = () => {
         setLoading(false);
     };
 
-    // All swap-supported currencies (crypto + fiat), sorted crypto-first so the admin sees the
-    // coins that actually matter for swap markup at the top of each dropdown.
+    // All swap-supported currencies (crypto from the live API + the fixed fiat rail list above),
+    // sorted crypto-first so the admin sees the coins that actually matter for swap markup at the
+    // top of each dropdown.
     const currencyOptions = useMemo(() => {
-        const list = supportedCurrencies.length ? supportedCurrencies : FALLBACK_CURRENCIES;
-        const dedup = Array.from(new Map(list.map(c => [c.code, c])).values());
+        const cryptoList = supportedCurrencies.length
+            ? supportedCurrencies.filter(c => c.type === 'crypto')
+            : FALLBACK_CRYPTOS;
+        const fiatList = FIAT_CURRENCIES.map(c => ({ ...c, type: 'fiat' }));
+        const dedup = Array.from(new Map([...cryptoList, ...fiatList].map(c => [c.code, c])).values());
         return dedup.sort((a, b) => {
             if (a.type !== b.type) return a.type === 'crypto' ? -1 : 1;
             return a.code.localeCompare(b.code);
         });
     }, [supportedCurrencies]);
 
-    const fiatCodes = useMemo(
-        () => new Set(currencyOptions.filter(c => c.type === 'fiat').map(c => c.code)),
-        [currencyOptions]
-    );
+    const fiatCodes = useMemo(() => new Set(FIAT_CURRENCIES.map(c => c.code)), []);
 
     // Auto-fetch the live Obiex "Base" rate whenever the modal is open and a valid, distinct
     // pair is selected — this is what lets the admin just type a markup instead of hand-entering
