@@ -171,7 +171,7 @@ const UserManagement = () => {
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h1>
                     <p className="text-gray-600 dark:text-gray-400">{pagination.total} total users</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     {isSuperAdmin && (
                         <button
                             onClick={() => setShowDeletionRequestsModal(true)}
@@ -373,7 +373,7 @@ const UserManagement = () => {
 
                 {/* Pagination */}
                 {totalPages > 1 && (
-                    <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-700">
                         <p className="text-sm text-gray-500">
                             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
                             {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
@@ -766,7 +766,7 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Staff Roles <span className="text-gray-400 font-normal">(leave unchecked for a regular end user)</span>
                         </label>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             {STAFF_ROLE_OPTIONS.map((opt) => (
                                 <label
                                     key={opt.value}
@@ -1008,14 +1008,14 @@ const DeletionRequestsModal = ({ onClose }) => {
                     ) : (
                         requests.map((r) => (
                             <div key={r.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="font-semibold text-gray-900 dark:text-white">
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="min-w-0">
+                                        <p className="font-semibold text-gray-900 dark:text-white truncate">
                                             {r.first_name ? `${r.first_name} ${r.last_name || ''}`.trim() : r.email}
                                         </p>
-                                        <p className="text-xs text-gray-500">{r.email}</p>
+                                        <p className="text-xs text-gray-500 truncate">{r.email}</p>
                                     </div>
-                                    <span className="text-xs text-gray-400">{formatDateTime(r.requested_at)}</span>
+                                    <span className="text-xs text-gray-400 shrink-0">{formatDateTime(r.requested_at)}</span>
                                 </div>
                                 {r.reason && (
                                     <p className="text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-lg p-2">{r.reason}</p>
@@ -1207,10 +1207,10 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                 {/* Content */}
                 <div className="p-6 space-y-6">
                     {/* User Info */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-500 mb-1">User ID</label>
-                            <p className="text-gray-900 dark:text-white font-mono text-sm">{user.id}</p>
+                            <p className="text-gray-900 dark:text-white font-mono text-sm break-all">{user.id}</p>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-500 mb-1">Phone</label>
@@ -1240,7 +1240,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                             )}
                         </div>
 
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-500 mb-2">KYC Tier</label>
                                 {editMode ? (
@@ -1429,12 +1429,12 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                                             />
                                         </div>
                                     </div>
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                         <p className="text-xs text-gray-400">Leave a field blank to fall back to the user's KYC tier default.</p>
                                         <button
                                             onClick={handleSaveLimits}
                                             disabled={financialControlsSaving}
-                                            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                                            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 self-start sm:self-auto shrink-0"
                                         >
                                             {financialControlsSaving ? 'Saving...' : 'Save Limits'}
                                         </button>

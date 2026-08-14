@@ -66,14 +66,14 @@ const CardManagement = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Virtual Card Registry</h1>
                     <p className="text-gray-600 dark:text-gray-400">Oversee all issued virtual cards and their performance</p>
                 </div>
                 <button
                     onClick={fetchCards}
-                    className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 transition-colors"
+                    className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 transition-colors self-start sm:self-auto"
                 >
                     <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
                 </button>
@@ -188,7 +188,7 @@ const CardManagement = () => {
                 </div>
 
                 {/* Pagination */}
-                <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700/30 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <div className="px-4 sm:px-6 py-4 bg-gray-50 dark:bg-gray-700/30 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-gray-500">
                         Showing {(pagination.page - 1) * pagination.limit + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} cards
                     </p>

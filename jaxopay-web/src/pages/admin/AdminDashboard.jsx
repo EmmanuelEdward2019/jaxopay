@@ -203,16 +203,16 @@ const AdminDashboard = () => {
     return (
         <div className="space-y-6">
             {/* Page Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="min-w-0">
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
                         {role === 'super_admin' ? 'Super Admin Dashboard Overview'
                             : role === 'compliance_officer' ? 'Compliance Dashboard Overview'
                                 : role === 'finance' ? 'Finance Dashboard Overview'
                                     : role === 'support' ? 'Support Dashboard Overview'
                                         : 'Dashboard Overview'}
                     </h1>
-                    <p className="text-gray-600 dark:text-gray-400">
+                    <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
                         {role === 'super_admin' ? 'Monitor and manage the entire platform'
                             : role === 'compliance_officer' ? 'Monitor compliance, KYC, and risk activity across the platform'
                                 : role === 'finance' ? 'Monitor treasury, wallets, rates, fees and transaction volume'
@@ -222,7 +222,7 @@ const AdminDashboard = () => {
                 </div>
                 <button
                     onClick={() => { fetchStats(); refetchGrowth(); }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-gray-900 font-medium rounded-lg"
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-accent-600 hover:bg-accent-700 text-gray-900 font-medium rounded-lg shrink-0 self-start sm:self-auto"
                 >
                     <RefreshCw className="w-4 h-4" />
                     Refresh
@@ -340,13 +340,15 @@ const AdminDashboard = () => {
 
                         {/* Trend range filter */}
                         <div className="border-t border-gray-100 dark:border-gray-700 pt-5 mb-4">
-                            <div className="flex flex-wrap items-center gap-2">
+                            {/* Horizontally scrollable on narrow screens instead of wrapping —
+                                flex-wrap here used to stack the presets into 3+ rows on mobile. */}
+                            <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
                                 <Calendar className="w-4 h-4 text-gray-400 shrink-0" />
                                 {RANGE_PRESETS.map((p) => (
                                     <button
                                         key={p.key}
                                         onClick={() => handlePresetClick(p.key)}
-                                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${rangePreset === p.key
+                                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shrink-0 whitespace-nowrap ${rangePreset === p.key
                                             ? 'bg-accent-600 text-gray-900'
                                             : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                                             }`}
@@ -357,18 +359,18 @@ const AdminDashboard = () => {
                             </div>
 
                             {showCustomPicker && (
-                                <div className="flex flex-wrap items-end gap-3 mt-3">
-                                    <div>
+                                <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3">
+                                    <div className="flex-1 min-w-0">
                                         <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">From</label>
                                         <input
                                             type="date"
                                             value={customStart}
                                             max={customEnd || undefined}
                                             onChange={(e) => setCustomStart(e.target.value)}
-                                            className="px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                                            className="w-full px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
                                         />
                                     </div>
-                                    <div>
+                                    <div className="flex-1 min-w-0">
                                         <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">To</label>
                                         <input
                                             type="date"
@@ -376,13 +378,13 @@ const AdminDashboard = () => {
                                             min={customStart || undefined}
                                             max={new Date().toISOString().slice(0, 10)}
                                             onChange={(e) => setCustomEnd(e.target.value)}
-                                            className="px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                                            className="w-full px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
                                         />
                                     </div>
                                     <button
                                         onClick={handleApplyCustomRange}
                                         disabled={!customStart || !customEnd || growthLoading}
-                                        className="px-4 py-1.5 text-sm font-semibold bg-accent-600 hover:bg-accent-700 text-gray-900 rounded-lg disabled:opacity-50"
+                                        className="w-full sm:w-auto px-4 py-1.5 text-sm font-semibold bg-accent-600 hover:bg-accent-700 text-gray-900 rounded-lg disabled:opacity-50"
                                     >
                                         Apply
                                     </button>
@@ -404,20 +406,23 @@ const AdminDashboard = () => {
 
                         {/* Trend chart — bucketed by day/week/month server-side depending on the
                             selected range's length (see growth.range.granularity). */}
-                        <div className="h-64">
+                        <div className="h-72">
                             <ResponsiveContainer width="100%" height="100%">
-                                <ComposedChart data={growth.trend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                                <ComposedChart data={growth.trend} margin={{ top: 4, right: 8, left: -20, bottom: 8 }}>
                                     <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
                                     <XAxis
                                         dataKey="date"
                                         tickFormatter={(d) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined,
                                             growth.range?.granularity === 'month' ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' }
                                         )}
-                                        tick={{ fontSize: 11 }}
-                                        interval={Math.max(0, Math.floor(growth.trend.length / 8) - 1)}
+                                        tick={{ fontSize: 10 }}
+                                        angle={-35}
+                                        textAnchor="end"
+                                        height={44}
+                                        interval={Math.max(0, Math.ceil(growth.trend.length / 6) - 1)}
                                     />
-                                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} allowDecimals={false} />
-                                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
+                                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} allowDecimals={false} width={32} />
+                                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} width={32} />
                                     <Tooltip
                                         labelFormatter={(d) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                                         contentStyle={{ borderRadius: 12, fontSize: 12 }}
@@ -439,7 +444,7 @@ const AdminDashboard = () => {
                 {/* Quick Actions */}
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Actions</h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <Link
                             to="/admin/users"
                             className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"

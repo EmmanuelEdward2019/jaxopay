@@ -74,9 +74,9 @@ const ProductManagement = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-center gap-4">
-                    <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 shrink-0">
                         {getProductIcon()}
                     </div>
                     <div>
@@ -86,14 +86,14 @@ const ProductManagement = () => {
                 </div>
                 <button
                     onClick={fetchProductData}
-                    className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                    className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm self-start sm:self-auto"
                 >
                     <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
                 </button>
             </div>
 
             {/* Quick Filters */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
                 <button
                     onClick={() => setFilters({ ...filters, status: '' })}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filters.status === ''

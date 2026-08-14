@@ -303,10 +303,10 @@ const KYCReview = () => {
                                 key={doc.id}
                                 className="p-6 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
                             >
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                    <div className="flex items-center gap-4 min-w-0">
                                         <div
-                                            className={`p-3 rounded-xl ${
+                                            className={`p-3 rounded-xl shrink-0 ${
                                                 activeTab === 'pending'
                                                     ? 'bg-yellow-100 dark:bg-yellow-900/30'
                                                     : activeTab === 'rejected'
@@ -322,7 +322,7 @@ const KYCReview = () => {
                                                 }`}
                                             />
                                         </div>
-                                        <div>
+                                        <div className="min-w-0">
                                             <div className="flex items-center gap-3 flex-wrap">
                                                 <h3 className="font-semibold text-gray-900 dark:text-white">
                                                     {DOC_TYPES[doc.document_type]?.label || doc.document_type}
@@ -382,7 +382,7 @@ const KYCReview = () => {
                                             else if (activeTab === 'rejected') handleReconsiderRejected(doc);
                                             else handleViewApproved(doc);
                                         }}
-                                        className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg"
+                                        className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg shrink-0 self-start sm:self-auto"
                                     >
                                         <Eye className="w-4 h-4" />
                                         {activeTab === 'pending' ? 'Review' : activeTab === 'rejected' ? 'Reconsider' : 'View record'}
@@ -394,7 +394,7 @@ const KYCReview = () => {
                 )}
 
                 {totalPages > 1 && (
-                    <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-700">
                         <p className="text-sm text-gray-500">
                             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
                             {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}

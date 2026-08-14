@@ -205,11 +205,11 @@ const AdminSupport = () => {
                                             {selectedTicket.status}
                                         </span>
                                     </div>
-                                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                                         <p>User: <span className="font-medium text-foreground">{selectedTicket.email}</span></p>
-                                        <span>•</span>
+                                        <span className="hidden sm:inline">•</span>
                                         <p>Category: <span className="font-medium text-foreground capitalize">{selectedTicket.category}</span></p>
-                                        <span>•</span>
+                                        <span className="hidden sm:inline">•</span>
                                         <p>Priority: <span className={`font-bold ${selectedTicket.priority === 'urgent' ? 'text-red-500' :
                                             selectedTicket.priority === 'high' ? 'text-amber-500' : 'text-muted-foreground'
                                             }`}>{selectedTicket.priority}</span></p>

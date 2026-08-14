@@ -201,30 +201,32 @@ const Treasury = () => {
                     <div>
                         <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">User liabilities (what we owe users)</h2>
                         <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="text-left text-gray-400 bg-gray-50 dark:bg-gray-900/40">
-                                        <th className="font-medium px-5 py-3">Currency</th>
-                                        <th className="font-medium px-5 py-3">Type</th>
-                                        <th className="font-medium px-5 py-3 text-right">Total owed</th>
-                                        <th className="font-medium px-5 py-3 text-right">Wallets</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {liabilities.filter((l) => Number(l.total) !== 0).length === 0 ? (
-                                        <tr><td colSpan={4} className="px-5 py-6 text-center text-gray-400">No outstanding balances.</td></tr>
-                                    ) : (
-                                        liabilities.filter((l) => Number(l.total) !== 0).map((l) => (
-                                            <tr key={`${l.currency}-${l.type}`} className="border-t border-gray-100 dark:border-gray-700">
-                                                <td className="px-5 py-3 font-medium text-gray-900 dark:text-white">{l.currency}</td>
-                                                <td className="px-5 py-3 capitalize text-gray-500">{l.type}</td>
-                                                <td className="px-5 py-3 text-right text-gray-900 dark:text-white font-medium">{Number(l.total).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
-                                                <td className="px-5 py-3 text-right text-gray-500">{l.wallets}</td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm min-w-[480px]">
+                                    <thead>
+                                        <tr className="text-left text-gray-400 bg-gray-50 dark:bg-gray-900/40">
+                                            <th className="font-medium px-5 py-3">Currency</th>
+                                            <th className="font-medium px-5 py-3">Type</th>
+                                            <th className="font-medium px-5 py-3 text-right">Total owed</th>
+                                            <th className="font-medium px-5 py-3 text-right">Wallets</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {liabilities.filter((l) => Number(l.total) !== 0).length === 0 ? (
+                                            <tr><td colSpan={4} className="px-5 py-6 text-center text-gray-400">No outstanding balances.</td></tr>
+                                        ) : (
+                                            liabilities.filter((l) => Number(l.total) !== 0).map((l) => (
+                                                <tr key={`${l.currency}-${l.type}`} className="border-t border-gray-100 dark:border-gray-700">
+                                                    <td className="px-5 py-3 font-medium text-gray-900 dark:text-white">{l.currency}</td>
+                                                    <td className="px-5 py-3 capitalize text-gray-500">{l.type}</td>
+                                                    <td className="px-5 py-3 text-right text-gray-900 dark:text-white font-medium">{Number(l.total).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
+                                                    <td className="px-5 py-3 text-right text-gray-500">{l.wallets}</td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
 

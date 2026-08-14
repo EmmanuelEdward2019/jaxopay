@@ -285,7 +285,7 @@ const TransactionMonitor = () => {
 
                 {/* Pagination */}
                 {totalPages > 1 && (
-                    <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-700">
                         <p className="text-sm text-gray-500">
                             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
                             {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
@@ -340,10 +340,10 @@ const TransactionMonitor = () => {
                                 </button>
                             </div>
                             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                                     <div>
                                         <span className="text-gray-500">Transaction ID</span>
-                                        <p className="font-mono text-gray-900 dark:text-white">{selectedTx.id}</p>
+                                        <p className="font-mono text-gray-900 dark:text-white break-all">{selectedTx.id}</p>
                                     </div>
                                     <div>
                                         <span className="text-gray-500">Type</span>
@@ -351,7 +351,7 @@ const TransactionMonitor = () => {
                                     </div>
                                     <div>
                                         <span className="text-gray-500">User Email</span>
-                                        <p className="text-gray-900 dark:text-white">{selectedTx.user_email || 'System'}</p>
+                                        <p className="text-gray-900 dark:text-white break-all">{selectedTx.user_email || 'System'}</p>
                                     </div>
                                     <div>
                                         <span className="text-gray-500">Amount</span>

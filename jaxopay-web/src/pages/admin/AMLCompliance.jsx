@@ -62,14 +62,14 @@ const AMLCompliance = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Compliance & AML</h1>
                     <p className="text-gray-600 dark:text-gray-400">Monitor high-risk activities and regulatory compliance</p>
                 </div>
                 <button
                     onClick={fetchData}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-gray-900 font-medium rounded-lg self-start sm:self-auto"
                 >
                     <RefreshCw className="w-4 h-4" />
                     Refresh
@@ -119,20 +119,20 @@ const AMLCompliance = () => {
                         ) : (
                             highRiskUsers.map(user => (
                                 <div key={user.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center font-bold">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center font-bold shrink-0">
                                                 {user.email[0].toUpperCase()}
                                             </div>
-                                            <div>
-                                                <p className="font-bold text-gray-900 dark:text-white">{user.email}</p>
+                                            <div className="min-w-0">
+                                                <p className="font-bold text-gray-900 dark:text-white truncate">{user.email}</p>
                                                 <p className="text-xs text-gray-500">Risk Score: <span className="text-red-600 font-bold">{user.risk_score}</span></p>
                                             </div>
                                         </div>
                                         <button
                                             onClick={() => handleRefreshRisk(user.id)}
                                             disabled={refreshing === user.id}
-                                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-primary-600"
+                                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-primary-600 shrink-0"
                                         >
                                             <RefreshCw className={`w-4 h-4 ${refreshing === user.id ? 'animate-spin' : ''}`} />
                                         </button>
@@ -157,16 +157,16 @@ const AMLCompliance = () => {
                         ) : (
                             auditLogs.map(log => (
                                 <div key={log.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                                    <div className="flex items-start justify-between">
-                                        <div>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
                                             <p className="font-medium text-gray-900 dark:text-white">
                                                 {log.action.replace(/_/g, ' ').toUpperCase()}
                                             </p>
-                                            <p className="text-xs text-gray-500 mt-1">
+                                            <p className="text-xs text-gray-500 mt-1 break-all">
                                                 Target: <span className="font-mono">{log.entity_type} / {log.entity_id}</span>
                                             </p>
                                         </div>
-                                        <p className="text-xs text-gray-400">
+                                        <p className="text-xs text-gray-400 shrink-0">
                                             {formatDateTime(log.created_at)}
                                         </p>
                                     </div>

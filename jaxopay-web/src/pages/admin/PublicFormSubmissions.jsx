@@ -90,7 +90,7 @@ const PublicFormSubmissions = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         Contact Messages
@@ -102,7 +102,7 @@ const PublicFormSubmissions = () => {
                 </div>
                 <button
                     onClick={fetchSubmissions}
-                    className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 transition-colors"
+                    className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 transition-colors self-start sm:self-auto"
                 >
                     <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
                 </button>
@@ -160,8 +160,8 @@ const PublicFormSubmissions = () => {
                                         <p className="text-sm text-gray-500 truncate">{s.subject || '(no subject)'}</p>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-4 shrink-0">
-                                    <span className="text-xs text-gray-400">{formatDateTime(s.created_at)}</span>
+                                <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                                    <span className="hidden sm:inline text-xs text-gray-400">{formatDateTime(s.created_at)}</span>
                                     <span className={`px-2.5 py-1 text-xs font-medium rounded-full capitalize ${STATUS_COLORS[s.status] || STATUS_COLORS.new}`}>
                                         {s.status}
                                     </span>
@@ -227,7 +227,7 @@ const PublicFormSubmissions = () => {
                 })}
 
                 {/* Pagination */}
-                <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700/30 flex items-center justify-between">
+                <div className="px-4 sm:px-6 py-4 bg-gray-50 dark:bg-gray-700/30 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-gray-500">
                         Showing {pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} messages
                     </p>
