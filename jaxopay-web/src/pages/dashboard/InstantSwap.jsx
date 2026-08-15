@@ -178,6 +178,10 @@ const InstantSwap = () => {
   }, []);
 
   // Preview rate debounce — recomputes whichever field ISN'T the one the user is typing into.
+  // Obiex has no lightweight "preview" endpoint, so even this fires a real quote call under the
+  // hood (getExchangeRates -> getTemporarySwapQuote) against the same shared hourly allowance as
+  // the actual Get Quote button. 650ms (was 300ms) meaningfully cuts how many of those a user
+  // typing/backspacing through an amount generates, while still feeling responsive.
   useEffect(() => {
     if (swapPhase !== 'idle') return;
     const editingReceive = lastEdited === 'receive';
@@ -188,28 +192,46 @@ const InstantSwap = () => {
         if (editingReceive) setPayAmount(''); else setReceiveAmount('');
         setPreviewRate(null);
       }
-    }, 300);
+    }, 650);
     return () => clearTimeout(timer);
   }, [payAmount, receiveAmount, fromCode, toCode, swapPhase, lastEdited]);
 
   // Keep refresh callback ref current
   useEffect(() => { refreshCallbackRef.current = handleRefresh; });
 
-  // Countdown timer
+  // Countdown timer — also drives auto-refresh on expiry. Obiex has no lightweight "is this
+  // quote still valid?" check, so every auto-refresh is a brand-new provider quote call, drawn
+  // from the same hourly quote allowance every JAXOPAY user shares (Obiex is a single pooled
+  // account, not per-user). A background/hidden tab left open on a quoted swap was silently
+  // generating one of these every ~15s forever — real quota spent with nobody even looking at
+  // it. Only auto-fire while the tab is actually visible; if the quote goes stale while hidden,
+  // catch up with a single refresh the moment the user comes back instead of having fired ~4
+  // wasted quote calls per minute the whole time it sat in the background.
   useEffect(() => {
     if (!quotation?.expires_at || !['quoted', 'refreshing'].includes(swapPhase)) { setCountdownSecs(0); return; }
     autoRefreshFiredRef.current = false;
     const expiresAt = new Date(quotation.expires_at).getTime();
+
+    const fireRefreshIfDue = () => {
+      if (autoRefreshFiredRef.current) return;
+      if (Date.now() < expiresAt) return;
+      if (document.visibilityState !== 'visible') return;
+      autoRefreshFiredRef.current = true;
+      clearInterval(interval);
+      refreshCallbackRef.current?.();
+    };
+
     const interval = setInterval(() => {
       const left = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
       setCountdownSecs(left);
-      if (Date.now() >= expiresAt && !autoRefreshFiredRef.current) {
-        autoRefreshFiredRef.current = true;
-        clearInterval(interval);
-        refreshCallbackRef.current?.();
-      }
+      fireRefreshIfDue();
     }, 1000);
-    return () => clearInterval(interval);
+
+    document.addEventListener('visibilitychange', fireRefreshIfDue);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', fireRefreshIfDue);
+    };
   }, [quotation?.expires_at, swapPhase]);
 
   // Reset quotation when user changes params — including after a failed attempt (e.g.

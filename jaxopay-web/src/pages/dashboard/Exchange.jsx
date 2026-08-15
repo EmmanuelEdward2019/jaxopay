@@ -130,6 +130,10 @@ const Exchange = () => {
     const refreshCallbackRef = useRef(null);
     const refreshInFlightRef = useRef(false);
 
+    // Obiex has no lightweight "preview" endpoint, so fetchRates fires a real quote call under
+    // the hood (getExchangeRates -> getTemporarySwapQuote) against the same shared hourly
+    // allowance as an actual confirmed exchange. 650ms (was 200ms) meaningfully cuts how many of
+    // those a user typing/backspacing through an amount generates.
     useEffect(() => {
         if (activeTab === 'exchange') {
             const timer = setTimeout(() => {
@@ -140,7 +144,7 @@ const Exchange = () => {
                     setRates(null);
                     setRateError(null);
                 }
-            }, 200);
+            }, 650);
             return () => clearTimeout(timer);
         }
     }, [payAmount, fromAsset, toAsset, activeTab]);
@@ -154,23 +158,38 @@ const Exchange = () => {
     // Keep refreshCallbackRef current so the countdown timer always calls the latest version
     useEffect(() => { refreshCallbackRef.current = handleQuotationRefresh; });
 
-    // Countdown timer — driven by quotation.expires_at; auto-refreshes at 0
+    // Countdown timer — driven by quotation.expires_at; auto-refreshes at 0. Obiex has no
+    // lightweight "is this quote still valid?" check, so every auto-refresh is a brand-new
+    // provider quote call against the same shared hourly allowance every JAXOPAY user draws
+    // from (Obiex is a single pooled account, not per-user) — a background/hidden tab left open
+    // on a quoted exchange was silently generating one of these every ~15s forever. Only
+    // auto-fire while the tab is actually visible; catch up with a single refresh when the user
+    // comes back if it went stale while hidden.
     useEffect(() => {
         if (!quotation?.expires_at || !['quoted', 'refreshing'].includes(swapPhase)) { setCountdownSecs(0); return; }
         autoRefreshFiredRef.current = false;
         const expiresAt = new Date(quotation.expires_at).getTime();
 
+        const fireRefreshIfDue = () => {
+            if (autoRefreshFiredRef.current) return;
+            if (Date.now() < expiresAt) return;
+            if (document.visibilityState !== 'visible') return;
+            autoRefreshFiredRef.current = true;
+            clearInterval(interval);
+            refreshCallbackRef.current?.();
+        };
+
         const interval = setInterval(() => {
             const secsLeft = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
             setCountdownSecs(secsLeft);
-            if (Date.now() >= expiresAt && !autoRefreshFiredRef.current) {
-                autoRefreshFiredRef.current = true;
-                clearInterval(interval);
-                refreshCallbackRef.current?.();
-            }
+            fireRefreshIfDue();
         }, 1000);
 
-        return () => clearInterval(interval);
+        document.addEventListener('visibilitychange', fireRefreshIfDue);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', fireRefreshIfDue);
+        };
     }, [quotation?.expires_at, swapPhase]);
 
     // Reset to idle when the user changes currency or amount while a quote is active
