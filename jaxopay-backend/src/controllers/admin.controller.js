@@ -1224,12 +1224,20 @@ export const createExchangeRate = catchAsync(async (req, res) => {
     throw new AppError('Exchange rate pair already exists', 409);
   }
 
+  const markupPct = Number(markup_percentage) || 0;
+  // Computed in JS and bound as its own parameter rather than an in-SQL expression reusing $3/$4 —
+  // Postgres has to deduce ONE static type per placeholder across the whole statement, and reusing
+  // a placeholder both as a plain value and inside an arithmetic expression can make it deduce
+  // conflicting types (seen live: "inconsistent types deduced for parameter $3: integer versus
+  // numeric" whenever `rate` was a whole number). A dedicated parameter sidesteps that entirely.
+  const finalRate = Number(rate) * (1 + markupPct / 100);
+
   const result = await query(
     `INSERT INTO exchange_rates
      (from_currency, to_currency, rate, markup_percentage, final_rate, source, is_active)
-     VALUES ($1, $2, $3, $4, $3 * (1 + $4/100), $5, true)
+     VALUES ($1, $2, $3, $4, $5, $6, true)
      RETURNING *`,
-    [from_currency, to_currency, rate, markup_percentage || 0, source || 'manual']
+    [from_currency, to_currency, rate, markupPct, finalRate, source || 'manual']
   );
 
   await logAdminAction({
@@ -1249,20 +1257,29 @@ export const updateExchangeRate = catchAsync(async (req, res) => {
   const { rateId } = req.params;
   const { rate, markup_percentage, is_active } = req.body;
 
+  if (rate === undefined && markup_percentage === undefined && is_active === undefined) {
+    throw new AppError('No fields to update', 400);
+  }
+
+  // Fetched up front (rather than a bare column reference or subquery inline in the UPDATE) so
+  // final_rate can be computed in JS as its own parameter — see createExchangeRate for why an
+  // in-SQL expression reusing the same placeholder as a plain SET value is unsafe (Postgres can
+  // deduce conflicting types for it). This also gives us the 404 check before writing anything.
+  const current = await query('SELECT rate, markup_percentage FROM exchange_rates WHERE id = $1', [rateId]);
+  if (current.rows.length === 0) {
+    throw new AppError('Exchange rate not found', 404);
+  }
+
   const updates = [];
   const params = [rateId];
-  let rateParamIdx = null;
-  let markupParamIdx = null;
 
   if (rate !== undefined) {
     params.push(rate);
-    rateParamIdx = params.length;
-    updates.push(`rate = $${rateParamIdx}`);
+    updates.push(`rate = $${params.length}`);
   }
   if (markup_percentage !== undefined) {
     params.push(markup_percentage);
-    markupParamIdx = params.length;
-    updates.push(`markup_percentage = $${markupParamIdx}`);
+    updates.push(`markup_percentage = $${params.length}`);
   }
   if (is_active !== undefined) {
     params.push(is_active);
@@ -1272,28 +1289,18 @@ export const updateExchangeRate = catchAsync(async (req, res) => {
   // final_rate is purely informational (the live swap flow always recomputes off a fresh
   // provider quote + markup_percentage, never this column) but must stay in sync with whichever
   // of rate/markup_percentage was actually edited — a partial PATCH previously left it stale,
-  // showing a customer rate that no longer matched the saved markup. A bare column reference
-  // here would read the row's OLD value even for the field THIS statement is also setting
-  // (Postgres SET clauses don't see each other's new values), so the just-updated field must be
-  // referenced by its own parameter placeholder, falling back to a subquery of the current row
-  // only for whichever field isn't part of this particular PATCH.
+  // showing a customer rate that no longer matched the saved markup.
   if (rate !== undefined || markup_percentage !== undefined) {
-    const rateExpr = rateParamIdx ? `$${rateParamIdx}` : `(SELECT rate FROM exchange_rates WHERE id = $1)`;
-    const markupExpr = markupParamIdx ? `$${markupParamIdx}` : `(SELECT markup_percentage FROM exchange_rates WHERE id = $1)`;
-    updates.push(`final_rate = ${rateExpr} * (1 + ${markupExpr} / 100)`);
-  }
-
-  if (updates.length === 0) {
-    throw new AppError('No fields to update', 400);
+    const newRate = rate !== undefined ? Number(rate) : Number(current.rows[0].rate);
+    const newMarkup = markup_percentage !== undefined ? Number(markup_percentage) : (Number(current.rows[0].markup_percentage) || 0);
+    params.push(newRate * (1 + newMarkup / 100));
+    updates.push(`final_rate = $${params.length}`);
   }
 
   const result = await query(
     `UPDATE exchange_rates SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
     params
   );
-  if (result.rows.length === 0) {
-    throw new AppError('Exchange rate not found', 404);
-  }
 
   await logAdminAction({
     adminId: req.user.id,

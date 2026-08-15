@@ -19,24 +19,18 @@ import cryptoService from '../../services/cryptoService';
 import { useAuthStore } from '../../store/authStore';
 import { formatCurrency } from '../../utils/formatters';
 
-// Fiat currencies JAXOPAY actually settles in — mirrors FIAT_CURRENCIES in swapMarkup.service.js
-// exactly, since this drives the same buy/sell direction math client-side (isInverseDirection
-// below). Deliberately NOT sourced from /crypto/supported: that endpoint reflects Obiex's
-// tradeable *token* catalog (e.g. it lists a synthetic "NGNX" token, not the real NGN fiat rail —
-// pulling fiat options from it silently dropped plain NGN/USD/etc. from the dropdown). Only the
-// crypto side of the dropdown comes from the live API; fiat is always this fixed list.
+// Fiat currencies offered in the FX modal — deliberately a NARROW subset of the fiat codes
+// swapMarkup.service.js recognizes on the backend (that set is broader, for direction-math
+// correctness on any pair). The markup feature currently only works against Obiex swap, and NGN/
+// GHS are the only fiat rails actually live there, so the dropdown is restricted to just those
+// two to avoid admins configuring rates for currencies that can't actually swap yet.
+// Deliberately NOT sourced from /crypto/supported: that endpoint reflects Obiex's tradeable
+// *token* catalog (e.g. it lists a synthetic "NGNX" token, not the real NGN fiat rail — pulling
+// fiat options from it silently dropped plain NGN from the dropdown). Only the crypto side of the
+// dropdown comes from the live API; fiat is always this fixed list.
 const FIAT_CURRENCIES = [
     { code: 'NGN', name: 'Nigerian Naira' },
-    { code: 'USD', name: 'US Dollar' },
-    { code: 'EUR', name: 'Euro' },
-    { code: 'GBP', name: 'British Pound' },
     { code: 'GHS', name: 'Ghanaian Cedi' },
-    { code: 'KES', name: 'Kenyan Shilling' },
-    { code: 'ZAR', name: 'South African Rand' },
-    { code: 'CAD', name: 'Canadian Dollar' },
-    { code: 'CNY', name: 'Chinese Yuan' },
-    { code: 'AUD', name: 'Australian Dollar' },
-    { code: 'JPY', name: 'Japanese Yen' },
 ];
 
 // Last-resort crypto list if /crypto/supported can't be reached.
