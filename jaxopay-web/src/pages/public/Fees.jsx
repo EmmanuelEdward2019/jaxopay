@@ -16,16 +16,16 @@ const FEE_ROWS = {
   crypto: [
     { icon: ArrowDownToLine, title: 'Deposit', value: 'Free', detail: 'No fee to deposit any supported coin into your JAXOPAY wallet.' },
     { icon: ArrowUpFromLine, title: 'Withdrawal', value: 'Network fee only', detail: 'A flat network fee that covers the actual blockchain transaction cost — varies by coin and network, and shown before you confirm. JAXOPAY adds nothing on top.' },
-    { icon: ArrowLeftRight, title: 'Swap (Buy / Sell / Convert)', value: 'No separate fee', detail: "There's no extra swap fee line — our margin is already built into the exchange rate you see. The rate shown before you confirm is exactly the rate you get." },
+    { icon: ArrowLeftRight, title: 'Swap (Buy / Sell / Convert)', value: 'No fee', detail: "There's no extra swap fee line. The rate shown before you confirm is exactly the rate you get." },
   ],
   fiat: [
-    { icon: ArrowDownToLine, title: 'Bank Deposit', value: 'Free', detail: 'Fund your NGN wallet from your bank with no JAXOPAY fee.' },
-    { icon: ArrowUpFromLine, title: 'Withdrawal to Bank', value: 'Free', detail: 'Withdraw to your linked bank account with no JAXOPAY fee.' },
+    { icon: ArrowDownToLine, title: 'Bank Deposit', value: '₦200 flat rate', detail: 'Fund your NGN wallet from your bank for a flat ₦200.' },
+    { icon: ArrowUpFromLine, title: 'Withdrawal to Bank', value: '₦100 flat rate', detail: 'Withdraw to your linked bank account for a flat ₦100.' },
     { icon: CreditCard, title: 'Virtual USD Card — Creation', value: '2% + $2.50', detail: 'One-time issuance fee: 2% of the funding amount, plus a flat $2.50.' },
     { icon: CreditCard, title: 'Virtual USD Card — Funding', value: '2% + $2', detail: 'Each top-up: 2% of the amount funded, plus a flat $2.' },
   ],
   global: [
-    { icon: Globe2, title: 'International Transfer', value: 'No JAXOPAY fee', detail: 'Send to 57+ countries at the live rate — JAXOPAY adds no separate transfer fee on top.' },
+    { icon: Globe2, title: 'International Transfer', value: '2%', detail: 'Send to 57+ countries at the live rate, plus a 2% JAXOPAY fee.' },
     { icon: ArrowLeftRight, title: 'Currency Swap', value: 'No JAXOPAY fee', detail: 'Convert between supported currencies at the live rate, with no extra JAXOPAY charge.' },
   ],
 };
