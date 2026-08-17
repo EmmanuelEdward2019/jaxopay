@@ -25,6 +25,7 @@ import Products from './pages/public/Products';
 import Privacy from './pages/public/Privacy';
 import Terms from './pages/public/Terms';
 import Cookies from './pages/public/Cookies';
+import Fees from './pages/public/Fees';
 
 // Product Pages
 import Payments from './pages/products/Payments';
@@ -221,6 +222,7 @@ function App() {
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/cookies" element={<Cookies />} />
+          <Route path="/fees" element={<Fees />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/careers" element={<Careers />} />
 
