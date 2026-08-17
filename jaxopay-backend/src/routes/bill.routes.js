@@ -78,7 +78,11 @@ router.post(
   body('provider_id').isString(),
   body('account_number').isString(),
   body('amount').isFloat({ min: 1 }),
-  body('currency').isString().isLength({ min: 3, max: 3 }),
+  // Optional — payBill's own destructuring already defaults this to 'NGN' when omitted; the
+  // validator was stricter than the controller it guards, so a client that didn't send it (e.g.
+  // RN before this fix) got a confusing "currency: Invalid value; currency: Invalid value"
+  // instead of the controller's intended NGN fallback.
+  body('currency').optional().isString().isLength({ min: 3, max: 3 }),
   body('metadata').optional().isObject(),
   validate,
   payBill
