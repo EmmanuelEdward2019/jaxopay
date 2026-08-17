@@ -18,7 +18,6 @@ const Signup = () => {
     const navigate = useNavigate();
     const { register, isLoading } = useAuthStore();
 
-    const [step, setStep] = useState(1); // 1: Account, 2: Personal — verification happens on its own page
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [error, setError] = useState('');
@@ -56,7 +55,10 @@ const Signup = () => {
         }
     };
 
-    const validateStep1 = () => {
+    // Password strength is advisory only (the strength meter below) — any non-empty password is
+    // accepted, both here and on the backend. Everything else here is a genuine correctness
+    // check (a real field missing, passwords not matching), not a complexity requirement.
+    const validate = () => {
         if (!formData.email || !formData.password || !formData.confirmPassword) {
             setError('Please fill in all fields');
             return false;
@@ -65,18 +67,10 @@ const Signup = () => {
             setError('Please enter a valid email address');
             return false;
         }
-        if (formData.password.length < 8) {
-            setError('Password must be at least 8 characters');
-            return false;
-        }
         if (formData.password !== formData.confirmPassword) {
             setError('Passwords do not match');
             return false;
         }
-        return true;
-    };
-
-    const validateStep2 = () => {
         if (!formData.firstName || !formData.lastName) {
             setError('Please enter your name');
             return false;
@@ -88,17 +82,11 @@ const Signup = () => {
         return true;
     };
 
-    const handleNextStep = () => {
+    const handleSubmit = async (e) => {
+        e.preventDefault();
         setError('');
-        if (step === 1 && validateStep1()) {
-            setStep(2);
-        } else if (step === 2 && validateStep2()) {
-            handleSubmit();
-        }
-    };
+        if (!validate()) return;
 
-    const handleSubmit = async () => {
-        setError('');
         const result = await register({
             email: formData.email,
             password: formData.password,
@@ -155,25 +143,8 @@ const Signup = () => {
             </div>
 
             {/* Right Panel - Form */}
-            <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50 dark:bg-gray-900">
-                <div className="w-full max-w-md">
-                    {/* Progress Steps */}
-                    <div className="flex items-center justify-center gap-4 mb-8">
-                        {[1, 2].map((s) => (
-                            <div key={s} className="flex items-center gap-2">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-medium ${step > s ? 'bg-accent-600 text-white' :
-                                    step === s ? 'bg-accent-600 text-white' :
-                                        'bg-gray-200 dark:bg-gray-700 text-gray-500'
-                                    }`}>
-                                    {step > s ? <Check className="w-5 h-5" /> : s}
-                                </div>
-                                {s < 2 && (
-                                    <div className={`w-8 h-0.5 ${step > s ? 'bg-accent-600' : 'bg-gray-200 dark:bg-gray-700'}`} />
-                                )}
-                            </div>
-                        ))}
-                    </div>
-
+            <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50 dark:bg-gray-900 overflow-y-auto">
+                <div className="w-full max-w-md py-8">
                     {/* Mobile Logo */}
                     <div className="lg:hidden text-center mb-8">
                         <Link to="/" className="inline-flex items-center gap-2">
@@ -181,269 +152,224 @@ const Signup = () => {
                         </Link>
                     </div>
 
-                    {/* Step 1: Account Details */}
-                    {step === 1 && (
-                        <motion.div
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                        >
-                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                                Create your account
-                            </h2>
-                            <p className="text-gray-600 dark:text-gray-400 mb-8">
-                                Enter your email and create a password
-                            </p>
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                    >
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                            Create your account
+                        </h2>
+                        <p className="text-gray-600 dark:text-gray-400 mb-8">
+                            Fill in your details below — it only takes a minute.
+                        </p>
 
-                            {error && (
-                                <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-3">
-                                    <AlertCircle className="w-5 h-5 text-red-600" />
-                                    <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-                                </div>
-                            )}
-
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        Email Address
-                                    </label>
-                                    <div className="relative">
-                                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                                        <input
-                                            type="email"
-                                            name="email"
-                                            value={formData.email}
-                                            onChange={handleChange}
-                                            placeholder="you@example.com"
-                                            className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        Password
-                                    </label>
-                                    <div className="relative">
-                                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                                        <input
-                                            type={showPassword ? 'text' : 'password'}
-                                            name="password"
-                                            value={formData.password}
-                                            onChange={handleChange}
-                                            placeholder="Create a strong password"
-                                            className="w-full pl-12 pr-12 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowPassword(!showPassword)}
-                                            className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                        >
-                                            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                        </button>
-                                    </div>
-                                    {/* Password Strength */}
-                                    {formData.password && (
-                                        <div className="mt-2">
-                                            <div className="flex gap-1">
-                                                {[1, 2, 3, 4, 5].map((i) => (
-                                                    <div
-                                                        key={i}
-                                                        className={`h-1 flex-1 rounded ${i <= passwordStrength
-                                                            ? passwordStrength <= 2 ? 'bg-red-500' :
-                                                                passwordStrength <= 3 ? 'bg-yellow-500' : 'bg-accent-500'
-                                                            : 'bg-gray-200 dark:bg-gray-700'
-                                                            }`}
-                                                    />
-                                                ))}
-                                            </div>
-                                            <p className="text-xs text-gray-500 mt-1">
-                                                {passwordStrength <= 2 ? 'Weak' : passwordStrength <= 3 ? 'Fair' : 'Strong'}
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    {/* Password requirements guide — always visible, ticks off as met */}
-                                    <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                                        {[
-                                            { label: 'At least 8 characters', met: formData.password.length >= 8 },
-                                            { label: 'One uppercase letter (A-Z)', met: /[A-Z]/.test(formData.password) },
-                                            { label: 'One lowercase letter (a-z)', met: /[a-z]/.test(formData.password) },
-                                            { label: 'One number (0-9)', met: /[0-9]/.test(formData.password) },
-                                            { label: 'One symbol (!@#$%...)', met: /[^a-zA-Z0-9]/.test(formData.password) },
-                                        ].map((rule) => (
-                                            <li
-                                                key={rule.label}
-                                                className={`flex items-center gap-1.5 ${rule.met ? 'text-accent-600 dark:text-accent-400' : 'text-gray-400 dark:text-gray-500'
-                                                    }`}
-                                            >
-                                                <Check className={`w-3.5 h-3.5 shrink-0 ${rule.met ? 'opacity-100' : 'opacity-30'}`} />
-                                                {rule.label}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        Confirm Password
-                                    </label>
-                                    <div className="relative">
-                                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                                        <input
-                                            type={showConfirmPassword ? 'text' : 'password'}
-                                            name="confirmPassword"
-                                            value={formData.confirmPassword}
-                                            onChange={handleChange}
-                                            placeholder="Confirm your password"
-                                            className="w-full pl-12 pr-12 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                            className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                        >
-                                            {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <button
-                                    onClick={handleNextStep}
-                                    className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
-                                >
-                                    Continue
-                                    <ArrowRight className="w-5 h-5" />
-                                </button>
+                        {error && (
+                            <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-3">
+                                <AlertCircle className="w-5 h-5 text-red-600" />
+                                <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
                             </div>
+                        )}
 
-                            <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
-                                Already have an account?{' '}
-                                <Link to="/login" className="text-accent-600 hover:text-accent-700 font-medium">
-                                    Sign in
-                                </Link>
-                            </p>
-                        </motion.div>
-                    )}
-
-                    {/* Step 2: Personal Details */}
-                    {step === 2 && (
-                        <motion.div
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                        >
-                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                                Personal Information
-                            </h2>
-                            <p className="text-gray-600 dark:text-gray-400 mb-8">
-                                Tell us a bit about yourself
-                            </p>
-
-                            {error && (
-                                <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-3">
-                                    <AlertCircle className="w-5 h-5 text-red-600" />
-                                    <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-                                </div>
-                            )}
-
-                            <div className="space-y-4">
-                                <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
-                                    Please enter your full <strong>legal name</strong> exactly as it appears on your government-issued ID card. This is required for identity verification later, and mismatched names can delay or block it.
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                            First Name
-                                        </label>
-                                        <div className="relative">
-                                            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                                            <input
-                                                type="text"
-                                                name="firstName"
-                                                value={formData.firstName}
-                                                onChange={handleChange}
-                                                placeholder="John"
-                                                className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                            Last Name
-                                        </label>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        First Name
+                                    </label>
+                                    <div className="relative">
+                                        <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                                         <input
                                             type="text"
-                                            name="lastName"
-                                            value={formData.lastName}
+                                            name="firstName"
+                                            value={formData.firstName}
                                             onChange={handleChange}
-                                            placeholder="Doe"
-                                            className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        Phone Number (Optional)
-                                    </label>
-                                    <div className="relative">
-                                        <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                                        <input
-                                            type="tel"
-                                            name="phone"
-                                            value={formData.phone}
-                                            onChange={handleChange}
-                                            placeholder="+1 234 567 8900"
+                                            placeholder="John"
                                             className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
                                         />
                                     </div>
                                 </div>
-
-                                <label className="flex items-start gap-3 cursor-pointer">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Last Name
+                                    </label>
                                     <input
-                                        type="checkbox"
-                                        name="acceptTerms"
-                                        checked={formData.acceptTerms}
+                                        type="text"
+                                        name="lastName"
+                                        value={formData.lastName}
                                         onChange={handleChange}
-                                        className="w-5 h-5 mt-0.5 rounded border-gray-300 text-accent-600 focus:ring-accent-500"
+                                        placeholder="Doe"
+                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
                                     />
-                                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                                        I agree to the{' '}
-                                        <Link to="/terms" className="text-accent-600 hover:text-accent-700">
-                                            Terms of Service
-                                        </Link>{' '}
-                                        and{' '}
-                                        <Link to="/privacy" className="text-accent-600 hover:text-accent-700">
-                                            Privacy Policy
-                                        </Link>
-                                    </span>
-                                </label>
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+                                Use your full <strong>legal name</strong> as it appears on your government-issued ID — this is required for identity verification later.
+                            </p>
 
-                                <div className="flex gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    Email Address
+                                </label>
+                                <div className="relative">
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <input
+                                        type="email"
+                                        name="email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        placeholder="you@example.com"
+                                        className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    Phone Number (Optional)
+                                </label>
+                                <div className="relative">
+                                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <input
+                                        type="tel"
+                                        name="phone"
+                                        value={formData.phone}
+                                        onChange={handleChange}
+                                        placeholder="+1 234 567 8900"
+                                        className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    Password
+                                </label>
+                                <div className="relative">
+                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        name="password"
+                                        value={formData.password}
+                                        onChange={handleChange}
+                                        placeholder="Create a password"
+                                        className="w-full pl-12 pr-12 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
+                                    />
                                     <button
-                                        onClick={() => setStep(1)}
-                                        className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl"
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                                     >
-                                        Back
+                                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                                     </button>
+                                </div>
+                                {/* Advisory strength meter — any password is accepted, this is just a recommendation. */}
+                                {formData.password && (
+                                    <div className="mt-2">
+                                        <div className="flex gap-1">
+                                            {[1, 2, 3, 4, 5].map((i) => (
+                                                <div
+                                                    key={i}
+                                                    className={`h-1 flex-1 rounded ${i <= passwordStrength
+                                                        ? passwordStrength <= 2 ? 'bg-red-500' :
+                                                            passwordStrength <= 3 ? 'bg-yellow-500' : 'bg-accent-500'
+                                                        : 'bg-gray-200 dark:bg-gray-700'
+                                                        }`}
+                                                />
+                                            ))}
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            {passwordStrength <= 2 ? 'Weak — we recommend a stronger password' : passwordStrength <= 3 ? 'Fair' : 'Strong'}
+                                        </p>
+                                    </div>
+                                )}
+                                {/* Suggestions, not requirements — nothing here blocks submission. */}
+                                <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                                    {[
+                                        { label: 'At least 8 characters', met: formData.password.length >= 8 },
+                                        { label: 'One uppercase letter (A-Z)', met: /[A-Z]/.test(formData.password) },
+                                        { label: 'One lowercase letter (a-z)', met: /[a-z]/.test(formData.password) },
+                                        { label: 'One number (0-9)', met: /[0-9]/.test(formData.password) },
+                                        { label: 'One symbol (!@#$%...)', met: /[^a-zA-Z0-9]/.test(formData.password) },
+                                    ].map((rule) => (
+                                        <li
+                                            key={rule.label}
+                                            className={`flex items-center gap-1.5 ${rule.met ? 'text-accent-600 dark:text-accent-400' : 'text-gray-400 dark:text-gray-500'
+                                                }`}
+                                        >
+                                            <Check className={`w-3.5 h-3.5 shrink-0 ${rule.met ? 'opacity-100' : 'opacity-30'}`} />
+                                            {rule.label}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    Confirm Password
+                                </label>
+                                <div className="relative">
+                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <input
+                                        type={showConfirmPassword ? 'text' : 'password'}
+                                        name="confirmPassword"
+                                        value={formData.confirmPassword}
+                                        onChange={handleChange}
+                                        placeholder="Confirm your password"
+                                        className="w-full pl-12 pr-12 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent-500 focus:border-transparent"
+                                    />
                                     <button
-                                        onClick={handleNextStep}
-                                        disabled={isLoading}
-                                        className="flex-1 py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                                        type="button"
+                                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                                     >
-                                        {isLoading ? (
-                                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-                                        ) : (
-                                            <>
-                                                Create Account
-                                                <ArrowRight className="w-5 h-5" />
-                                            </>
-                                        )}
+                                        {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                                     </button>
                                 </div>
                             </div>
-                        </motion.div>
-                    )}
 
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    name="acceptTerms"
+                                    checked={formData.acceptTerms}
+                                    onChange={handleChange}
+                                    className="w-5 h-5 mt-0.5 rounded border-gray-300 text-accent-600 focus:ring-accent-500"
+                                />
+                                <span className="text-sm text-gray-600 dark:text-gray-400">
+                                    I agree to the{' '}
+                                    <Link to="/terms" className="text-accent-600 hover:text-accent-700">
+                                        Terms of Service
+                                    </Link>{' '}
+                                    and{' '}
+                                    <Link to="/privacy" className="text-accent-600 hover:text-accent-700">
+                                        Privacy Policy
+                                    </Link>
+                                </span>
+                            </label>
+
+                            <button
+                                type="submit"
+                                disabled={isLoading}
+                                className="w-full py-3 bg-accent-600 hover:bg-accent-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                {isLoading ? (
+                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                                ) : (
+                                    <>
+                                        Create Account
+                                        <ArrowRight className="w-5 h-5" />
+                                    </>
+                                )}
+                            </button>
+                        </form>
+
+                        <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
+                            Already have an account?{' '}
+                            <Link to="/login" className="text-accent-600 hover:text-accent-700 font-medium">
+                                Sign in
+                            </Link>
+                        </p>
+                    </motion.div>
                 </div>
             </div>
         </div>
