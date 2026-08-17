@@ -186,6 +186,11 @@ export const getExchangeRates = catchAsync(async (req, res) => {
   // Use a reference amount of 1 for rate computation when none provided.
   const amountNum  = amount ? parseFloat(amount) : null;
   const refAmount  = amountNum ?? 1;
+  // This is the live "preview" a user sees while typing, before ever clicking Get Quote —
+  // it must always already be the JAXOPAY rate, never Obiex's raw one, or the number on screen
+  // visibly jumps between "before" and "after" a quote is fetched. Same markup lookup + safety
+  // clamp as the real quotation flow (see applyMarkupToQuotation), just applied here too.
+  const markupPct = fromCurr !== toCurr ? await getSwapMarkupPercentage(fromCurr, toCurr) : 0;
 
   // ─── Strategy 1: Live Temporary Swap Quotation (Obiex primary, Quidax fallback) ──
   // Most accurate: includes real fees, uses the provider's own matching engine.
@@ -198,21 +203,30 @@ export const getExchangeRates = catchAsync(async (req, res) => {
     });
 
     if (quote && parseFloat(quote.to_amount) > 0) {
-      const fromAmt = parseFloat(quote.from_amount);
-      const toAmt   = parseFloat(quote.to_amount);
-      const rate    = toAmt / fromAmt;  // to_currency per 1 from_currency
+      const fromAmt  = parseFloat(quote.from_amount);
+      const rawToAmt = parseFloat(quote.to_amount);
+      const rawRate  = rawToAmt / fromAmt;  // to_currency per 1 from_currency
 
       // Sanity-check: if both currencies are crypto the rate should NOT be ~1.0
       // (1 BTC ≠ 1 USDT). A rate of ~1 for cross-crypto pairs means the API
-      // returned bad data — discard and fall through to the ticker cache.
+      // returned bad data — discard and fall through to the ticker cache. Runs on the
+      // provider's own raw rate, before markup, since this is checking for bad PROVIDER
+      // data, not anything markup could legitimately shift.
       const isCrossAsset = CRYPTO_SYMBOLS.has(fromCurr) && CRYPTO_SYMBOLS.has(toCurr)
                         && fromCurr !== toCurr
                         && !(fromCurr === 'USDT' || toCurr === 'USDT'
                           || fromCurr === 'USDC' || toCurr === 'USDC');
-      if (isCrossAsset && rate >= 0.9 && rate <= 1.1) {
-        logger.warn(`[ExchangeRates] ${CRYPTO_PROVIDER} quote for ${fromCurr}/${toCurr} returned suspicious rate ${rate} — discarding`);
+      if (isCrossAsset && rawRate >= 0.9 && rawRate <= 1.1) {
+        logger.warn(`[ExchangeRates] ${CRYPTO_PROVIDER} quote for ${fromCurr}/${toCurr} returned suspicious rate ${rawRate} — discarding`);
         throw new Error('Suspicious rate');
       }
+
+      // Never-exceed-raw clamp, same as confirmSwapQuotation/applyMarkupToQuotation — the
+      // preview must never promise more than a real quote could actually deliver.
+      const toAmt = markupPct
+        ? Math.min(markDownDelivered(rawToAmt, fromCurr, toCurr, markupPct), rawToAmt)
+        : rawToAmt;
+      const rate = toAmt / fromAmt;
 
       const exchangeAmount = amountNum != null ? toAmt : null;
 
@@ -226,7 +240,6 @@ export const getExchangeRates = catchAsync(async (req, res) => {
           fee_percentage: 0,
           amount: amountNum,
           exchange_amount: exchangeAmount,
-          quoted_price: quote.quoted_price,
           source: `${CRYPTO_PROVIDER}_swap_quote`,
           timestamp: new Date().toISOString(),
           expiry:    quote.expires_at || new Date(Date.now() + 15000).toISOString(),
@@ -238,9 +251,9 @@ export const getExchangeRates = catchAsync(async (req, res) => {
   }
 
   // ─── Strategy 2: Ticker cache fallback ───────────────────────────────────
-  const rate = await getLiveExchangeRate(fromCurr, toCurr);
+  const rawRate = await getLiveExchangeRate(fromCurr, toCurr);
 
-  if (!rate || rate <= 0) {
+  if (!rawRate || rawRate <= 0) {
     return res.status(200).json({
       success: false,
       error: `Live rate for ${fromCurr}/${toCurr} is temporarily unavailable. Please try again in a moment.`,
@@ -248,16 +261,22 @@ export const getExchangeRates = catchAsync(async (req, res) => {
     });
   }
 
-  const fee          = 0.01;
-  const rateWithFee  = rate * (1 - fee);
-  const exchangeAmt  = amountNum != null ? amountNum * rateWithFee : null;
+  const fee = 0.01;
+  const rawRateWithFee = rawRate * (1 - fee);
+  const rateWithFee = markupPct
+    ? Math.min(markDownDelivered(rawRateWithFee, fromCurr, toCurr, markupPct), rawRateWithFee)
+    : rawRateWithFee;
+  const exchangeAmt = amountNum != null ? amountNum * rateWithFee : null;
 
   res.status(200).json({
     success: true,
     data: {
       from: fromCurr,
       to:   toCurr,
-      rate,
+      // Both fields are the same final (fee + markup adjusted) number — no separate raw/fee
+      // breakdown is exposed, so there's nothing for the client to accidentally display that
+      // isn't already the final JAXOPAY rate.
+      rate: rateWithFee,
       rate_with_fee: rateWithFee,
       fee_percentage: fee * 100,
       amount: amountNum,
