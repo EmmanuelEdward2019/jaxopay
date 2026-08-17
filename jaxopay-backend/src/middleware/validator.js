@@ -21,11 +21,11 @@ export const signupValidation = [
     .isEmail()
     .normalizeEmail()
     .withMessage('Please provide a valid email address'),
+  // No complexity/length rule — any non-empty password is accepted server-side. Strength is
+  // advisory only, communicated in the UI (see Signup.jsx's strength meter), not enforced here.
   body('password')
-    .isLength({ min: 8 })
-    .withMessage('Password must be at least 8 characters long')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
+    .notEmpty()
+    .withMessage('Password is required'),
   body('phone')
     .optional()
     .isMobilePhone()
@@ -83,11 +83,10 @@ export const resetPasswordValidation = [
   body('token')
     .notEmpty()
     .withMessage('Reset token is required'),
+  // Same relaxed rule as signup — advisory strength only, not enforced.
   body('password')
-    .isLength({ min: 8 })
-    .withMessage('Password must be at least 8 characters long')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
+    .notEmpty()
+    .withMessage('Password is required'),
   validate,
 ];
 
@@ -96,10 +95,8 @@ export const changePasswordValidation = [
     .notEmpty()
     .withMessage('Current password is required'),
   body('newPassword')
-    .isLength({ min: 8 })
-    .withMessage('New password must be at least 8 characters long')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .withMessage('New password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
+    .notEmpty()
+    .withMessage('New password is required'),
   validate,
 ];
 

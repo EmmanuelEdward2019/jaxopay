@@ -148,7 +148,7 @@ router.post(
   '/users',
   restrictTo('admin', 'super_admin'),
   body('email').isEmail(),
-  body('password').isLength({ min: 8 }),
+  body('password').notEmpty(), // relaxed to match signup — advisory strength only
   body('phone').isString(),
   body('first_name').isString(),
   body('last_name').isString(),

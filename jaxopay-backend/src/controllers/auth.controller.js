@@ -133,108 +133,42 @@ const issueVerificationEmail = async (user, name) => {
   });
 };
 
-// Signup
+// Signup — nothing is written to `users` here. Signup data (password already hashed) is held in
+// `pending_signups` until the 6-digit email code is confirmed; the real account only gets
+// created at that point (see verifyEmailCode below). This is what lets someone who typo'd their
+// email/phone just retry with a correction instead of hitting "already exists" for an account
+// that was never actually theirs — pending_signups has no uniqueness constraint at all, and a
+// resubmission for the same email deletes-and-replaces the previous pending attempt outright.
 export const signup = catchAsync(async (req, res) => {
-  console.log('--- SIGNUP REQUEST START ---');
-  console.log('Body:', req.body);
   const { email, password, phone, country_code, metadata } = req.body;
 
-  // Check if user already exists
-  // Handle null/empty phone to avoid matching all users with null phones
-  let existingUser;
+  // Only a REAL, already-registered account blocks signup — never another pending, unverified
+  // attempt (there's nothing to conflict with on pending_signups).
   const phoneToCheck = phone && phone.trim() !== '' ? phone : null;
-
-  if (phoneToCheck) {
-    existingUser = await query(
-      'SELECT id, email, phone FROM users WHERE email = $1 OR phone = $2',
-      [email, phoneToCheck]
-    );
-  } else {
-    existingUser = await query(
-      'SELECT id, email, phone FROM users WHERE email = $1',
-      [email]
-    );
-  }
+  const existingUser = phoneToCheck
+    ? await query('SELECT id FROM users WHERE (email = $1 OR phone = $2) AND deleted_at IS NULL', [email, phoneToCheck])
+    : await query('SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL', [email]);
 
   if (existingUser.rows.length > 0) {
     throw new AppError('User with this email or phone already exists', 409);
   }
 
-  // Hash password
   const passwordHash = await bcrypt.hash(password, 12);
+  // Frontend sends first_name/last_name at the top level; older clients nest them under metadata.
+  const firstName = metadata?.first_name || req.body.first_name || 'User';
+  const lastName = metadata?.last_name || req.body.last_name || null;
 
-  // Create user and profile in a transaction
-  const result = await transaction(async (client) => {
-    // Create user
-    const userResult = await client.query(
-      `INSERT INTO users (email, phone, password_hash, country_code)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, email, phone, role, kyc_tier, kyc_status, created_at`,
-      [email, phone, passwordHash, country_code]
-    );
+  const verificationCode = generateNumericCode();
+  const codeHash = await bcrypt.hash(verificationCode, 10);
 
-    const user = userResult.rows[0];
-
-    // Create user profile (Always create one, even if empty).
-    // Frontend sends first_name/last_name at the top level; older clients nest them under metadata.
-    const firstName = metadata?.first_name || req.body.first_name || 'User';
-    const lastName = metadata?.last_name || req.body.last_name || user.id.substring(0, 8);
-
+  await transaction(async (client) => {
+    await client.query('DELETE FROM pending_signups WHERE email = $1', [email]);
     await client.query(
-      `INSERT INTO user_profiles (user_id, first_name, last_name, country)
-       VALUES ($1, $2, $3, $4)`,
-      [user.id, firstName, lastName, country_code || 'NG']
+      `INSERT INTO pending_signups
+       (email, phone, password_hash, first_name, last_name, country_code, code_hash, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + INTERVAL '15 minutes')`,
+      [email, phone || null, passwordHash, firstName, lastName, country_code || null, codeHash]
     );
-
-    // Create default wallets
-    const defaultCurrencies = ['NGN', 'USD'];
-    for (const currency of defaultCurrencies) {
-      await client.query(
-        `INSERT INTO wallets (user_id, currency, wallet_type, balance)
-         VALUES ($1, $2, $3, $4)`,
-        [user.id, currency, 'fiat', 0]
-      );
-    }
-
-    // No session/access token is issued here — email must be verified before the account can
-    // log in at all (see login()), so there's no working session to hand out yet. Store device
-    // info now anyway since we already have the fingerprint from this request.
-    await storeDeviceInfo(user.id, req.deviceInfo, (...args) => client.query(...args));
-
-    // OPTIONAL: Sync with Supabase Auth (if service role key is provided)
-    if (supabaseAdmin) {
-      try {
-        const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
-          email: email,
-          password: password, // Cross-platform sync
-          email_confirm: true,
-          user_metadata: { first_name: metadata?.first_name, last_name: metadata?.last_name }
-        });
-
-        if (authError) {
-          logger.warn('Supabase Auth sync failed (non-critical):', authError.message);
-        } else {
-          // Link Supabase UID to our public user record
-          await client.query('UPDATE users SET id = $1 WHERE id = $2', [authUser.user.id, user.id]);
-          user.id = authUser.user.id;
-        }
-      } catch (err) {
-        logger.error('Unexpected error during Supabase sync:', err);
-      }
-    }
-
-    // Verification code — generated after the Supabase sync above so it's tied to the final,
-    // real user_id in all cases (previously generated before it, so a ever-active Supabase sync
-    // would have orphaned the row against the pre-swap id).
-    const verificationCode = generateNumericCode();
-    const codeHash = await bcrypt.hash(verificationCode, 10);
-    await client.query(
-      `INSERT INTO otp_codes (user_id, code_hash, purpose, expires_at)
-       VALUES ($1, $2, 'email_verification', NOW() + INTERVAL '15 minutes')`,
-      [user.id, codeHash]
-    );
-
-    return { user, verificationCode };
   });
 
   // Send verification email (async, outside transaction)
@@ -243,28 +177,18 @@ export const signup = catchAsync(async (req, res) => {
     subject: 'Verify your JAXOPAY account',
     template: 'email-verification',
     data: {
-      name: metadata?.first_name || 'User',
-      verificationCode: result.verificationCode,
+      name: firstName,
+      verificationCode,
     },
   }).catch(err => logger.error('Error sending verification email:', err));
 
-  logger.info('User signed up successfully:', { userId: result.user.id, email });
+  logger.info('Signup pending email verification:', { email });
 
   res.status(201).json({
     success: true,
-    message: 'Account created successfully. Please check your email for a 6-digit code to verify your account.',
-    data: {
-      user: {
-        id: result.user.id,
-        email: result.user.email,
-        phone: result.user.phone,
-        role: result.user.role,
-        kyc_tier: result.user.kyc_tier,
-        kyc_status: result.user.kyc_status,
-        created_at: result.user.created_at,
-      },
-      // No session — the account can't log in until the email is verified.
-    },
+    message: 'Please check your email for a 6-digit code to verify your account.',
+    // No user id and no session — nothing exists in `users` until the code is confirmed.
+    data: { email },
   });
 });
 
@@ -835,47 +759,146 @@ export const verifyEmailCode = catchAsync(async (req, res) => {
      WHERE u.email = $1 AND u.deleted_at IS NULL`,
     [email]
   );
-  if (userResult.rows.length === 0) {
-    throw new AppError('Invalid verification code', 400);
-  }
-  const user = userResult.rows[0];
+  let user = userResult.rows[0];
 
-  // Already verified (e.g. a second submit after success, or a scanner beat them to a click on
-  // the old link-based flow during the transition) — idempotent success, still logs them in.
-  if (!user.is_email_verified) {
-    const otpResult = await query(
-      `SELECT id, code_hash, expires_at, attempts FROM otp_codes
-       WHERE user_id = $1 AND purpose = 'email_verification' AND used_at IS NULL
-       ORDER BY created_at DESC LIMIT 1`,
-      [user.id]
-    );
-
-    if (otpResult.rows.length === 0) {
-      throw new AppError('Invalid or expired verification code. Please request a new one.', 400);
-    }
-    const otp = otpResult.rows[0];
-
-    if (new Date(otp.expires_at) < new Date()) {
-      throw new AppError('Verification code has expired. Please request a new one.', 400);
-    }
-    if (otp.attempts >= 5) {
-      throw new AppError('Too many incorrect attempts. Please request a new code.', 429);
-    }
-
-    const isValid = await bcrypt.compare(String(code).trim(), otp.code_hash);
-    if (!isValid) {
-      await query('UPDATE otp_codes SET attempts = attempts + 1 WHERE id = $1', [otp.id]);
-      const remaining = 5 - (otp.attempts + 1);
-      throw new AppError(
-        remaining > 0 ? `Incorrect code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` : 'Too many incorrect attempts. Please request a new code.',
-        400
+  // Already a real, verified account (e.g. a second submit after success) — idempotent success,
+  // still logs them in. Anything else means no `users` row exists yet for this email, since
+  // signup no longer creates one — look for the pending signup instead and promote it.
+  if (!user || !user.is_email_verified) {
+    if (user) {
+      // Real account exists but isn't verified yet — a row from before this change (signup used
+      // to create the user row immediately; this handles anyone already sitting in that state
+      // rather than leaving them stuck), verified via the original otp_codes-based check.
+      const otpResult = await query(
+        `SELECT id, code_hash, expires_at, attempts FROM otp_codes
+         WHERE user_id = $1 AND purpose = 'email_verification' AND used_at IS NULL
+         ORDER BY created_at DESC LIMIT 1`,
+        [user.id]
       );
-    }
+      if (otpResult.rows.length === 0) {
+        throw new AppError('Invalid or expired verification code. Please request a new one.', 400);
+      }
+      const otp = otpResult.rows[0];
 
-    await query('UPDATE otp_codes SET used_at = NOW() WHERE id = $1', [otp.id]);
-    await query('UPDATE users SET is_email_verified = true WHERE id = $1', [user.id]);
-    user.is_email_verified = true;
-    logger.info('Email verified via code:', { userId: user.id });
+      if (new Date(otp.expires_at) < new Date()) {
+        throw new AppError('Verification code has expired. Please request a new one.', 400);
+      }
+      if (otp.attempts >= 5) {
+        throw new AppError('Too many incorrect attempts. Please request a new code.', 429);
+      }
+
+      const isValid = await bcrypt.compare(String(code).trim(), otp.code_hash);
+      if (!isValid) {
+        await query('UPDATE otp_codes SET attempts = attempts + 1 WHERE id = $1', [otp.id]);
+        const remaining = 5 - (otp.attempts + 1);
+        throw new AppError(
+          remaining > 0 ? `Incorrect code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` : 'Too many incorrect attempts. Please request a new code.',
+          400
+        );
+      }
+
+      await query('UPDATE otp_codes SET used_at = NOW() WHERE id = $1', [otp.id]);
+      await query('UPDATE users SET is_email_verified = true WHERE id = $1', [user.id]);
+      user.is_email_verified = true;
+      logger.info('Email verified via code (legacy row):', { userId: user.id });
+    } else {
+      const pendingResult = await query(
+        `SELECT * FROM pending_signups WHERE email = $1 ORDER BY created_at DESC LIMIT 1`,
+        [email]
+      );
+      if (pendingResult.rows.length === 0) {
+        throw new AppError('Invalid or expired verification code. Please sign up again.', 400);
+      }
+      const pending = pendingResult.rows[0];
+
+      if (new Date(pending.expires_at) < new Date()) {
+        throw new AppError('Verification code has expired. Please request a new one.', 400);
+      }
+      if (pending.attempts >= 5) {
+        throw new AppError('Too many incorrect attempts. Please request a new code.', 429);
+      }
+
+      const isValid = await bcrypt.compare(String(code).trim(), pending.code_hash);
+      if (!isValid) {
+        await query('UPDATE pending_signups SET attempts = attempts + 1 WHERE id = $1', [pending.id]);
+        const remaining = 5 - (pending.attempts + 1);
+        throw new AppError(
+          remaining > 0 ? `Incorrect code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` : 'Too many incorrect attempts. Please request a new code.',
+          400
+        );
+      }
+
+      // Code confirmed — this is the moment the account actually gets created. Wrapped in a
+      // transaction with the pending row's own deletion so a crash partway through can't leave
+      // a promoted user AND a still-usable pending row (which could re-promote on retry and
+      // collide with the users.email unique constraint).
+      try {
+        const created = await transaction(async (client) => {
+          const userInsert = await client.query(
+            `INSERT INTO users (email, phone, password_hash, country_code, is_email_verified)
+             VALUES ($1, $2, $3, $4, true)
+             RETURNING id, email, role, kyc_tier, is_email_verified, is_active`,
+            [pending.email, pending.phone, pending.password_hash, pending.country_code]
+          );
+          const newUser = userInsert.rows[0];
+
+          const lastName = pending.last_name || newUser.id.substring(0, 8);
+          await client.query(
+            `INSERT INTO user_profiles (user_id, first_name, last_name, country)
+             VALUES ($1, $2, $3, $4)`,
+            [newUser.id, pending.first_name || 'User', lastName, pending.country_code || 'NG']
+          );
+
+          for (const currency of ['NGN', 'USD']) {
+            await client.query(
+              `INSERT INTO wallets (user_id, currency, wallet_type, balance) VALUES ($1, $2, 'fiat', 0)`,
+              [newUser.id, currency]
+            );
+          }
+
+          await storeDeviceInfo(newUser.id, req.deviceInfo, (...args) => client.query(...args));
+
+          // OPTIONAL: Sync with Supabase Auth (if service role key is provided) — same
+          // best-effort behavior signup used to have before account creation moved here, minus
+          // the password field: only the bcrypt hash survives into pending_signups (the raw
+          // plaintext is never persisted), and Supabase's admin API needs the raw password, not
+          // a pre-computed hash. Currently inactive in every environment (no
+          // SUPABASE_SERVICE_ROLE_KEY configured) — if this is ever reactivated, a synced user
+          // would need to set their Supabase-side password separately (e.g. on first login).
+          if (supabaseAdmin) {
+            try {
+              const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+                email: pending.email,
+                email_confirm: true,
+                user_metadata: { first_name: pending.first_name, last_name: pending.last_name },
+              });
+              if (authError) {
+                logger.warn('Supabase Auth sync failed (non-critical):', authError.message);
+              } else {
+                await client.query('UPDATE users SET id = $1 WHERE id = $2', [authUser.user.id, newUser.id]);
+                newUser.id = authUser.user.id;
+              }
+            } catch (err) {
+              logger.error('Unexpected error during Supabase sync:', err);
+            }
+          }
+
+          await client.query('DELETE FROM pending_signups WHERE email = $1', [pending.email]);
+
+          return newUser;
+        });
+
+        user = { ...created, first_name: pending.first_name, last_name: pending.last_name || created.id.substring(0, 8), avatar_url: null };
+        logger.info('Signup promoted after email verification:', { userId: user.id, email: user.email });
+      } catch (err) {
+        // 23505 = unique_violation — someone else claimed this email/phone between signup and
+        // this verification (e.g. two pending signups for the same email both got verified).
+        if (err.code === '23505') {
+          throw new AppError('This email or phone was just registered. Please try logging in.', 409);
+        }
+        throw err;
+      }
+    }
   }
 
   if (!user.is_active) {
@@ -939,16 +962,40 @@ export const resendVerificationEmail = catchAsync(async (req, res) => {
 
   const generic = { success: true, message: 'If that account exists and needs verification, a new code has been sent.' };
 
+  // Legacy path: a real users row from before signup stopped creating one immediately, still
+  // sitting unverified.
   const result = await query(
     `SELECT id, email, is_email_verified FROM users WHERE email = $1 AND deleted_at IS NULL`,
     [email]
   );
-  if (result.rows.length === 0) return res.status(200).json(generic);
+  if (result.rows.length > 0) {
+    const user = result.rows[0];
+    if (!user.is_email_verified) await issueVerificationEmail(user);
+    return res.status(200).json(generic);
+  }
 
-  const user = result.rows[0];
-  if (user.is_email_verified) return res.status(200).json(generic);
+  // Normal path: an unpromoted pending signup — refresh its code/expiry/attempts and resend,
+  // rather than requiring the user to redo the whole signup form just to get a new code.
+  const pendingResult = await query(
+    `SELECT id, email, first_name FROM pending_signups WHERE email = $1 ORDER BY created_at DESC LIMIT 1`,
+    [email]
+  );
+  if (pendingResult.rows.length === 0) return res.status(200).json(generic);
 
-  await issueVerificationEmail(user);
+  const pending = pendingResult.rows[0];
+  const verificationCode = generateNumericCode();
+  const codeHash = await bcrypt.hash(verificationCode, 10);
+  await query(
+    `UPDATE pending_signups SET code_hash = $1, expires_at = NOW() + INTERVAL '15 minutes', attempts = 0 WHERE id = $2`,
+    [codeHash, pending.id]
+  );
+
+  await sendEmail({
+    to: pending.email,
+    subject: 'Verify your JAXOPAY account',
+    template: 'email-verification',
+    data: { name: pending.first_name || 'User', verificationCode },
+  });
 
   res.status(200).json(generic);
 });
