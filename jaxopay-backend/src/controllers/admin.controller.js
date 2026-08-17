@@ -513,6 +513,41 @@ export const suspendUser = catchAsync(async (req, res) => {
   });
 });
 
+// Delete a user's account directly (super_admin only). Distinct from
+// approveAccountDeletionRequest above: that path approves a user's OWN self-service request:
+// this one is the admin initiating deletion unprompted (e.g. freeing up an email/phone stuck on
+// an abandoned unverified signup so the real owner can register again). Both reuse the same
+// performAccountDeletion anonymization, so the effect is identical either way.
+export const deleteUserAccount = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+  const { reason } = req.body;
+
+  if (userId === req.user.id) {
+    throw new AppError('You cannot delete your own account from here.', 400);
+  }
+
+  const existing = await query('SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL', [userId]);
+  if (existing.rows.length === 0) {
+    throw new AppError('User not found', 404);
+  }
+
+  // Throws (400) if the wallet still has a balance — same guard the request-approval path gets.
+  await performAccountDeletion(userId);
+
+  logger.warn('User account deleted by admin:', { adminId: req.user.id, userId, reason });
+
+  await logAdminAction({
+    adminId: req.user.id,
+    action: 'delete_user_account',
+    targetId: userId,
+    targetType: 'user',
+    changes: { reason },
+    req
+  });
+
+  res.status(200).json({ success: true, message: 'Account deleted successfully.' });
+});
+
 // Verify KYC document (admin only)
 export const verifyKYCDocument = catchAsync(async (req, res) => {
   const { documentId } = req.params;

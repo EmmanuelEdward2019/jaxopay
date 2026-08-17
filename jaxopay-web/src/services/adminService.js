@@ -98,6 +98,17 @@ const adminService = {
         }
     },
 
+    // Delete user account directly (super_admin only) — anonymizes the account and frees the
+    // email/phone for reuse. Distinct from the account-deletion-requests approval flow.
+    deleteUserAccount: async (userId, reason) => {
+        try {
+            const response = await apiClient.post(`/admin/users/${userId}/delete`, { reason });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error?.response?.data?.message || error.message };
+        }
+    },
+
     // Get pending KYC documents
     getPendingKYC: async (params = {}) => {
         try {

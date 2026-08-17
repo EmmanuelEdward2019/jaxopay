@@ -8,6 +8,7 @@ import {
   getUser,
   updateUser,
   suspendUser,
+  deleteUserAccount,
   verifyKYCDocument,
   getSystemStats,
   getGrowthAnalytics,
@@ -198,6 +199,18 @@ router.post(
   body('reason').isString(),
   validate,
   suspendUser
+);
+
+// Delete user account directly - super_admin only (irreversible-in-effect: anonymizes the
+// account, frees the email/phone for reuse). See deleteUserAccount for how this differs from
+// the account-deletion-requests approval flow below.
+router.post(
+  '/users/:userId/delete',
+  restrictTo('super_admin'),
+  param('userId').isUUID(),
+  body('reason').optional().isString(),
+  validate,
+  deleteUserAccount
 );
 
 // Verify KYC document - Compliance Officer task

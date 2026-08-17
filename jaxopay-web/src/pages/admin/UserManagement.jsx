@@ -17,7 +17,8 @@ import {
     ChevronLeft,
     ChevronRight,
     Plus,
-    CheckCircle2
+    CheckCircle2,
+    Trash2
 } from 'lucide-react';
 import adminService from '../../services/adminService';
 import { formatDateTime } from '../../utils/formatters';
@@ -159,6 +160,19 @@ const UserManagement = () => {
             setShowUserModal(false);
         }
         setActionLoading(false);
+    };
+
+    // Returns the result so the modal can show a rejection reason (e.g. "still has a wallet
+    // balance") inline instead of the deletion silently appearing to do nothing.
+    const handleDeleteUser = async (userId, reason) => {
+        setActionLoading(true);
+        const result = await adminService.deleteUserAccount(userId, reason);
+        if (result.success) {
+            fetchUsers();
+            setShowUserModal(false);
+        }
+        setActionLoading(false);
+        return result;
     };
 
     const totalPages = Math.ceil(pagination.total / pagination.limit);
@@ -409,6 +423,7 @@ const UserManagement = () => {
                         onClose={() => setShowUserModal(false)}
                         onUpdate={handleUpdateUser}
                         onSuspend={(reason) => handleSuspendUser(selectedUser.id, reason)}
+                        onDelete={(reason) => handleDeleteUser(selectedUser.id, reason)}
                         loading={actionLoading}
                     />
                 )}
@@ -1073,7 +1088,7 @@ const DeletionRequestsModal = ({ onClose }) => {
 };
 
 // User Detail Modal
-const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
+const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading }) => {
     const [editMode, setEditMode] = useState(false);
     const [form, setForm] = useState({
         kyc_tier: user.kyc_tier || 0,
@@ -1089,6 +1104,10 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
     const [saving, setSaving] = useState(false);
     const [suspendReason, setSuspendReason] = useState('');
     const [showSuspendForm, setShowSuspendForm] = useState(false);
+    const [deleteReason, setDeleteReason] = useState('');
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [showDeleteForm, setShowDeleteForm] = useState(false);
+    const [deleteError, setDeleteError] = useState(null);
     const [userFeatures, setUserFeatures] = useState([]);
     const [featuresLoading, setFeaturesLoading] = useState(false);
     const [financialControls, setFinancialControls] = useState(null);
@@ -1098,9 +1117,20 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
     const [withdrawalLimitInput, setWithdrawalLimitInput] = useState('');
     const { user: currentUser } = useAuthStore();
     // Backend: PATCH /admin/users/:userId (kyc_tier/status/roles) is admin/super_admin only;
-    // POST /admin/users/:userId/suspend is COMPLIANCE_ACCESS (admin/super_admin/compliance_officer).
+    // POST /admin/users/:userId/suspend is COMPLIANCE_ACCESS (admin/super_admin/compliance_officer);
+    // POST /admin/users/:userId/delete is super_admin only (see admin.routes.js).
     const canEditUser = ['admin', 'super_admin'].includes(currentUser?.role);
     const canSuspendUser = ['admin', 'super_admin', 'compliance_officer'].includes(currentUser?.role);
+    const canDeleteUser = currentUser?.role === 'super_admin';
+    const deleteConfirmMatches = deleteConfirmText.trim().toUpperCase() === 'DELETE';
+
+    const handleDeleteClick = async () => {
+        setDeleteError(null);
+        const result = await onDelete(deleteReason);
+        if (!result.success) {
+            setDeleteError(result.error || 'Could not delete this account.');
+        }
+    };
 
     const availableProducts = [
         'crypto', 'virtual_cards', 'utilities', 'bill_payments', 'cross_border', 'wallet_transfers'
@@ -1480,6 +1510,70 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, loading }) => {
                                             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg disabled:opacity-50"
                                         >
                                             {loading ? 'Suspending...' : 'Confirm Suspension'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Delete Account Section — super_admin only. Anonymizes the account
+                        (email/phone freed for reuse) rather than a hard row delete; blocked
+                        server-side if the wallet still has a balance. */}
+                    {user.status !== 'deleted' && canDeleteUser && (
+                        <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+                            {!showDeleteForm ? (
+                                <button
+                                    onClick={() => { setShowDeleteForm(true); setDeleteError(null); }}
+                                    className="inline-flex items-center gap-2 px-4 py-2 text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg font-medium"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                    Delete Account
+                                </button>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/30 rounded-lg">
+                                        <p className="text-sm text-red-700 dark:text-red-400 font-medium">
+                                            This anonymizes the account and frees up {user.email} for a new signup.
+                                            It cannot be undone. Blocked if the wallet still has a balance.
+                                        </p>
+                                    </div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        Reason (optional, for the audit log)
+                                    </label>
+                                    <textarea
+                                        value={deleteReason}
+                                        onChange={(e) => setDeleteReason(e.target.value)}
+                                        placeholder="e.g. Abandoned unverified signup, freeing email for reuse..."
+                                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                                        rows={3}
+                                    />
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        Type <span className="font-bold">DELETE</span> to confirm
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={deleteConfirmText}
+                                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                                        placeholder="DELETE"
+                                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+                                    />
+                                    {deleteError && (
+                                        <p className="text-sm text-red-600 dark:text-red-400">{deleteError}</p>
+                                    )}
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => { setShowDeleteForm(false); setDeleteConfirmText(''); setDeleteError(null); }}
+                                            className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-lg"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleDeleteClick}
+                                            disabled={!deleteConfirmMatches || loading}
+                                            className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white font-medium rounded-lg disabled:opacity-50"
+                                        >
+                                            {loading ? 'Deleting...' : 'Permanently Delete Account'}
                                         </button>
                                     </div>
                                 </div>
