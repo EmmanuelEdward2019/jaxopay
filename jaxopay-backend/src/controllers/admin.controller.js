@@ -182,6 +182,7 @@ export const getUsers = catchAsync(async (req, res) => {
   const result = await query(
     `SELECT u.id, u.email, u.phone, u.role, u.roles, u.kyc_tier, u.is_active,
             u.is_email_verified, u.two_fa_enabled, u.created_at, u.deleted_at,
+            u.last_login_at,
             up.first_name, up.last_name, up.country, up.avatar_url
      FROM users u
      LEFT JOIN user_profiles up ON u.id = up.user_id
@@ -357,6 +358,7 @@ export const getUser = catchAsync(async (req, res) => {
   const result = await query(
     `SELECT u.id, u.email, u.phone, u.role, u.roles, u.kyc_tier, u.is_active,
             u.is_email_verified, u.two_fa_enabled, u.created_at, u.updated_at, u.deleted_at,
+            u.last_login_at,
             up.first_name, up.last_name, up.date_of_birth, up.gender,
             up.country, up.city, up.address_line1, up.address_line2, up.postal_code, up.avatar_url
      FROM users u
