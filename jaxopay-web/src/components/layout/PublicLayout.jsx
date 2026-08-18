@@ -323,6 +323,7 @@ export default function PublicLayout({ children }) {
                 <li><Link to="/privacy" className="text-sm hover:text-accent-400 transition-colors">Privacy Policy</Link></li>
                 <li><Link to="/terms" className="text-sm hover:text-accent-400 transition-colors">Terms & Conditions</Link></li>
                 <li><Link to="/cookies" className="text-sm hover:text-accent-400 transition-colors">Cookie Policy</Link></li>
+                <li><Link to="/sanctions" className="text-sm hover:text-accent-400 transition-colors">Sanctions Policy</Link></li>
                 <li><a href="/legal/aml-cft-policy.pdf" target="_blank" rel="noopener noreferrer" className="text-sm hover:text-accent-400 transition-colors">AML &amp; CFT Policy</a></li>
               </ul>
             </div>
