@@ -10,6 +10,7 @@ import {
   requestTierUpgrade,
   getSmileIdConfig,
   postSmileAuthPackage,
+  postSmileV3Token,
   submitSmileBasicKyc,
   submitSmileBiometricKyc,
   prepareSmileBiometricJob,
@@ -35,6 +36,7 @@ router.get('/tier-limits', getKYCLimits);
 // Smile ID (mobile + server KYC)
 router.get('/smile/config', getSmileIdConfig);
 router.post('/smile/auth-package', postSmileAuthPackage);
+router.post('/smile/v3-token', postSmileV3Token);
 router.post(
   '/smile/basic-kyc',
   body('country').isLength({ min: 2, max: 2 }).withMessage('country must be ISO2'),

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import '@smile_identity/smart-camera-web';
 import {
     Shield, Upload, Check, X, AlertTriangle, Clock,
     FileText, Camera, CreditCard, Info, Home,
@@ -41,6 +40,37 @@ const ADDRESS_DOCUMENT_TYPES = [
 
 const KYC_DOC_NUMBER_STORAGE_KEY = 'jaxopay-kyc-doc-numbers';
 const KYC_DOC_NUMBER_HISTORY_MAX = 15;
+
+// Smile ID's hosted Web SDK (v12) — capture AND submission both happen inside its own modal
+// iframe, so there's no local camera UI to wire up on our side at all, unlike the old Smart
+// Camera Web component this replaces. Not published to npm — the script tag is the only
+// supported install path. Loaded lazily (only once a user actually opens KYC) and cached at
+// module scope so remounting this page never injects it twice.
+const SMILE_V12_SCRIPT_URL = 'https://cdn.usesmileid.com/inline/v12/js/script.min.js';
+let smileV12ScriptPromise = null;
+function loadSmileV12Script() {
+    if (window.SmileIdentity) return Promise.resolve();
+    if (!smileV12ScriptPromise) {
+        smileV12ScriptPromise = new Promise((resolve, reject) => {
+            const existing = document.querySelector(`script[src="${SMILE_V12_SCRIPT_URL}"]`);
+            if (existing) {
+                existing.addEventListener('load', () => resolve());
+                existing.addEventListener('error', () => reject(new Error('Could not load the verification script.')));
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = SMILE_V12_SCRIPT_URL;
+            script.async = true;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Could not load the verification script.'));
+            document.head.appendChild(script);
+        }).catch((err) => {
+            smileV12ScriptPromise = null; // let a retry re-attempt instead of caching a failure forever
+            throw err;
+        });
+    }
+    return smileV12ScriptPromise;
+}
 
 function loadKycDocNumberHistory() {
     try {
@@ -110,32 +140,15 @@ const KYC = () => {
     });
 
     // SmileID state
-    const smileCameraHostRef = useRef(null);
-    const smileSubmittingRef = useRef(false);
     const manualSelfieVideoRef = useRef(null);
     const manualSelfieStreamRef = useRef(null);
     const selfieInputRef = useRef(null);
     const addressDocInputRef = useRef(null);
 
     const [smileConfigured, setSmileConfigured] = useState(false);
-    const [showCameraModal, setShowCameraModal] = useState(false);
+    const [openingSmileVerification, setOpeningSmileVerification] = useState(false);
     const [showManualSelfieCamera, setShowManualSelfieCamera] = useState(false);
     const [docNumberHistoryTick, setDocNumberHistoryTick] = useState(0);
-
-    // SmileID form ref for camera callback
-    const smileFormRef = useRef({ first_name: '', last_name: '', country: 'NG', id_type: 'NIN_V2', id_number: '', dob: '' });
-
-    useEffect(() => {
-        const [first, ...rest] = formData.fullName.trim().split(/\s+/);
-        smileFormRef.current = {
-            first_name: first || '',
-            last_name: rest.join(' ') || '',
-            country: formData.nationality,
-            id_type: formData.documentType === 'national_id' ? 'NATIONAL_ID' : 'NIN_V2',
-            id_number: formData.documentNumber || '',
-            dob: formData.dateOfBirth || '',
-        };
-    }, [formData.fullName, formData.nationality, formData.documentType, formData.documentNumber, formData.dateOfBirth]);
 
     // ── Data fetching ────────────────────────────────────────────────
     const fetchKYCData = useCallback(async () => {
@@ -258,58 +271,86 @@ const KYC = () => {
     // next fetch. Tier 1 is the only one with no async review step, hence handleSaveTier1 above
     // calling /kyc/upgrade explicitly right after saving the profile.
 
-    // ── SmileID Camera (Tier 2 — liveness) ──────────────────────────────
-    useEffect(() => {
-        if (!showCameraModal || !smileCameraHostRef.current) return undefined;
-        const host = smileCameraHostRef.current;
-        host.innerHTML = '';
-        // No `capture-id` attribute: Tier 2 only needs a selfie + liveness capture, not a photo of
-        // the physical ID document — the typed document number (sent as idInfo) is what Smile
-        // verifies against, so a card photo is redundant. See @smile_identity/smart-camera-web's
-        // README: omitting capture-id skips straight from liveness to the selfie review screen.
-        const el = document.createElement('smart-camera-web');
-
-        const onImages = async (e) => {
-            const { images } = e.detail || {};
-            if (!images?.length) {
-                setError('No images captured. Please try again.');
-                setShowCameraModal(false);
+    // ── SmileID hosted Web SDK (Tier 2 — liveness) ──────────────────────
+    // v12 opens and owns its own modal iframe — consent, ID-number entry (pre-filled below so
+    // that screen is skipped), then selfie + liveness capture, then submits straight to Smile ID's
+    // V3 API itself. Nothing comes back to this page except onSuccess/onClose/onError; the actual
+    // verdict arrives later on our webhook (processSmileIdentity), same as every other KYC path.
+    const handleOpenSmileVerification = async () => {
+        setError(null);
+        const [first, ...rest] = formData.fullName.trim().split(/\s+/);
+        if (!first || rest.length === 0) {
+            setError('Please enter your full first and last name before verifying.');
+            return;
+        }
+        if (!formData.documentNumber.trim()) {
+            setError('Please enter your document number before verifying.');
+            return;
+        }
+        setOpeningSmileVerification(true);
+        try {
+            await loadSmileV12Script();
+            const tokenRes = await kycService.getSmileV3Token('biometric_kyc');
+            if (!tokenRes.success || !tokenRes.data?.token) {
+                setError(tokenRes.error || 'Could not start verification session.');
                 return;
             }
-            smileSubmittingRef.current = true;
-            setSubmitting(true); setError(null);
-            const f = smileFormRef.current;
-            try {
-                const result = await kycService.submitSmileBiometric({
-                    first_name: f.first_name.trim(), last_name: f.last_name.trim(),
-                    country: f.country.trim().toUpperCase(), id_type: f.id_type.trim(),
-                    id_number: f.id_number.trim(), dob: f.dob?.trim() || undefined, images,
-                });
-                if (result.success) {
-                    setSuccess(result.message || result.data?.message || 'Verification submitted! We will update you when processing completes.');
-                    fetchKYCData();
-                } else { setError(result.error || 'Submission failed'); }
-            } finally {
-                smileSubmittingRef.current = false;
-                setSubmitting(false); setShowCameraModal(false);
-            }
-        };
+            const idType = formData.documentType === 'national_id' ? 'NATIONAL_ID' : 'NIN';
+            const country = (formData.nationality || 'NG').toUpperCase();
+            // user_details requires at least one contact method if supplied at all, and the phone
+            // (if any) must be E.164 — if neither a valid email nor E.164 phone is on file, omit
+            // the object entirely and let the in-flow form collect it, rather than risking an
+            // init-time validation throw over an incomplete/malformed object.
+            const e164Phone = /^\+[1-9]\d{6,14}$/.test(profile?.phone || '') ? profile.phone : null;
+            const hasContact = !!(profile?.email || e164Phone);
 
-        const onClose = () => {
-            if (smileSubmittingRef.current) return;
-            setShowCameraModal(false);
-        };
-        el.addEventListener('imagesComputed', onImages);
-        el.addEventListener('close', onClose);
-        el.addEventListener('backExit', onClose);
-        host.appendChild(el);
-        return () => {
-            el.removeEventListener('imagesComputed', onImages);
-            el.removeEventListener('close', onClose);
-            el.removeEventListener('backExit', onClose);
-            el.remove(); host.innerHTML = '';
-        };
-    }, [showCameraModal]);
+            window.SmileIdentity({
+                token: tokenRes.data.token,
+                product: 'biometric_kyc',
+                callback_url: tokenRes.data.callback_url,
+                environment: tokenRes.data.environment === 'production' ? 'production' : 'sandbox',
+                partner_details: {
+                    partner_id: tokenRes.data.partnerId,
+                    name: 'JAXOPAY',
+                    logo_url: `${window.location.origin}/logo-icon.png`,
+                    policy_url: `${window.location.origin}/privacy`,
+                    theme_color: '#1FAD6B',
+                },
+                ...(hasContact ? {
+                    user_details: {
+                        given_names: first,
+                        last_name: rest.join(' '),
+                        ...(profile?.email ? { email: profile.email } : {}),
+                        ...(e164Phone ? { phone_number: e164Phone } : {}),
+                    },
+                } : {}),
+                id_info: {
+                    [country]: { [idType]: { id_number: formData.documentNumber.trim() } },
+                },
+                partner_params: {
+                    internal_reference: `kyc-tier2-${Date.now()}`,
+                },
+                onSuccess: () => {
+                    setSuccess('Verification submitted! We will update you when processing completes.');
+                    fetchKYCData();
+                },
+                onClose: () => {
+                    // User closed the flow — intent, not an error.
+                },
+                onError: (message) => {
+                    if (message === 'SmileIdentity::ConsentDenied') {
+                        setError('Verification requires consent to continue.');
+                    } else {
+                        setError(message || 'Could not complete verification. Please try again.');
+                    }
+                },
+            });
+        } catch (err) {
+            setError(err?.message || 'Could not start verification. Please try again.');
+        } finally {
+            setOpeningSmileVerification(false);
+        }
+    };
 
     // ── Manual selfie camera ─────────────────────────────────────────
     useEffect(() => {
@@ -606,7 +647,8 @@ const KYC = () => {
                                                     selfieInputRef={selfieInputRef}
                                                     docNumberSuggestions={docNumberSuggestions}
                                                     smileConfigured={smileConfigured}
-                                                    onOpenSmileCamera={() => setShowCameraModal(true)}
+                                                    onOpenSmileCamera={handleOpenSmileVerification}
+                                                    openingSmileVerification={openingSmileVerification}
                                                     onOpenManualSelfie={() => { setError(null); setShowManualSelfieCamera(true); }}
                                                     onSubmit={handleSubmitTier2}
                                                     submitting={submitting}
@@ -669,28 +711,6 @@ const KYC = () => {
 
             {/* Previous Submissions */}
             {documents.length > 0 && <SubmittedDocuments documents={documents} />}
-
-            {/* Camera Modal (SmileID) */}
-            {showCameraModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 relative">
-                        <button type="button"
-                            className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-muted hover:bg-muted/80"
-                            onClick={() => { if (!smileSubmittingRef.current) setShowCameraModal(false); }}>
-                            <X className="w-5 h-5 text-foreground" />
-                        </button>
-                        <p className="text-sm text-muted-foreground mb-3 pr-10">
-                            Allow camera access, then follow on-screen steps: liveness capture, then selfie review.
-                        </p>
-                        <div ref={smileCameraHostRef} className="min-h-[320px] w-full relative" />
-                        {submitting && (
-                            <div className="mt-3 text-center text-sm font-medium text-primary">
-                                Uploading images — please keep this page open...
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
 
             {/* Manual Selfie Camera Modal */}
             {showManualSelfieCamera && (
@@ -820,7 +840,7 @@ const Tier1Form = ({ formData, updateField, onSave, saving, nationalities }) => 
 
 const Tier2Form = ({
     formData, updateField, handleFileChange, selfieInputRef,
-    docNumberSuggestions, smileConfigured, onOpenSmileCamera, onOpenManualSelfie, onSubmit, submitting, isValid,
+    docNumberSuggestions, smileConfigured, onOpenSmileCamera, openingSmileVerification, onOpenManualSelfie, onSubmit, submitting, isValid,
 }) => (
     <div className="space-y-6">
         {/* Document Type Selector */}
@@ -868,9 +888,9 @@ const Tier2Form = ({
                         </div>
                     </div>
                     <button type="button" onClick={onOpenSmileCamera}
-                        disabled={submitting || !formData.fullName.trim() || !formData.documentNumber.trim()}
+                        disabled={submitting || openingSmileVerification || !formData.fullName.trim() || !formData.documentNumber.trim()}
                         className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                        <Camera className="w-5 h-5" /> Open Camera - Liveness Capture
+                        <Camera className="w-5 h-5" /> {openingSmileVerification ? 'Starting verification…' : 'Open Camera - Liveness Capture'}
                     </button>
                     {(!formData.fullName.trim() || !formData.documentNumber.trim()) && (
                         <p className="text-xs text-muted-foreground mt-2 text-center">Enter your name and document number above first</p>

@@ -194,21 +194,51 @@ async function creditUserWallet(reference, amount, currency) {
 
 /**
  * Smile ID — Basic KYC / job callbacks (signature verified in webhookVerifier).
+ *
+ * Two integration generations deliver here now:
+ *  - v1/v2 (RN native SDK's direct-to-Smile submission, and the REST relay path
+ *    submitBiometricKycJob uses): we chose job_id/user_id ourselves at submission time and
+ *    already have a 'pending' kyc_documents row keyed on document_number = `SMILE:${job_id}`, so
+ *    this is a plain UPDATE. Partner params — including user_id — arrive under PartnerParams/
+ *    partner_params, per the SDK's own docs.
+ *  - v3 (web dashboard's hosted Web SDK): job_id/user_id are server-generated, not partner-
+ *    supplied, so there is no pre-existing pending row to find, and the correlation id is
+ *    whatever we set in `partner_params` at token-mint time (postSmileV3Token below sets
+ *    `internal_user_id`) rather than a real user_id. This path INSERTS the row instead.
+ * The exact v3 webhook field names are Smile ID's documented ResultCode/ResultText/job_id/
+ * partner_params contract, followed as closely as the available docs allow — if a payload doesn't
+ * match either shape, it's logged in full below (never silently dropped) so a real example can
+ * correct any mismatch.
  */
 async function processSmileIdentity(body) {
     const b = body?.Information || body?.information || body;
     const partnerParams = b.PartnerParams || b.partner_params || {};
-    const jobId = partnerParams.job_id;
-    const userId = partnerParams.user_id;
     const rawCode = b.ResultCode ?? b.result_code;
     if (rawCode === undefined || rawCode === null || rawCode === '') {
-        logger.warn('[WEBHOOK] Smile ID: missing result code');
+        logger.warn('[WEBHOOK] Smile ID: missing result code', { payload: JSON.stringify(body).slice(0, 2000) });
         return;
     }
     const resultCode = String(rawCode).padStart(4, '0');
 
+    // v1/v2: we minted job_id/user_id ourselves, both travel in partner_params.
+    let jobId = partnerParams.job_id;
+    let userId = partnerParams.user_id;
+    let isV3 = false;
+
+    // v3: job_id/user_id are server-generated (top-level, camelCase per the v12 docs), and our
+    // own correlation id is whatever we bound into partner_params at token-mint time.
     if (!jobId || !userId) {
-        logger.warn('[WEBHOOK] Smile ID: missing job_id or user_id');
+        const v3JobId = b.job_id ?? b.jobId ?? b.JobId;
+        const v3UserId = partnerParams.internal_user_id ?? b.internal_user_id;
+        if (v3JobId && v3UserId) {
+            jobId = v3JobId;
+            userId = v3UserId;
+            isV3 = true;
+        }
+    }
+
+    if (!jobId || !userId) {
+        logger.warn('[WEBHOOK] Smile ID: missing job_id or user_id', { payload: JSON.stringify(body).slice(0, 2000) });
         return;
     }
 
@@ -221,22 +251,45 @@ async function processSmileIdentity(body) {
 
     const docNumber = `SMILE:${jobId}`;
 
-    const docUpdate = await query(
-        `UPDATE kyc_documents
-         SET status = $1,
-             rejection_reason = $2,
-             reviewed_at = NOW(),
-             updated_at = NOW()
-         WHERE user_id = $3::uuid AND document_number = $4
-           AND document_type IN ('smile_basic_kyc', 'smile_biometric_kyc')
-         RETURNING document_type`,
-        [
-            approved ? 'approved' : 'rejected',
-            approved ? null : (b.ResultText || b.result_text || 'Verification did not pass'),
-            userId,
-            docNumber,
-        ]
-    );
+    let docUpdate;
+    if (isV3) {
+        // No pending row was ever created for this path (the hosted SDK talks to Smile directly,
+        // with no prepare-style call to our backend first) — insert the final result directly.
+        // kyc_documents has no unique constraint on (user_id, document_number), so a duplicate
+        // webhook delivery would insert a second row rather than upsert; Smile ID webhooks are
+        // idempotent-by-intent but not guaranteed exactly-once, same as every other provider
+        // webhook in this file — acceptable here since reads key off the latest row by tier logic
+        // below, not row count.
+        docUpdate = await query(
+            `INSERT INTO kyc_documents
+             (user_id, document_type, document_number, document_url, selfie_url, status, rejection_reason, tier, reviewed_at)
+             VALUES ($1::uuid, 'smile_biometric_kyc', $2, 'https://jaxopay.com/kyc/smile-web-v3', null, $3, $4, 'tier_2', NOW())
+             RETURNING document_type`,
+            [
+                userId,
+                docNumber,
+                approved ? 'approved' : 'rejected',
+                approved ? null : (b.ResultText || b.result_text || 'Verification did not pass'),
+            ]
+        );
+    } else {
+        docUpdate = await query(
+            `UPDATE kyc_documents
+             SET status = $1,
+                 rejection_reason = $2,
+                 reviewed_at = NOW(),
+                 updated_at = NOW()
+             WHERE user_id = $3::uuid AND document_number = $4
+               AND document_type IN ('smile_basic_kyc', 'smile_biometric_kyc')
+             RETURNING document_type`,
+            [
+                approved ? 'approved' : 'rejected',
+                approved ? null : (b.ResultText || b.result_text || 'Verification did not pass'),
+                userId,
+                docNumber,
+            ]
+        );
+    }
 
     if (docUpdate.rowCount === 0) {
         logger.warn(`[WEBHOOK] Smile ID: no kyc_documents row for job ${jobId} user ${userId}`);

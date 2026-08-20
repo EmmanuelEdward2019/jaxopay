@@ -173,6 +173,49 @@ export function getMobileAuthPackage() {
   };
 }
 
+/**
+ * Mint a short-lived v3 auth token (POST /v3/token) for the hosted Web SDK — the browser must
+ * never see the long-lived API key, so this always happens server-side. Confirmed contract
+ * (docs.usesmileid.com/api-reference/set-up/access): auth via smileid-partner-id/smileid-api-key
+ * HEADERS (not signed like the v1/v2 flows above), body is multipart/form-data — a JSON body is
+ * rejected with 415. Tokens expire 15 minutes after issuance; mint one per verification session.
+ * @param {object} opts
+ * @param {string} opts.userId - bound into the token so it round-trips to the webhook.
+ * @param {string} [opts.product] - e.g. 'biometric_kyc'. Optional per the API, but scopes the token.
+ */
+export async function mintV3Token({ userId, product }) {
+  const { apiKey, partnerId } = getSmileCredentials();
+  if (!apiKey || !partnerId) {
+    throw new Error('Identity verification is not configured on the server');
+  }
+
+  const form = new FormData();
+  if (userId != null) form.append('user_id', String(userId));
+  if (product) form.append('product', product);
+  // Echoed back on the webhook per docs — our own correlation id, since v3 job_id/user_id are
+  // server-generated and we no longer choose them ourselves for this flow.
+  form.append('partner_params', JSON.stringify({ internal_user_id: String(userId) }));
+
+  const base = getSmileApiBase(); // https://api.smileidentity.com or https://testapi.smileidentity.com — no /v1 suffix
+  const url = `${base}/v3/token`;
+
+  try {
+    const res = await axios.post(url, form, {
+      headers: {
+        'smileid-partner-id': partnerId,
+        'smileid-api-key': apiKey,
+      },
+      timeout: 20000,
+    });
+    if (!res.data?.token) throw new Error('Smile ID did not return a token');
+    return { token: res.data.token, environment: base.includes('testapi') ? 'sandbox' : 'production' };
+  } catch (err) {
+    const msg = err.response?.data || err.message;
+    logger.error('[SmileID] v3/token failed:', typeof msg === 'object' ? JSON.stringify(msg) : msg);
+    throw new Error(err.response?.data?.message || err.response?.data?.error || err.message || 'Could not start verification session');
+  }
+}
+
 /** Smile Identity Core uses 0 = sandbox, 1 = production (not the same as API host string). */
 export function getSmileSidServerFlag() {
   const sandbox =

@@ -349,6 +349,30 @@ export const postSmileAuthPackage = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: pkg });
 });
 
+/**
+ * POST /kyc/smile/v3-token — mints a short-lived v3 auth token for the web dashboard's hosted
+ * Web SDK (window.SmileIdentity(...)). The SDK handles capture AND submission entirely
+ * client-side against Smile's V3 API once it has this token — unlike the REST-relay path above,
+ * there's no image payload for our backend to see or forward here at all.
+ */
+export const postSmileV3Token = catchAsync(async (req, res) => {
+  if (!smileId.isSmileConfigured()) {
+    throw new AppError('Identity verification is not available', 503);
+  }
+  if (!process.env.API_BASE_URL) {
+    throw new AppError('Server callback URL is not configured. Please contact support.', 500);
+  }
+  const { product } = req.body || {};
+  const { token, environment } = await smileId.mintV3Token({ userId: req.user.id, product });
+  // partner_id is not a secret (only the API key is) — the v12 Web SDK's own docs require it
+  // directly in the browser's partner_details config, paired with the short-lived token above.
+  const { partnerId } = smileId.getSmileCredentials();
+  res.status(200).json({
+    success: true,
+    data: { token, environment, partnerId, callback_url: buildCallbackUrl('/webhooks/smile_identity') },
+  });
+});
+
 /** Submit Basic KYC (job_type 5) to Smile Identity — async; results via webhook. */
 export const submitSmileBasicKyc = catchAsync(async (req, res) => {
   if (!smileId.isSmileConfigured()) {

@@ -94,18 +94,16 @@ const kycService = {
     }
   },
 
-  submitSmileBiometric: async (payload) => {
+  // Short-lived v3 token for the hosted Web SDK (window.SmileIdentity) — the SDK captures AND
+  // submits directly to Smile ID's V3 API from the browser, so unlike the old Smart Camera Web
+  // flow there's no images payload for us to relay; this token is the only thing our backend
+  // hands the page.
+  getSmileV3Token: async (product) => {
     try {
-      const raw = await apiClient.post('/kyc/smile/biometric-kyc', payload, {
-        timeout: 600000,
-      });
-      return {
-        success: raw?.success !== false,
-        data: unwrapData(raw),
-        message: raw?.message,
-      };
+      const raw = await apiClient.post('/kyc/smile/v3-token', product ? { product } : {});
+      return { success: raw?.success !== false, data: unwrapData(raw) };
     } catch (error) {
-      return { success: false, error: error.message };
+      return { success: false, error: error?.response?.data?.message || error.message };
     }
   },
 
