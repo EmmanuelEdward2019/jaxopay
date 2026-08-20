@@ -534,6 +534,88 @@ function validateSmileBiometricImages(images) {
   return null;
 }
 
+/**
+ * POST /kyc/smile/biometric-kyc/prepare — for the RN native Smile SDK path ONLY.
+ *
+ * Unlike Smart Camera Web (which captures images in the browser and hands them to us to forward
+ * — see submitSmileBiometricKyc below), the RN native SDK submits captured images directly to
+ * Smile ID's own servers from the device (SmileIDBiometricKYCView with skipApiSubmission: false).
+ * We never see the images and never call Smile's submit API ourselves for this path.
+ *
+ * What we DO still need: a job_id our webhook handler can recognize when Smile's async verdict
+ * arrives (processSmileIdentity in webhook.controller.js matches on document_number =
+ * `SMILE:${job_id}`), and a pending kyc_documents row for it to update. v11 native SDKs accept a
+ * partner-supplied jobId/userId (unlike the v12 web/mobile line, where both are server-generated),
+ * so this mints exactly the same job_id/pending-row shape submitSmileBiometricKyc creates, minus
+ * the image submission — the app passes job_id/userId straight into BiometricKYCParams, and the
+ * webhook that eventually arrives is indistinguishable from the Smart Camera Web path.
+ */
+export const prepareSmileBiometricJob = catchAsync(async (req, res) => {
+  if (!smileId.isSmileConfigured()) {
+    throw new AppError('Identity verification is not available', 503);
+  }
+  if (!process.env.API_BASE_URL) {
+    throw new AppError('Server callback URL is not configured. Please contact support.', 500);
+  }
+
+  const pending = await query(
+    `SELECT id FROM kyc_documents
+     WHERE user_id = $1 AND status = 'pending'
+       AND document_type IN ('smile_basic_kyc', 'smile_biometric_kyc')`,
+    [req.user.id]
+  );
+  if (pending.rows.length > 0) {
+    throw new AppError('A verification is already in progress. Please wait for the result.', 409);
+  }
+
+  const jobId = crypto.randomUUID();
+  const callbackUrl = buildCallbackUrl('/webhooks/smile_identity');
+  const docNumber = `SMILE:${jobId}`;
+
+  await query(
+    `INSERT INTO kyc_documents
+     (user_id, document_type, document_number, document_url, selfie_url, status, tier)
+     VALUES ($1, 'smile_biometric_kyc', $2, $3, null, 'pending', 'tier_2')`,
+    [req.user.id, docNumber, 'https://jaxopay.com/kyc/smile-biometric-native']
+  );
+
+  await query(`UPDATE users SET kyc_status = 'under_review', updated_at = NOW() WHERE id = $1`, [req.user.id]);
+
+  logger.info('[KYC] Prepared native Smile Biometric KYC job', { userId: req.user.id, jobId });
+  auditFromReq(req, { action: 'kyc_submitted', entityType: 'kyc_document', newValues: { method: 'smile_biometric_native', job_id: jobId } });
+
+  res.status(200).json({
+    success: true,
+    data: { job_id: jobId, user_id: String(req.user.id), callback_url: callbackUrl },
+  });
+});
+
+/**
+ * POST /kyc/smile/biometric-kyc/:jobId/cancel — releases a job prepared via the endpoint above
+ * when the native capture errors out or the user backs out before Smile ever received anything.
+ * Without this, the pending-row guard in both prepare and submit above would permanently block
+ * the user from ever retrying. Only deletes rows still 'pending' (a job that already got a
+ * webhook verdict is left alone — cancelling after the fact would misrepresent a real result).
+ */
+export const cancelSmileBiometricJob = catchAsync(async (req, res) => {
+  const { jobId } = req.params;
+  const result = await query(
+    `DELETE FROM kyc_documents
+     WHERE user_id = $1 AND document_number = $2 AND status = 'pending'
+       AND document_type = 'smile_biometric_kyc'`,
+    [req.user.id, `SMILE:${jobId}`]
+  );
+  if (result.rowCount > 0) {
+    await query(
+      `UPDATE users SET kyc_status = 'not_started', updated_at = NOW()
+       WHERE id = $1 AND kyc_status = 'under_review'
+         AND NOT EXISTS (SELECT 1 FROM kyc_documents WHERE user_id = $1 AND status = 'pending')`,
+      [req.user.id]
+    );
+  }
+  res.status(200).json({ success: true, data: { cancelled: result.rowCount > 0 } });
+});
+
 /** POST /kyc/smile/biometric-kyc — Biometric KYC with liveness (Smart Camera Web, selfie + liveness only — no ID document photo). */
 export const submitSmileBiometricKyc = catchAsync(async (req, res) => {
   if (!smileId.isSmileConfigured()) {

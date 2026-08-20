@@ -12,6 +12,8 @@ import {
   postSmileAuthPackage,
   submitSmileBasicKyc,
   submitSmileBiometricKyc,
+  prepareSmileBiometricJob,
+  cancelSmileBiometricJob,
   submitRampIdVerification,
 } from '../controllers/kyc.controller.js';
 
@@ -60,6 +62,11 @@ router.post(
   validate,
   submitSmileBiometricKyc
 );
+
+// RN native Smile SDK path — see prepareSmileBiometricJob's doc comment for why this exists
+// separately from the endpoint above (the device submits images directly to Smile, not to us).
+router.post('/smile/biometric-kyc/prepare', prepareSmileBiometricJob);
+router.post('/smile/biometric-kyc/:jobId/cancel', cancelSmileBiometricJob);
 
 const looksLikeImageOrUrl = (value) => {
   if (!value || typeof value !== 'string' || value.length < 24) return false;
