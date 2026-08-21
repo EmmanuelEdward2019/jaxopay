@@ -173,9 +173,12 @@ const Profile = () => {
                 {/* Profile Card */}
                 <div className="lg:col-span-2">
                     <div className="card">
-                        {/* Avatar Section */}
-                        <div className="flex items-center gap-6 pb-6 border-b border-border">
-                            <div className="relative">
+                        {/* Avatar Section — stacked/centered on mobile so a long name or email can't push
+                            the row wider than the viewport; side-by-side from sm: up. min-w-0 on the text
+                            column plus truncate on the name/email lines is the actual overflow fix (a flex
+                            child needs min-w-0 before truncate/wrap can take effect at all). */}
+                        <div className="flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-left gap-4 sm:gap-6 pb-6 border-b border-border">
+                            <div className="relative shrink-0">
                                 <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-3xl font-bold overflow-hidden">
                                     {profile?.avatar_url ? (
                                         <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
@@ -197,26 +200,28 @@ const Profile = () => {
                                     className="hidden"
                                 />
                             </div>
-                            <div>
-                                <h2 className="text-xl font-bold text-foreground">
+                            <div className="min-w-0 w-full sm:w-auto">
+                                <h2 className="text-xl font-bold text-foreground truncate">
                                     {profile?.first_name && profile?.last_name
                                         ? `${profile.first_name} ${profile.last_name}`
                                         : user?.email?.split('@')[0]}
                                 </h2>
-                                <p className="text-muted-foreground">{user?.email}</p>
-                                <span className={`inline-block mt-2 px-3 py-1 text-xs font-medium rounded-full ${kycBadge.color}`}>
-                                    <Shield className="w-3 h-3 inline mr-1" />
-                                    {kycBadge.label}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => copyUid(profile?.id || user?.id)}
-                                    title="Copy your Customer ID — share this with support if they ask for it"
-                                    className="mt-2 ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono text-muted-foreground bg-muted/60 hover:bg-muted rounded-full transition-colors"
-                                >
-                                    {uidCopied ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
-                                    ID: {(profile?.id || user?.id || '').slice(0, 8)}…
-                                </button>
+                                <p className="text-muted-foreground truncate">{user?.email}</p>
+                                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-2">
+                                    <span className={`inline-block px-3 py-1 text-xs font-medium rounded-full ${kycBadge.color}`}>
+                                        <Shield className="w-3 h-3 inline mr-1" />
+                                        {kycBadge.label}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => copyUid(profile?.id || user?.id)}
+                                        title="Copy your Customer ID — share this with support if they ask for it"
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono text-muted-foreground bg-muted/60 hover:bg-muted rounded-full transition-colors"
+                                    >
+                                        {uidCopied ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
+                                        ID: {(profile?.id || user?.id || '').slice(0, 8)}…
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -298,9 +303,9 @@ const Profile = () => {
                                         type="button"
                                         onClick={() => copyUid(profile?.id || user?.id)}
                                         title="Copy — share this with support if they ask for your account ID"
-                                        className="flex items-center gap-2 text-foreground font-medium font-mono text-sm hover:text-primary transition-colors"
+                                        className="flex items-center gap-2 w-full text-foreground font-medium font-mono text-sm hover:text-primary transition-colors"
                                     >
-                                        {profile?.id || user?.id || '—'}
+                                        <span className="truncate">{profile?.id || user?.id || '—'}</span>
                                         {uidCopied ? <Check className="w-3.5 h-3.5 text-primary shrink-0" /> : <Copy className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
                                     </button>
                                 </div>
