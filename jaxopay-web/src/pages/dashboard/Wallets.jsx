@@ -1541,9 +1541,9 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                 </div>
 
                 <div>
-                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Note (optional)</label>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">{isCrypto ? 'Memo/Tag (optional)' : 'Note (optional)'}</label>
                     <input type="text" value={description} onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Optional reference"
+                        placeholder={isCrypto ? 'For coins that require it' : 'Optional reference'}
                         className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground text-sm focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
                 </div>
 
