@@ -12,11 +12,14 @@ import userService from '../../services/userService';
 import { SMILE_ISO2_COUNTRIES } from '../../constants/smileKycOptions';
 
 // ── Tier ladder definitions — JAXOPAY's own requirements, always visible so a user can see the
-// whole path ahead, not just whatever they're on right now. ────────────────────────────────────
+// whole path ahead, not just whatever they're on right now.
+// `num` is the real backend tier (kyc_tier = tier_1/2/3) and drives all gating/lookup logic below —
+// never change it. `displayNum` is the user-facing tier number (num - 1), used only in rendered
+// text, so the tier ladder reads Tier 0/1/2 instead of Tier 1/2/3. ────────────────────────────────
 const TIER_DEFS = [
-    { num: 1, title: 'Basic Profile', subtitle: 'Confirm your details', icon: User },
-    { num: 2, title: 'Identity Verification', subtitle: 'Government ID + liveness check', icon: ScanFace },
-    { num: 3, title: 'Address Verification', subtitle: 'Proof of residence', icon: Home },
+    { num: 1, displayNum: 0, title: 'Basic Profile', subtitle: 'Confirm your details', icon: User },
+    { num: 2, displayNum: 1, title: 'Identity Verification', subtitle: 'Government ID + liveness check', icon: ScanFace },
+    { num: 3, displayNum: 2, title: 'Address Verification', subtitle: 'Proof of residence', icon: Home },
 ];
 
 // Passport and Driver's License are no longer offered — Tier 2 only accepts NIN or National ID
@@ -257,7 +260,7 @@ const KYC = () => {
         setUpgrading(false);
         if (res.success) {
             setUpgradeMsg(null);
-            setSuccess('Tier 1 complete!');
+            setSuccess('Tier 0 complete!');
             setTierPopup({ completedTier: 1, nextTier: 2 });
             fetchKYCData();
         } else {
@@ -522,7 +525,7 @@ const KYC = () => {
                     <div>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Your current level</p>
                         <span className="text-xl font-bold text-foreground">
-                            {tierLimits.limits?.[currentTierLabel]?.name || `Tier ${tierNum}`}
+                            {tierLimits.limits?.[currentTierLabel]?.name || (tierNum > 0 ? `Tier ${tierNum - 1}` : 'Unverified')}
                         </span>
                     </div>
                     <div className="text-sm text-muted-foreground">
@@ -568,7 +571,7 @@ const KYC = () => {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="font-bold text-foreground">Tier {tier.num}: {tier.title}</span>
+                                        <span className="font-bold text-foreground">Tier {tier.displayNum}: {tier.title}</span>
                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                                             status === 'approved' ? 'bg-success/10 text-success'
                                                 : status === 'rejected' ? 'bg-danger/10 text-danger'
@@ -580,7 +583,7 @@ const KYC = () => {
                                         </span>
                                     </div>
                                     <p className="text-sm text-muted-foreground mt-0.5">
-                                        {locked ? `Complete Tier ${tier.num - 1} first` : tier.subtitle}
+                                        {locked ? `Complete Tier ${tier.num - 2} first` : tier.subtitle}
                                     </p>
                                 </div>
                                 {!locked && (isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />)}
@@ -753,11 +756,11 @@ const KYC = () => {
                             <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <PartyPopper className="w-8 h-8 text-success" />
                             </div>
-                            <h3 className="text-xl font-bold text-foreground mb-2">Tier {tierPopup.completedTier} complete!</h3>
+                            <h3 className="text-xl font-bold text-foreground mb-2">Tier {tierPopup.completedTier - 1} complete!</h3>
                             {tierPopup.nextTier ? (
                                 <>
                                     <p className="text-muted-foreground text-sm mb-6">
-                                        Continue to Tier {tierPopup.nextTier} from your dashboard any time to unlock even higher limits and more features.
+                                        Continue to Tier {tierPopup.nextTier - 1} from your dashboard any time to unlock even higher limits and more features.
                                     </p>
                                     <div className="flex gap-3">
                                         <button onClick={() => setTierPopup(null)} className="flex-1 py-3 bg-muted text-foreground font-medium rounded-xl">
@@ -767,7 +770,7 @@ const KYC = () => {
                                             onClick={() => { setExpandedTier(tierPopup.nextTier); setTierPopup(null); }}
                                             className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl"
                                         >
-                                            Start Tier {tierPopup.nextTier}
+                                            Start Tier {tierPopup.nextTier - 1}
                                         </button>
                                     </div>
                                 </>
@@ -833,7 +836,7 @@ const Tier1Form = ({ formData, updateField, onSave, saving, nationalities }) => 
         </div>
         <button onClick={onSave} disabled={saving}
             className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-            {saving ? (<><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</>) : (<>Complete Tier 1 <ArrowRight className="w-4 h-4" /></>)}
+            {saving ? (<><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</>) : (<>Complete Tier 0 <ArrowRight className="w-4 h-4" /></>)}
         </button>
     </div>
 );

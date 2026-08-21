@@ -169,6 +169,10 @@ export const getKYCDocuments = catchAsync(async (req, res) => {
 
 // Get KYC tier limits — daily/monthly figures mirror TIER_CAPS_USD in kycLimits.service.js
 // (kept as plain literals here since this is a display/status endpoint, not the enforcement path).
+// Object keys (tier_0..tier_3) stay the real DB enum values — never renumber those. Only each
+// entry's `name` is user-facing display text, and it's offset by -1 from the real tier (tier_1's
+// document is "Tier 0" on screen, tier_3's is "Tier 2") since the product no longer shows a
+// "Tier 3" anywhere — both web and mobile shifted their own display numbering to match.
 export const getKYCLimits = catchAsync(async (req, res) => {
   const limits = {
     tier_0: {
@@ -181,7 +185,7 @@ export const getKYCLimits = catchAsync(async (req, res) => {
       required: ['Sign up'],
     },
     tier_1: {
-      name: 'Tier 1',
+      name: 'Tier 0',
       daily_limit_crypto: 0,
       daily_limit_fiat: 0,
       monthly_limit_crypto: 0,
@@ -190,7 +194,7 @@ export const getKYCLimits = catchAsync(async (req, res) => {
       required: ['Full name', 'Residential address', 'Verified email', 'Phone number'],
     },
     tier_2: {
-      name: 'Tier 2',
+      name: 'Tier 1',
       daily_limit_crypto: 5000000,
       daily_limit_fiat: 50000,
       monthly_limit_crypto: 50000000,
@@ -199,7 +203,7 @@ export const getKYCLimits = catchAsync(async (req, res) => {
       required: ['NIN', 'Facial verification'],
     },
     tier_3: {
-      name: 'Tier 3',
+      name: 'Tier 2',
       daily_limit_crypto: 8000000,
       daily_limit_fiat: 500000,
       monthly_limit_crypto: 80000000,
@@ -287,13 +291,13 @@ export const requestTierUpgrade = catchAsync(async (req, res) => {
       if (!hasNin) missing.push(country === 'NG' ? 'an approved NIN' : 'an approved government ID');
       if (!hasFacial) missing.push('facial verification');
       if (missing.length > 0) {
-        throw new AppError(`Tier 2 requires ${missing.join(' and ')}.`, 400);
+        throw new AppError(`Tier 1 requires ${missing.join(' and ')}.`, 400);
       }
     }
 
     if (targetStep === 3) {
       if (!hasPoa) {
-        throw new AppError('Tier 3 requires an approved proof of address (utility bill or bank statement).', 400);
+        throw new AppError('Tier 2 requires an approved proof of address (utility bill or bank statement).', 400);
       }
     }
   }
@@ -316,7 +320,7 @@ export const requestTierUpgrade = catchAsync(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: `Successfully upgraded to ${newTierLabel.replace('_', ' ')}`,
+    message: `Successfully upgraded to Tier ${targetStep - 1}`,
     data: {
       new_tier: newTierLabel,
     },

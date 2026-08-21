@@ -79,24 +79,31 @@ export const notifyLogin = (userId, { device, location, ipAddress }) =>
     metadata: { device, location, ipAddress },
   });
 
-// next-tier nudge appended to an approval message — Tier 3 is the top of the ladder, nothing to
-// continue to from there.
+// next-tier nudge appended to an approval message — Tier 2 is the top of the displayed ladder,
+// nothing to continue to from there. Keys are the REAL just-completed tier (1 or 2 — LOGIC, unchanged);
+// the interpolated tier numbers in the hint text itself are display numbers (real - 1), matching
+// web/mobile's shifted tier ladder (no "Tier 3" appears anywhere in the product anymore).
 const NEXT_TIER_HINT = {
-  '1': ' Continue to Tier 2 (NIN + liveness verification) to unlock deposits, transfers, and crypto.',
-  '2': ' Continue to Tier 3 (proof of address) for the highest transaction limits.',
+  '1': ' Continue to Tier 1 (NIN + liveness verification) to unlock deposits, transfers, and crypto.',
+  '2': ' Continue to Tier 2 (proof of address) for the highest transaction limits.',
 };
 
-export const notifyKyc = (userId, { tier, status, reason }) =>
-  notifyUser(userId, {
+export const notifyKyc = (userId, { tier, status, reason }) => {
+  // `tier` is the real backend tier (1, 2, or 3, or '' for a queued/no-tier update) — the
+  // displayed tier shown in this notification's copy is one less, per the product's shifted
+  // tier-0/1/2 ladder.
+  const displayTier = tier !== '' && tier != null ? Number(tier) - 1 : tier;
+  return notifyUser(userId, {
     type: 'kyc',
-    title: status === 'approved' ? `KYC Tier ${tier} approved` : status === 'rejected' ? 'KYC submission rejected' : 'KYC update',
+    title: status === 'approved' ? `KYC Tier ${displayTier} approved` : status === 'rejected' ? 'KYC submission rejected' : 'KYC update',
     message: status === 'approved'
-      ? `Your KYC Tier ${tier} verification has been approved. Your limits have been updated.${NEXT_TIER_HINT[String(tier)] || ''}`
+      ? `Your KYC Tier ${displayTier} verification has been approved. Your limits have been updated.${NEXT_TIER_HINT[String(tier)] || ''}`
       : status === 'rejected'
         ? `Your KYC submission was rejected.${reason ? ` Reason: ${reason}` : ''} You can retry verification from your dashboard, and our compliance team can also review it manually.`
         : 'There has been an update to your KYC verification status.',
     metadata: { tier, status, reason },
   });
+};
 
 export const notifyCompliance = (userId, { title, message, metadata }) =>
   notifyUser(userId, { type: 'compliance', title, message, metadata });

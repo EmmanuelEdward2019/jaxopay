@@ -133,6 +133,7 @@ const Profile = () => {
             tier_0: { label: 'Unverified', color: 'bg-muted text-foreground' },
             tier_1: { label: 'Basic', color: 'bg-primary/10 text-blue-700' },
             tier_2: { label: 'Verified', color: 'bg-primary/10 text-primary' },
+            tier_3: { label: 'Fully Verified', color: 'bg-primary/10 text-primary' },
         };
         return badges[tier] || badges.tier_0;
     };
