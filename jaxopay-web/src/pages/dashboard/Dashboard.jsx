@@ -12,13 +12,13 @@ import {
   BarChart2,
   Activity,
   Zap,
-  Plus,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
 import dashboardService from '../../services/dashboardService';
 import cryptoService from '../../services/cryptoService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
+import BillPayIllustration from '../../components/BillPayIllustration';
 
 /** Keeps balance text on a single line by shrinking font-size to fit the container */
 const BalanceOneLine = ({ children, className = '' }) => {
@@ -389,40 +389,27 @@ const Dashboard = () => {
       </div>
 
       {/* Promo banner — on-brand green gradient (not a decor tone), matching the balance/hero
-          card language: soft decorative circles + a graphic + a floating round CTA overlapping
-          the corner. Links to an existing page only, nothing new. */}
+          card language: soft decorative circles + a humanized illustration on the RHS (a person
+          confirming a bill payment on their phone) instead of a plain icon or a separate floating
+          button. Links to an existing page only, nothing new. */}
       {isFeatureEnabled('bill_payments') && (
-        <div className="relative">
-          <Link
-            to="/dashboard/bills"
-            className="relative flex items-center justify-between gap-4 rounded-2xl p-7 sm:p-8 overflow-hidden group"
-            style={{ background: 'linear-gradient(135deg, #0C6B40 0%, #1FAD6B 100%)' }}
-          >
-            <div className="absolute w-56 h-56 rounded-full bg-white/5 -top-24 -right-8" />
-            <div className="absolute w-24 h-24 rounded-full bg-white/5 -bottom-6 right-20" />
-            <div className="relative z-10">
-              <h3 className="text-white text-xl sm:text-2xl font-extrabold leading-tight mb-4">
-                Pay Bills with<br />JAXOPAY
-              </h3>
-              <span className="inline-block bg-white text-[#0C6B40] text-sm font-extrabold px-5 py-2.5 rounded-full group-hover:scale-105 transition-transform">
-                Pay Now
-              </span>
-            </div>
-            <div className="relative z-10 w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/15 flex items-center justify-center shrink-0">
-              <Receipt className="w-8 h-8 sm:w-10 sm:h-10 text-white/90" strokeWidth={1.6} />
-            </div>
-          </Link>
-          {/* Separate sibling, not nested in the Link above (invalid HTML) — its own destination,
-              matching RN's floating "+" which opens Transfer rather than duplicating the banner's link. */}
-          <Link
-            to="/dashboard/wallets"
-            title="New transfer"
-            className="absolute -bottom-4 right-8 w-12 h-12 rounded-full shadow-lg flex items-center justify-center z-20 hover:scale-105 transition-transform"
-            style={{ background: 'linear-gradient(135deg, #22C378 0%, #1FAD6B 100%)' }}
-          >
-            <Plus className="w-5 h-5 text-white" strokeWidth={2.5} />
-          </Link>
-        </div>
+        <Link
+          to="/dashboard/bills"
+          className="relative flex items-center justify-between gap-4 rounded-2xl p-7 sm:p-8 overflow-hidden group"
+          style={{ background: 'linear-gradient(135deg, #0C6B40 0%, #1FAD6B 100%)' }}
+        >
+          <div className="absolute w-56 h-56 rounded-full bg-white/5 -top-24 -right-8" />
+          <div className="absolute w-24 h-24 rounded-full bg-white/5 -bottom-6 right-20" />
+          <div className="relative z-10">
+            <h3 className="text-white text-xl sm:text-2xl font-extrabold leading-tight mb-4">
+              Pay Bills with<br />JAXOPAY
+            </h3>
+            <span className="inline-block bg-white text-[#0C6B40] text-sm font-extrabold px-5 py-2.5 rounded-full group-hover:scale-105 transition-transform">
+              Pay Now
+            </span>
+          </div>
+          <BillPayIllustration size={104} className="relative z-10 shrink-0 w-16 h-16 sm:w-24 sm:h-24" />
+        </Link>
       )}
 
       {/* Recent Transactions */}
