@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { createRequire } from 'module';
 import logger from '../utils/logger.js';
+import { AppError } from '../middleware/errorHandler.js';
 
 const require = createRequire(import.meta.url);
 const { WebApi, JOB_TYPE } = require('smile-identity-core');
@@ -106,7 +107,7 @@ export async function submitBasicKycAsync({
 }) {
   const { apiKey, partnerId } = getSmileCredentials();
   if (!apiKey || !partnerId) {
-    throw new Error('Identity verification is not configured on the server');
+    throw new AppError('Identity verification is not configured on the server', 503);
   }
 
   const jobId = crypto.randomUUID();
@@ -153,7 +154,12 @@ export async function submitBasicKycAsync({
   } catch (err) {
     const msg = err.response?.data || err.message;
     logger.error('[SmileID] verify_async failed:', typeof msg === 'object' ? JSON.stringify(msg) : msg);
-    throw new Error(err.response?.data?.message || err.response?.data?.error || err.message || 'Verification request failed');
+    // AppError (not a plain Error) so the real upstream reason reaches the client — a plain Error
+    // here loses both .isOperational and the original .response, so errorHandler's upstream-error
+    // normalization can never match it and it falls through to a generic "Something went wrong"
+    // 500, silently swallowing exactly the detail (bad credentials, malformed request, whatever
+    // Smile actually said) needed to diagnose a failure like this.
+    throw new AppError(err.response?.data?.message || err.response?.data?.error || err.message || 'Verification request failed', 502);
   }
 }
 
@@ -186,7 +192,7 @@ export function getMobileAuthPackage() {
 export async function mintV3Token({ userId, product }) {
   const { apiKey, partnerId } = getSmileCredentials();
   if (!apiKey || !partnerId) {
-    throw new Error('Identity verification is not configured on the server');
+    throw new AppError('Identity verification is not configured on the server', 503);
   }
 
   const form = new FormData();
@@ -207,12 +213,17 @@ export async function mintV3Token({ userId, product }) {
       },
       timeout: 20000,
     });
-    if (!res.data?.token) throw new Error('Smile ID did not return a token');
+    if (!res.data?.token) throw new AppError('Smile ID did not return a token', 502);
     return { token: res.data.token, environment: base.includes('testapi') ? 'sandbox' : 'production' };
   } catch (err) {
+    if (err instanceof AppError) throw err;
     const msg = err.response?.data || err.message;
     logger.error('[SmileID] v3/token failed:', typeof msg === 'object' ? JSON.stringify(msg) : msg);
-    throw new Error(err.response?.data?.message || err.response?.data?.error || err.message || 'Could not start verification session');
+    // See the note on the same pattern above in submitBasicKycAsync — AppError, not a plain
+    // Error, so the real reason (e.g. an actual 401 from Smile over bad credentials, a 415/400
+    // over a malformed multipart body, a network failure) reaches the client instead of a
+    // generic 500 that looks identical no matter what actually went wrong.
+    throw new AppError(err.response?.data?.message || err.response?.data?.error || err.message || 'Could not start verification session', 502);
   }
 }
 
@@ -235,7 +246,7 @@ export function getSmileSidServerFlag() {
 export async function submitBiometricKycJob({ userId, jobId, callbackUrl, images, idInfo }) {
   const { apiKey, partnerId } = getSmileCredentials();
   if (!apiKey || !partnerId) {
-    throw new Error('Identity verification is not configured on the server');
+    throw new AppError('Identity verification is not configured on the server', 503);
   }
 
   const connection = new WebApi(String(partnerId), callbackUrl, apiKey, getSmileSidServerFlag());
