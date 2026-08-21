@@ -78,8 +78,11 @@ const Profile = () => {
                 first_name: result.data.user?.first_name || '',
                 last_name: result.data.user?.last_name || '',
                 phone: result.data.user?.phone || '',
+                date_of_birth: (result.data.user?.date_of_birth || '').slice(0, 10),
                 address: result.data.user?.address || '',
                 city: result.data.user?.city || '',
+                state: result.data.user?.state || '',
+                postal_code: result.data.user?.postal_code || '',
                 country: result.data.user?.country || '',
             });
         } else {
@@ -319,10 +322,28 @@ const Profile = () => {
                                         </p>
                                     )}
                                 </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-muted-foreground mb-1">
+                                        <Calendar className="w-4 h-4 inline mr-1" />
+                                        Date of Birth
+                                    </label>
+                                    {editing ? (
+                                        <input
+                                            type="date"
+                                            value={editForm.date_of_birth}
+                                            onChange={(e) => setEditForm({ ...editForm, date_of_birth: e.target.value })}
+                                            className="w-full px-3 py-2 bg-card border border-border rounded-lg"
+                                        />
+                                    ) : (
+                                        <p className="text-foreground font-medium">
+                                            {profile?.date_of_birth ? profile.date_of_birth.slice(0, 10) : '—'}
+                                        </p>
+                                    )}
+                                </div>
                                 <div className="md:col-span-2">
                                     <label className="block text-sm font-medium text-muted-foreground mb-1">
                                         <MapPin className="w-4 h-4 inline mr-1" />
-                                        Address
+                                        Address <span className="font-normal normal-case text-xs">(also used as your billing address for cards and KYC)</span>
                                     </label>
                                     {editing ? (
                                         <input
@@ -349,6 +370,36 @@ const Profile = () => {
                                     ) : (
                                         <p className="text-foreground font-medium">
                                             {profile?.city || '—'}
+                                        </p>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-muted-foreground mb-1">State / Province</label>
+                                    {editing ? (
+                                        <input
+                                            type="text"
+                                            value={editForm.state}
+                                            onChange={(e) => setEditForm({ ...editForm, state: e.target.value })}
+                                            className="w-full px-3 py-2 bg-card border border-border rounded-lg"
+                                        />
+                                    ) : (
+                                        <p className="text-foreground font-medium">
+                                            {profile?.state || '—'}
+                                        </p>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-muted-foreground mb-1">Postal Code</label>
+                                    {editing ? (
+                                        <input
+                                            type="text"
+                                            value={editForm.postal_code}
+                                            onChange={(e) => setEditForm({ ...editForm, postal_code: e.target.value })}
+                                            className="w-full px-3 py-2 bg-card border border-border rounded-lg"
+                                        />
+                                    ) : (
+                                        <p className="text-foreground font-medium">
+                                            {profile?.postal_code || '—'}
                                         </p>
                                     )}
                                 </div>

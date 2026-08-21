@@ -84,6 +84,7 @@ router.patch(
   body('gender').optional({ checkFalsy: true }).isIn(['male', 'female', 'other']),
   body('country').optional({ checkFalsy: true }).isString(),
   body('city').optional({ checkFalsy: true }).isString(),
+  body('state').optional({ checkFalsy: true }).isString(),
   body('address').optional({ checkFalsy: true }).isString(),
   body('postal_code').optional({ checkFalsy: true }).isString(),
   body('bio').optional({ checkFalsy: true }).isString().isLength({ max: 500 }),

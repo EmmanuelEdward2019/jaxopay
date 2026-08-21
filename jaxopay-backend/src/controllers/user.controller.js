@@ -12,7 +12,7 @@ export const getProfile = catchAsync(async (req, res) => {
             u.is_email_verified, u.is_phone_verified, u.two_fa_enabled,
             u.is_active, u.created_at, u.preferred_language, u.preferences,
             up.first_name, up.last_name, up.date_of_birth, up.gender,
-            up.country, up.city, up.address_line1 as address, up.postal_code,
+            up.country, up.city, up.state, up.address_line1 as address, up.postal_code,
             up.avatar_url
      FROM users u
      LEFT JOIN user_profiles up ON u.id = up.user_id
@@ -75,6 +75,7 @@ export const updateProfile = catchAsync(async (req, res) => {
     gender,
     country,
     city,
+    state,
     address,
     postal_code,
   } = req.body;
@@ -85,7 +86,7 @@ export const updateProfile = catchAsync(async (req, res) => {
   const country2 = nz(country) ? String(country).trim().toUpperCase().slice(0, 2) : null;
   const params = [
     nz(first_name), nz(last_name), nz(date_of_birth), nz(gender),
-    country2, nz(city), nz(address), nz(postal_code), req.user.id,
+    country2, nz(city), nz(address), nz(postal_code), nz(state), req.user.id,
   ];
 
   let result = await query(
@@ -98,8 +99,9 @@ export const updateProfile = catchAsync(async (req, res) => {
          city = COALESCE($6, city),
          address_line1 = COALESCE($7, address_line1),
          postal_code = COALESCE($8, postal_code),
+         state = COALESCE($9, state),
          updated_at = NOW()
-     WHERE user_id = $9
+     WHERE user_id = $10
      RETURNING *`,
     params
   );
@@ -107,8 +109,8 @@ export const updateProfile = catchAsync(async (req, res) => {
   // No profile row yet (older accounts) → create one.
   if (result.rows.length === 0) {
     result = await query(
-      `INSERT INTO user_profiles (user_id, first_name, last_name, date_of_birth, gender, country, city, address_line1, postal_code)
-       VALUES ($9, $1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO user_profiles (user_id, first_name, last_name, date_of_birth, gender, country, city, address_line1, postal_code, state)
+       VALUES ($10, $1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       params
     );

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     CreditCard,
@@ -21,16 +22,36 @@ import walletService from '../../services/walletService';
 import PinModal from '../../components/common/PinModal';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
-// Compute a card fee from the { flat, percent, cap } config returned by /cards/fees.
+// Compute a card fee from the { fee_type, flat, percent, cap } config returned by /cards/fees.
+// Mirrors the backend's computeFee (feeConfig.service.js) — must branch on fee_type, since an
+// admin can switch card_creation/card_funding to 'fixed' or 'percentage' in Rates & Fees at any
+// time, and a flat_plus_percent-only formula would silently show the wrong preview if they did.
 const computeCardFee = (cfg, amount) => {
     if (!cfg) return 0;
     const amt = parseFloat(amount) || 0;
-    let fee = (Number(cfg.flat) || 0) + (amt * (Number(cfg.percent) || 0)) / 100;
-    if (Number(cfg.cap) > 0) fee = Math.min(fee, Number(cfg.cap));
+    const flat = Number(cfg.flat) || 0;
+    const percent = Number(cfg.percent) || 0;
+    const cap = Number(cfg.cap) || 0;
+    let fee = 0;
+    switch (cfg.fee_type) {
+        case 'fixed':
+            fee = flat;
+            break;
+        case 'percentage':
+            fee = (amt * percent) / 100;
+            if (flat) fee = Math.max(fee, flat);
+            break;
+        case 'flat_plus_percent':
+        default:
+            fee = flat + (amt * percent) / 100;
+            break;
+    }
+    if (cap > 0) fee = Math.min(fee, cap);
     return Math.round((fee + Number.EPSILON) * 100) / 100;
 };
 
 const Cards = () => {
+    const navigate = useNavigate();
     const [cards, setCards] = useState([]);
     const [wallets, setWallets] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -43,6 +64,7 @@ const Cards = () => {
     const [secureLoading, setSecureLoading] = useState({});   // cardId -> bool
     const [copiedField, setCopiedField] = useState(null);
     const [error, setError] = useState(null);
+    const [errorCode, setErrorCode] = useState(null);
     const [actionLoading, setActionLoading] = useState(false);
     // Transaction PIN flow (shared by create + fund)
     const [pinFlow, setPinFlow] = useState(null); // { kind: 'create'|'fund', payload }
@@ -103,12 +125,14 @@ const Cards = () => {
     // Both create and fund move money out of the USD wallet → require the transaction PIN.
     const handleCreateCard = (cardData) => {
         setError(null);
+        setErrorCode(null);
         setPinError('');
         setPinFlow({ kind: 'create', payload: cardData });
     };
 
     const handleFundCard = (cardId, amount) => {
         setError(null);
+        setErrorCode(null);
         setPinError('');
         setPinFlow({ kind: 'fund', payload: { cardId, amount } });
     };
@@ -139,6 +163,7 @@ const Cards = () => {
         } else {
             setPinFlow(null);
             setError(result.message || result.error || (pinFlow.kind === 'create' ? 'Failed to create card.' : 'Failed to fund card.'));
+            setErrorCode(result.code || null);
         }
         setPinProcessing(false);
     };
@@ -237,9 +262,16 @@ const Cards = () => {
             {error && (
                 <div className="bg-danger/10 border border-danger/20 rounded-lg p-4">
                     <p className="text-danger">{error}</p>
-                    <button onClick={() => setError(null)} className="text-danger underline text-sm mt-1">
-                        Dismiss
-                    </button>
+                    <div className="flex items-center gap-4 mt-1">
+                        {errorCode === 'CARD_KYC_INCOMPLETE' && (
+                            <button onClick={() => navigate('/dashboard/profile')} className="text-danger underline text-sm font-semibold">
+                                Complete your profile
+                            </button>
+                        )}
+                        <button onClick={() => { setError(null); setErrorCode(null); }} className="text-danger underline text-sm">
+                            Dismiss
+                        </button>
+                    </div>
                 </div>
             )}
 

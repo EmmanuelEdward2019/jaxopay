@@ -263,7 +263,7 @@ export const requestTierUpgrade = catchAsync(async (req, res) => {
     if (!String(prof.phone || '').trim()) missing.push('a phone number');
 
     if (missing.length > 0) {
-      throw new AppError(`Please complete your profile first: ${missing.join(', ')}.`, 400);
+      throw new AppError(`Please complete your profile first: ${missing.join(', ')}.`, 400, 'PROFILE_INCOMPLETE');
     }
   } else {
     const [documents, profRes] = await Promise.all([

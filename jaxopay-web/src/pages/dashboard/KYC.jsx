@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
@@ -112,6 +113,7 @@ function latestRejectionReason(documents, types) {
 
 // ── Main Component ────────────────────────────────────────────────────
 const KYC = () => {
+    const navigate = useNavigate();
     const refreshSession = useAuthStore(s => s.refreshSession);
     const [kycStatus, setKycStatus] = useState(null);
     const [documents, setDocuments] = useState([]);
@@ -671,7 +673,14 @@ const KYC = () => {
             </div>
 
             {upgradeMsg && !upgradeMsg.ok && (
-                <p className="text-sm text-danger mb-6">{upgradeMsg.text}</p>
+                <div className="mb-6">
+                    <p className="text-sm text-danger">{upgradeMsg.text}</p>
+                    {/^please complete your profile/i.test(upgradeMsg.text || '') && (
+                        <button onClick={() => navigate('/dashboard/profile')} className="text-danger underline text-sm font-semibold mt-1">
+                            Complete your profile
+                        </button>
+                    )}
+                </div>
             )}
 
             {/* Why Verify section */}
