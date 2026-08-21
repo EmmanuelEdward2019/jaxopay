@@ -12,6 +12,7 @@ import {
   BarChart2,
   Activity,
   Zap,
+  Plus,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
@@ -139,13 +140,15 @@ const Dashboard = () => {
     loadData();
   }, []);
 
+  // `wash`/`ink` are decorative-only tints for this card's icon + background — purely visual
+  // variety on an otherwise single-accent (green) design, not a status/meaning signal.
   const quickActions = [
-    { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', color: 'bg-primary', enabled: true },
-    { name: 'Deposit', icon: ArrowDownLeft, href: '/dashboard/wallets', color: 'bg-emerald-600', enabled: true },
-    { name: 'Markets', icon: BarChart2, href: '/dashboard/markets', color: 'bg-primary', enabled: true },
-    { name: 'Spot Trade', icon: Activity, href: '/dashboard/trade', color: 'bg-violet-600', enabled: isFeatureEnabled('crypto') },
-    { name: 'Instant Swap', icon: Zap, href: '/dashboard/swap', color: 'bg-warning/100', enabled: isFeatureEnabled('crypto') },
-    { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', color: 'bg-emerald-800', enabled: isFeatureEnabled('bill_payments') },
+    { name: 'Send Money', icon: ArrowUpRight, href: '/dashboard/wallets', wash: 'bg-primary/10 dark:bg-primary/15', ink: 'text-primary', enabled: true },
+    { name: 'Deposit', icon: ArrowDownLeft, href: '/dashboard/wallets', wash: 'bg-teal-50 dark:bg-teal-500/10', ink: 'text-teal-600 dark:text-teal-400', enabled: true },
+    { name: 'Markets', icon: BarChart2, href: '/dashboard/markets', wash: 'bg-primary/10 dark:bg-primary/15', ink: 'text-primary', enabled: true },
+    { name: 'Spot Trade', icon: Activity, href: '/dashboard/trade', wash: 'bg-violet-50 dark:bg-violet-500/10', ink: 'text-violet-600 dark:text-violet-400', enabled: isFeatureEnabled('crypto') },
+    { name: 'Instant Swap', icon: Zap, href: '/dashboard/swap', wash: 'bg-amber-50 dark:bg-amber-500/10', ink: 'text-amber-600 dark:text-amber-400', enabled: isFeatureEnabled('crypto') },
+    { name: 'Pay Bills', icon: Receipt, href: '/dashboard/bills', wash: 'bg-orange-50 dark:bg-orange-500/10', ink: 'text-orange-600 dark:text-orange-400', enabled: isFeatureEnabled('bill_payments') },
   ].filter(action => action.enabled);
 
   const statsDisplay = [
@@ -371,12 +374,12 @@ const Dashboard = () => {
               <Link
                 key={action.name}
                 to={action.href}
-                className="flex flex-col items-center p-4 rounded-lg border-2 border-border hover:border-primary transition-colors"
+                className={`flex flex-col items-center text-center p-5 rounded-2xl ${action.wash} hover:brightness-95 dark:hover:brightness-125 transition-all`}
               >
-                <div className={`${action.color} p-3 rounded-full mb-2`}>
-                  <Icon className="h-6 w-6 text-white" />
+                <div className="bg-card p-3 rounded-xl mb-3 shadow-sm">
+                  <Icon className={`h-6 w-6 ${action.ink}`} />
                 </div>
-                <span className="text-sm font-medium text-foreground">
+                <span className="text-sm font-semibold text-foreground">
                   {action.name}
                 </span>
               </Link>
@@ -384,6 +387,43 @@ const Dashboard = () => {
           })}
         </div>
       </div>
+
+      {/* Promo banner — on-brand green gradient (not a decor tone), matching the balance/hero
+          card language: soft decorative circles + a graphic + a floating round CTA overlapping
+          the corner. Links to an existing page only, nothing new. */}
+      {isFeatureEnabled('bill_payments') && (
+        <div className="relative">
+          <Link
+            to="/dashboard/bills"
+            className="relative flex items-center justify-between gap-4 rounded-2xl p-7 sm:p-8 overflow-hidden group"
+            style={{ background: 'linear-gradient(135deg, #0C6B40 0%, #1FAD6B 100%)' }}
+          >
+            <div className="absolute w-56 h-56 rounded-full bg-white/5 -top-24 -right-8" />
+            <div className="absolute w-24 h-24 rounded-full bg-white/5 -bottom-6 right-20" />
+            <div className="relative z-10">
+              <h3 className="text-white text-xl sm:text-2xl font-extrabold leading-tight mb-4">
+                Pay Bills with<br />JAXOPAY
+              </h3>
+              <span className="inline-block bg-white text-[#0C6B40] text-sm font-extrabold px-5 py-2.5 rounded-full group-hover:scale-105 transition-transform">
+                Pay Now
+              </span>
+            </div>
+            <div className="relative z-10 w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/15 flex items-center justify-center shrink-0">
+              <Receipt className="w-8 h-8 sm:w-10 sm:h-10 text-white/90" strokeWidth={1.6} />
+            </div>
+          </Link>
+          {/* Separate sibling, not nested in the Link above (invalid HTML) — its own destination,
+              matching RN's floating "+" which opens Transfer rather than duplicating the banner's link. */}
+          <Link
+            to="/dashboard/wallets"
+            title="New transfer"
+            className="absolute -bottom-4 right-8 w-12 h-12 rounded-full shadow-lg flex items-center justify-center z-20 hover:scale-105 transition-transform"
+            style={{ background: 'linear-gradient(135deg, #22C378 0%, #1FAD6B 100%)' }}
+          >
+            <Plus className="w-5 h-5 text-white" strokeWidth={2.5} />
+          </Link>
+        </div>
+      )}
 
       {/* Recent Transactions */}
       <div className="card">
