@@ -286,14 +286,22 @@ export const login = catchAsync(async (req, res) => {
   const accessToken = generateToken(user.id);
   const refreshToken = generateRefreshToken(user.id);
 
-  // Create session (with timeout protection)
+  // Create session (with timeout protection). A token handed back without a matching
+  // user_sessions row is worse than no token at all — verifyToken() requires that row on
+  // every subsequent request, so a silently-tolerated failure here means the client walks
+  // away believing login succeeded while every following request 401s. Fail loudly instead
+  // so the client can retry the login rather than limping along on a dead-on-arrival token.
+  let sessionId;
   try {
-    await Promise.race([
+    sessionId = await Promise.race([
       createSession(user.id, accessToken, req.deviceInfo),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Session creation timeout')), 5000))
     ]);
   } catch (error) {
-    logger.warn('Session creation failed or timed out (non-critical):', error.message);
+    logger.warn('Session creation failed or timed out:', error.message);
+  }
+  if (!sessionId) {
+    throw new AppError('Login service temporarily unavailable. Please try again.', 503);
   }
 
   // Store device info (with timeout protection)
@@ -473,8 +481,13 @@ export const verifyOTP = catchAsync(async (req, res) => {
   const accessToken = generateToken(user.id);
   const refreshToken = generateRefreshToken(user.id);
 
-  // Create session
-  await createSession(user.id, accessToken, req.deviceInfo);
+  // Create session. Must succeed — a token without a matching user_sessions row fails
+  // verifyToken() on its very next use, so a silent failure here would report a
+  // successful login that's actually dead on arrival.
+  const sessionId = await createSession(user.id, accessToken, req.deviceInfo);
+  if (!sessionId) {
+    throw new AppError('Login service temporarily unavailable. Please try again.', 503);
+  }
 
   // Store device info
   if (req.deviceInfo) {
@@ -571,8 +584,15 @@ export const refreshToken = catchAsync(async (req, res) => {
   // Generate new access token
   const accessToken = generateToken(user.id);
 
-  // Create new session in DB so verifyToken recognizes it (best-effort)
-  await createSession(user.id, accessToken, req.deviceInfo);
+  // Create new session in DB so verifyToken recognizes it. This must succeed — verifyToken()
+  // requires a matching, active user_sessions row on every request, so silently returning a
+  // token without one (the old "best-effort" behavior) meant a refresh could report success
+  // while handing back a token that 401s on its very next use, degrading the app mid-session
+  // with no explanation. Fail loudly instead so the client retries the refresh.
+  const sessionId = await createSession(user.id, accessToken, req.deviceInfo);
+  if (!sessionId) {
+    throw new AppError('Session service temporarily unavailable. Please try again.', 503);
+  }
 
   res.status(200).json({
     success: true,
@@ -909,13 +929,19 @@ export const verifyEmailCode = catchAsync(async (req, res) => {
   // Log the user straight in — same shape/side-effects as login().
   const accessToken = generateToken(user.id);
   const refreshToken = generateRefreshToken(user.id);
+  // Must succeed — see refreshToken()/login() above for why a token without a matching
+  // user_sessions row is worse than an honest failure the client can retry.
+  let sessionId;
   try {
-    await Promise.race([
+    sessionId = await Promise.race([
       createSession(user.id, accessToken, req.deviceInfo),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Session creation timeout')), 5000)),
     ]);
   } catch (error) {
-    logger.warn('Session creation failed or timed out (non-critical):', error.message);
+    logger.warn('Session creation failed or timed out:', error.message);
+  }
+  if (!sessionId) {
+    throw new AppError('Login service temporarily unavailable. Please try logging in.', 503);
   }
   try {
     await Promise.race([
