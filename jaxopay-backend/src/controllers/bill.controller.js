@@ -267,13 +267,16 @@ function extractVerifyCustomer(rawObj, accountNumber, meterType) {
   };
 }
 
+// SME Data and Recharge PIN (epin) are intentionally not listed here — both web and RN were
+// already filtering them out of the category picker client-side (epin's account-validation
+// path made it unpayable, and SME plans are offered inside the Data category instead, via
+// mapSmePlansToDataVariations below), so this makes the backend match what users actually see
+// instead of leaving them reachable only through the raw GET /bills/categories response.
 const BILL_CATEGORIES = [
   { id: 'electricity', name: 'Electricity', icon: '⚡', description: 'Prepaid & postpaid electricity top-up' },
   { id: 'cable_tv', name: 'Cable TV', icon: '📺', description: 'DSTV, GOtv, Startimes, Showmax' },
   { id: 'airtime', name: 'Airtime', icon: '📱', description: 'Buy mobile airtime for any network' },
   { id: 'data', name: 'Data Bundle', icon: '📶', description: 'Buy data bundles for any network' },
-  { id: 'sme_data', name: 'SME Data', icon: '📡', description: 'SME data plans' },
-  { id: 'epin', name: 'Recharge PIN', icon: '🎫', description: 'Airtime e-PIN (MTN, Glo, Airtel, 9mobile)' },
   { id: 'education', name: 'Education', icon: '🎓', description: 'WAEC, JAMB & more' },
 ];
 
