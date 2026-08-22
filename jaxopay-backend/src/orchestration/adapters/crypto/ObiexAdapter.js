@@ -3,6 +3,12 @@ import { createApiClient } from '../../../utils/apiClient.js';
 import logger from '../../../utils/logger.js';
 import { circuitBreakers } from '../../../utils/circuitBreaker.js';
 
+// Same set duplicated in crypto.controller.js / kycLimits.service.js / swapMarkup.service.js —
+// not imported from swapMarkup.service.js here specifically because that file imports this
+// adapter (obiex), so importing back would be a circular dependency.
+const FIAT_CURRENCIES = new Set(['NGN', 'USD', 'EUR', 'GBP', 'GHS', 'KES', 'ZAR', 'CAD', 'CNY', 'AUD', 'JPY']);
+const isFiat = (code) => FIAT_CURRENCIES.has(String(code || '').toUpperCase());
+
 /**
  * ObiexAdapter
  *
@@ -167,7 +173,13 @@ class ObiexAdapter {
     const list = (data?.data || []).map((c) => ({
       code: String(c.code || '').toUpperCase(),
       name: c.name,
-      type: 'coin',
+      // Was hardcoded 'coin' for every entry Obiex returns — crypto.controller.js's
+      // getSupportedCryptos maps type==='coin' to 'crypto' and anything else to 'fiat', so this
+      // silently meant NOTHING ever came back as fiat, even though NGN/GHS are both real
+      // tradeable currencies on Obiex. That broke CryptoScreen.tsx's availableCoins filter for
+      // fiat pairs (`s.type === 'fiat' && ['NGN','GHS'].includes(s.coin)`) — the code to show
+      // those pairs already existed, it just never had anything to find.
+      type: isFiat(c.code) ? 'fiat' : 'coin',
       min_deposit_amount: 0,
       precision: c.maximumDecimalPlaces ?? 8,
       networks: [],

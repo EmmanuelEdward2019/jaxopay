@@ -242,7 +242,7 @@ export const getExchangeRates = catchAsync(async (req, res) => {
           exchange_amount: exchangeAmount,
           source: `${CRYPTO_PROVIDER}_swap_quote`,
           timestamp: new Date().toISOString(),
-          expiry:    quote.expires_at || new Date(Date.now() + 15000).toISOString(),
+          expiry:    quote.expires_at || new Date(Date.now() + 30000).toISOString(),
         },
       });
     }
