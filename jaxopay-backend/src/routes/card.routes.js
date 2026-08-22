@@ -63,6 +63,7 @@ router.post(
   body('card_type').optional().isIn(['single_use', 'multi_use']),
   body('amount_usd').isFloat({ min: 1 }),
   body('spending_limit').optional().isFloat({ min: 1 }),
+  body('card_design').optional().isIn(['midnight', 'emerald', 'violet', 'sunset', 'silver']),
   validate,
   createCard
 );

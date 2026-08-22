@@ -27,6 +27,11 @@ function strowalletCardsEnabled() {
   return !!(process.env.STROWALLET_PUBLIC_KEY && process.env.STROWALLET_SECRET_KEY);
 }
 
+// Purely cosmetic — which gradient the web/RN apps render the card with. Stored in the existing
+// metadata JSONB column (no schema change needed) rather than its own column. An invalid/missing
+// value just means "no preference"; the clients fall back to their own default in that case.
+const CARD_DESIGNS = ['midnight', 'emerald', 'violet', 'sunset', 'silver'];
+
 const COUNTRY_ISO3 = {
   NG: 'NGA', NGA: 'NGA', NIGERIA: 'NGA', GH: 'GHA', GHA: 'GHA', GHANA: 'GHA',
   KE: 'KEN', KEN: 'KEN', KENYA: 'KEN', ZA: 'ZAF', ZAF: 'ZAF', US: 'USA', USA: 'USA',
@@ -142,6 +147,7 @@ export const getCards = catchAsync(async (req, res) => {
     ...c,
     currency: c.metadata?.currency || 'USD',
     card_brand: c.metadata?.card_brand || 'visa',
+    card_design: c.metadata?.card_design || null,
     last_four: c.card_last_four,
     card_status: c.status,
     spending_limit: c.spending_limit_daily,
@@ -185,6 +191,7 @@ export const getCard = catchAsync(async (req, res) => {
     billing_address: c.metadata?.billing_address || null,
     currency: c.metadata?.currency || 'USD',
     card_brand: c.metadata?.card_brand || 'visa',
+    card_design: c.metadata?.card_design || null,
   };
 
   // Refresh live balance from primary provider
@@ -268,6 +275,7 @@ export const getCardSecureData = catchAsync(async (req, res) => {
 export const createCard = catchAsync(async (req, res) => {
   const { card_type = 'multi_use', spending_limit } = req.body;
   const amountUsd = Number(req.body.amount_usd ?? req.body.initial_amount ?? 0);
+  const cardDesign = CARD_DESIGNS.includes(req.body.card_design) ? req.body.card_design : null;
 
   if (kycTierLevel(req.user.kyc_tier) < 1) {
     throw new AppError('Please verify your identity (KYC) to create a virtual card.', 403, 'KYC_TIER_REQUIRED');
@@ -360,6 +368,7 @@ export const createCard = catchAsync(async (req, res) => {
         JSON.stringify({
           currency: 'USD',
           card_brand: 'visa',
+          card_design: cardDesign,
           billing_address: { line1: kyc.line1, city: kyc.city, state: kyc.state, postal_code: kyc.postalCode, country: kyc.country },
           spending_limit: spending_limit || amountUsd,
           provider_response: raw || null,
@@ -390,6 +399,7 @@ export const createCard = catchAsync(async (req, res) => {
       total_charged: totalDebit,
       currency: 'USD',
       card_brand: 'visa',
+      card_design: cardDesign,
       last_four: card.card_last_four,
       card_status: 'active',
       card_number: created.cardPAN,

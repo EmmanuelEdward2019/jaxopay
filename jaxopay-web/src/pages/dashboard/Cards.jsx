@@ -49,53 +49,93 @@ const computeCardFee = (cfg, amount) => {
     return Math.round((fee + Number.EPSILON) * 100) / 100;
 };
 
-// Same visual language as the real card render below (gloss overlay, EMV chip, contactless mark,
-// JAXOPAY wordmark) in four palettes — shown before a user has a card so "Create Your First Card"
-// isn't a leap of faith into an empty grid. The card design itself is fixed (the issuer produces
-// one physical/virtual design), so only the color varies; layout and every other detail matches
-// exactly what a real card renders as.
-const SAMPLE_CARD_DESIGNS = [
-    { name: 'Midnight', gradient: 'linear-gradient(135deg,#334155 0%,#1e293b 55%,#020617 100%)' },
-    { name: 'Emerald', gradient: 'linear-gradient(135deg,#34d399 0%,#10b981 30%,#0d9488 60%,#065f46 100%)' },
-    { name: 'Violet', gradient: 'linear-gradient(135deg,#a78bfa 0%,#7c3aed 40%,#4c1d95 100%)' },
-    { name: 'Sunset', gradient: 'linear-gradient(135deg,#fbbf24 0%,#f59e0b 40%,#b45309 100%)' },
-];
+// Single source of truth for every card design — used by the sample carousel, the design picker
+// in CreateCardModal, and real cards' own rendering (via card.card_design, stored server-side in
+// virtual_cards.metadata). textDark flips every text/icon color for the light Silver design,
+// which is otherwise unreadable in the white the other four designs use.
+const CARD_DESIGNS = {
+    midnight: { label: 'Midnight', gradient: 'linear-gradient(135deg,#334155 0%,#1e293b 55%,#020617 100%)' },
+    emerald: { label: 'Emerald', gradient: 'linear-gradient(135deg,#34d399 0%,#10b981 30%,#0d9488 60%,#065f46 100%)' },
+    violet: { label: 'Violet', gradient: 'linear-gradient(135deg,#a78bfa 0%,#7c3aed 40%,#4c1d95 100%)' },
+    sunset: { label: 'Sunset', gradient: 'linear-gradient(135deg,#fbbf24 0%,#f59e0b 40%,#b45309 100%)' },
+    // Brushed-steel shimmer matching the metallic card in the pre-login onboarding illustration —
+    // needs dark text/icons, unlike every other design.
+    silver: { label: 'Silver', gradient: 'linear-gradient(135deg,#F8FAFC 0%,#CBD5E1 25%,#94A3B8 50%,#CBD5E1 75%,#F8FAFC 100%)', textDark: true },
+};
+const CARD_DESIGN_ORDER = ['midnight', 'emerald', 'violet', 'sunset', 'silver'];
+// card_type-based fallback for cards created before card_design existed server-side.
+const defaultDesignFor = (card) => (card?.card_type === 'single_use' ? 'midnight' : 'emerald');
 
-const SampleCard = ({ gradient }) => (
-    <div
-        className="relative w-[290px] h-[180px] shrink-0 snap-center rounded-2xl p-6 text-white overflow-hidden"
-        style={{ background: gradient, boxShadow: '0 22px 45px -14px rgba(5,95,70,0.4), inset 0 1px 0 rgba(255,255,255,0.28)' }}
-    >
-        <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,0.32), transparent 55%)' }} />
-        <div className="pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10 blur-2xl" />
+// Shared card face — real cards, the sample carousel, and the design picker all render through
+// this so none of the three can visually drift apart. sample=true skips the reveal/frozen
+// controls (nothing to reveal on a placeholder) and shows masked placeholder content.
+const CardFace = ({ designId, frozen, sample, balance, revealed, cardNumber, validThru, cvv, onToggleReveal, revealing }) => {
+    const d = CARD_DESIGNS[designId] || CARD_DESIGNS.emerald;
+    const fg = d.textDark ? 'text-slate-800' : 'text-white';
+    const fgDim = d.textDark ? 'text-slate-800/65' : 'text-white/70';
+    const fgFaint = d.textDark ? 'text-slate-800/50' : 'text-white/50';
+    const glossOpacity = d.textDark ? 0.5 : 0.32;
+    const glowClass = d.textDark ? 'bg-slate-900/5' : 'bg-white/10';
 
-        <div className="relative flex items-start justify-between mb-4">
-            <div className="flex flex-col">
-                <span className="text-base font-extrabold tracking-tight leading-none">JAXO<span className="text-white/70">PAY</span></span>
-                <span className="text-[10px] uppercase tracking-[0.15em] text-white/60 mt-1">Virtual · USD</span>
-            </div>
-            <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
-                <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[2px] opacity-50">
-                    {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-yellow-800/40 rounded-[1px]" />)}
+    return (
+        <div
+            className={`relative w-[290px] h-[180px] shrink-0 snap-center rounded-2xl p-6 ${fg} overflow-hidden ${frozen ? 'saturate-[0.6]' : ''}`}
+            style={{ background: d.gradient, boxShadow: '0 22px 45px -14px rgba(5,95,70,0.4), inset 0 1px 0 rgba(255,255,255,0.28)' }}
+        >
+            <div className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,${glossOpacity}), transparent 55%)` }} />
+            <div className={`pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full ${glowClass} blur-2xl`} />
+
+            <div className="relative flex items-start justify-between mb-4">
+                <div className="flex flex-col">
+                    <span className="text-base font-extrabold tracking-tight leading-none">JAXO<span className={fgDim}>PAY</span></span>
+                    <span className={`text-[10px] uppercase tracking-[0.15em] ${fgDim} mt-1`}>Virtual · USD</span>
+                </div>
+                <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
+                    <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[2px] opacity-50">
+                        {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-yellow-800/40 rounded-[1px]" />)}
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <p className="relative font-mono text-lg tracking-[0.18em] mb-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]">•••• •••• •••• 4242</p>
+            <div className="relative flex items-center justify-between mb-4">
+                <svg viewBox="0 0 24 24" className={`w-5 h-6 ${fgDim}`} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                    <path d="M8 7a8 8 0 0 1 0 10" /><path d="M11.5 5a12 12 0 0 1 0 14" /><path d="M15 3a16 16 0 0 1 0 18" />
+                </svg>
+                {!sample && (
+                    <div className="flex items-center gap-2">
+                        {frozen && (
+                            <span className={`px-2 py-1 ${d.textDark ? 'bg-black/10' : 'bg-white/15'} backdrop-blur text-[10px] font-semibold rounded-full flex items-center gap-1`}>
+                                <Lock className="w-3 h-3" /> Frozen
+                            </span>
+                        )}
+                        <button onClick={onToggleReveal} className={`p-1.5 ${d.textDark ? 'hover:bg-black/5' : 'hover:bg-white/10'} rounded-lg transition-colors`}>
+                            {revealing ? <RefreshCw className="w-4 h-4 animate-spin" /> : revealed ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                    </div>
+                )}
+            </div>
 
-        <div className="relative flex items-end gap-6">
-            <div>
-                <p className="text-white/50 text-[10px] uppercase tracking-wide mb-0.5">Valid thru</p>
-                <p className="font-mono text-sm">••/••</p>
+            <div className="relative mb-3">
+                <p className={`${fgFaint} text-[11px] mb-0.5`}>Balance</p>
+                <p className="text-xl font-bold drop-shadow-sm">{sample ? '••••••' : (revealed ? formatCurrency(balance || 0, 'USD') : '••••••')}</p>
             </div>
-            <div>
-                <p className="text-white/50 text-[10px] uppercase tracking-wide mb-0.5">CVV</p>
-                <p className="font-mono text-sm">•••</p>
+
+            <p className="relative font-mono text-lg tracking-[0.18em] mb-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]">{sample ? '•••• •••• •••• 4242' : cardNumber}</p>
+
+            <div className="relative flex items-end gap-6">
+                <div>
+                    <p className={`${fgFaint} text-[10px] uppercase tracking-wide mb-0.5`}>Valid thru</p>
+                    <p className="font-mono text-sm">{sample ? '••/••' : validThru}</p>
+                </div>
+                <div>
+                    <p className={`${fgFaint} text-[10px] uppercase tracking-wide mb-0.5`}>CVV</p>
+                    <p className="font-mono text-sm">{sample ? '•••' : cvv}</p>
+                </div>
+                <div className="ml-auto italic font-black text-2xl tracking-tighter drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]">VISA</div>
             </div>
-            <div className="ml-auto italic font-black text-2xl tracking-tighter drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]">VISA</div>
         </div>
-    </div>
-);
+    );
+};
 
 const SampleCardCarousel = () => {
     const [activeIndex, setActiveIndex] = useState(0);
@@ -107,18 +147,45 @@ const SampleCardCarousel = () => {
                 className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 onScroll={(e) => setActiveIndex(Math.round(e.currentTarget.scrollLeft / CARD_STEP))}
             >
-                {SAMPLE_CARD_DESIGNS.map((design) => (
-                    <SampleCard key={design.name} gradient={design.gradient} />
+                {CARD_DESIGN_ORDER.map((id) => (
+                    <CardFace key={id} designId={id} sample />
                 ))}
             </div>
             <div className="flex justify-center gap-1.5 mt-3">
-                {SAMPLE_CARD_DESIGNS.map((design, i) => (
-                    <div key={design.name} className={`h-1.5 rounded-full transition-all ${i === activeIndex ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30'}`} />
+                {CARD_DESIGN_ORDER.map((id, i) => (
+                    <div key={id} className={`h-1.5 rounded-full transition-all ${i === activeIndex ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30'}`} />
                 ))}
             </div>
         </div>
     );
 };
+
+// Compact swatch picker for CreateCardModal — a small gradient chip per design, ring highlight on
+// the selected one.
+const DesignPicker = ({ selected, onSelect }) => (
+    <div className="flex justify-between">
+        {CARD_DESIGN_ORDER.map((id) => {
+            const d = CARD_DESIGNS[id];
+            const isSelected = selected === id;
+            return (
+                <button
+                    key={id}
+                    type="button"
+                    onClick={() => onSelect(id)}
+                    className="flex flex-col items-center gap-1.5"
+                >
+                    <span
+                        className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-colors ${isSelected ? 'border-primary' : 'border-transparent'}`}
+                        style={{ background: d.gradient }}
+                    >
+                        {isSelected && <Check className={`w-4 h-4 ${d.textDark ? 'text-slate-800' : 'text-white'}`} strokeWidth={3} />}
+                    </span>
+                    <span className={`text-[11px] font-medium ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}>{d.label}</span>
+                </button>
+            );
+        })}
+    </div>
+);
 
 const Cards = () => {
     const navigate = useNavigate();
@@ -374,7 +441,22 @@ const Cards = () => {
                         </button>
                     </div>
                 ) : (
-                    cards.map((card) => (
+                    cards.map((card) => {
+                        const designId = card.card_design && CARD_DESIGNS[card.card_design] ? card.card_design : defaultDesignFor(card);
+                        const d = CARD_DESIGNS[designId];
+                        const fg = d.textDark ? 'text-slate-800' : 'text-white';
+                        const fgDim70 = d.textDark ? 'text-slate-800/70' : 'text-white/70';
+                        const fgDim60 = d.textDark ? 'text-slate-800/60' : 'text-white/60';
+                        const fgDim55 = d.textDark ? 'text-slate-800/55' : 'text-white/55';
+                        const fgDim50 = d.textDark ? 'text-slate-800/50' : 'text-white/50';
+                        const hoverBg = d.textDark ? 'hover:bg-black/5' : 'hover:bg-white/10';
+                        const badgeBg = d.textDark ? 'bg-black/10' : 'bg-white/15';
+                        const glowBg = d.textDark ? 'bg-slate-900/5' : 'bg-white/10';
+                        const glossOpacity = d.textDark ? 0.5 : 0.32;
+                        const borderTop = d.textDark ? 'border-slate-800/20' : 'border-white/20';
+                        const addressColor = d.textDark ? 'text-slate-800/80' : 'text-white/80';
+
+                        return (
                         <motion.div
                             key={card.id}
                             initial={{ opacity: 0, y: 20 }}
@@ -386,34 +468,44 @@ const Cards = () => {
                             {/* Card Visual — modern 3D */}
                             <div className="[perspective:1600px]">
                                 <div
-                                    className={`relative p-6 text-white overflow-hidden transition-transform duration-500 ease-out will-change-transform group-hover:scale-[1.015] group-hover:-translate-y-0.5 ${card.card_status === 'frozen' ? 'saturate-[0.6]' : ''}`}
+                                    className={`relative p-6 ${fg} overflow-hidden transition-transform duration-500 ease-out will-change-transform group-hover:scale-[1.015] group-hover:-translate-y-0.5 ${card.card_status === 'frozen' ? 'saturate-[0.6]' : ''}`}
                                     style={{
-                                        background: card.card_type === 'single_use'
-                                            ? 'linear-gradient(135deg,#334155 0%,#1e293b 55%,#020617 100%)'
-                                            : 'linear-gradient(135deg,#34d399 0%,#10b981 30%,#0d9488 60%,#065f46 100%)',
+                                        background: d.gradient,
                                         boxShadow: '0 22px 45px -14px rgba(5,95,70,0.55), inset 0 1px 0 rgba(255,255,255,0.28)',
                                     }}
                                 >
                                     {/* gloss + glow overlays */}
-                                    <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,0.32), transparent 55%)' }} />
-                                    <div className="pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10 blur-2xl" />
-                                    <div className="pointer-events-none absolute inset-y-0 -left-1/4 w-1/3 rotate-12 bg-white/10 blur-md transition-transform duration-700 group-hover:translate-x-[260%]" />
+                                    <div className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,${glossOpacity}), transparent 55%)` }} />
+                                    <div className={`pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full ${glowBg} blur-2xl`} />
+                                    <div className={`pointer-events-none absolute inset-y-0 -left-1/4 w-1/3 rotate-12 ${glowBg} blur-md transition-transform duration-700 group-hover:translate-x-[260%]`} />
 
-                                    {/* Top: brand + status/reveal */}
-                                    <div className="relative flex items-start justify-between mb-5">
+                                    {/* Top: brand + EMV chip */}
+                                    <div className="relative flex items-start justify-between mb-4">
                                         <div className="flex flex-col">
-                                            <span className="text-base font-extrabold tracking-tight leading-none">JAXO<span className="text-white/70">PAY</span></span>
-                                            <span className="text-[10px] uppercase tracking-[0.15em] text-white/60 mt-1">Virtual · USD</span>
+                                            <span className="text-base font-extrabold tracking-tight leading-none">JAXO<span className={fgDim70}>PAY</span></span>
+                                            <span className={`text-[10px] uppercase tracking-[0.15em] ${fgDim60} mt-1`}>Virtual · USD</span>
                                         </div>
+                                        <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
+                                            <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[2px] opacity-50">
+                                                {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-yellow-800/40 rounded-[1px]" />)}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Contactless mark + status/reveal */}
+                                    <div className="relative flex items-center justify-between mb-4">
+                                        <svg viewBox="0 0 24 24" className={`w-5 h-6 ${fgDim70}`} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                                            <path d="M8 7a8 8 0 0 1 0 10" /><path d="M11.5 5a12 12 0 0 1 0 14" /><path d="M15 3a16 16 0 0 1 0 18" />
+                                        </svg>
                                         <div className="flex items-center gap-2">
                                             {card.card_status === 'frozen' && (
-                                                <span className="px-2 py-1 bg-white/15 backdrop-blur text-white text-[10px] font-semibold rounded-full flex items-center gap-1">
+                                                <span className={`px-2 py-1 ${badgeBg} backdrop-blur text-[10px] font-semibold rounded-full flex items-center gap-1`}>
                                                     <Lock className="w-3 h-3" /> Frozen
                                                 </span>
                                             )}
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); toggleShowDetails(card.id); }}
-                                                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                                                className={`p-2 ${hoverBg} rounded-lg transition-colors`}
                                                 title={showDetails[card.id] ? 'Hide card details' : 'Reveal card details'}
                                             >
                                                 {secureLoading[card.id]
@@ -423,21 +515,9 @@ const Cards = () => {
                                         </div>
                                     </div>
 
-                                    {/* EMV chip + contactless */}
-                                    <div className="relative flex items-center gap-3 mb-5">
-                                        <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
-                                            <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[2px] opacity-50">
-                                                {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-yellow-800/40 rounded-[1px]" />)}
-                                            </div>
-                                        </div>
-                                        <svg viewBox="0 0 24 24" className="w-5 h-6 text-white/70" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                                            <path d="M8 7a8 8 0 0 1 0 10" /><path d="M11.5 5a12 12 0 0 1 0 14" /><path d="M15 3a16 16 0 0 1 0 18" />
-                                        </svg>
-                                    </div>
-
                                     {/* Balance */}
                                     <div className="relative mb-4">
-                                        <p className="text-white/55 text-[11px] mb-0.5">Balance</p>
+                                        <p className={`${fgDim55} text-[11px] mb-0.5`}>Balance</p>
                                         <p className="text-2xl font-bold drop-shadow-sm">
                                             {showDetails[card.id] ? formatCurrency(card.balance || 0, 'USD') : '••••••'}
                                         </p>
@@ -445,7 +525,7 @@ const Cards = () => {
 
                                     {/* Card number */}
                                     <div className="relative mb-4 flex items-center gap-2">
-                                        <p className="font-mono text-lg tracking-[0.18em] flex-1 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]">
+                                        <p className="font-mono text-lg tracking-[0.18em] flex-1 drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]">
                                             {showDetails[card.id] && secureData[card.id]?.card_number
                                                 ? maskCardNumber(secureData[card.id].card_number)
                                                 : `•••• •••• •••• ${card.last_four || '••••'}`}
@@ -453,9 +533,9 @@ const Cards = () => {
                                         {showDetails[card.id] && secureData[card.id]?.card_number && (
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); copyToClipboard(secureData[card.id].card_number, `number-${card.id}`); }}
-                                                className="p-1 hover:bg-white/10 rounded transition-colors"
+                                                className={`p-1 ${hoverBg} rounded transition-colors`}
                                             >
-                                                {copiedField === `number-${card.id}` ? <Check className="w-4 h-4 text-emerald-200" /> : <Copy className="w-4 h-4" />}
+                                                {copiedField === `number-${card.id}` ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                                             </button>
                                         )}
                                     </div>
@@ -463,13 +543,13 @@ const Cards = () => {
                                     {/* Expiry / CVV / Brand */}
                                     <div className="relative flex items-end gap-6">
                                         <div>
-                                            <p className="text-white/50 text-[10px] uppercase tracking-wide mb-0.5">Valid thru</p>
+                                            <p className={`${fgDim50} text-[10px] uppercase tracking-wide mb-0.5`}>Valid thru</p>
                                             <p className="font-mono text-sm">
                                                 {showDetails[card.id] ? (secureData[card.id]?.expiry_date || card.expiry_date || '••/••') : '••/••'}
                                             </p>
                                         </div>
                                         <div>
-                                            <p className="text-white/50 text-[10px] uppercase tracking-wide mb-0.5">CVV</p>
+                                            <p className={`${fgDim50} text-[10px] uppercase tracking-wide mb-0.5`}>CVV</p>
                                             <div className="flex items-center gap-1">
                                                 <p className="font-mono text-sm">
                                                     {showDetails[card.id] ? (secureData[card.id]?.cvv || card.cvv || '•••') : '•••'}
@@ -477,24 +557,24 @@ const Cards = () => {
                                                 {showDetails[card.id] && (secureData[card.id]?.cvv || card.cvv) && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); copyToClipboard(secureData[card.id]?.cvv || card.cvv, `cvv-${card.id}`); }}
-                                                        className="p-1 hover:bg-white/10 rounded transition-colors"
+                                                        className={`p-1 ${hoverBg} rounded transition-colors`}
                                                     >
-                                                        {copiedField === `cvv-${card.id}` ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
+                                                        {copiedField === `cvv-${card.id}` ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                                                     </button>
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="ml-auto italic font-black text-2xl tracking-tighter drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]">VISA</div>
+                                        <div className="ml-auto italic font-black text-2xl tracking-tighter drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]">VISA</div>
                                     </div>
 
                                     {/* Billing address — show when revealed */}
                                     {showDetails[card.id] && (secureData[card.id]?.billing_address || card.billing_address) && (
-                                        <div className="relative mt-4 pt-4 border-t border-white/20">
-                                            <p className="text-white/50 text-[10px] uppercase tracking-wide mb-1">Billing address</p>
+                                        <div className={`relative mt-4 pt-4 border-t ${borderTop}`}>
+                                            <p className={`${fgDim50} text-[10px] uppercase tracking-wide mb-1`}>Billing address</p>
                                             {(() => {
                                                 const ba = secureData[card.id]?.billing_address || card.billing_address;
                                                 return (
-                                                    <p className="text-white/80 text-xs">
+                                                    <p className={`${addressColor} text-xs`}>
                                                         {ba.line1 && `${ba.line1}, `}{ba.city && `${ba.city}, `}{ba.state && `${ba.state} `}{ba.postal_code && `${ba.postal_code}, `}{ba.country}
                                                     </p>
                                                 );
@@ -543,7 +623,8 @@ const Cards = () => {
                                 </div>
                             </div>
                         </motion.div>
-                    ))
+                        );
+                    })
                 )}
             </div>
 
@@ -646,6 +727,7 @@ const Cards = () => {
 const CreateCardModal = ({ onClose, onCreate, loading, wallets = [], feeConfig }) => {
     const [amountUsd, setAmountUsd] = useState('5');
     const [spendingLimit, setSpendingLimit] = useState('');
+    const [cardDesign, setCardDesign] = useState('emerald');
     const [error, setError] = useState(null);
 
     const usdWallet = wallets.find(w => w.currency === 'USD') || wallets[0];
@@ -661,6 +743,7 @@ const CreateCardModal = ({ onClose, onCreate, loading, wallets = [], feeConfig }
         if (total > usdBalance) { setError(`Insufficient USD balance. You need $${total.toFixed(2)} (incl. $${fee.toFixed(2)} fee). Available: $${usdBalance.toFixed(2)}.`); return; }
         onCreate({
             card_type: 'multi_use',
+            card_design: cardDesign,
             amount_usd: amt,
             ...(spendingLimit && parseFloat(spendingLimit) > 0 ? { spending_limit: parseFloat(spendingLimit) } : {}),
         });
@@ -693,6 +776,12 @@ const CreateCardModal = ({ onClose, onCreate, loading, wallets = [], feeConfig }
                         <p className="text-danger text-sm">{error}</p>
                     </div>
                 )}
+
+                {/* Card design */}
+                <div className="mb-5">
+                    <label className="block text-sm font-medium text-foreground mb-2">Card Design</label>
+                    <DesignPicker selected={cardDesign} onSelect={setCardDesign} />
+                </div>
 
                 {/* Initial funding amount */}
                 <div className="mb-5">
