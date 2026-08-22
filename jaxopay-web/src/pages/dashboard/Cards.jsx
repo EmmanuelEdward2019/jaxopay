@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    CreditCard,
     Plus,
     Eye,
     EyeOff,
@@ -48,6 +47,77 @@ const computeCardFee = (cfg, amount) => {
     }
     if (cap > 0) fee = Math.min(fee, cap);
     return Math.round((fee + Number.EPSILON) * 100) / 100;
+};
+
+// Same visual language as the real card render below (gloss overlay, EMV chip, contactless mark,
+// JAXOPAY wordmark) in four palettes — shown before a user has a card so "Create Your First Card"
+// isn't a leap of faith into an empty grid. The card design itself is fixed (the issuer produces
+// one physical/virtual design), so only the color varies; layout and every other detail matches
+// exactly what a real card renders as.
+const SAMPLE_CARD_DESIGNS = [
+    { name: 'Midnight', gradient: 'linear-gradient(135deg,#334155 0%,#1e293b 55%,#020617 100%)' },
+    { name: 'Emerald', gradient: 'linear-gradient(135deg,#34d399 0%,#10b981 30%,#0d9488 60%,#065f46 100%)' },
+    { name: 'Violet', gradient: 'linear-gradient(135deg,#a78bfa 0%,#7c3aed 40%,#4c1d95 100%)' },
+    { name: 'Sunset', gradient: 'linear-gradient(135deg,#fbbf24 0%,#f59e0b 40%,#b45309 100%)' },
+];
+
+const SampleCard = ({ gradient }) => (
+    <div
+        className="relative w-[290px] h-[180px] shrink-0 snap-center rounded-2xl p-6 text-white overflow-hidden"
+        style={{ background: gradient, boxShadow: '0 22px 45px -14px rgba(5,95,70,0.4), inset 0 1px 0 rgba(255,255,255,0.28)' }}
+    >
+        <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,0.32), transparent 55%)' }} />
+        <div className="pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10 blur-2xl" />
+
+        <div className="relative flex items-start justify-between mb-4">
+            <div className="flex flex-col">
+                <span className="text-base font-extrabold tracking-tight leading-none">JAXO<span className="text-white/70">PAY</span></span>
+                <span className="text-[10px] uppercase tracking-[0.15em] text-white/60 mt-1">Virtual · USD</span>
+            </div>
+            <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
+                <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[2px] opacity-50">
+                    {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-yellow-800/40 rounded-[1px]" />)}
+                </div>
+            </div>
+        </div>
+
+        <p className="relative font-mono text-lg tracking-[0.18em] mb-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]">•••• •••• •••• 4242</p>
+
+        <div className="relative flex items-end gap-6">
+            <div>
+                <p className="text-white/50 text-[10px] uppercase tracking-wide mb-0.5">Valid thru</p>
+                <p className="font-mono text-sm">••/••</p>
+            </div>
+            <div>
+                <p className="text-white/50 text-[10px] uppercase tracking-wide mb-0.5">CVV</p>
+                <p className="font-mono text-sm">•••</p>
+            </div>
+            <div className="ml-auto italic font-black text-2xl tracking-tighter drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]">VISA</div>
+        </div>
+    </div>
+);
+
+const SampleCardCarousel = () => {
+    const [activeIndex, setActiveIndex] = useState(0);
+    const CARD_STEP = 290 + 16; // card width + gap-4
+
+    return (
+        <div className="mb-2">
+            <div
+                className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                onScroll={(e) => setActiveIndex(Math.round(e.currentTarget.scrollLeft / CARD_STEP))}
+            >
+                {SAMPLE_CARD_DESIGNS.map((design) => (
+                    <SampleCard key={design.name} gradient={design.gradient} />
+                ))}
+            </div>
+            <div className="flex justify-center gap-1.5 mt-3">
+                {SAMPLE_CARD_DESIGNS.map((design, i) => (
+                    <div key={design.name} className={`h-1.5 rounded-full transition-all ${i === activeIndex ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30'}`} />
+                ))}
+            </div>
+        </div>
+    );
 };
 
 const Cards = () => {
@@ -289,11 +359,11 @@ const Cards = () => {
             {/* Cards Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {cards.length === 0 ? (
-                    <div className="col-span-full text-center py-12">
-                        <CreditCard className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-foreground mb-2">No virtual cards yet</h3>
+                    <div className="col-span-full text-center py-8">
+                        <SampleCardCarousel />
+                        <h3 className="text-lg font-medium text-foreground mb-2 mt-4">Your USD Virtual Card</h3>
                         <p className="text-muted-foreground mb-4">
-                            Create your first USD virtual card for secure online payments
+                            Swipe to preview the design — spend online anywhere Visa is accepted, funded instantly from your USD wallet.
                         </p>
                         <button
                             onClick={() => setShowCreateModal(true)}
