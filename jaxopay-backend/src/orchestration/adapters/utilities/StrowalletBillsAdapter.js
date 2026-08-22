@@ -421,6 +421,13 @@ class StrowalletBillsAdapter {
     return {
       success: isSuccess(data),
       transactionId: data?.trx_num || data?.reference || data?.data?.reference,
+      // WAEC/NECO result-checker purchases issue a PIN/serial the student needs to check their
+      // result online — same "artifact the user actually paid for" shape as an electricity token,
+      // just under different field names depending on the checker. Cast a wide net; a purchase
+      // that doesn't come with one (already sent by SMS, or this specific checker just confirms)
+      // leaves this null rather than guessing.
+      token: data?.token || data?.data?.token || data?.pin || data?.Pin || data?.data?.pin
+        || data?.serial || data?.Serial || data?.data?.serial || null,
       raw: data,
     };
   }

@@ -73,6 +73,7 @@ const Bills = () => {
     const [selectedVariation, setSelectedVariation] = useState(null);
     const [validatedAccount, setValidatedAccount] = useState(null);
     const [history, setHistory] = useState([]);
+    const [expandedHistoryId, setExpandedHistoryId] = useState(null);
     const [loading, setLoading] = useState(false);
     const [validating, setValidating] = useState(false);
     const [error, setError] = useState(null);
@@ -238,9 +239,12 @@ const Bills = () => {
         setPinProcessing(false);
     };
 
-    // Map a bill category to a beneficiary type and persist it for reuse.
+    // Map a bill category to a beneficiary type and persist it for reuse. Keys must match
+    // BILL_CATEGORIES ids exactly — this used 'cable' (the backend's beneficiary type name) as
+    // the key instead of 'cable_tv' (the actual category id), so every cable payment silently
+    // skipped saving a reusable beneficiary while every other category worked.
     const saveBillBeneficiary = () => {
-        const typeMap = { airtime: 'airtime', data: 'data', cable: 'cable', electricity: 'electricity' };
+        const typeMap = { airtime: 'airtime', data: 'data', cable_tv: 'cable', electricity: 'electricity' };
         const type = typeMap[selectedCategory?.id];
         if (!type || !accountNumber) return;
         beneficiaryService.create({
@@ -742,18 +746,34 @@ const Bills = () => {
                         ) : (
                             <div className="space-y-3">
                                 {history.map((payment) => (
-                                    <div key={payment.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                                        <div>
-                                            <p className="font-medium text-foreground text-sm">{payment.provider_name || payment.provider_id}</p>
-                                            <p className="text-xs text-muted-foreground">{formatDateTime(payment.created_at)}</p>
+                                    <div
+                                        key={payment.id}
+                                        className={`p-3 bg-muted/50 rounded-lg ${payment.token ? 'cursor-pointer hover:bg-muted' : ''}`}
+                                        onClick={() => payment.token && setExpandedHistoryId(expandedHistoryId === payment.id ? null : payment.id)}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="font-medium text-foreground text-sm">{payment.provider_name || payment.provider_id}</p>
+                                                <p className="text-xs text-muted-foreground">{formatDateTime(payment.created_at)}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="font-medium text-foreground text-sm">{formatCurrency(payment.amount, payment.currency)}</p>
+                                                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${payment.status === 'completed' ? 'bg-success/10 text-success' :
+                                                    payment.status === 'failed' ? 'bg-danger/10 text-danger' :
+                                                        'bg-warning/10 text-warning'
+                                                    }`}>{payment.status}</span>
+                                            </div>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="font-medium text-foreground text-sm">{formatCurrency(payment.amount, payment.currency)}</p>
-                                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${payment.status === 'completed' ? 'bg-success/10 text-success' :
-                                                payment.status === 'failed' ? 'bg-danger/10 text-danger' :
-                                                    'bg-warning/10 text-warning'
-                                                }`}>{payment.status}</span>
-                                        </div>
+                                        {/* Electricity token / education PIN — persisted server-side now (see
+                                            bill.controller.js's updateBillRow), so past payments can show this
+                                            again, not just the moment the payment first went through. */}
+                                        {payment.token && expandedHistoryId === payment.id && (
+                                            <div className="mt-2 pt-2 border-t border-border">
+                                                <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Token</p>
+                                                <p className="font-mono text-sm font-bold text-foreground">{payment.token}</p>
+                                                {payment.units && <p className="text-xs text-muted-foreground mt-0.5">{payment.units}</p>}
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>

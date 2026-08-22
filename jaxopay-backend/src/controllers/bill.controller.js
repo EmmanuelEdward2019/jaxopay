@@ -707,10 +707,17 @@ export const payBill = catchAsync(async (req, res) => {
     throw new AppError(message, 502);
   };
 
+  // token/units were being returned in the pay response and the confirmation email, but never
+  // written back to the row itself — so GET /bills/history and GET /bills/:id (what a "past
+  // transaction" receipt screen actually reads) could never show an electricity token again once
+  // the user navigated away from the immediate response. Reads token/units from the closure —
+  // every call site below sets them (or leaves them null) before calling this.
   const updateBillRow = async (status, ref) => {
     await query(
-      `UPDATE bill_payments SET status = $1, provider_reference = $2, updated_at = NOW() WHERE id = $3`,
-      [status, ref, result.billPaymentId]
+      `UPDATE bill_payments
+       SET status = $1, provider_reference = $2, updated_at = NOW(), metadata = metadata || $4::jsonb
+       WHERE id = $3`,
+      [status, ref, result.billPaymentId, JSON.stringify({ token, units })]
     );
   };
 
@@ -888,6 +895,7 @@ export const payBill = catchAsync(async (req, res) => {
         }
         providerStatus = 'completed';
         providerRef = String(st.transactionId || st.raw?.trx_num || '').trim() || reference;
+        token = st.token || null;
         await updateBillRow('completed', providerRef);
         return;
       }
@@ -1026,10 +1034,19 @@ export const getBillHistory = catchAsync(async (req, res) => {
 
   const countResult = await query(`SELECT COUNT(*) as total FROM bill_payments ${conditions}`, params);
 
+  // token/units live in metadata (see updateBillRow) — surfaced at the top level too so a receipt
+  // screen doesn't need to know to dig into metadata for the one thing (an electricity token,
+  // an education PIN) the user actually came back to look up.
+  const payments = result.rows.map((r) => ({
+    ...r,
+    token: r.metadata?.token || null,
+    units: r.metadata?.units || null,
+  }));
+
   res.status(200).json({
     success: true,
     data: {
-      payments: result.rows,
+      payments,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -1055,5 +1072,9 @@ export const getBillPayment = catchAsync(async (req, res) => {
 
   if (result.rows.length === 0) throw new AppError('Bill payment not found', 404);
 
-  res.status(200).json({ success: true, data: result.rows[0] });
+  const payment = result.rows[0];
+  res.status(200).json({
+    success: true,
+    data: { ...payment, token: payment.metadata?.token || null, units: payment.metadata?.units || null },
+  });
 });
