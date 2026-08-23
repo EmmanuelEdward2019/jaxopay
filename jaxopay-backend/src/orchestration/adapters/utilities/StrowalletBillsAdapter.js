@@ -89,6 +89,41 @@ function dataBundleServiceId(network) {
   return `${n}-data`;
 }
 
+// Strowallet's documented electricity response uses Title-Case field names (Token, Units,
+// purchased_code) nested inconsistently depending on the disco — sometimes top-level, sometimes
+// under `response` or `data`. The lowercase-only check this used to have (data?.token ||
+// data?.data?.token || data?.pin) never matched any of them, so every electricity purchase's
+// token silently came back null — not a persistence bug, an extraction bug: there was never
+// anything to persist. Search every plausible container and casing rather than guessing one.
+function extractElectricityToken(data) {
+  const containers = [data, data?.response, data?.data, data?.response?.content, data?.data?.response].filter(
+    (c) => c && typeof c === 'object'
+  );
+  for (const c of containers) {
+    if (c.Token) return String(c.Token).trim();
+    if (c.token) return String(c.token).trim();
+    if (c.purchased_code) {
+      // Occasionally formatted as "Token : 147380000005838" rather than a bare value.
+      const m = String(c.purchased_code).match(/(\d[\d-]{6,})/);
+      return (m ? m[1] : String(c.purchased_code)).trim();
+    }
+    if (c.pin) return String(c.pin).trim();
+    if (c.Pin) return String(c.Pin).trim();
+  }
+  return null;
+}
+
+function extractElectricityUnits(data) {
+  const containers = [data, data?.response, data?.data, data?.response?.content, data?.data?.response].filter(
+    (c) => c && typeof c === 'object'
+  );
+  for (const c of containers) {
+    if (c.Units != null) return c.Units;
+    if (c.units != null) return c.units;
+  }
+  return null;
+}
+
 class StrowalletBillsAdapter {
   constructor() {
     this.publicKey = process.env.STROWALLET_PUBLIC_KEY;
@@ -394,9 +429,9 @@ class StrowalletBillsAdapter {
     });
     return {
       success: isSuccess(data),
-      transactionId: data?.trx_num || data?.reference || data?.data?.reference,
-      token: data?.token || data?.data?.token || data?.pin,
-      units: data?.units || data?.data?.units,
+      transactionId: data?.trx_num || data?.reference || data?.data?.reference || data?.response?.requestId,
+      token: extractElectricityToken(data),
+      units: extractElectricityUnits(data),
       raw: data,
     };
   }
