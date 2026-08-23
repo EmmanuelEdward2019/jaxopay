@@ -170,23 +170,31 @@ class ObiexAdapter {
     if (cached) return cached;
 
     const data = await this._request('GET', '/currencies/tradeable');
-    const list = (data?.data || []).map((c) => ({
-      code: String(c.code || '').toUpperCase(),
-      name: c.name,
-      // Was hardcoded 'coin' for every entry Obiex returns — crypto.controller.js's
-      // getSupportedCryptos maps type==='coin' to 'crypto' and anything else to 'fiat', so this
-      // silently meant NOTHING ever came back as fiat, even though NGN/GHS are both real
-      // tradeable currencies on Obiex. That broke CryptoScreen.tsx's availableCoins filter for
-      // fiat pairs (`s.type === 'fiat' && ['NGN','GHS'].includes(s.coin)`) — the code to show
-      // those pairs already existed, it just never had anything to find.
-      type: isFiat(c.code) ? 'fiat' : 'coin',
-      min_deposit_amount: 0,
-      precision: c.maximumDecimalPlaces ?? 8,
-      networks: [],
-      active: c.active !== false,
-      withdrawable: c.withdrawable !== false,
-      receivable: c.receivable !== false,
-    }));
+    const list = (data?.data || []).map((c) => {
+      // Obiex lists the Naira as NGNX (see _fromObiexCurrency above), not NGN — this was
+      // returning that raw code untranslated, so even after fixing the type below, the entry
+      // still couldn't match CryptoScreen.tsx's `['NGN','GHS'].includes(s.coin)` filter (looking
+      // for 'NGN', getting 'NGNX') and isFiat('NGNX') itself fell through to 'coin' anyway
+      // (FIAT_CURRENCIES lists 'NGN', not 'NGNX'). Translate first, then classify.
+      const code = this._fromObiexCurrency(c.code);
+      return {
+        code,
+        name: c.name,
+        // Was hardcoded 'coin' for every entry Obiex returns — crypto.controller.js's
+        // getSupportedCryptos maps type==='coin' to 'crypto' and anything else to 'fiat', so this
+        // silently meant NOTHING ever came back as fiat, even though NGN/GHS are both real
+        // tradeable currencies on Obiex. That broke CryptoScreen.tsx's availableCoins filter for
+        // fiat pairs (`s.type === 'fiat' && ['NGN','GHS'].includes(s.coin)`) — the code to show
+        // those pairs already existed, it just never had anything to find.
+        type: isFiat(code) ? 'fiat' : 'coin',
+        min_deposit_amount: 0,
+        precision: c.maximumDecimalPlaces ?? 8,
+        networks: [],
+        active: c.active !== false,
+        withdrawable: c.withdrawable !== false,
+        receivable: c.receivable !== false,
+      };
+    });
     this._setCache(cacheKey, list);
     return list;
   }
