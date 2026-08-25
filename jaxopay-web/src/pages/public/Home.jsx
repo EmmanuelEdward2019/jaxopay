@@ -163,8 +163,11 @@ export default function Home() {
 
   return (
     <PublicLayout>
-      {/* Hero Section - Modern Light Theme */}
-      <section className="relative bg-white pt-16 pb-12 lg:pt-20 lg:pb-16 overflow-hidden">
+      {/* Hero Section - Modern Light Theme. bg-gradient (not flat bg-white) so the section's own
+          background carries the same faint green wash as its decorative blobs all the way down —
+          on mobile this section stacks tall (single column) and the blobs, sized/positioned for a
+          much shorter desktop hero, left everything below the fold starkly white by comparison. */}
+      <section className="relative bg-gradient-to-b from-white to-emerald-50 pt-16 pb-12 lg:pt-20 lg:pb-16 overflow-hidden">
         {/* Background Gradients/Shapes */}
         <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-accent-50 to-transparent opacity-60 skew-x-12" />
         <div className="absolute top-20 left-10 w-72 h-72 bg-emerald-100 rounded-full blur-3xl opacity-40 mix-blend-multiply animate-blob" />
@@ -192,10 +195,6 @@ export default function Home() {
               <p className="text-xl text-gray-600 mb-8 leading-relaxed max-w-lg">
                 JAXOPAY is a crypto exchange platform where you can buy, sell, and swap cryptocurrency at zero fee. We also offer remittance services across borders and let you manage multi-currency fiat &amp; crypto wallets — at the best market rates, with instant transfers and zero hidden fees.
               </p>
-
-              <div className="flex flex-col sm:flex-row gap-4 mb-10">
-                {/* Hero buttons removed per request */}
-              </div>
 
               {/* App Store Links */}
               <div className="flex items-center gap-6">

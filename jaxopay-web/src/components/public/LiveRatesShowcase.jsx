@@ -2,27 +2,6 @@ import { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import cryptoService from '../../services/cryptoService';
 
-// Pairs to showcase — mirrors what the app itself trades, so the numbers visitors see here
-// are the same ones they'd get inside the app. Curated (not the full ~100+ market catalog the
-// backend ticker actually returns) since this is a compact decorative marquee, but every fiat the
-// swap engine supports gets at least a couple of pairs — GHS previously had none at all.
-const PAIRS = [
-    { code: 'BTC', market: 'btcusdt', quote: 'USDT' },
-    { code: 'ETH', market: 'ethusdt', quote: 'USDT' },
-    { code: 'BTC', market: 'btcngn', quote: 'NGN' },
-    { code: 'USDT', market: 'usdtngn', quote: 'NGN' },
-    { code: 'USDT', market: 'usdtghs', quote: 'GHS' },
-    { code: 'BTC', market: 'btcghs', quote: 'GHS' },
-    { code: 'SOL', market: 'solusdt', quote: 'USDT' },
-    { code: 'BNB', market: 'bnbusdt', quote: 'USDT' },
-    { code: 'XRP', market: 'xrpusdt', quote: 'USDT' },
-    { code: 'ETH', market: 'ethngn', quote: 'NGN' },
-    { code: 'ETH', market: 'ethghs', quote: 'GHS' },
-    { code: 'ADA', market: 'adausdt', quote: 'USDT' },
-    { code: 'DOGE', market: 'dogeusdt', quote: 'USDT' },
-    { code: 'SOL', market: 'solngn', quote: 'NGN' },
-];
-
 const COIN_META = {
     BTC: { color: '#f7931a' },
     ETH: { color: '#627eea' },
@@ -66,23 +45,16 @@ const CoinIcon = ({ code }) => {
     );
 };
 
-const TickerPill = ({ pair, ticker, loading }) => {
-    // jaxopay_rate is the raw provider price marked down by whatever the admin-configured swap
-    // markup is (see crypto.controller.js's attachJaxopayRates) — the same number a swap of this
-    // pair would actually execute at, not just the exchange's own passthrough price. Falls back
-    // to the raw price only if jaxopay_rate is somehow absent (older cached response shape).
-    const price = ticker
-        ? parseFloat(ticker.jaxopay_rate ?? ticker.last ?? ticker.sell ?? ticker.buy ?? 0)
-        : null;
-    const change = ticker ? parseFloat(ticker.change || ticker.price_change_percent || 0) : 0;
+const TickerPill = ({ pair }) => {
+    const change = parseFloat(pair.change || pair.price_change_percent || 0);
     return (
         <div className="flex items-center gap-2.5 px-4 py-2.5 mx-1.5 bg-gray-50 dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700 shrink-0">
-            <CoinIcon code={pair.code} />
-            <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{pair.code}/{pair.quote}</span>
+            <CoinIcon code={pair.base} />
+            <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{pair.base}/{pair.quote}</span>
             <span className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
-                {loading ? '···' : formatPrice(price, pair.quote)}
+                {formatPrice(pair.jaxopay_rate, pair.quote)}
             </span>
-            {!loading && change !== 0 && (
+            {change !== 0 && (
                 <span className={`flex items-center gap-0.5 text-[11px] font-bold ${change > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                     {change > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                     {Math.abs(change).toFixed(2)}%
@@ -92,6 +64,14 @@ const TickerPill = ({ pair, ticker, loading }) => {
     );
 };
 
+const SkeletonPill = ({ i }) => (
+    <div className="flex items-center gap-2.5 px-4 py-2.5 mx-1.5 bg-gray-50 dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700 shrink-0 animate-pulse">
+        <div className="w-[22px] h-[22px] rounded-full bg-gray-200 dark:bg-gray-700" />
+        <div className="h-3 w-14 rounded bg-gray-200 dark:bg-gray-700" />
+        <div className="h-3 w-16 rounded bg-gray-200 dark:bg-gray-700" />
+    </div>
+);
+
 /**
  * Public marketing rate ticker — a compact, continuously scrolling marquee (same visual
  * language as the old in-app ticker), fetched ONCE per page load (no interval, no polling)
@@ -100,9 +80,16 @@ const TickerPill = ({ pair, ticker, loading }) => {
  * most one real call every 5-minute window, not one per page view. The scrolling motion and
  * pulsing "LIVE" dot keep it feeling real-time even though the underlying data is a cached
  * snapshot, not a per-second feed.
+ *
+ * The pair list is derived from the response itself, not a hardcoded array — has_markup (set by
+ * crypto.controller.js's attachJaxopayRates) is true only for pairs an admin has actually
+ * configured a markup for in the Rates & Fees tab. A hardcoded list previously showed several
+ * pairs (BTC/NGN, every GHS pair, ETH, SOL, BNB, XRP, ADA, DOGE) nobody had priced, silently
+ * passing through the raw provider rate as if it were "our rate" — this can never drift out of
+ * sync with admin config again since it only ever shows what's actually been marked up.
  */
 const LiveRatesShowcase = () => {
-    const [rates, setRates] = useState({});
+    const [pairs, setPairs] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -111,18 +98,28 @@ const LiveRatesShowcase = () => {
             if (!active) return;
             if (res.success && res.data) {
                 const raw = res.data.data || res.data;
-                const map = {};
+                const list = [];
                 if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-                    Object.entries(raw).forEach(([id, v]) => { map[id.toLowerCase()] = v?.ticker || v; });
+                    Object.entries(raw).forEach(([id, v]) => {
+                        const t = v?.ticker || v;
+                        if (!v?.base || !v?.quote || !t?.has_markup) return;
+                        list.push({
+                            market: id,
+                            base: v.base,
+                            quote: v.quote,
+                            jaxopay_rate: t.jaxopay_rate,
+                            change: t.change ?? t.price_change_percent,
+                        });
+                    });
                 }
-                setRates(map);
+                setPairs(list);
             }
         }).finally(() => { if (active) setLoading(false); });
         return () => { active = false; };
     }, []);
 
     // Duplicated once so the -50% marquee translate loops seamlessly with no visible seam.
-    const displayPairs = [...PAIRS, ...PAIRS];
+    const displayPairs = [...pairs, ...pairs];
 
     return (
         <section className="py-6 bg-white dark:bg-gray-900 border-y border-gray-100 dark:border-gray-800 overflow-hidden">
@@ -136,9 +133,9 @@ const LiveRatesShowcase = () => {
                 </div>
                 <div className="relative flex-1 overflow-hidden">
                     <div className="flex animate-marquee w-max">
-                        {displayPairs.map((pair, i) => (
-                            <TickerPill key={`${pair.market}-${i}`} pair={pair} ticker={rates[pair.market]} loading={loading} />
-                        ))}
+                        {loading
+                            ? Array.from({ length: 6 }).map((_, i) => <SkeletonPill key={i} />)
+                            : displayPairs.map((pair, i) => <TickerPill key={`${pair.market}-${i}`} pair={pair} />)}
                     </div>
                     {/* Edge fades so pills scroll in/out smoothly instead of clipping abruptly */}
                     <div className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-white dark:from-gray-900 to-transparent" />
