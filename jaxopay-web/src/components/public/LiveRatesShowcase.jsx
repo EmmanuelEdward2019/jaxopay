@@ -3,18 +3,24 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 import cryptoService from '../../services/cryptoService';
 
 // Pairs to showcase — mirrors what the app itself trades, so the numbers visitors see here
-// are the same ones they'd get inside the app.
+// are the same ones they'd get inside the app. Curated (not the full ~100+ market catalog the
+// backend ticker actually returns) since this is a compact decorative marquee, but every fiat the
+// swap engine supports gets at least a couple of pairs — GHS previously had none at all.
 const PAIRS = [
     { code: 'BTC', market: 'btcusdt', quote: 'USDT' },
     { code: 'ETH', market: 'ethusdt', quote: 'USDT' },
     { code: 'BTC', market: 'btcngn', quote: 'NGN' },
     { code: 'USDT', market: 'usdtngn', quote: 'NGN' },
+    { code: 'USDT', market: 'usdtghs', quote: 'GHS' },
+    { code: 'BTC', market: 'btcghs', quote: 'GHS' },
     { code: 'SOL', market: 'solusdt', quote: 'USDT' },
     { code: 'BNB', market: 'bnbusdt', quote: 'USDT' },
     { code: 'XRP', market: 'xrpusdt', quote: 'USDT' },
     { code: 'ETH', market: 'ethngn', quote: 'NGN' },
+    { code: 'ETH', market: 'ethghs', quote: 'GHS' },
     { code: 'ADA', market: 'adausdt', quote: 'USDT' },
     { code: 'DOGE', market: 'dogeusdt', quote: 'USDT' },
+    { code: 'SOL', market: 'solngn', quote: 'NGN' },
 ];
 
 const COIN_META = {
@@ -32,6 +38,7 @@ const formatPrice = (value, quote) => {
     const n = Number(value);
     if (!(n > 0)) return '—';
     if (quote === 'NGN') return `₦${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    if (quote === 'GHS') return `₵${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     return n < 1 ? `$${n.toFixed(4)}` : `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 };
 
