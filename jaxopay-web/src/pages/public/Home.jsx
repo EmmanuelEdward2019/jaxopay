@@ -313,11 +313,14 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Floating Notification */}
+                {/* Floating Notification — left-0/right-0 on mobile (was -4, which combined with the
+                    section's own px-4 landed exactly flush against the viewport edge with zero
+                    padding); md:- offsets keep the original "floats past the frame" effect once
+                    there's enough room for it to read as intentional rather than clipped. */}
                 <motion.div
                   animate={{ y: [0, -10, 0] }}
                   transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-                  className="absolute -right-4 md:-right-12 top-1/4 bg-white p-4 rounded-xl shadow-xl border border-gray-100 flex items-center gap-3 z-20"
+                  className="absolute right-0 md:-right-12 top-1/4 bg-white p-4 rounded-xl shadow-xl border border-gray-100 flex items-center gap-3 z-20"
                 >
                   <div className="w-10 h-10 bg-accent-600 rounded-full flex items-center justify-center text-white">
                     <CheckCircle className="w-6 h-6" />
@@ -328,19 +331,21 @@ export default function Home() {
                   </div>
                 </motion.div>
 
-                {/* Floating Card */}
+                {/* Floating Card — trimmed padding/spacing to sit closer to a real card's ~1.586:1
+                    aspect ratio (was noticeably taller than that), and the crest replaces the full
+                    logo+wordmark image, which read as "JAXOPAY text" at this size. */}
                 <motion.div
                   animate={{ y: [0, 10, 0] }}
                   transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                  className="absolute -left-4 md:-left-12 bottom-1/4 bg-[#0f172a] p-5 rounded-xl shadow-xl border border-gray-700 w-60 z-20"
+                  className="absolute left-0 md:-left-12 bottom-1/4 bg-[#0f172a] p-4 rounded-xl shadow-xl border border-gray-700 w-60 z-20"
                 >
-                  <div className="flex justify-between items-start mb-6">
-                    <img src="/logo.png" alt="JAXOPAY" className="h-10 w-auto" />
+                  <div className="flex justify-between items-start mb-4">
+                    <img src="/logo-crest.png" alt="JAXOPAY" className="h-7 w-7 object-contain" />
                     <div className="w-8 h-5 bg-white/20 rounded-md flex items-center justify-center">
                       <div className="w-4 h-3 border border-white/40 rounded-sm"></div>
                     </div>
                   </div>
-                  <div className="text-white font-mono text-lg tracking-widest mb-4 drop-shadow-md">
+                  <div className="text-white font-mono text-base tracking-wider mb-3 drop-shadow-md whitespace-nowrap">
                     5790 •••• •••• 5977
                   </div>
                   <div className="flex justify-between items-end">
@@ -622,7 +627,7 @@ export default function Home() {
                 className="absolute w-[280px] sm:w-[320px] h-[180px] sm:h-[200px] bg-[#0f172a] rounded-2xl shadow-2xl z-10 -rotate-6 transform -translate-x-12 translate-y-4 border border-gray-700/50 flex flex-col justify-between p-6 overflow-hidden"
               >
                 <div className="flex justify-between items-start">
-                  <img src="/logo.png" alt="JAXOPAY" className="h-5 w-auto brightness-200 opacity-80" />
+                  <img src="/logo-crest.png" alt="JAXOPAY" className="h-6 w-6 object-contain brightness-200 opacity-80" />
                   <div className="text-white/50 text-xs">VIRTUAL</div>
                 </div>
                 <div className="flex justify-between items-end">
@@ -642,7 +647,7 @@ export default function Home() {
               >
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-2">
-                    <img src="/logo.png" alt="JAXOPAY" className="w-8 h-8 object-contain" />
+                    <img src="/logo-crest.png" alt="JAXOPAY" className="w-8 h-8 object-contain" />
                   </div>
                   <div className="text-white/80 text-xs tracking-wider">VIRTUAL</div>
                 </div>

@@ -87,8 +87,8 @@ const CardFace = ({ designId, frozen, sample, balance, revealed, cardNumber, val
 
             <div className="relative flex items-start justify-between mb-4">
                 <div className="flex flex-col">
-                    <span className="text-base font-extrabold tracking-tight leading-none">JAXO<span className={fgDim}>PAY</span></span>
-                    <span className={`text-[10px] uppercase tracking-[0.15em] ${fgDim} mt-1`}>Virtual · USD</span>
+                    <img src="/logo-crest.png" alt="JAXOPAY" className="h-6 w-6 object-contain" />
+                    <span className={`text-[10px] uppercase tracking-[0.15em] ${fgDim} mt-1.5`}>Virtual · USD</span>
                 </div>
                 <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
                     <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[2px] opacity-50">
@@ -482,8 +482,8 @@ const Cards = () => {
                                     {/* Top: brand + EMV chip */}
                                     <div className="relative flex items-start justify-between mb-4">
                                         <div className="flex flex-col">
-                                            <span className="text-base font-extrabold tracking-tight leading-none">JAXO<span className={fgDim70}>PAY</span></span>
-                                            <span className={`text-[10px] uppercase tracking-[0.15em] ${fgDim60} mt-1`}>Virtual · USD</span>
+                                            <img src="/logo-crest.png" alt="JAXOPAY" className="h-6 w-6 object-contain" />
+                                            <span className={`text-[10px] uppercase tracking-[0.15em] ${fgDim60} mt-1.5`}>Virtual · USD</span>
                                         </div>
                                         <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
                                             <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[2px] opacity-50">
