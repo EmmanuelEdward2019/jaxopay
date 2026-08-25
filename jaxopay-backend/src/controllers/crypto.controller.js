@@ -51,14 +51,36 @@ function createCryptoWithdrawalReference(userId) {
   return `QWD-${userPart}-${Date.now()}-${uniquePart}`;
 }
 
-// market id -> { base, quote } for the fixed set of pairs the dashboard ticker bar shows.
-// MATIC is aliased to Obiex's current ticker (POL, post-rebrand) only for the lookup itself —
-// the market id / displayed pair label stay "MATIC/USDT" on the frontend, unchanged.
+// market id -> { base, quote } for the fixed set of pairs refreshTickerCacheFromObiex polls when
+// OBIEX_TICKER_DISABLED is off (that path needs an explicit list of what to ask Obiex for; the
+// Quidax fallback's bulk snapshot needs no such list). MATIC is aliased to Obiex's current ticker
+// (POL, post-rebrand) only for the lookup itself — the market id / displayed pair label stay
+// "MATIC/USDT" on the frontend, unchanged.
 const TICKER_PAIRS = {
   btcusdt: ['BTC', 'USDT'], ethusdt: ['ETH', 'USDT'], btcngn: ['BTC', 'NGN'], ethngn: ['ETH', 'NGN'],
   usdtngn: ['USDT', 'NGN'], solusdt: ['SOL', 'USDT'], bnbusdt: ['BNB', 'USDT'], xrpusdt: ['XRP', 'USDT'],
   adausdt: ['ADA', 'USDT'], dogeusdt: ['DOGE', 'USDT'], dotusdt: ['DOT', 'USDT'], maticusdt: ['POL', 'USDT'],
 };
+
+// Generic base/quote parser for attachJaxopayRates below — the actual ticker snapshot (Quidax
+// fallback, or Obiex once live) covers ~100+ markets, not just TICKER_PAIRS' fixed 12, and
+// several admin-configured markups (USDC<->USDT, NGN->SOL, NGN->TRX at last count) apply to pairs
+// outside that list — restricting jaxopay_rate to TICKER_PAIRS meant those were silently never
+// applied. Longest-quote-first so e.g. "usdtcngn" parses as USDT/CNGN, not USDTC/NGN.
+const TICKER_QUOTE_CANDIDATES = ['USDT', 'CNGN', 'GHS', 'BTC', 'USD', 'XAF', 'XOF', 'ZAR', 'KES', 'NGN'];
+function parseMarketPair(marketId) {
+  const known = TICKER_PAIRS[marketId];
+  if (known) return known;
+  const id = String(marketId || '').toLowerCase();
+  for (const quote of TICKER_QUOTE_CANDIDATES) {
+    const q = quote.toLowerCase();
+    if (id.length > q.length && id.endsWith(q)) {
+      const base = id.slice(0, -q.length).toUpperCase();
+      if (base) return [base, quote];
+    }
+  }
+  return null;
+}
 
 async function refreshTickerCacheFromObiex() {
   const entries = await Promise.all(
@@ -1592,17 +1614,16 @@ export const getMarkets = catchAsync(async (req, res) => {
 // Get 24hr ticker statistics
 // Attaches ticker.jaxopay_rate — the same rate a swap of that pair would actually execute at
 // (raw provider price, marked down by the admin-configured markup — see swapMarkup.service.js)
-// — alongside the existing raw ticker.last. Only computed for entries whose market id is one of
-// TICKER_PAIRS' known base/quote pairs; anything else (e.g. a Quidax-fallback market this app
-// doesn't otherwise reference) is left with jaxopay_rate === the raw price, unchanged. Both the
-// web homepage's LiveRatesShowcase and RN's CryptoScreen "Live Market Rates" read this field so
-// visitors and swap users see the identical number, not a raw price that quietly differs from
-// what a real swap delivers.
+// — alongside the existing raw ticker.last, for every market parseMarketPair can resolve a
+// base/quote for (effectively all of them). Anything unparseable is left with jaxopay_rate ===
+// the raw price, unchanged. Both the web homepage's LiveRatesShowcase and RN's CryptoScreen
+// "Live Market Rates" read this field so visitors and swap users see the identical number, not a
+// raw price that quietly differs from what a real swap delivers.
 async function attachJaxopayRates(tickers) {
   const markups = await getAllSwapMarkups();
   const out = {};
   for (const [marketId, entry] of Object.entries(tickers || {})) {
-    const pair = TICKER_PAIRS[marketId];
+    const pair = parseMarketPair(marketId);
     const raw = extractPrice(entry, 'last');
     const t = entry?.ticker || entry || {};
     let jaxopayRate = raw;
