@@ -1627,9 +1627,16 @@ async function attachJaxopayRates(tickers) {
     const raw = extractPrice(entry, 'last');
     const t = entry?.ticker || entry || {};
     let jaxopayRate = raw;
+    let hasMarkup = false;
     if (pair && raw > 0) {
       const [base, quote] = pair;
       const markupPct = markups.get(`${base}:${quote}`) || 0;
+      // Only markets with a specific admin-configured row in exchange_rates are a real JAXOPAY
+      // rate — everything else falls through to raw provider passthrough (markDownDelivered is a
+      // no-op for markupPct 0), which is fine for the swap engine (an unpriced pair just isn't
+      // marked up yet) but must never be shown to a visitor as "our rate": has_markup is what lets
+      // callers tell the two cases apart instead of silently displaying the raw market price.
+      hasMarkup = markupPct !== 0;
       jaxopayRate = markDownDelivered(raw, base, quote, markupPct);
     }
     out[marketId] = {
@@ -1637,7 +1644,7 @@ async function attachJaxopayRates(tickers) {
       // base/quote so clients don't need their own copy of TICKER_PAIRS just to know what a
       // market id like "btcngn" actually means.
       ...(pair ? { base: pair[0], quote: pair[1] } : {}),
-      ticker: { ...t, jaxopay_rate: jaxopayRate },
+      ticker: { ...t, jaxopay_rate: jaxopayRate, has_markup: hasMarkup },
     };
   }
   return out;
