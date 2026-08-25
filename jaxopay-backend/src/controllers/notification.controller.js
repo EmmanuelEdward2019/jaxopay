@@ -2,6 +2,7 @@ import { query } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import cache, { CacheNamespaces, CacheTTL } from '../utils/cache.js';
+import { registerDeviceToken, unregisterDeviceToken } from '../services/pushNotification.service.js';
 
 // Cache key helper
 const getNotificationCacheKey = (userId) => `notifications:${userId}`;
@@ -142,6 +143,35 @@ export const getUnreadCount = catchAsync(async (req, res) => {
         success: true,
         count
     });
+});
+
+// Register this device's Expo push token so real OS-level pushes (sound + notification-tray,
+// delivered even while the app is closed) can reach it — called on login and on app start while
+// already authenticated (a fresh token can be issued by Expo at any time).
+export const registerDevice = catchAsync(async (req, res) => {
+    const { expo_push_token, platform } = req.body;
+
+    if (!expo_push_token) {
+        throw new AppError('expo_push_token is required', 400);
+    }
+
+    await registerDeviceToken(req.user.id, { expoPushToken: expo_push_token, platform });
+
+    res.status(200).json({ success: true, message: 'Device registered' });
+});
+
+// Unregister a device's push token (e.g. on logout) so a signed-out device stops receiving this
+// account's pushes.
+export const unregisterDevice = catchAsync(async (req, res) => {
+    const { expo_push_token } = req.body;
+
+    if (!expo_push_token) {
+        throw new AppError('expo_push_token is required', 400);
+    }
+
+    await unregisterDeviceToken(expo_push_token);
+
+    res.status(200).json({ success: true, message: 'Device unregistered' });
 });
 
 // Delete a notification

@@ -1,10 +1,12 @@
 import { query } from '../config/database.js';
 import logger from '../utils/logger.js';
+import { sendPushToUser } from './pushNotification.service.js';
 
 /**
- * Creates an in-app notification for a user (bell icon / notifications page). Never throws —
- * a notification failing to write must never break the underlying transaction/action it's
- * describing, so callers can safely fire-and-forget this.
+ * Creates an in-app notification for a user (bell icon / notifications page) AND, if they have
+ * any registered devices, a real OS-level push (sound + notification-tray, delivered even while
+ * the app is closed). Never throws — a notification failing to write/send must never break the
+ * underlying transaction/action it's describing, so callers can safely fire-and-forget this.
  *
  * @param {string} userId
  * @param {object} p
@@ -24,6 +26,10 @@ export async function notifyUser(userId, { type, title, message, metadata }) {
   } catch (err) {
     logger.error(`[Notification] Failed to create '${type}' notification for ${userId}: ${err.message}`);
   }
+
+  // Fire-and-forget — sendPushToUser has its own internal try/catch and never throws, but this
+  // must not block/fail the caller either way, so it isn't awaited.
+  sendPushToUser(userId, { title, body: message, data: { type, ...metadata } });
 }
 
 /** Same notification to many users at once (e.g. admin/compliance broadcast). */
