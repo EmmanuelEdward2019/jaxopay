@@ -43,6 +43,35 @@ export async function getSwapMarkupPercentage(fromCurrency, toCurrency) {
   return Number(result.rows[0].markup_percentage) || 0;
 }
 
+// Bulk, cached version for callers computing markup across many pairs at once (the dashboard/
+// homepage ticker's "JAXOPAY Rate" column) — one query for every active pair instead of one
+// query per pair per request. Mirrors crypto.controller.js's own ticker-snapshot cache (same
+// 5-minute TTL); admin FX-rate edits show up within that window, not instantly, which is fine
+// for a decorative rate display.
+let _markupCache = new Map(); // "FROM:TO" -> percentage
+let _markupCacheTime = 0;
+const MARKUP_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export async function getAllSwapMarkups() {
+  if (_markupCache.size > 0 && Date.now() - _markupCacheTime < MARKUP_CACHE_TTL_MS) {
+    return _markupCache;
+  }
+  try {
+    const result = await query(
+      `SELECT from_currency, to_currency, markup_percentage FROM exchange_rates WHERE is_active = true`
+    );
+    const next = new Map();
+    for (const row of result.rows) {
+      next.set(`${row.from_currency}:${row.to_currency}`, Number(row.markup_percentage) || 0);
+    }
+    _markupCache = next;
+    _markupCacheTime = Date.now();
+  } catch (e) {
+    logger.warn('[SwapMarkup] Failed to refresh markup cache:', e.message);
+  }
+  return _markupCache;
+}
+
 // The one direction where the "price of crypto in fiat" convention is inversely related to how
 // much of the output currency a fixed input actually buys: paying a fixed amount of FIAT for
 // CRYPTO means a *higher* crypto price buys *less* crypto. Every other direction (selling crypto

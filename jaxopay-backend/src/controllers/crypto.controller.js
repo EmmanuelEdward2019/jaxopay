@@ -17,7 +17,7 @@ import emailService from '../services/email.service.js';
 import { notifyUser, notifyWithdrawal, notifyDeposit } from '../services/notification.service.js';
 import { assertDepositsAllowed, assertWithdrawalsAllowed } from '../services/financialControls.service.js';
 import { getFeeConfig, computeFee } from '../services/feeConfig.service.js';
-import { getSwapMarkupPercentage, markDownDelivered, inflateTarget } from '../services/swapMarkup.service.js';
+import { getSwapMarkupPercentage, markDownDelivered, inflateTarget, getAllSwapMarkups } from '../services/swapMarkup.service.js';
 
 // Crypto deposit/withdrawal/swap provider — Obiex by default; set CRYPTO_PROVIDER=quidax to
 // fall back (e.g. during an Obiex outage). Order-book spot trading (createOrder, getOrderBook,
@@ -1590,12 +1590,44 @@ export const getMarkets = catchAsync(async (req, res) => {
 });
 
 // Get 24hr ticker statistics
+// Attaches ticker.jaxopay_rate — the same rate a swap of that pair would actually execute at
+// (raw provider price, marked down by the admin-configured markup — see swapMarkup.service.js)
+// — alongside the existing raw ticker.last. Only computed for entries whose market id is one of
+// TICKER_PAIRS' known base/quote pairs; anything else (e.g. a Quidax-fallback market this app
+// doesn't otherwise reference) is left with jaxopay_rate === the raw price, unchanged. Both the
+// web homepage's LiveRatesShowcase and RN's CryptoScreen "Live Market Rates" read this field so
+// visitors and swap users see the identical number, not a raw price that quietly differs from
+// what a real swap delivers.
+async function attachJaxopayRates(tickers) {
+  const markups = await getAllSwapMarkups();
+  const out = {};
+  for (const [marketId, entry] of Object.entries(tickers || {})) {
+    const pair = TICKER_PAIRS[marketId];
+    const raw = extractPrice(entry, 'last');
+    const t = entry?.ticker || entry || {};
+    let jaxopayRate = raw;
+    if (pair && raw > 0) {
+      const [base, quote] = pair;
+      const markupPct = markups.get(`${base}:${quote}`) || 0;
+      jaxopayRate = markDownDelivered(raw, base, quote, markupPct);
+    }
+    out[marketId] = {
+      ...entry,
+      // base/quote so clients don't need their own copy of TICKER_PAIRS just to know what a
+      // market id like "btcngn" actually means.
+      ...(pair ? { base: pair[0], quote: pair[1] } : {}),
+      ticker: { ...t, jaxopay_rate: jaxopayRate },
+    };
+  }
+  return out;
+}
+
 export const get24hTickers = catchAsync(async (req, res) => {
   const { market } = req.query;
   try {
     // Serve the always-warm in-memory snapshot (non-blocking) rather than a live Quidax fetch, so
     // the dashboard's 15s ticker poll can never hang the page when the exchange is slow.
-    const all = await getAllTickers();
+    const all = await attachJaxopayRates(await getAllTickers());
     const data = market ? (all?.[String(market).toLowerCase()] || null) : all;
     res.status(200).json({ success: true, data });
   } catch (err) {

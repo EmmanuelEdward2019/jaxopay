@@ -60,7 +60,13 @@ const CoinIcon = ({ code }) => {
 };
 
 const TickerPill = ({ pair, ticker, loading }) => {
-    const price = ticker ? parseFloat(ticker.last || ticker.sell || ticker.buy || 0) : null;
+    // jaxopay_rate is the raw provider price marked down by whatever the admin-configured swap
+    // markup is (see crypto.controller.js's attachJaxopayRates) — the same number a swap of this
+    // pair would actually execute at, not just the exchange's own passthrough price. Falls back
+    // to the raw price only if jaxopay_rate is somehow absent (older cached response shape).
+    const price = ticker
+        ? parseFloat(ticker.jaxopay_rate ?? ticker.last ?? ticker.sell ?? ticker.buy ?? 0)
+        : null;
     const change = ticker ? parseFloat(ticker.change || ticker.price_change_percent || 0) : 0;
     return (
         <div className="flex items-center gap-2.5 px-4 py-2.5 mx-1.5 bg-gray-50 dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700 shrink-0">
@@ -119,7 +125,7 @@ const LiveRatesShowcase = () => {
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                     </span>
-                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wide">Live</span>
+                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wide">JAXOPAY Rate</span>
                 </div>
                 <div className="relative flex-1 overflow-hidden">
                     <div className="flex animate-marquee w-max">
