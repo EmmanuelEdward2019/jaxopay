@@ -61,7 +61,7 @@ const SampleCardCarousel = () => {
                 onScroll={(e) => setActiveIndex(Math.round(e.currentTarget.scrollLeft / CARD_STEP))}
             >
                 {CARD_DESIGN_ORDER.map((id) => (
-                    <CardFaceMockup key={id} designId={id} sample formatCurrency={formatCurrency} className="w-[290px] h-[180px] shrink-0 snap-center" />
+                    <CardFaceMockup key={id} designId={id} sample formatCurrency={formatCurrency} className="w-[290px] h-[220px] shrink-0 snap-center" />
                 ))}
             </div>
             <div className="flex justify-center gap-1.5 mt-3">

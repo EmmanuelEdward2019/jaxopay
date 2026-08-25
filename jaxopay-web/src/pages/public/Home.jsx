@@ -345,7 +345,7 @@ export default function Home() {
                   transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
                   className="absolute left-0 md:-left-12 bottom-1/4 z-20"
                 >
-                  <CardFaceMockup designId="midnight" sample className="w-60 aspect-[1.586] shadow-xl" />
+                  <CardFaceMockup designId="midnight" sample className="w-60 min-h-[220px] shadow-xl" />
                 </motion.div>
               </div>
             </motion.div>
@@ -612,7 +612,7 @@ export default function Home() {
                 viewport={{ once: true }}
                 className="absolute z-10 -rotate-6 transform -translate-x-12 translate-y-4"
               >
-                <CardFaceMockup designId="midnight" sample className="w-[280px] sm:w-[320px] aspect-[1.586] shadow-2xl" />
+                <CardFaceMockup designId="midnight" sample className="w-[280px] sm:w-[320px] min-h-[220px] shadow-2xl" />
               </motion.div>
 
               {/* Card 2 - Front (Main) */}
@@ -624,7 +624,7 @@ export default function Home() {
                 whileHover={{ scale: 1.05, rotate: 0 }}
                 className="absolute z-20 rotate-3 transform translate-x-4 -translate-y-4 cursor-pointer"
               >
-                <CardFaceMockup designId="emerald" sample className="w-[300px] sm:w-[340px] aspect-[1.586] shadow-2xl" />
+                <CardFaceMockup designId="emerald" sample className="w-[300px] sm:w-[340px] min-h-[220px] shadow-2xl" />
               </motion.div>
             </div>
 
@@ -1181,15 +1181,15 @@ export default function Home() {
             </p>
 
             <form className="max-w-md mx-auto">
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <input
                   type="email"
                   placeholder="Enter your email"
-                  className="flex-1 px-6 py-4 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-500"
+                  className="flex-1 min-w-0 px-6 py-4 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-500"
                 />
                 <button
                   type="submit"
-                  className="px-8 py-4 bg-accent-600 text-white font-semibold rounded-lg hover:bg-accent-700 transition-colors shadow-lg shadow-accent-500/30"
+                  className="px-8 py-4 bg-accent-600 text-white font-semibold rounded-lg hover:bg-accent-700 transition-colors shadow-lg shadow-accent-500/30 shrink-0"
                 >
                   Subscribe
                 </button>
