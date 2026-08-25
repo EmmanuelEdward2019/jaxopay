@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from './store/authStore';
 import { useAppStore } from './store/appStore';
+import useIdleLogout from './hooks/useIdleLogout';
+import { LAST_ACTIVE_KEY, isSessionStale } from './utils/idleSession';
 
 // Layouts
 import DashboardLayout from './components/layout/DashboardLayout';
@@ -164,6 +166,8 @@ function App() {
   const { refreshSession, setLoading } = useAuthStore();
   const { setTheme, fetchFeatureToggles } = useAppStore();
 
+  useIdleLogout();
+
   // Check if Supabase is configured
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const hasValidCredentials =
@@ -191,13 +195,39 @@ function App() {
       // persisted, render the app immediately and validate/renew it in the background (the API
       // layer refreshes the token on demand). On a slow/flaky connection this avoids the long
       // full-page spinner + reload loop. If there's no session, ProtectedRoute sends to login.
-      const hasSession = !!useAuthStore.getState().session?.access_token;
-      setLoading(false);
+      const runSessionCheck = () => {
+        let hasSession = !!useAuthStore.getState().session?.access_token;
 
-      if (hasSession) {
-        Promise.resolve(refreshSession()).catch(() => { /* keep session on transient failure */ });
+        // A closed tab/browser (or a killed mobile-web session) skips useIdleLogout's live timer
+        // entirely, so a persisted token could otherwise silently resume the dashboard no matter
+        // how long it's been. Funds are on the line — an idle session found stale here is wiped
+        // before ProtectedRoute ever gets a chance to trust it.
+        if (hasSession && isSessionStale()) {
+          useAuthStore.setState({ user: null, session: null, isAuthenticated: false });
+          localStorage.removeItem('jaxopay-auth');
+          localStorage.removeItem(LAST_ACTIVE_KEY);
+          hasSession = false;
+        }
+
+        setLoading(false);
+
+        if (hasSession) {
+          Promise.resolve(refreshSession()).catch(() => { /* keep session on transient failure */ });
+        }
+        Promise.resolve(fetchFeatureToggles()).catch(() => { /* non-critical, must not block login */ });
+      };
+
+      // zustand's persist middleware rehydrates localStorage asynchronously. Reading
+      // useAuthStore.getState() before that finishes sees the pre-hydration default
+      // (isAuthenticated: false, no session) and would skip the staleness check entirely — only
+      // for the real persisted session to pop in moments later, unchecked, once hydration
+      // resolves. hasHydrated()/onFinishHydration() guarantee runSessionCheck only ever sees the
+      // real, fully-loaded state, however long hydration takes.
+      if (useAuthStore.persist.hasHydrated()) {
+        runSessionCheck();
+      } else {
+        useAuthStore.persist.onFinishHydration(runSessionCheck);
       }
-      Promise.resolve(fetchFeatureToggles()).catch(() => { /* non-critical, must not block login */ });
     };
 
     initApp();

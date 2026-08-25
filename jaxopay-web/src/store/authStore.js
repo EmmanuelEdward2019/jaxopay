@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import authService from '../services/authService';
+import { stampActivity, LAST_ACTIVE_KEY } from '../utils/idleSession';
 
 export const useAuthStore = create(
   persist(
@@ -51,6 +52,11 @@ export const useAuthStore = create(
           user,
         };
 
+        // Real login success — the one unambiguous moment to start the 15-minute idle clock.
+        // (Rehydrating a persisted session on page load also flips isAuthenticated false→true,
+        // so that transition alone can't be trusted to mean "just logged in" — this explicit
+        // call at the actual login call sites is what makes it unambiguous.)
+        stampActivity();
         set({
           user,
           session,
@@ -100,6 +106,7 @@ export const useAuthStore = create(
           user
         };
 
+        stampActivity();
         set({
           user,
           session,
@@ -131,6 +138,7 @@ export const useAuthStore = create(
             user,
           };
 
+          stampActivity();
           set({
             user,
             session,
@@ -165,6 +173,7 @@ export const useAuthStore = create(
             user,
           };
 
+          stampActivity();
           set({
             user,
             session,
@@ -223,6 +232,7 @@ export const useAuthStore = create(
             refresh_token: sessionData.refresh_token,
             user,
           };
+          stampActivity();
           set({ user, session, isAuthenticated: true, isLoading: false, error: null });
         } else {
           // Verified but no session (e.g. deactivated account) — nothing to auto-login into.
@@ -268,6 +278,7 @@ export const useAuthStore = create(
           });
           // Also clear any other persistent state if needed
           localStorage.removeItem('jaxopay-auth');
+          localStorage.removeItem(LAST_ACTIVE_KEY);
         }
 
         return { success: true };
