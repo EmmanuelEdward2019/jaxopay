@@ -20,6 +20,7 @@ import cardService from '../../services/cardService';
 import walletService from '../../services/walletService';
 import PinModal from '../../components/common/PinModal';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
+import CardFaceMockup, { CARD_DESIGNS, CARD_DESIGN_ORDER, defaultDesignFor } from '../../components/CardFaceMockup';
 
 // Compute a card fee from the { fee_type, flat, percent, cap } config returned by /cards/fees.
 // Mirrors the backend's computeFee (feeConfig.service.js) — must branch on fee_type, since an
@@ -49,94 +50,6 @@ const computeCardFee = (cfg, amount) => {
     return Math.round((fee + Number.EPSILON) * 100) / 100;
 };
 
-// Single source of truth for every card design — used by the sample carousel, the design picker
-// in CreateCardModal, and real cards' own rendering (via card.card_design, stored server-side in
-// virtual_cards.metadata). textDark flips every text/icon color for the light Silver design,
-// which is otherwise unreadable in the white the other four designs use.
-const CARD_DESIGNS = {
-    midnight: { label: 'Midnight', gradient: 'linear-gradient(135deg,#334155 0%,#1e293b 55%,#020617 100%)' },
-    emerald: { label: 'Emerald', gradient: 'linear-gradient(135deg,#34d399 0%,#10b981 30%,#0d9488 60%,#065f46 100%)' },
-    violet: { label: 'Violet', gradient: 'linear-gradient(135deg,#a78bfa 0%,#7c3aed 40%,#4c1d95 100%)' },
-    sunset: { label: 'Sunset', gradient: 'linear-gradient(135deg,#fbbf24 0%,#f59e0b 40%,#b45309 100%)' },
-    // Brushed-steel shimmer matching the metallic card in the pre-login onboarding illustration —
-    // needs dark text/icons, unlike every other design.
-    silver: { label: 'Silver', gradient: 'linear-gradient(135deg,#F8FAFC 0%,#CBD5E1 25%,#94A3B8 50%,#CBD5E1 75%,#F8FAFC 100%)', textDark: true },
-};
-const CARD_DESIGN_ORDER = ['midnight', 'emerald', 'violet', 'sunset', 'silver'];
-// card_type-based fallback for cards created before card_design existed server-side.
-const defaultDesignFor = (card) => (card?.card_type === 'single_use' ? 'midnight' : 'emerald');
-
-// Shared card face — real cards, the sample carousel, and the design picker all render through
-// this so none of the three can visually drift apart. sample=true skips the reveal/frozen
-// controls (nothing to reveal on a placeholder) and shows masked placeholder content.
-const CardFace = ({ designId, frozen, sample, balance, revealed, cardNumber, validThru, cvv, onToggleReveal, revealing }) => {
-    const d = CARD_DESIGNS[designId] || CARD_DESIGNS.emerald;
-    const fg = d.textDark ? 'text-slate-800' : 'text-white';
-    const fgDim = d.textDark ? 'text-slate-800/65' : 'text-white/70';
-    const fgFaint = d.textDark ? 'text-slate-800/50' : 'text-white/50';
-    const glossOpacity = d.textDark ? 0.5 : 0.32;
-    const glowClass = d.textDark ? 'bg-slate-900/5' : 'bg-white/10';
-
-    return (
-        <div
-            className={`relative w-[290px] h-[180px] shrink-0 snap-center rounded-2xl p-6 ${fg} overflow-hidden ${frozen ? 'saturate-[0.6]' : ''}`}
-            style={{ background: d.gradient, boxShadow: '0 22px 45px -14px rgba(5,95,70,0.4), inset 0 1px 0 rgba(255,255,255,0.28)' }}
-        >
-            <div className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,${glossOpacity}), transparent 55%)` }} />
-            <div className={`pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full ${glowClass} blur-2xl`} />
-
-            <div className="relative flex items-start justify-between mb-4">
-                <div className="flex flex-col">
-                    <img src="/logo-crest.png" alt="JAXOPAY" className="h-6 w-6 object-contain" />
-                    <span className={`text-[10px] uppercase tracking-[0.15em] ${fgDim} mt-1.5`}>Virtual · USD</span>
-                </div>
-                <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
-                    <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[2px] opacity-50">
-                        {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-yellow-800/40 rounded-[1px]" />)}
-                    </div>
-                </div>
-            </div>
-
-            <div className="relative flex items-center justify-between mb-4">
-                <svg viewBox="0 0 24 24" className={`w-5 h-6 ${fgDim}`} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                    <path d="M8 7a8 8 0 0 1 0 10" /><path d="M11.5 5a12 12 0 0 1 0 14" /><path d="M15 3a16 16 0 0 1 0 18" />
-                </svg>
-                {!sample && (
-                    <div className="flex items-center gap-2">
-                        {frozen && (
-                            <span className={`px-2 py-1 ${d.textDark ? 'bg-black/10' : 'bg-white/15'} backdrop-blur text-[10px] font-semibold rounded-full flex items-center gap-1`}>
-                                <Lock className="w-3 h-3" /> Frozen
-                            </span>
-                        )}
-                        <button onClick={onToggleReveal} className={`p-1.5 ${d.textDark ? 'hover:bg-black/5' : 'hover:bg-white/10'} rounded-lg transition-colors`}>
-                            {revealing ? <RefreshCw className="w-4 h-4 animate-spin" /> : revealed ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            <div className="relative mb-3">
-                <p className={`${fgFaint} text-[11px] mb-0.5`}>Balance</p>
-                <p className="text-xl font-bold drop-shadow-sm">{sample ? '••••••' : (revealed ? formatCurrency(balance || 0, 'USD') : '••••••')}</p>
-            </div>
-
-            <p className="relative font-mono text-lg tracking-[0.18em] mb-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]">{sample ? '•••• •••• •••• 4242' : cardNumber}</p>
-
-            <div className="relative flex items-end gap-6">
-                <div>
-                    <p className={`${fgFaint} text-[10px] uppercase tracking-wide mb-0.5`}>Valid thru</p>
-                    <p className="font-mono text-sm">{sample ? '••/••' : validThru}</p>
-                </div>
-                <div>
-                    <p className={`${fgFaint} text-[10px] uppercase tracking-wide mb-0.5`}>CVV</p>
-                    <p className="font-mono text-sm">{sample ? '•••' : cvv}</p>
-                </div>
-                <div className="ml-auto italic font-black text-2xl tracking-tighter drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]">VISA</div>
-            </div>
-        </div>
-    );
-};
-
 const SampleCardCarousel = () => {
     const [activeIndex, setActiveIndex] = useState(0);
     const CARD_STEP = 290 + 16; // card width + gap-4
@@ -148,7 +61,7 @@ const SampleCardCarousel = () => {
                 onScroll={(e) => setActiveIndex(Math.round(e.currentTarget.scrollLeft / CARD_STEP))}
             >
                 {CARD_DESIGN_ORDER.map((id) => (
-                    <CardFace key={id} designId={id} sample />
+                    <CardFaceMockup key={id} designId={id} sample formatCurrency={formatCurrency} className="w-[290px] h-[180px] shrink-0 snap-center" />
                 ))}
             </div>
             <div className="flex justify-center gap-1.5 mt-3">
@@ -482,7 +395,7 @@ const Cards = () => {
                                     {/* Top: brand + EMV chip */}
                                     <div className="relative flex items-start justify-between mb-4">
                                         <div className="flex flex-col">
-                                            <img src="/logo-crest.png" alt="JAXOPAY" className="h-6 w-6 object-contain" />
+                                            <img src="/logo-crest.png" alt="JAXOPAY" className="h-5 w-5 object-contain opacity-60 drop-shadow-sm" />
                                             <span className={`text-[10px] uppercase tracking-[0.15em] ${fgDim60} mt-1.5`}>Virtual · USD</span>
                                         </div>
                                         <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">

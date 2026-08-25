@@ -29,6 +29,7 @@ import { FaPaperPlane, FaCreditCard, FaBitcoin, FaPlane, FaGift, FaGlobe, FaWall
 import PublicLayout from '../../components/layout/PublicLayout';
 import VideoPlayer from '../../components/VideoPlayer';
 import LiveRatesShowcase from '../../components/public/LiveRatesShowcase';
+import CardFaceMockup from '../../components/CardFaceMockup';
 
 // Import Swiper styles
 import 'swiper/css';
@@ -199,9 +200,14 @@ export default function Home() {
               {/* App Store Links */}
               <div className="flex items-center gap-6">
                 <div className="flex -space-x-3">
-                  {[1, 2, 3, 4].map(i => (
+                  {[
+                    'https://images.unsplash.com/photo-1508243529287-e21914733111?w=100&auto=format&fit=crop&q=80',
+                    'https://images.unsplash.com/photo-1611432579402-7037e3e2c1e4?w=100&auto=format&fit=crop&q=80',
+                    'https://images.unsplash.com/photo-1495603889488-42d1d66e5523?w=100&auto=format&fit=crop&q=80',
+                    'https://images.unsplash.com/photo-1530785602389-07594beb8b73?w=100&auto=format&fit=crop&q=80',
+                  ].map((src, i) => (
                     <div key={i} className="w-10 h-10 rounded-full border-2 border-white bg-gray-200 overflow-hidden">
-                      <img src={`https://i.pravatar.cc/100?img=${i + 10}`} alt="User" className="w-full h-full object-cover" />
+                      <img src={src} alt="User" className="w-full h-full object-cover" />
                     </div>
                   ))}
                 </div>
@@ -233,7 +239,7 @@ export default function Home() {
                     <div className="flex justify-between items-center mb-8">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-gray-200 rounded-full overflow-hidden">
-                          <img src="https://i.pravatar.cc/100?img=33" alt="User" />
+                          <img src="https://images.unsplash.com/photo-1617244147299-5ef406921c35?w=100&auto=format&fit=crop&q=80" alt="Emmanuel Jordan" className="w-full h-full object-cover" />
                         </div>
                         <div>
                           <div className="text-xs text-gray-500">Good Morning</div>
@@ -331,36 +337,15 @@ export default function Home() {
                   </div>
                 </motion.div>
 
-                {/* Floating Card — trimmed padding/spacing to sit closer to a real card's ~1.586:1
-                    aspect ratio (was noticeably taller than that), and the crest replaces the full
-                    logo+wordmark image, which read as "JAXOPAY text" at this size. */}
+                {/* Floating Card — the exact same component the dashboard's real cards and its
+                    sample carousel render, so this is genuinely the card design, not a hand-tuned
+                    lookalike that can drift from it. */}
                 <motion.div
                   animate={{ y: [0, 10, 0] }}
                   transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                  className="absolute left-0 md:-left-12 bottom-1/4 bg-[#0f172a] p-4 rounded-xl shadow-xl border border-gray-700 w-60 z-20"
+                  className="absolute left-0 md:-left-12 bottom-1/4 z-20"
                 >
-                  <div className="flex justify-between items-start mb-4">
-                    <img src="/logo-crest.png" alt="JAXOPAY" className="h-7 w-7 object-contain" />
-                    <div className="w-8 h-5 bg-white/20 rounded-md flex items-center justify-center">
-                      <div className="w-4 h-3 border border-white/40 rounded-sm"></div>
-                    </div>
-                  </div>
-                  <div className="text-white font-mono text-base tracking-wider mb-3 drop-shadow-md whitespace-nowrap">
-                    5790 •••• •••• 5977
-                  </div>
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <div className="text-white/40 text-[9px] uppercase tracking-wider mb-1">Card Holder</div>
-                      <div className="text-white text-xs font-medium tracking-wide">Emmanuel Jordan</div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <div className="text-white/40 text-[9px]">Exp 09/28</div>
-                      <div className="flex -space-x-2">
-                        <div className="w-5 h-5 rounded-full bg-red-500/90 z-10"></div>
-                        <div className="w-5 h-5 rounded-full bg-yellow-500/90"></div>
-                      </div>
-                    </div>
-                  </div>
+                  <CardFaceMockup designId="midnight" sample className="w-60 aspect-[1.586] shadow-xl" />
                 </motion.div>
               </div>
             </motion.div>
@@ -618,22 +603,16 @@ export default function Home() {
 
             {/* Left Images - Stacked Cards */}
             <div className="relative w-full lg:w-1/2 min-h-[400px] flex items-center justify-center perspective-1000">
-              {/* Card 1 - Back */}
+              {/* Card 1 - Back — same shared CardFaceMockup as the dashboard/hero, so this
+                  marketing shot is the actual card design, not a lookalike. */}
               <motion.div
                 initial={{ x: -100, opacity: 0, rotate: -15 }}
                 whileInView={{ x: 0, opacity: 1, rotate: -6 }}
                 transition={{ duration: 0.8, type: "spring", bounce: 0.4 }}
                 viewport={{ once: true }}
-                className="absolute w-[280px] sm:w-[320px] h-[180px] sm:h-[200px] bg-[#0f172a] rounded-2xl shadow-2xl z-10 -rotate-6 transform -translate-x-12 translate-y-4 border border-gray-700/50 flex flex-col justify-between p-6 overflow-hidden"
+                className="absolute z-10 -rotate-6 transform -translate-x-12 translate-y-4"
               >
-                <div className="flex justify-between items-start">
-                  <img src="/logo-crest.png" alt="JAXOPAY" className="h-6 w-6 object-contain brightness-200 opacity-80" />
-                  <div className="text-white/50 text-xs">VIRTUAL</div>
-                </div>
-                <div className="flex justify-between items-end">
-                  <div className="text-white/90 font-mono tracking-widest text-lg">**** 5339</div>
-                  <div className="w-10 h-6 bg-white/10 rounded-sm" />
-                </div>
+                <CardFaceMockup designId="midnight" sample className="w-[280px] sm:w-[320px] aspect-[1.586] shadow-2xl" />
               </motion.div>
 
               {/* Card 2 - Front (Main) */}
@@ -643,34 +622,9 @@ export default function Home() {
                 transition={{ duration: 0.8, delay: 0.1, type: "spring", bounce: 0.4 }}
                 viewport={{ once: true }}
                 whileHover={{ scale: 1.05, rotate: 0 }}
-                className="absolute w-[300px] sm:w-[340px] h-[190px] sm:h-[210px] bg-gradient-to-br from-accent-600 to-emerald-700 text-white rounded-2xl shadow-2xl z-20 rotate-3 transform translate-x-4 -translate-y-4 p-7 flex flex-col justify-between cursor-pointer"
+                className="absolute z-20 rotate-3 transform translate-x-4 -translate-y-4 cursor-pointer"
               >
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-2">
-                    <img src="/logo-crest.png" alt="JAXOPAY" className="w-8 h-8 object-contain" />
-                  </div>
-                  <div className="text-white/80 text-xs tracking-wider">VIRTUAL</div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex gap-4 font-mono text-xl tracking-widest text-shadow-sm">
-                    <span>5339</span>
-                    <span>****</span>
-                    <span>****</span>
-                    <span>5632</span>
-                  </div>
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <div className="text-[10px] text-white/60 mb-1">CARD HOLDER</div>
-                      <div className="font-medium tracking-wide uppercase">Emmanuel Jordan</div>
-                    </div>
-                    {/* Mastercard Logo Simulation */}
-                    <div className="flex -space-x-3 opacity-90">
-                      <div className="w-8 h-8 rounded-full bg-red-500/90" />
-                      <div className="w-8 h-8 rounded-full bg-yellow-400/90" />
-                    </div>
-                  </div>
-                </div>
+                <CardFaceMockup designId="emerald" sample className="w-[300px] sm:w-[340px] aspect-[1.586] shadow-2xl" />
               </motion.div>
             </div>
 
@@ -1103,28 +1057,28 @@ export default function Home() {
               {
                 name: 'Emmanuel Jordan',
                 role: 'Small Business Owner',
-                image: 'https://images.unsplash.com/photo-1542909168-82c3e7fdca5c?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1617244147299-5ef406921c35?w=150&auto=format&fit=crop&q=80',
                 text: 'JAXOPAY has transformed how I manage my international payments. The fees are incredibly low and transfers are instant!',
                 rating: 5
               },
               {
                 name: 'David Amadi',
                 role: 'Freelance Developer',
-                image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1614023342667-6f060e9d1e04?w=150&auto=format&fit=crop&q=80',
                 text: 'As a freelancer working with global clients, JAXOPAY makes receiving payments seamless. Best financial app I\'ve used!',
                 rating: 5
               },
               {
                 name: 'Amara Okafor',
                 role: 'E-commerce Entrepreneur',
-                image: 'https://images.unsplash.com/photo-1614204424926-196a80bf0be8?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=150&auto=format&fit=crop&q=80',
                 text: 'The virtual cards feature is a game-changer for my online business. Secure, fast, and reliable!',
                 rating: 5
               },
               {
                 name: 'Adebayo Abraham',
                 role: 'Digital Nomad',
-                image: 'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?w=150&auto=format&fit=crop&q=80',
+                image: 'https://images.unsplash.com/photo-1617244147030-8bd6f9e21d1e?w=150&auto=format&fit=crop&q=80',
                 text: 'Managing multiple currencies while traveling has never been easier. JAXOPAY is my go-to financial companion!',
                 rating: 5
               }
