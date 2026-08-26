@@ -1,7 +1,8 @@
-import { Send, Globe, Shield, Zap, CheckCircle, ArrowRight, Clock, DollarSign, MessageCircle, Bell, ChevronDown, ArrowDownLeft, ArrowUpRight, RefreshCw } from 'lucide-react';
+import { Send, Globe, Shield, Zap, CheckCircle, ArrowRight, Clock, DollarSign } from 'lucide-react';
 import PublicLayout from '../../components/layout/PublicLayout';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
+import PhoneHomeMockup from '../../components/PhoneHomeMockup';
 
 export default function Payments() {
   const features = [
@@ -105,115 +106,13 @@ export default function Payments() {
               <div className="absolute w-[500px] h-[500px] bg-accent-100 rounded-full blur-3xl opacity-50" />
 
               {/* Phone Frame */}
-              <div className="relative bg-gray-900 rounded-[2.5rem] border-[8px] border-gray-900 overflow-hidden shadow-2xl h-[580px] w-[300px] ring-4 ring-gray-100/50">
+              <div className="relative bg-gray-900 rounded-[2.5rem] border-[8px] border-gray-900 overflow-hidden shadow-2xl h-[600px] w-[300px] ring-4 ring-gray-100/50">
                 {/* Notch */}
                 <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-28 h-6 bg-gray-900 rounded-b-xl z-20"></div>
 
-                {/* Screen Content — mirrors the real RN app's Home tab (DashboardScreen.tsx):
-                    same header, dark-green balance card gradient/copy, quick actions, and
-                    Recent Activity row styling/colors, not a generic invented chat-style UI. */}
-                <div className="w-full h-full bg-gray-50 flex flex-col pt-10 relative overflow-hidden">
-                  {/* Header */}
-                  <div className="px-5 pb-3 flex justify-between items-center">
-                    <div>
-                      <div className="text-[11px] text-gray-400 font-medium">Good afternoon</div>
-                      <div className="font-bold text-gray-900 text-[15px]">Emmanuel 👋</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-white border border-gray-100 flex items-center justify-center">
-                        <MessageCircle className="w-4 h-4" style={{ color: '#25D366' }} />
-                      </div>
-                      <div className="relative w-8 h-8 rounded-full bg-white border border-gray-100 flex items-center justify-center">
-                        <Bell className="w-4 h-4 text-gray-500" />
-                        <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 flex items-center justify-center">
-                          <span className="text-[7px] text-white font-bold">2</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 px-5 overflow-hidden">
-                    {/* Balance Card */}
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.3 }}
-                      className="rounded-2xl p-4 mb-4"
-                      style={{ background: 'linear-gradient(135deg,#064e3b,#065f46)' }}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-white/70 text-[11px] font-medium">Total Balance</span>
-                        <div className="flex items-center gap-1 bg-white/15 rounded-full px-2 py-1">
-                          <span className="text-white text-[10px] font-bold">USD</span>
-                          <ChevronDown className="w-3 h-3 text-white" />
-                        </div>
-                      </div>
-                      <div className="text-white text-2xl font-bold mb-3 tracking-tight">$24,562.80</div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#10B981' }} />
-                          <span className="text-white/60 text-[10px]">4 active wallets</span>
-                        </div>
-                        <span className="text-white/60 text-[10px]">Tap to hide</span>
-                      </div>
-                    </motion.div>
-
-                    {/* Quick Actions */}
-                    <div className="flex justify-between mb-5 px-2">
-                      {[
-                        { label: 'Deposit', Icon: ArrowDownLeft },
-                        { label: 'Withdraw', Icon: ArrowUpRight },
-                        { label: 'Swap', Icon: RefreshCw },
-                      ].map(({ label, Icon }) => (
-                        <div key={label} className="flex flex-col items-center gap-1.5">
-                          <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(31, 173, 107, 0.12)' }}>
-                            <Icon className="w-5 h-5" style={{ color: '#1FAD6B' }} />
-                          </div>
-                          <span className="text-[10px] font-medium text-gray-500">{label}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Recent Activity */}
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[13px] font-bold text-gray-900">Recent Activity</span>
-                      <span className="text-[11px] font-semibold" style={{ color: '#1FAD6B' }}>See all</span>
-                    </div>
-                    <div className="space-y-2">
-                      <motion.div
-                        initial={{ opacity: 0, x: 10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.5 }}
-                        className="flex items-center gap-3 bg-white rounded-xl p-2.5 border border-gray-100"
-                      >
-                        <div className="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center shrink-0">
-                          <ArrowUpRight className="w-4 h-4 text-red-500" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[11px] font-bold text-gray-900 truncate">Transfer to Emmanuel Edward</div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[9px] text-gray-400">Just now</span>
-                            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }}>Completed</span>
-                          </div>
-                        </div>
-                        <span className="text-[11px] font-bold text-gray-900 shrink-0">-$2,500.00</span>
-                      </motion.div>
-                      <div className="flex items-center gap-3 bg-white rounded-xl p-2.5 border border-gray-100">
-                        <div className="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center shrink-0">
-                          <ArrowDownLeft className="w-4 h-4" style={{ color: '#1FAD6B' }} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[11px] font-bold text-gray-900 truncate">Deposit</div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[9px] text-gray-400">Yesterday</span>
-                            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }}>Completed</span>
-                          </div>
-                        </div>
-                        <span className="text-[11px] font-bold shrink-0" style={{ color: '#1FAD6B' }}>+$4,500.00</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* Screen Content — the real RN app's Home tab (DashboardScreen.tsx), shared
+                    with the homepage hero's phone so neither can drift from the other. */}
+                <PhoneHomeMockup name="Kunle" balance={3950} greeting="Good afternoon" />
               </div>
 
               {/* Floating Notification Bubble 1 */}

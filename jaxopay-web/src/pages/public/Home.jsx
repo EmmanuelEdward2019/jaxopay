@@ -3,23 +3,18 @@ import {
   ArrowRight,
   ArrowUpRight,
   ArrowDownLeft,
-  Bell,
   Globe,
   Wallet,
-  CreditCard,
   Zap,
   Shield,
   TrendingUp,
   Users,
   CheckCircle,
   Star,
-  Send,
   Bitcoin,
   Plane,
   Gift,
   DollarSign,
-  Plus,
-  MoreHorizontal
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Swiper, SwiperSlide } from 'swiper/react';
@@ -30,6 +25,7 @@ import PublicLayout from '../../components/layout/PublicLayout';
 import VideoPlayer from '../../components/VideoPlayer';
 import LiveRatesShowcase from '../../components/public/LiveRatesShowcase';
 import CardFaceMockup from '../../components/CardFaceMockup';
+import PhoneHomeMockup from '../../components/PhoneHomeMockup';
 
 // Import Swiper styles
 import 'swiper/css';
@@ -232,90 +228,10 @@ export default function Home() {
                   {/* Notch */}
                   <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-28 h-6 bg-gray-900 rounded-b-xl z-20"></div>
 
-                  {/* Screen Content */}
-                  <div className="w-full h-full bg-white flex flex-col pt-12 px-6">
-                    {/* App Header */}
-                    <div className="flex justify-between items-center mb-8">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gray-200 rounded-full overflow-hidden">
-                          <img src="https://images.unsplash.com/photo-1617244147299-5ef406921c35?w=100&auto=format&fit=crop&q=80" alt="Emmanuel Jordan" className="w-full h-full object-cover" />
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">Good Morning</div>
-                          <div className="font-bold text-gray-900">Emmanuel Jordan</div>
-                        </div>
-                      </div>
-                      <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center border border-gray-200">
-                        <Bell className="w-5 h-5 text-gray-600" />
-                      </div>
-                    </div>
-
-                    {/* Balance Card */}
-                    <div className="bg-accent-600 rounded-3xl p-6 text-white text-center mb-8 shadow-lg shadow-accent-500/30 relative overflow-hidden">
-                      <div className="absolute -right-10 -top-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
-                      <div className="absolute -left-10 -bottom-10 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl"></div>
-
-                      <div className="text-sm text-accent-100 mb-2 font-medium">Total Balance</div>
-                      <div className="text-4xl font-bold mb-6">$24,500.00</div>
-                      <div className="flex justify-center gap-4">
-                        <button className="flex flex-col items-center gap-1 group">
-                          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm group-hover:bg-white/30 transition-colors">
-                            <Plus className="w-6 h-6" />
-                          </div>
-                          <span className="text-xs font-medium">Add</span>
-                        </button>
-                        <button className="flex flex-col items-center gap-1 group">
-                          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm group-hover:bg-white/30 transition-colors">
-                            <Send className="w-6 h-6" />
-                          </div>
-                          <span className="text-xs font-medium">Send</span>
-                        </button>
-                        <button className="flex flex-col items-center gap-1 group">
-                          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm group-hover:bg-white/30 transition-colors">
-                            <CreditCard className="w-6 h-6" />
-                          </div>
-                          <span className="text-xs font-medium">Cards</span>
-                        </button>
-                        <button className="flex flex-col items-center gap-1 group">
-                          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm group-hover:bg-white/30 transition-colors">
-                            <MoreHorizontal className="w-6 h-6" />
-                          </div>
-                          <span className="text-xs font-medium">More</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Recent Transactions */}
-                    <div>
-                      <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-bold text-gray-900">Recent Activity</h3>
-                        <a href="#" className="text-sm text-accent-600 font-semibold">See All</a>
-                      </div>
-                      <div className="space-y-4">
-                        {[
-                          { name: 'Netflix Subscription', date: 'Today, 9:41 AM', amount: '-$14.99', icon: 'N', color: 'bg-red-100 text-red-600' },
-                          { name: 'Spotify Premium', date: 'Yesterday, 2:30 PM', amount: '-$9.99', icon: 'S', color: 'bg-accent-100 text-accent-600' },
-                          { name: 'Salary Deposit', date: 'Oct 24, 10:00 AM', amount: '+$4,500.00', icon: '💰', color: 'bg-emerald-100 text-emerald-600' },
-                          { name: 'Uber Ride', date: 'Oct 23, 8:15 PM', amount: '-$24.50', icon: 'U', color: 'bg-black text-white' },
-                        ].map((tx, i) => (
-                          <div key={i} className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold ${tx.color}`}>
-                                {tx.icon}
-                              </div>
-                              <div>
-                                <div className="font-bold text-gray-900 text-sm">{tx.name}</div>
-                                <div className="text-xs text-gray-500">{tx.date}</div>
-                              </div>
-                            </div>
-                            <div className={`font-bold text-sm ${tx.amount.startsWith('+') ? 'text-accent-600' : 'text-gray-900'}`}>
-                              {tx.amount}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                  {/* Screen Content — the real RN app's Home tab (DashboardScreen.tsx), not a
+                      hand-drawn approximation. Shared with /products/payments' hero phone so
+                      neither can drift from the other or from the app. */}
+                  <PhoneHomeMockup name="Kunle" balance={3950} />
                 </div>
 
                 {/* Floating Notification — left-0/right-0 on mobile (was -4, which combined with the
