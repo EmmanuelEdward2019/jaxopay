@@ -125,7 +125,7 @@ const InstantSwap = () => {
 
   // Quotation lifecycle
   const [quotation, setQuotation] = useState(null);
-  const [swapPhase, setSwapPhase] = useState('idle'); // idle|quoting|quoted|refreshing|confirming|polling|completed|failed
+  const [swapPhase, setSwapPhase] = useState('idle'); // idle|quoting|quoted|refreshing|expired|confirming|polling|completed|failed
   const [swapError, setSwapError] = useState(null);
   const [swapResult, setSwapResult] = useState(null);
   const [oldToBalance, setOldToBalance] = useState(null);
@@ -133,8 +133,11 @@ const InstantSwap = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const quotationIdRef = useRef(null);
-  const autoRefreshFiredRef = useRef(false);
-  const refreshCallbackRef = useRef(null);
+  // Total seconds the current quote was valid for at the moment it arrived — lets the countdown
+  // progress bar's fill % reflect whatever Obiex actually granted instead of an assumed constant.
+  // State, not a ref: its value is read during render (the bar's width), and refs can't be read
+  // there without breaking React's render-purity guarantees.
+  const [quoteDuration, setQuoteDuration] = useState(15);
   const refreshInFlightRef = useRef(false);
 
   // Rate preview (before quote)
@@ -196,42 +199,29 @@ const InstantSwap = () => {
     return () => clearTimeout(timer);
   }, [payAmount, receiveAmount, fromCode, toCode, swapPhase, lastEdited]);
 
-  // Keep refresh callback ref current
-  useEffect(() => { refreshCallbackRef.current = handleRefresh; });
-
-  // Countdown timer — also drives auto-refresh on expiry. Obiex has no lightweight "is this
-  // quote still valid?" check, so every auto-refresh is a brand-new provider quote call, drawn
-  // from the same hourly quote allowance every JAXOPAY user shares (Obiex is a single pooled
-  // account, not per-user). A background/hidden tab left open on a quoted swap was silently
-  // generating one of these every ~15s forever — real quota spent with nobody even looking at
-  // it. Only auto-fire while the tab is actually visible; if the quote goes stale while hidden,
-  // catch up with a single refresh the moment the user comes back instead of having fired ~4
-  // wasted quote calls per minute the whole time it sat in the background.
+  // Countdown timer. Used to auto-refresh on expiry — every refresh is a brand-new provider
+  // quote call, drawn from the same hourly quote allowance every JAXOPAY user shares (Obiex is a
+  // single pooled account, not per-user) — so a background/hidden tab left open on a quoted swap
+  // was silently generating one of these every ~15s forever, real quota spent with nobody even
+  // looking at it. Now it just stops and asks: at 0 it sets swapPhase to 'expired' and does
+  // nothing further until the user explicitly taps Refresh (handleRefresh) — the only way a new
+  // quote gets requested here is a real user action (typing, changing coins, or that tap).
   useEffect(() => {
     if (!quotation?.expires_at || !['quoted', 'refreshing'].includes(swapPhase)) { setCountdownSecs(0); return; }
-    autoRefreshFiredRef.current = false;
     const expiresAt = new Date(quotation.expires_at).getTime();
+    setQuoteDuration(Math.max(1, Math.round((expiresAt - Date.now()) / 1000)));
 
-    const fireRefreshIfDue = () => {
-      if (autoRefreshFiredRef.current) return;
-      if (Date.now() < expiresAt) return;
-      if (document.visibilityState !== 'visible') return;
-      autoRefreshFiredRef.current = true;
-      clearInterval(interval);
-      refreshCallbackRef.current?.();
-    };
-
-    const interval = setInterval(() => {
+    const tick = () => {
       const left = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
       setCountdownSecs(left);
-      fireRefreshIfDue();
-    }, 1000);
-
-    document.addEventListener('visibilitychange', fireRefreshIfDue);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', fireRefreshIfDue);
+      if (left <= 0) {
+        clearInterval(interval);
+        setSwapPhase('expired');
+      }
     };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
   }, [quotation?.expires_at, swapPhase]);
 
   // Reset quotation when user changes params — including after a failed attempt (e.g.
@@ -243,7 +233,7 @@ const InstantSwap = () => {
   // gets set, discarding it before the user ever sees it.
   const activeAmount = lastEdited === 'pay' ? payAmount : receiveAmount;
   useEffect(() => {
-    if (['quoted', 'refreshing', 'failed'].includes(swapPhase)) {
+    if (['quoted', 'refreshing', 'expired', 'failed'].includes(swapPhase)) {
       setSwapPhase('idle');
       setQuotation(null);
       setSwapError(null);
@@ -343,7 +333,7 @@ const InstantSwap = () => {
 
   const handleRefresh = useCallback(async () => {
     const qid = quotationIdRef.current;
-    if (!qid || refreshInFlightRef.current || !['quoted', 'refreshing'].includes(swapPhase)) return;
+    if (!qid || refreshInFlightRef.current || !['quoted', 'refreshing', 'expired'].includes(swapPhase)) return;
     refreshInFlightRef.current = true;
     setIsRefreshing(true);
     setSwapPhase('refreshing');
@@ -696,7 +686,7 @@ const InstantSwap = () => {
                         <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
                           <div className="h-full rounded-full transition-all duration-1000"
                             style={{
-                              width: `${(countdownSecs / 15) * 100}%`,
+                              width: `${(countdownSecs / quoteDuration) * 100}%`,
                               backgroundColor: countdownSecs > 5 ? '#0ecb81' : countdownSecs > 2 ? '#f0b90b' : '#f6465d'
                             }} />
                         </div>
@@ -709,6 +699,16 @@ const InstantSwap = () => {
                         </button>
                       </div>
                     </div>
+                  )}
+                  {swapPhase === 'expired' && (
+                    <button onClick={handleRefresh} disabled={isRefreshing}
+                      className="w-full flex items-center justify-between text-[11px] bg-danger/10 hover:bg-danger/15 transition-colors rounded-lg px-2 py-1.5 -mx-0.5 disabled:opacity-60">
+                      <span className="text-danger font-bold">Quote expired</span>
+                      <span className="flex items-center gap-1.5 text-primary font-bold">
+                        Refresh
+                        <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                      </span>
+                    </button>
                   )}
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-muted-foreground">Fee</span>
@@ -742,6 +742,12 @@ const InstantSwap = () => {
                     className="w-full py-3.5 rounded-xl bg-success text-white font-bold text-sm hover:bg-success/90 transition-colors flex items-center justify-center gap-2">
                     Confirm Swap
                   </button>
+                ) : swapPhase === 'expired' ? (
+                  <button onClick={handleRefresh} disabled={isRefreshing}
+                    className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                    {isRefreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Refresh Quote
+                  </button>
                 ) : swapPhase === 'quoting' ? (
                   <button disabled className="w-full py-3.5 rounded-xl bg-muted text-muted-foreground font-bold text-sm flex items-center justify-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" /> Getting Quote...
@@ -756,7 +762,7 @@ const InstantSwap = () => {
                   </button>
                 ) : null}
 
-                {isQuoteActive && (
+                {(isQuoteActive || swapPhase === 'expired') && (
                   <button onClick={handleNewSwap}
                     className="w-full py-2.5 rounded-xl bg-transparent border border-border text-muted-foreground font-medium text-xs hover:text-gray-900 dark:hover:text-white hover:border-gray-500 dark:hover:border-gray-400 transition-colors">
                     Cancel

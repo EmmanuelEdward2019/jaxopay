@@ -119,15 +119,13 @@ const Exchange = () => {
 
     // ── Quotation lifecycle ───────────────────────────────────────────────────
     const [quotation, setQuotation] = useState(null);     // active quotation object
-    const [swapPhase, setSwapPhase] = useState('idle');   // idle|quoting|quoted|refreshing|confirming|polling|completed|failed
+    const [swapPhase, setSwapPhase] = useState('idle');   // idle|quoting|quoted|refreshing|expired|confirming|polling|completed|failed
     const [swapTxId, setSwapTxId] = useState(null);
     const [swapResult, setSwapResult] = useState(null);
     const [swapError, setSwapError] = useState(null);
     const [countdownSecs, setCountdownSecs] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const quotationIdRef = useRef(null);
-    const autoRefreshFiredRef = useRef(false);
-    const refreshCallbackRef = useRef(null);
     const refreshInFlightRef = useRef(false);
 
     // Obiex has no lightweight "preview" endpoint, so fetchRates fires a real quote call under
@@ -155,46 +153,34 @@ const Exchange = () => {
         fetchAssets();
     }, []);
 
-    // Keep refreshCallbackRef current so the countdown timer always calls the latest version
-    useEffect(() => { refreshCallbackRef.current = handleQuotationRefresh; });
-
-    // Countdown timer — driven by quotation.expires_at; auto-refreshes at 0. Obiex has no
-    // lightweight "is this quote still valid?" check, so every auto-refresh is a brand-new
-    // provider quote call against the same shared hourly allowance every JAXOPAY user draws
-    // from (Obiex is a single pooled account, not per-user) — a background/hidden tab left open
-    // on a quoted exchange was silently generating one of these every ~15s forever. Only
-    // auto-fire while the tab is actually visible; catch up with a single refresh when the user
-    // comes back if it went stale while hidden.
+    // Countdown timer, driven by quotation.expires_at. Used to stop-and-ask at 0 rather than
+    // auto-refresh — every refresh is a brand-new provider quote call against the same shared
+    // hourly allowance every JAXOPAY user draws from (Obiex is a single pooled account, not
+    // per-user), so a background/hidden tab left open on a quoted exchange was silently
+    // generating one of these every ~15s forever, real quota spent with nobody even looking at
+    // it. Now it just sets swapPhase to 'expired' and stops; the only way a new quote gets
+    // requested from here on is a real user action (typing, changing assets, or an explicit tap
+    // on the resulting "Quote expired — Refresh" prompt).
     useEffect(() => {
         if (!quotation?.expires_at || !['quoted', 'refreshing'].includes(swapPhase)) { setCountdownSecs(0); return; }
-        autoRefreshFiredRef.current = false;
         const expiresAt = new Date(quotation.expires_at).getTime();
 
-        const fireRefreshIfDue = () => {
-            if (autoRefreshFiredRef.current) return;
-            if (Date.now() < expiresAt) return;
-            if (document.visibilityState !== 'visible') return;
-            autoRefreshFiredRef.current = true;
-            clearInterval(interval);
-            refreshCallbackRef.current?.();
-        };
-
-        const interval = setInterval(() => {
+        const tick = () => {
             const secsLeft = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
             setCountdownSecs(secsLeft);
-            fireRefreshIfDue();
-        }, 1000);
-
-        document.addEventListener('visibilitychange', fireRefreshIfDue);
-        return () => {
-            clearInterval(interval);
-            document.removeEventListener('visibilitychange', fireRefreshIfDue);
+            if (secsLeft <= 0) {
+                clearInterval(interval);
+                setSwapPhase('expired');
+            }
         };
+        tick();
+        const interval = setInterval(tick, 1000);
+        return () => clearInterval(interval);
     }, [quotation?.expires_at, swapPhase]);
 
     // Reset to idle when the user changes currency or amount while a quote is active
     useEffect(() => {
-        if (swapPhase === 'quoted' || swapPhase === 'refreshing') {
+        if (swapPhase === 'quoted' || swapPhase === 'refreshing' || swapPhase === 'expired') {
             setSwapPhase('idle');
             setQuotation(null);
             setSwapError(null);
@@ -389,7 +375,7 @@ const Exchange = () => {
     // Step 3: Refresh an active quotation (manual or auto)
     const handleQuotationRefresh = async () => {
         const qid = quotationIdRef.current;
-        if (!qid || refreshInFlightRef.current || !['quoted', 'refreshing'].includes(swapPhase)) return;
+        if (!qid || refreshInFlightRef.current || !['quoted', 'refreshing', 'expired'].includes(swapPhase)) return;
         refreshInFlightRef.current = true;
         setIsRefreshing(true);
         setSwapPhase('refreshing');
@@ -421,10 +407,6 @@ const Exchange = () => {
             refreshInFlightRef.current = false;
         }
     };
-
-    // Keep refreshCallbackRef always pointing to the latest version (avoids stale closures in timer)
-    // This useEffect is placed here (before the countdown effect) to ensure it runs on every render
-    // Note: effects are collected in order and all run after render; this pattern is safe.
 
     // Step 2: Create a real quotation (user clicks "Get Quote")
     const handleGetQuote = async () => {
@@ -837,6 +819,30 @@ const Exchange = () => {
                                 </motion.div>
                             )}
 
+                            {/* Expired quote — stop and ask, not a silent auto-refresh */}
+                            {quotation && swapPhase === 'expired' && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                                    className="mt-8 p-6 bg-danger/10 rounded-3xl border border-danger/20"
+                                >
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2 text-sm font-bold text-danger">
+                                            <AlertCircle className="w-4 h-4" />
+                                            <span>Quote expired</span>
+                                        </div>
+                                        <button
+                                            onClick={handleQuotationRefresh}
+                                            disabled={isRefreshing}
+                                            className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-bold rounded-xl hover:bg-primary/90 transition-all disabled:opacity-50"
+                                        >
+                                            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                            Refresh
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-2">This rate is no longer valid. Refresh to get a new one.</p>
+                                </motion.div>
+                            )}
+
                             {/* Processing state (confirming + polling) */}
                             {(swapPhase === 'confirming' || swapPhase === 'polling') && (
                                 <div className="mt-8 p-8 bg-primary/10 rounded-3xl border border-primary/20 text-center">
@@ -891,7 +897,11 @@ const Exchange = () => {
                             {/* Action button — adapts to current phase */}
                             {swapPhase !== 'completed' && swapPhase !== 'polling' && swapPhase !== 'confirming' && (
                                 <button
-                                    onClick={swapPhase === 'quoted' || swapPhase === 'refreshing' ? handleConfirmSwap : handleGetQuote}
+                                    onClick={
+                                        swapPhase === 'quoted' || swapPhase === 'refreshing' ? handleConfirmSwap
+                                            : swapPhase === 'expired' ? handleQuotationRefresh
+                                                : handleGetQuote
+                                    }
                                     disabled={
                                         !payAmount || parseFloat(payAmount) <= 0 ||
                                         swapPhase === 'quoting' ||
@@ -904,6 +914,8 @@ const Exchange = () => {
                                         <RefreshCw className="w-8 h-8 animate-spin" />
                                     ) : swapPhase === 'quoted' || swapPhase === 'refreshing' ? (
                                         isRefreshing ? <><RefreshCw className="w-5 h-5 animate-spin" /> Refreshing…</> : 'Confirm Swap'
+                                    ) : swapPhase === 'expired' ? (
+                                        isRefreshing ? <><RefreshCw className="w-5 h-5 animate-spin" /> Refreshing…</> : 'Refresh Quote'
                                     ) : swapPhase === 'failed' ? (
                                         'Try Again'
                                     ) : (
