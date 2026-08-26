@@ -35,6 +35,11 @@ const CardFaceMockup = ({ designId, frozen, sample, balance, revealed, cardNumbe
             <div className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,${glossOpacity}), transparent 55%)` }} />
             <div className={`pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full ${glowClass} blur-2xl`} />
 
+            {/* Chip + contactless mark now share a column on the right, wave stacked directly
+                under the gold chip, instead of the wave getting its own full-width row — that
+                row used to render (and cost height) even on sample cards with nothing else in
+                it. Collapsing the two is what actually shortens the card into looking rectangular
+                rather than square, not just a different aspect-ratio number. */}
             <div className="relative flex items-start justify-between mb-3">
                 <div className="flex flex-col">
                     {/* logo-crest.png: logo-icon.png's icon mark cropped out from the wordmark that
@@ -44,32 +49,35 @@ const CardFaceMockup = ({ designId, frozen, sample, balance, revealed, cardNumbe
                     <img src="/logo-crest.png" alt="JAXOPAY" className="h-4 w-4 object-contain opacity-60 drop-shadow-sm" />
                     <span className={`text-[8px] uppercase tracking-[0.15em] ${fgDim} mt-1`}>Virtual · USD</span>
                 </div>
-                <div className="w-9 h-6 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
-                    <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[1px] opacity-50">
-                        {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-yellow-800/40 rounded-[1px]" />)}
+                <div className="flex flex-col items-end gap-1">
+                    <div className="w-9 h-6 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
+                        <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[1px] opacity-50">
+                            {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-yellow-800/40 rounded-[1px]" />)}
+                        </div>
                     </div>
+                    <svg viewBox="0 0 24 24" className={`w-4 h-5 ${fgDim}`} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                        <path d="M8 7a8 8 0 0 1 0 10" /><path d="M11.5 5a12 12 0 0 1 0 14" /><path d="M15 3a16 16 0 0 1 0 18" />
+                    </svg>
                 </div>
             </div>
 
-            <div className="relative flex items-center justify-between mb-3">
-                <svg viewBox="0 0 24 24" className={`w-4 h-5 ${fgDim}`} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                    <path d="M8 7a8 8 0 0 1 0 10" /><path d="M11.5 5a12 12 0 0 1 0 14" /><path d="M15 3a16 16 0 0 1 0 18" />
-                </svg>
-                {!sample && (
-                    <div className="flex items-center gap-2">
-                        {frozen && (
-                            <span className={`px-2 py-1 ${d.textDark ? 'bg-black/10' : 'bg-white/15'} backdrop-blur text-[10px] font-semibold rounded-full`}>
-                                Frozen
-                            </span>
-                        )}
-                        {onToggleReveal && (
-                            <button onClick={onToggleReveal} className={`p-1 ${d.textDark ? 'hover:bg-black/5' : 'hover:bg-white/10'} rounded-lg transition-colors text-xs`}>
-                                {revealing ? '···' : revealed ? 'Hide' : 'Show'}
-                            </button>
-                        )}
-                    </div>
-                )}
-            </div>
+            {/* Frozen badge / reveal toggle only ever apply to a real card, never a sample one —
+                this row no longer renders (and no longer costs height) when there's nothing to
+                put in it, instead of always reserving space for an empty wrapper. */}
+            {!sample && (frozen || onToggleReveal) && (
+                <div className="relative flex items-center justify-end gap-2 mb-3">
+                    {frozen && (
+                        <span className={`px-2 py-1 ${d.textDark ? 'bg-black/10' : 'bg-white/15'} backdrop-blur text-[10px] font-semibold rounded-full`}>
+                            Frozen
+                        </span>
+                    )}
+                    {onToggleReveal && (
+                        <button onClick={onToggleReveal} className={`p-1 ${d.textDark ? 'hover:bg-black/5' : 'hover:bg-white/10'} rounded-lg transition-colors text-xs`}>
+                            {revealing ? '···' : revealed ? 'Hide' : 'Show'}
+                        </button>
+                    )}
+                </div>
+            )}
 
             <div className="relative mb-2">
                 <p className={`${fgFaint} text-[9px] mb-0.5`}>Balance</p>

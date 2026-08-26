@@ -61,7 +61,7 @@ const SampleCardCarousel = () => {
                 onScroll={(e) => setActiveIndex(Math.round(e.currentTarget.scrollLeft / CARD_STEP))}
             >
                 {CARD_DESIGN_ORDER.map((id) => (
-                    <CardFaceMockup key={id} designId={id} sample formatCurrency={formatCurrency} className="w-[290px] h-[220px] shrink-0 snap-center" />
+                    <CardFaceMockup key={id} designId={id} sample formatCurrency={formatCurrency} className="w-[290px] h-[200px] shrink-0 snap-center" />
                 ))}
             </div>
             <div className="flex justify-center gap-1.5 mt-3">
@@ -392,24 +392,29 @@ const Cards = () => {
                                     <div className={`pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full ${glowBg} blur-2xl`} />
                                     <div className={`pointer-events-none absolute inset-y-0 -left-1/4 w-1/3 rotate-12 ${glowBg} blur-md transition-transform duration-700 group-hover:translate-x-[260%]`} />
 
-                                    {/* Top: brand + EMV chip */}
+                                    {/* Top: brand + EMV chip, with the contactless mark stacked under the chip
+                                        instead of getting its own full-width row below — shortens the card
+                                        (more rectangular, less square) without losing anything, same change
+                                        as the shared CardFaceMockup sample cards. */}
                                     <div className="relative flex items-start justify-between mb-4">
                                         <div className="flex flex-col">
                                             <img src="/logo-crest.png" alt="JAXOPAY" className="h-5 w-5 object-contain opacity-60 drop-shadow-sm" />
                                             <span className={`text-[10px] uppercase tracking-[0.15em] ${fgDim60} mt-1.5`}>Virtual · USD</span>
                                         </div>
-                                        <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
-                                            <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[2px] opacity-50">
-                                                {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-yellow-800/40 rounded-[1px]" />)}
+                                        <div className="flex flex-col items-end gap-1.5">
+                                            <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-100 via-yellow-300 to-yellow-500 shadow-inner relative overflow-hidden">
+                                                <div className="absolute inset-[3px] grid grid-cols-3 grid-rows-3 gap-[2px] opacity-50">
+                                                    {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-yellow-800/40 rounded-[1px]" />)}
+                                                </div>
                                             </div>
+                                            <svg viewBox="0 0 24 24" className={`w-5 h-6 ${fgDim70}`} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                                                <path d="M8 7a8 8 0 0 1 0 10" /><path d="M11.5 5a12 12 0 0 1 0 14" /><path d="M15 3a16 16 0 0 1 0 18" />
+                                            </svg>
                                         </div>
                                     </div>
 
-                                    {/* Contactless mark + status/reveal */}
-                                    <div className="relative flex items-center justify-between mb-4">
-                                        <svg viewBox="0 0 24 24" className={`w-5 h-6 ${fgDim70}`} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                                            <path d="M8 7a8 8 0 0 1 0 10" /><path d="M11.5 5a12 12 0 0 1 0 14" /><path d="M15 3a16 16 0 0 1 0 18" />
-                                        </svg>
+                                    {/* Status / reveal */}
+                                    <div className="relative flex items-center justify-end mb-4">
                                         <div className="flex items-center gap-2">
                                             {card.card_status === 'frozen' && (
                                                 <span className={`px-2 py-1 ${badgeBg} backdrop-blur text-[10px] font-semibold rounded-full flex items-center gap-1`}>

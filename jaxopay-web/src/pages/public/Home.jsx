@@ -241,14 +241,14 @@ export default function Home() {
                 <motion.div
                   animate={{ y: [0, -10, 0] }}
                   transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-                  className="absolute right-0 md:-right-12 top-1/4 bg-white p-4 rounded-xl shadow-xl border border-gray-100 flex items-center gap-3 z-20"
+                  className="absolute right-0 md:-right-12 top-1/4 bg-white p-2 rounded-lg shadow-xl border border-gray-100 flex items-center gap-2 z-20"
                 >
-                  <div className="w-10 h-10 bg-accent-600 rounded-full flex items-center justify-center text-white">
-                    <CheckCircle className="w-6 h-6" />
+                  <div className="w-6 h-6 shrink-0 bg-accent-600 rounded-full flex items-center justify-center text-white">
+                    <CheckCircle className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500 font-bold">Success</div>
-                    <div className="text-sm font-bold text-gray-900">Sent $150.00</div>
+                    <div className="text-[9px] leading-tight text-gray-500 font-bold">Success</div>
+                    <div className="text-[11px] leading-tight font-bold text-gray-900 whitespace-nowrap">Sent $150.00</div>
                   </div>
                 </motion.div>
 
@@ -260,7 +260,7 @@ export default function Home() {
                   transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
                   className="absolute left-0 md:-left-12 bottom-1/4 z-20"
                 >
-                  <CardFaceMockup designId="midnight" sample className="w-60 min-h-[220px] shadow-xl" />
+                  <CardFaceMockup designId="midnight" sample className="w-60 min-h-[200px] shadow-xl" />
                 </motion.div>
               </div>
             </motion.div>
@@ -527,7 +527,7 @@ export default function Home() {
                 viewport={{ once: true }}
                 className="absolute z-10 -rotate-6 transform -translate-x-12 translate-y-4"
               >
-                <CardFaceMockup designId="midnight" sample className="w-[280px] sm:w-[320px] min-h-[220px] shadow-2xl" />
+                <CardFaceMockup designId="midnight" sample className="w-[280px] sm:w-[320px] min-h-[200px] shadow-2xl" />
               </motion.div>
 
               {/* Card 2 - Front (Main) */}
@@ -539,7 +539,7 @@ export default function Home() {
                 whileHover={{ scale: 1.05, rotate: 0 }}
                 className="absolute z-20 rotate-3 transform translate-x-4 -translate-y-4 cursor-pointer"
               >
-                <CardFaceMockup designId="emerald" sample className="w-[300px] sm:w-[340px] min-h-[220px] shadow-2xl" />
+                <CardFaceMockup designId="emerald" sample className="w-[300px] sm:w-[340px] min-h-[200px] shadow-2xl" />
               </motion.div>
             </div>
 
