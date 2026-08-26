@@ -1,10 +1,26 @@
-import { Expo } from 'expo-server-sdk';
 import { query } from '../config/database.js';
 import logger from '../utils/logger.js';
 
-// EXPO_ACCESS_TOKEN is optional — Expo's push API works without one, it just raises rate
-// limits / lets Expo attribute requests to this project. Undefined is a valid Expo() arg.
-const expo = new Expo({ accessToken: process.env.EXPO_ACCESS_TOKEN });
+// expo-server-sdk is loaded lazily, NOT via a top-level import — its ExpoClient.js does
+// `import packageJson from '../package.json' with { type: 'json' }`, import-attribute syntax
+// only Node.js 20.10+ parses. A top-level import crashed the ENTIRE backend on boot on this
+// project's Node 18 droplet (SyntaxError: Unexpected token 'with', thrown before any app code
+// runs) — took down login and every other route, not just push notifications. A dynamic
+// import() only evaluates (and can fail) when actually awaited, so a Node 18 environment can
+// still boot everything else; only an actual push-send attempt fails, caught below same as any
+// other push-provider error.
+let _expoPromise = null;
+function loadExpo() {
+  if (!_expoPromise) {
+    // EXPO_ACCESS_TOKEN is optional — Expo's push API works without one, it just raises rate
+    // limits / lets Expo attribute requests to this project. Undefined is a valid Expo() arg.
+    _expoPromise = import('expo-server-sdk').then(({ Expo }) => ({
+      Expo,
+      instance: new Expo({ accessToken: process.env.EXPO_ACCESS_TOKEN }),
+    }));
+  }
+  return _expoPromise;
+}
 
 /**
  * Registers (or re-homes) a device's Expo push token to a user. UNIQUE(expo_push_token) means a
@@ -38,6 +54,8 @@ export async function sendPushToUser(userId, { title, body, data }) {
       [userId]
     );
     if (rows.length === 0) return;
+
+    const { Expo, instance: expo } = await loadExpo();
 
     const messages = [];
     const staleTokens = [];
