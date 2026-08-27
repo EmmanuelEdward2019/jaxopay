@@ -179,6 +179,17 @@ apiClient.interceptors.response.use(
           data: null,
         });
       }
+      // No response and not a timeout — the request never reached the server at all (dropped
+      // connection, DNS hiccup, a CORS preflight racing a reconnect, browser extension blocking
+      // it, etc). Without this, `status` and `serverMessage` below are both undefined and this
+      // falls all the way through to getErrorMessage's last-resort "Something went wrong" text,
+      // which is technically true but gives no hint that it's a connectivity issue rather than
+      // something broken server-side — easy to misread as the feature itself being broken.
+      return Promise.reject({
+        message: 'Could not reach the server. Check your internet connection and try again.',
+        status: 0,
+        data: null,
+      });
     }
 
     // Background polling endpoints (ticker, notifications) should fail silently on 401
