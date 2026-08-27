@@ -23,16 +23,16 @@ const TIER_DEFS = [
     { num: 3, displayNum: 2, title: 'Address Verification', subtitle: 'Proof of residence', icon: Home },
 ];
 
-// Passport and Driver's License are no longer offered — Tier 2 only accepts NIN or National ID
+// Passport, Driver's License, and National ID are no longer offered — Tier 2 only accepts NIN
 // (number + liveness/selfie, no document photo). Kept out of the selector entirely per product
 // decision, not just hidden.
 const ID_DOCUMENT_TYPES = [
     { id: 'nin', name: 'NIN (Nigeria)', icon: Fingerprint },
-    { id: 'national_id', name: 'National ID', icon: CreditCard },
 ];
-// Legacy types (passport, drivers_license) are no longer selectable for new submissions, but kept
-// here so status/rejection-reason lookups still recognize documents submitted before this change.
-const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card', 'passport', 'drivers_license']);
+// Legacy types (national_id, passport, drivers_license) are no longer selectable for new
+// submissions, but kept here so status/rejection-reason lookups still recognize documents
+// submitted before this change.
+const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card', 'national_id', 'passport', 'drivers_license']);
 const ADDRESS_DOC_TYPE_VALUES = ['proof_of_address', 'utility_bill'];
 
 const ADDRESS_DOCUMENT_TYPES = [
@@ -56,17 +56,26 @@ function loadSmileV12Script() {
     if (window.SmileIdentity) return Promise.resolve();
     if (!smileV12ScriptPromise) {
         smileV12ScriptPromise = new Promise((resolve, reject) => {
+            // A script tag left over from an earlier attempt (e.g. a previous call's promise was
+            // reset by the .catch below, but the <script> element itself was never removed) may
+            // already have fired its own 'load'/'error' event before this listener attaches —
+            // browsers don't replay past events, so those listeners would sit forever and the
+            // caller's promise would never settle. The timeout below is the backstop for exactly
+            // that: without it, a stuck load leaves the button showing "Starting verification…"
+            // indefinitely with no error, which looks identical to "the button does nothing".
+            const timer = setTimeout(() => reject(new Error('Verification script timed out loading. Please try again.')), 15000);
+            const settle = (fn) => (...args) => { clearTimeout(timer); fn(...args); };
             const existing = document.querySelector(`script[src="${SMILE_V12_SCRIPT_URL}"]`);
             if (existing) {
-                existing.addEventListener('load', () => resolve());
-                existing.addEventListener('error', () => reject(new Error('Could not load the verification script.')));
+                existing.addEventListener('load', settle(resolve));
+                existing.addEventListener('error', settle(() => reject(new Error('Could not load the verification script.'))));
                 return;
             }
             const script = document.createElement('script');
             script.src = SMILE_V12_SCRIPT_URL;
             script.async = true;
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error('Could not load the verification script.'));
+            script.onload = settle(resolve);
+            script.onerror = settle(() => reject(new Error('Could not load the verification script.')));
             document.head.appendChild(script);
         }).catch((err) => {
             smileV12ScriptPromise = null; // let a retry re-attempt instead of caching a failure forever
@@ -138,7 +147,7 @@ const KYC = () => {
         dateOfBirth: '',
         nationality: 'NG',
         address: '',
-        documentType: '',
+        documentType: 'nin',
         documentNumber: '',
         selfie: null,
         addressDocument: null,
@@ -154,6 +163,15 @@ const KYC = () => {
     const [openingSmileVerification, setOpeningSmileVerification] = useState(false);
     const [showManualSelfieCamera, setShowManualSelfieCamera] = useState(false);
     const [docNumberHistoryTick, setDocNumberHistoryTick] = useState(0);
+    const alertRef = useRef(null);
+
+    // The error/success banner renders at the very top of the page, but a user acting on the
+    // Tier 2 panel (e.g. clicking "Open Camera - Liveness Capture") is usually scrolled well
+    // below it — without this, a genuine failure (bad token, script timeout, etc.) sets `error`
+    // correctly but the banner appears off-screen, which reads as "the button did nothing".
+    useEffect(() => {
+        if (error || success) alertRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, [error, success]);
 
     // ── Data fetching ────────────────────────────────────────────────
     const fetchKYCData = useCallback(async () => {
@@ -295,6 +313,10 @@ const KYC = () => {
         setOpeningSmileVerification(true);
         try {
             await loadSmileV12Script();
+            if (typeof window.SmileIdentity !== 'function') {
+                setError('Could not start verification — please refresh the page and try again.');
+                return;
+            }
             const tokenRes = await kycService.getSmileV3Token('biometric_kyc');
             if (!tokenRes.success || !tokenRes.data?.token) {
                 setError(tokenRes.error || 'Could not start verification session.');
@@ -492,6 +514,7 @@ const KYC = () => {
     return (
         <div className="max-w-2xl mx-auto py-4 sm:py-8 px-4">
             {/* Alerts */}
+            <div ref={alertRef} />
             <AnimatePresence>
                 {error && (
                     <Motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
@@ -658,6 +681,7 @@ const KYC = () => {
                                                     onSubmit={handleSubmitTier2}
                                                     submitting={submitting}
                                                     isValid={isTier2FormValid()}
+                                                    smileError={error}
                                                 />
                                             )}
                                             {tier.num === 3 && (status === 'none' || status === 'rejected') && (
@@ -852,22 +876,16 @@ const Tier1Form = ({ formData, updateField, onSave, saving, nationalities }) => 
 
 const Tier2Form = ({
     formData, updateField, handleFileChange, selfieInputRef,
-    docNumberSuggestions, smileConfigured, onOpenSmileCamera, openingSmileVerification, onOpenManualSelfie, onSubmit, submitting, isValid,
+    docNumberSuggestions, smileConfigured, onOpenSmileCamera, openingSmileVerification, onOpenManualSelfie, onSubmit, submitting, isValid, smileError,
 }) => (
     <div className="space-y-6">
-        {/* Document Type Selector */}
+        {/* Document Type — NIN is the only accepted type, so this is an info row, not a selector
+            (a single-option grid would otherwise leave two empty columns behind it). */}
         <div>
             <label className="block text-sm font-medium text-foreground mb-3">Document Type</label>
-            <div className="grid grid-cols-3 gap-3">
-                {ID_DOCUMENT_TYPES.map(doc => (
-                    <button key={doc.id} type="button" onClick={() => updateField('documentType', doc.id)}
-                        className={`p-4 rounded-xl border-2 text-center transition-all ${
-                            formData.documentType === doc.id ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'
-                        }`}>
-                        <doc.icon className={`w-6 h-6 mx-auto mb-2 ${formData.documentType === doc.id ? 'text-primary' : 'text-muted-foreground'}`} />
-                        <p className="text-xs sm:text-sm font-medium text-foreground">{doc.name}</p>
-                    </button>
-                ))}
+            <div className="w-40 p-4 rounded-xl border-2 border-primary bg-primary/10 text-center">
+                <Fingerprint className="w-6 h-6 mx-auto mb-2 text-primary" />
+                <p className="text-xs sm:text-sm font-medium text-foreground">NIN (Nigeria)</p>
             </div>
         </div>
 
@@ -906,6 +924,11 @@ const Tier2Form = ({
                     </button>
                     {(!formData.fullName.trim() || !formData.documentNumber.trim()) && (
                         <p className="text-xs text-muted-foreground mt-2 text-center">Enter your name and document number above first</p>
+                    )}
+                    {/* Mirrors the page-level error banner right next to the button that triggered it —
+                        that banner renders at the very top of the page, easy to miss from this panel. */}
+                    {smileError && (
+                        <p className="text-xs text-danger font-medium mt-2 text-center">{smileError}</p>
                     )}
                 </div>
             )}
