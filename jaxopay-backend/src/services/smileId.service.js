@@ -216,14 +216,26 @@ export async function mintV3Token({ userId, product }) {
         'smileid-partner-id': partnerId,
         'smileid-api-key': apiKey,
       },
-      timeout: 20000,
+      timeout: 12000,
+      // Belt-and-suspenders alongside `timeout` above: axios's own timeout is implemented as a
+      // socket-idle timer, which has known gaps for a streamed multipart body (the request can
+      // sit past its nominal timeout without ever firing). AbortSignal.timeout() is a platform
+      // primitive independent of axios's internal timer, so it fires reliably regardless. Without
+      // a HARD bound here, a hang on this call means OUR process never responds at all — Cloudflare
+      // (or Render's own edge) eventually returns its own 502 with none of our app's CORS headers,
+      // which the browser reports as a CORS policy violation instead of what actually happened.
+      signal: AbortSignal.timeout(12000),
     });
     if (!res.data?.token) throw new AppError('Smile ID did not return a token', 502);
     return { token: res.data.token, environment: base.includes('testapi') ? 'sandbox' : 'production' };
   } catch (err) {
     if (err instanceof AppError) throw err;
+    const isTimeout = err.code === 'ECONNABORTED' || err.name === 'AbortError' || err.name === 'TimeoutError' || err.code === 'ERR_CANCELED';
     const msg = err.response?.data || err.message;
-    logger.error('[SmileID] v3/token failed:', typeof msg === 'object' ? JSON.stringify(msg) : msg);
+    logger.error(`[SmileID] v3/token failed${isTimeout ? ' (timed out)' : ''}:`, typeof msg === 'object' ? JSON.stringify(msg) : msg);
+    if (isTimeout) {
+      throw new AppError('Verification service is taking too long to respond. Please try again.', 504);
+    }
     // See the note on the same pattern above in submitBasicKycAsync — AppError, not a plain
     // Error, so the real reason (e.g. an actual 401 from Smile over bad credentials, a 415/400
     // over a malformed multipart body, a network failure) reaches the client instead of a
