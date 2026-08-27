@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import axios from 'axios';
+import FormData from 'form-data';
 import { createRequire } from 'module';
 import logger from '../utils/logger.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -185,6 +186,10 @@ export function getMobileAuthPackage() {
  * (docs.usesmileid.com/api-reference/set-up/access): auth via smileid-partner-id/smileid-api-key
  * HEADERS (not signed like the v1/v2 flows above), body is multipart/form-data — a JSON body is
  * rejected with 415. Tokens expire 15 minutes after issuance; mint one per verification session.
+ * Uses the 'form-data' package (axios's own dependency for this) rather than the global/undici
+ * FormData — passing the native FormData into axios's Node adapter produced a request that
+ * failed the moment it was actually exercised end-to-end (surfaced as a 502 with no CORS headers,
+ * since the origin process choked mid-request rather than returning a normal JSON error).
  * @param {object} opts
  * @param {string} opts.userId - bound into the token so it round-trips to the webhook.
  * @param {string} [opts.product] - e.g. 'biometric_kyc'. Optional per the API, but scopes the token.
