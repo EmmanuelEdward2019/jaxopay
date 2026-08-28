@@ -950,7 +950,7 @@ const Tier2Form = ({
             {(() => {
                 const doc = ID_DOCUMENT_TYPES.find((d) => d.id === formData.documentType) || ID_DOCUMENT_TYPES[0];
                 return (
-                    <div className="w-40 mx-auto p-4 rounded-xl border-2 border-primary bg-primary/10 text-center">
+                    <div className="w-full max-w-xs mx-auto p-4 rounded-xl border-2 border-primary bg-primary/10 text-center">
                         <doc.icon className="w-6 h-6 mx-auto mb-2 text-primary" />
                         <p className="text-xs sm:text-sm font-medium text-foreground">{doc.name}</p>
                     </div>
