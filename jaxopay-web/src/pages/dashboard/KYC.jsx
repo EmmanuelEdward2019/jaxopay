@@ -860,6 +860,51 @@ const ReqRow = ({ label, done, pending }) => (
     </div>
 );
 
+// Custom button-and-list dropdown rather than a native <select> — matches the picker RN's
+// KYCScreen now uses for the same field (Globe icon + selected name + chevron, opening a list
+// with a checkmark on the current selection), so the two platforms' KYC flows look and behave
+// the same way here.
+const NationalityDropdown = ({ value, onChange, nationalities }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const onClickOutside = (e) => {
+            if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+        };
+        document.addEventListener('mousedown', onClickOutside);
+        return () => document.removeEventListener('mousedown', onClickOutside);
+    }, [open]);
+
+    const selected = nationalities.find(c => c.code === value);
+
+    return (
+        <div className="relative" ref={ref}>
+            <button type="button" onClick={() => setOpen(v => !v)}
+                className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none flex items-center justify-between">
+                <span className="flex items-center gap-2 truncate">
+                    <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
+                    {selected?.name || 'Select nationality'}
+                </span>
+                <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open && (
+                <div className="absolute z-20 mt-2 w-full max-h-64 overflow-y-auto rounded-xl border border-border bg-card shadow-xl">
+                    {nationalities.map(c => (
+                        <button key={c.code} type="button"
+                            onClick={() => { onChange(c.code); setOpen(false); }}
+                            className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-muted transition-colors">
+                            <span className="text-foreground">{c.name}</span>
+                            {value === c.code && <Check className="w-4 h-4 text-primary shrink-0" />}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const Tier1Form = ({ formData, updateField, onSave, saving, nationalities }) => (
     <div className="space-y-4">
         <div>
@@ -877,13 +922,7 @@ const Tier1Form = ({ formData, updateField, onSave, saving, nationalities }) => 
         </div>
         <div>
             <label className="block text-sm font-medium text-foreground mb-2">Nationality</label>
-            <select value={formData.nationality}
-                onChange={e => updateField('nationality', e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none">
-                {nationalities.map(c => (
-                    <option key={c.code} value={c.code} className="bg-card text-foreground">{c.name}</option>
-                ))}
-            </select>
+            <NationalityDropdown value={formData.nationality} onChange={v => updateField('nationality', v)} nationalities={nationalities} />
         </div>
         <div>
             <label className="block text-sm font-medium text-foreground mb-2">Residential Address</label>
@@ -911,7 +950,7 @@ const Tier2Form = ({
             {(() => {
                 const doc = ID_DOCUMENT_TYPES.find((d) => d.id === formData.documentType) || ID_DOCUMENT_TYPES[0];
                 return (
-                    <div className="w-40 p-4 rounded-xl border-2 border-primary bg-primary/10 text-center">
+                    <div className="w-40 mx-auto p-4 rounded-xl border-2 border-primary bg-primary/10 text-center">
                         <doc.icon className="w-6 h-6 mx-auto mb-2 text-primary" />
                         <p className="text-xs sm:text-sm font-medium text-foreground">{doc.name}</p>
                     </div>
