@@ -146,7 +146,7 @@ const KYC = () => {
     const [formData, setFormData] = useState({
         fullName: '',
         dateOfBirth: '',
-        nationality: 'NG',
+        nationality: '',
         address: '',
         documentType: 'nin',
         documentNumber: '',
@@ -210,7 +210,14 @@ const KYC = () => {
                 fullName: prev.fullName || [u.first_name, u.last_name].filter(Boolean).join(' '),
                 address: prev.address || u.address || '',
                 dateOfBirth: prev.dateOfBirth || (u.date_of_birth ? String(u.date_of_birth).slice(0, 10) : ''),
-                nationality: u.country || prev.nationality,
+                // Unlike the fields above, this used to prefer the fetched profile value over
+                // whatever the user had already picked — harmless on the very first fetch (prev
+                // was still the initial default), but fetchKYCData also re-runs on every window
+                // focus/tab visibility change, so switching away mid-form and back silently
+                // reverted a manual nationality change back to the profile's saved country. That
+                // also reverted documentType (NIN vs National ID), which is derived from this
+                // field, back to whatever the old nationality implied.
+                nationality: prev.nationality || u.country || 'NG',
             }));
         }
         setLoading(false);
@@ -282,7 +289,7 @@ const KYC = () => {
             last_name: rest.join(' '),
             address: formData.address.trim(),
             date_of_birth: formData.dateOfBirth || undefined,
-            country: formData.nationality,
+            country: formData.nationality || 'NG',
         });
         if (!profileRes.success) {
             setUpgrading(false);
