@@ -23,16 +23,17 @@ const TIER_DEFS = [
     { num: 3, displayNum: 2, title: 'Address Verification', subtitle: 'Proof of residence', icon: Home },
 ];
 
-// Passport, Driver's License, and National ID are no longer offered — Tier 2 only accepts NIN
-// (number + liveness/selfie, no document photo). Kept out of the selector entirely per product
-// decision, not just hidden.
+// Passport and Driver's License are no longer offered — Tier 2 only accepts NIN (Nigerian
+// nationals) or National ID (everyone else), number + liveness/selfie, no document photo. Which
+// one applies isn't a user choice — it follows nationality automatically (see the sync effect
+// above) — so this is keyed by id for lookup, not rendered as a selector.
 const ID_DOCUMENT_TYPES = [
     { id: 'nin', name: 'NIN (Nigeria)', icon: Fingerprint },
+    { id: 'national_id', name: 'National ID', icon: CreditCard },
 ];
-// Legacy types (national_id, passport, drivers_license) are no longer selectable for new
-// submissions, but kept here so status/rejection-reason lookups still recognize documents
-// submitted before this change.
-const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card', 'national_id', 'passport', 'drivers_license']);
+// Legacy types (passport, drivers_license) are no longer selectable for new submissions, but kept
+// here so status/rejection-reason lookups still recognize documents submitted before this change.
+const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card', 'passport', 'drivers_license']);
 const ADDRESS_DOC_TYPE_VALUES = ['proof_of_address', 'utility_bill'];
 
 const ADDRESS_DOCUMENT_TYPES = [
@@ -172,6 +173,18 @@ const KYC = () => {
     useEffect(() => {
         if (error || success) alertRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, [error, success]);
+
+    // NIN is Nigeria-specific — a non-Nigerian national has no NIN to enter, so Tier 2's accepted
+    // ID type follows nationality automatically: NIN for NG, National ID for everyone else. Not a
+    // user choice (there's only ever one correct answer for a given nationality), so this stays in
+    // sync with the Tier 1 nationality field rather than living as independent form state.
+    useEffect(() => {
+        const isNigerian = (formData.nationality || 'NG').toUpperCase() === 'NG';
+        setFormData((prev) => {
+            const next = isNigerian ? 'nin' : 'national_id';
+            return prev.documentType === next ? prev : { ...prev, documentType: next };
+        });
+    }, [formData.nationality]);
 
     // ── Data fetching ────────────────────────────────────────────────
     const fetchKYCData = useCallback(async () => {
@@ -884,14 +897,19 @@ const Tier2Form = ({
     docNumberSuggestions, smileConfigured, onOpenSmileCamera, openingSmileVerification, onOpenManualSelfie, onSubmit, submitting, isValid, smileError,
 }) => (
     <div className="space-y-6">
-        {/* Document Type — NIN is the only accepted type, so this is an info row, not a selector
-            (a single-option grid would otherwise leave two empty columns behind it). */}
+        {/* Document Type — determined by nationality (see the sync effect in the parent), not a
+            user choice, so this is an info row rather than a selector. */}
         <div>
             <label className="block text-sm font-medium text-foreground mb-3">Document Type</label>
-            <div className="w-40 p-4 rounded-xl border-2 border-primary bg-primary/10 text-center">
-                <Fingerprint className="w-6 h-6 mx-auto mb-2 text-primary" />
-                <p className="text-xs sm:text-sm font-medium text-foreground">NIN (Nigeria)</p>
-            </div>
+            {(() => {
+                const doc = ID_DOCUMENT_TYPES.find((d) => d.id === formData.documentType) || ID_DOCUMENT_TYPES[0];
+                return (
+                    <div className="w-40 p-4 rounded-xl border-2 border-primary bg-primary/10 text-center">
+                        <doc.icon className="w-6 h-6 mx-auto mb-2 text-primary" />
+                        <p className="text-xs sm:text-sm font-medium text-foreground">{doc.name}</p>
+                    </div>
+                );
+            })()}
         </div>
 
         {/* Document Number */}
@@ -924,8 +942,9 @@ const Tier2Form = ({
                     </div>
                     <button type="button" onClick={onOpenSmileCamera}
                         disabled={submitting || openingSmileVerification || !formData.fullName.trim() || !formData.documentNumber.trim()}
-                        className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                        <Camera className="w-5 h-5" /> {openingSmileVerification ? 'Starting verification…' : 'Open Camera - Liveness Capture'}
+                        className="w-full py-3 px-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                        <Camera className="w-5 h-5 shrink-0" />
+                        <span className="text-sm sm:text-base">{openingSmileVerification ? 'Starting verification…' : 'Open Camera - Liveness Capture'}</span>
                     </button>
                     {(!formData.fullName.trim() || !formData.documentNumber.trim()) && (
                         <p className="text-xs text-muted-foreground mt-2 text-center">Enter your name and document number above first</p>
