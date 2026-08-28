@@ -322,7 +322,12 @@ const KYC = () => {
                 setError(tokenRes.error || 'Could not start verification session.');
                 return;
             }
-            const idType = formData.documentType === 'national_id' ? 'NATIONAL_ID' : 'NIN';
+            // Smile's id_info key for Nigerian NIN is 'NIN_V2', not plain 'NIN' — see
+            // smileKycOptions.js's NG_ID_TYPES (the value this codebase already verified against
+            // Smile's API elsewhere). Sending the wrong key here means Smile's SDK doesn't
+            // recognize this as valid pre-filled ID info, so instead of skipping straight to the
+            // camera as intended, it fell back to its own country/ID-type selection screen.
+            const idType = formData.documentType === 'national_id' ? 'NATIONAL_ID' : 'NIN_V2';
             const country = (formData.nationality || 'NG').toUpperCase();
             // user_details requires at least one contact method if supplied at all, and the phone
             // (if any) must be E.164 — if neither a valid email nor E.164 phone is on file, omit
