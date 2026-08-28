@@ -32,6 +32,34 @@ export function getSmileCredentials() {
   };
 }
 
+/**
+ * v3/token (hosted Web SDK) uses a genuinely different credential from everything else in this
+ * file — confirmed directly with Smile ID support. SMILE_ID_API_KEY here has, since setup, held
+ * the auth_token from smile_config.json (the mobile app's v11-SDK credential); that value works
+ * fine as the HMAC-signing secret for the v1/v2 endpoints below (submitBasicKycAsync,
+ * submitBiometricKycJob) — Smile's v1/v2 signature check doesn't care which credential produced a
+ * valid signature — but v3/token authenticates via plain headers instead of a signature, and
+ * rejects that value outright with "Invalid authentication credentials". SMILE_ID_API_KEY_V3 is
+ * the real server-side API Key from the partner portal (distinct from the mobile SDK download).
+ * Falls back to the regular key so isSmileConfigured() etc. don't regress for anyone who hasn't
+ * set it yet — that fallback is known-wrong for v3 specifically, not a safe default, but matches
+ * this file's existing "never throw from a missing-config check" convention.
+ */
+export function getSmileV3Credentials() {
+  const apiKey =
+    process.env.SMILE_ID_API_KEY_V3 ||
+    process.env.SMILE_ID_API_KEY ||
+    process.env.SMILE_IDENTITY_API_KEY ||
+    process.env.SMILE_ID_AUTH_TOKEN;
+  const partnerId = process.env.SMILE_ID_PARTNER_ID || process.env.SMILE_IDENTITY_PARTNER_ID;
+  const key =
+    apiKey != null ? String(apiKey).trim().replace(/^["']|["']$/g, '') : null;
+  return {
+    apiKey: key,
+    partnerId: partnerId != null ? String(partnerId).trim() : null,
+  };
+}
+
 export function isSmileConfigured() {
   const { apiKey, partnerId } = getSmileCredentials();
   return !!(apiKey && partnerId);
@@ -195,7 +223,7 @@ export function getMobileAuthPackage() {
  * @param {string} [opts.product] - e.g. 'biometric_kyc'. Optional per the API, but scopes the token.
  */
 export async function mintV3Token({ userId, product }) {
-  const { apiKey, partnerId } = getSmileCredentials();
+  const { apiKey, partnerId } = getSmileV3Credentials();
   if (!apiKey || !partnerId) {
     throw new AppError('Identity verification is not configured on the server', 503);
   }
