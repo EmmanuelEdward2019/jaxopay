@@ -131,10 +131,12 @@ router.post(
   exchangeCryptoToCrypto
 );
 
-// Get deposit address
+// Get deposit address — requireKYCTier(1) matches /withdraw below; this route generates a real
+// funding address, which is exactly the kind of action Tier 0 (Basic Profile) exists to gate.
 router.get(
   '/deposit-address',
   requireFeature('deposits_crypto'),
+  requireKYCTier(1),
   query('coin').isString().notEmpty(),
   query('network').optional().isString(),
   validate,
