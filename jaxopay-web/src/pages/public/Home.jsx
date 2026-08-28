@@ -16,7 +16,8 @@ import {
   Gift,
   DollarSign,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, useScroll, useTransform, useMotionValueEvent } from 'framer-motion';
+import { useRef, useState } from 'react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Pagination } from 'swiper/modules';
 import { FaApple, FaGooglePlay } from 'react-icons/fa';
@@ -31,6 +32,152 @@ import PhoneHomeMockup from '../../components/PhoneHomeMockup';
 import 'swiper/css';
 import 'swiper/css/pagination';
 import 'swiper/css/autoplay';
+
+// ── Stacked testimonial card ────────────────────────────────────────────
+// One card in the deck. `scrollYProgress` is shared across the whole stack (0→1 across the
+// pinned scroll range below); each card owns a 1/total-wide slice of that range to flip through.
+// Before its slice, it glides in from a stacked position behind whichever card is currently
+// active — offset continuously by how many cards separate it from the front (a fractional
+// value, not a stepped one, so the approach is a glide rather than a snap at each handoff), so
+// waiting cards read as a physical deck rather than a pile of identical rectangles. During its
+// own slice it rotates away top-first (transformOrigin + negative rotateX, like flipping a page
+// over). backfaceVisibility hidden is what actually sells the disappearance — past -90deg the
+// card's face is edge-on to the viewer and renders nothing at all, which is also why opacity only
+// needs to fade in the approach to that point (a sharp fade timed just before -90deg) rather than
+// across the whole rotation: without it, a still-mostly-opaque card tilted at, say, -40deg
+// visually doubles up with the next card underneath. z-index is static (earliest card highest)
+// rather than scroll-derived: card 0 starts on top and, once it has rotated past vertical, simply
+// stops being visible — no need to reshuffle stacking order as scroll progresses. Waiting cards
+// (not yet active) are ALSO faded down by depth, not left at full opacity — with every card the
+// same absolute-positioned size, a "waiting" card sitting at full opacity directly behind the
+// active one reads as competing text, not a stacked hint of a card behind it; real physical decks
+// only show a sliver of what's underneath, not the whole face.
+function StackedTestimonialCard({ scrollYProgress, index, total, testimonial }) {
+  const segStart = index / total;
+  const segEnd = (index + 1) / total;
+  const segSpan = segEnd - segStart;
+  const isLast = index === total - 1; // nothing left to reveal behind it — settles in and stays
+
+  // Each style is its own single function-based transform computed directly off scrollYProgress —
+  // deliberately NOT chained through an intermediate motion value (e.g. deriving opacity from two
+  // separately-useTransform'd inputs combined with Math.min): that combinator approach produced
+  // cards stuck fully opaque, un-rotated, and glued to the top of the stack long after their own
+  // segment had passed, blocking the entire deck behind them. Each function below re-derives
+  // everything it needs from the raw progress value every time, so there's no stale-dependency
+  // surface for that bug to live in.
+  const rotateX = useTransform(scrollYProgress, (p) => {
+    if (isLast) return 0;
+    const segProgress = Math.min(Math.max((p - segStart) / segSpan, 0), 1);
+    return segProgress * -110;
+  });
+
+  const opacity = useTransform(scrollYProgress, (p) => {
+    // How far through this card's OWN flip-away it is (0 before its turn, 1 once fully gone).
+    // The last card never flips away — it just holds at full once its turn arrives, or the pin
+    // would release on an empty stack with nothing left to look at.
+    const segProgress = (p - segStart) / segSpan;
+    let active;
+    if (isLast) active = segProgress >= 0 ? 1 : 0;
+    else if (segProgress <= 0.3) active = 1;
+    else if (segProgress >= 0.85) active = 0;
+    else active = 1 - (segProgress - 0.3) / 0.55;
+    active = Math.min(Math.max(active, 0), 1);
+
+    // How many cards separate it from the front — full opacity at the front, a faint hint while
+    // still stacked behind (real decks show a sliver of what's underneath, not the whole face).
+    const depth = Math.min(Math.max(index - p * total, 0), 3);
+    const wait = depth <= 1 ? 1 - depth * 0.78 : 0.22 - ((depth - 1) / 2) * 0.17;
+
+    return Math.min(active, Math.min(Math.max(wait, 0), 1));
+  });
+
+  const y = useTransform(scrollYProgress, (p) => {
+    const depth = Math.min(Math.max(index - p * total, 0), 3);
+    return depth * 16;
+  });
+  const scale = useTransform(scrollYProgress, (p) => {
+    const depth = Math.min(Math.max(index - p * total, 0), 3);
+    return 1 - depth * 0.04;
+  });
+
+  return (
+    <motion.div
+      style={{
+        rotateX, opacity, y, scale,
+        zIndex: total - index,
+        transformOrigin: 'top center',
+        backfaceVisibility: 'hidden',
+        WebkitBackfaceVisibility: 'hidden',
+      }}
+      className="absolute inset-0 flex flex-col rounded-3xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-2xl shadow-purple-900/10 p-8 sm:p-10"
+    >
+      <div className="flex gap-1 mb-5">
+        {[...Array(testimonial.rating)].map((_, i) => (
+          <Star key={i} className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+        ))}
+      </div>
+      <p className="text-gray-700 dark:text-gray-300 text-lg sm:text-xl leading-relaxed flex-1">
+        "{testimonial.text}"
+      </p>
+      <div className="flex items-center gap-4 mt-6">
+        <img
+          src={testimonial.image}
+          alt={testimonial.name}
+          className="w-14 h-14 rounded-full object-cover shrink-0"
+        />
+        <div>
+          <div className="font-semibold text-gray-900 dark:text-white">{testimonial.name}</div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">{testimonial.role}</div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// Pins the stack in view for `total * 65vh` of scroll — long enough to read each card and feel
+// each flip, short enough not to drag. `useScroll`'s target is this tall outer div; progress 0 is
+// the instant its top hits the viewport top (pinning begins), 1 is the instant its bottom hits the
+// viewport bottom (pinning ends) — the standard scroll-linked-pin measurement.
+function StackedTestimonials({ testimonials }) {
+  const containerRef = useRef(null);
+  const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start start', 'end end'] });
+  const total = testimonials.length;
+  const [activeIndex, setActiveIndex] = useState(0);
+  useMotionValueEvent(scrollYProgress, 'change', (p) => {
+    setActiveIndex(Math.min(total - 1, Math.max(0, Math.floor(p * total))));
+  });
+
+  return (
+    <div ref={containerRef} style={{ height: `${total * 65}vh` }} className="relative">
+      <div className="sticky top-0 h-screen flex flex-col items-center justify-center px-4">
+        <div
+          className="relative w-full max-w-xl"
+          style={{ height: 440, perspective: 1400 }}
+        >
+          {testimonials.map((t, i) => (
+            <StackedTestimonialCard
+              key={t.name}
+              scrollYProgress={scrollYProgress}
+              index={i}
+              total={total}
+              testimonial={t}
+            />
+          ))}
+        </div>
+        <div className="flex items-center gap-2 mt-8">
+          {testimonials.map((t, i) => (
+            <div
+              key={t.name}
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                i === activeIndex ? 'w-6 bg-purple-600' : 'w-1.5 bg-purple-200 dark:bg-purple-900'
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   // Country flags for carousel
@@ -133,27 +280,6 @@ export default function Home() {
       step: '4',
       title: 'Start Transacting',
       description: 'Send money, exchange currencies, pay bills, and more!',
-    },
-  ];
-
-  const testimonials = [
-    {
-      name: 'Amara Okafor',
-      role: 'Business Owner, Nigeria',
-      content: 'JAXOPAY has transformed how I send money to my suppliers across Africa. Fast, reliable, and affordable!',
-      rating: 5,
-    },
-    {
-      name: 'Kwame Mensah',
-      role: 'Freelancer, Ghana',
-      content: 'The virtual USD card feature is a game-changer. I can now subscribe to international services without hassle.',
-      rating: 5,
-    },
-    {
-      name: 'Fatima Hassan',
-      role: 'Student, Kenya',
-      content: 'Sending money home has never been easier. The rates are great and transfers are instant!',
-      rating: 5,
     },
   ];
 
@@ -966,70 +1092,56 @@ export default function Home() {
             </p>
           </motion.div>
 
-          {/* Testimonials Grid */}
-          <div className="grid md:grid-cols-2 gap-8 mb-12">
-            {[
-              {
-                name: 'Emmanuel Jordan',
-                role: 'Small Business Owner',
-                image: 'https://images.unsplash.com/photo-1617244147299-5ef406921c35?w=150&auto=format&fit=crop&q=80',
-                text: 'JAXOPAY has transformed how I manage my international payments. The fees are incredibly low and transfers are instant!',
-                rating: 5
-              },
-              {
-                name: 'David Amadi',
-                role: 'Freelance Developer',
-                image: 'https://images.unsplash.com/photo-1614023342667-6f060e9d1e04?w=150&auto=format&fit=crop&q=80',
-                text: 'As a freelancer working with global clients, JAXOPAY makes receiving payments seamless. Best financial app I\'ve used!',
-                rating: 5
-              },
-              {
-                name: 'Amara Okafor',
-                role: 'E-commerce Entrepreneur',
-                image: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=150&auto=format&fit=crop&q=80',
-                text: 'The virtual cards feature is a game-changer for my online business. Secure, fast, and reliable!',
-                rating: 5
-              },
-              {
-                name: 'Adebayo Abraham',
-                role: 'Digital Nomad',
-                image: 'https://images.unsplash.com/photo-1617244147030-8bd6f9e21d1e?w=150&auto=format&fit=crop&q=80',
-                text: 'Managing multiple currencies while traveling has never been easier. JAXOPAY is my go-to financial companion!',
-                rating: 5
-              }
-            ].map((testimonial, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-lg border border-gray-100 dark:border-gray-700"
-              >
-                <div className="flex gap-1 mb-4">
-                  {[...Array(testimonial.rating)].map((_, i) => (
-                    <Star key={i} className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                  ))}
-                </div>
-                <p className="text-gray-700 dark:text-gray-300 mb-6 text-lg leading-relaxed">
-                  "{testimonial.text}"
-                </p>
-                <div className="flex items-center gap-4">
-                  <img
-                    src={testimonial.image}
-                    alt={testimonial.name}
-                    className="w-14 h-14 rounded-full object-cover"
-                  />
-                  <div>
-                    <div className="font-semibold text-gray-900 dark:text-white">{testimonial.name}</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">{testimonial.role}</div>
-                  </div>
-                </div>
-              </motion.div>
-            ))
-            }
-          </div>
         </div>
+
+        {/* Testimonial stack — pinned in view while the user scrolls through it; each card
+            flips away in turn to reveal the next, see StackedTestimonials above. */}
+        <StackedTestimonials
+          testimonials={[
+            {
+              name: 'Emmanuel Jordan',
+              role: 'Small Business Owner',
+              image: 'https://images.unsplash.com/photo-1617244147299-5ef406921c35?w=150&auto=format&fit=crop&q=80',
+              text: 'JAXOPAY has transformed how I manage my international payments. The fees are incredibly low and transfers are instant!',
+              rating: 5,
+            },
+            {
+              name: 'David Amadi',
+              role: 'Freelance Developer',
+              image: 'https://images.unsplash.com/photo-1614023342667-6f060e9d1e04?w=150&auto=format&fit=crop&q=80',
+              text: "As a freelancer working with global clients, JAXOPAY makes receiving payments seamless. Best financial app I've used!",
+              rating: 5,
+            },
+            {
+              name: 'Amara Okafor',
+              role: 'E-commerce Entrepreneur',
+              image: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=150&auto=format&fit=crop&q=80',
+              text: 'The virtual cards feature is a game-changer for my online business. Secure, fast, and reliable!',
+              rating: 5,
+            },
+            {
+              name: 'Ngozi Eze',
+              role: 'Remote Worker, based in London',
+              image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+              text: "Sending money home to my parents used to eat into my salary with hidden fees. With JAXOPAY they get it in minutes, and I actually know what I'm paying upfront.",
+              rating: 5,
+            },
+            {
+              name: 'Adebayo Abraham',
+              role: 'Digital Nomad',
+              image: 'https://images.unsplash.com/photo-1617244147030-8bd6f9e21d1e?w=150&auto=format&fit=crop&q=80',
+              text: 'Managing multiple currencies while traveling has never been easier. JAXOPAY is my go-to financial companion!',
+              rating: 5,
+            },
+            {
+              name: 'Chidi Nwosu',
+              role: 'Import/Export Trader',
+              image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+              text: 'I swap crypto for naira and pay my suppliers’ bills from the same app. What used to take three different platforms and a lot of patience now takes one.',
+              rating: 5,
+            },
+          ]}
+        />
       </section>
 
       {/* Partners & Trust Section */}
