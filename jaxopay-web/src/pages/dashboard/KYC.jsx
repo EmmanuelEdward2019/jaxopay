@@ -707,6 +707,7 @@ const KYC = () => {
                                                     submitting={submitting}
                                                     isValid={isTier2FormValid()}
                                                     smileError={error}
+                                                    nationalities={SMILE_ISO2_COUNTRIES}
                                                 />
                                             )}
                                             {tier.num === 3 && (status === 'none' || status === 'rejected') && (
@@ -941,8 +942,17 @@ const Tier1Form = ({ formData, updateField, onSave, saving, nationalities }) => 
 const Tier2Form = ({
     formData, updateField, handleFileChange, selfieInputRef,
     docNumberSuggestions, smileConfigured, onOpenSmileCamera, openingSmileVerification, onOpenManualSelfie, onSubmit, submitting, isValid, smileError,
+    nationalities,
 }) => (
     <div className="space-y-6">
+        {/* Nationality lives here too, not just in Tier 1's form — once Tier 0/Basic Profile is
+            already approved, that form (and its own nationality field) is gone for good, which
+            left no way for an already-verified user to ever set anything other than NIN. */}
+        <div>
+            <label className="block text-sm font-medium text-foreground mb-2">Nationality</label>
+            <NationalityDropdown value={formData.nationality} onChange={v => updateField('nationality', v)} nationalities={nationalities} />
+        </div>
+
         {/* Document Type — determined by nationality (see the sync effect in the parent), not a
             user choice, so this is an info row rather than a selector. */}
         <div>
@@ -990,7 +1000,7 @@ const Tier2Form = ({
                         disabled={submitting || openingSmileVerification || !formData.fullName.trim() || !formData.documentNumber.trim()}
                         className="w-full py-3 px-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                         <Camera className="w-5 h-5 shrink-0" />
-                        <span className="text-sm sm:text-base">{openingSmileVerification ? 'Starting verification…' : 'Open Camera - Liveness Capture'}</span>
+                        <span className="text-sm sm:text-base">{openingSmileVerification ? 'Starting verification…' : 'Start Liveness Check - Click Here'}</span>
                     </button>
                     {(!formData.fullName.trim() || !formData.documentNumber.trim()) && (
                         <p className="text-xs text-muted-foreground mt-2 text-center">Enter your name and document number above first</p>
