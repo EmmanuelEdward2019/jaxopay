@@ -34,6 +34,14 @@ const POPULAR_PAIRS = [
   { from: 'BNB', to: 'USDT' },
 ];
 
+// Fiat currencies the swap engine accepts as either side of a trade — not part of Obiex's
+// tradeable-cryptocurrency catalog, so they're merged into the picker separately (see the
+// getSupportedCryptos handler below) rather than expected to come back from that API.
+const SUPPORTED_FIAT = [
+  { code: 'NGN', name: 'Nigerian Naira' },
+  { code: 'GHS', name: 'Ghanaian Cedi' },
+];
+
 const COIN_META = {
   // Major cryptocurrencies
   BTC: { name: 'Bitcoin', color: '#f7931a' },
@@ -172,6 +180,17 @@ const InstantSwap = () => {
           if (!code || seen.has(code)) return;
           seen.add(code);
           list.push({ code, coin: code.toLowerCase(), name: c.name || code });
+        });
+        // Fiat is a different case from the "stale provider coin" problem above: Obiex's catalog
+        // is a *tradeable cryptocurrency* listing, so NGN/GHS never appear in it even though the
+        // swap engine accepts either as a real trade side (confirmed working via the pair
+        // shortcuts below, which are hardcoded for exactly this reason). This is a small, fixed
+        // whitelist of currencies already known to work, not an unbounded static coin list, so it
+        // doesn't reintroduce the staleness risk the comment above is warning about.
+        SUPPORTED_FIAT.forEach(f => {
+          if (seen.has(f.code)) return;
+          seen.add(f.code);
+          list.push({ code: f.code, coin: f.code.toLowerCase(), name: f.name });
         });
         setAssets(list);
       } else {
