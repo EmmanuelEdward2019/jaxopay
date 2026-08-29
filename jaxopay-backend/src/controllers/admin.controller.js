@@ -62,7 +62,7 @@ function parseKycDocumentUrls(documentUrl) {
 
 const KYC_TIER_RANK = { tier_0: 0, tier_1: 1, tier_2: 2, tier_3: 3 };
 
-const KYC_ID_DOC_TYPES = ['nin', 'passport', 'national_id', 'drivers_license', 'id_card'];
+const KYC_ID_DOC_TYPES = ['nin', 'passport', 'national_id', 'drivers_license', 'voter_id', 'id_card'];
 const KYC_FACIAL_DOC_TYPES = ['smile_biometric_kyc'];
 const KYC_ADDRESS_DOC_TYPES = ['proof_of_address', 'utility_bill'];
 
