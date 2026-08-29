@@ -12,6 +12,7 @@ import DashboardLayout from './components/layout/DashboardLayout';
 // Components
 import SetupNotice from './components/SetupNotice';
 import FeatureGuard from './components/FeatureGuard';
+import KycGateModal from './components/KycGateModal';
 
 // Auth Pages
 import Login from './pages/auth/Login';
@@ -456,6 +457,9 @@ function App() {
           {/* Catch all - redirect to home for unauthenticated, dashboard for authenticated */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        {/* Global handler for KYC_TIER_REQUIRED / LIMIT_EXCEEDED 403s, mounted once — see
+            KycGateModal.jsx and apiClient.js's response interceptor. */}
+        <KycGateModal />
       </Router>
     </QueryClientProvider >
   );

@@ -1,6 +1,13 @@
 import axios from 'axios';
+import { useKycGateStore } from '../store/kycGateStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
+
+// KYC_TIER_REQUIRED and LIMIT_EXCEEDED have no existing per-page handling anywhere on web (unlike
+// BVN_NIN_REQUIRED/PENDING, which Wallets.jsx/CrossBorder.jsx/CryptoRamp.jsx already catch and
+// render an inline gate for) — routing those two through here as well would show two different
+// prompts for the same condition, so this stays deliberately narrower than RN's KYC_GATE_CODES.
+const WEB_KYC_GATE_CODES = ['KYC_TIER_REQUIRED', 'LIMIT_EXCEEDED'];
 
 // Create axios instance
 const apiClient = axios.create({
@@ -190,6 +197,15 @@ apiClient.interceptors.response.use(
         status: 0,
         data: null,
       });
+    }
+
+    // Global KYC gate — fires the shared modal for any request the backend 403s with one of
+    // these codes, regardless of which page triggered it. Web previously had no equivalent of
+    // this at all (RN has had one all along via api/client.ts), so every one of these fell
+    // through to whatever generic error text that specific page happened to render.
+    const errorCode = error.response?.data?.code;
+    if (status === 403 && WEB_KYC_GATE_CODES.includes(errorCode)) {
+      useKycGateStore.getState().show(errorCode, serverMessage);
     }
 
     // Background polling endpoints (ticker, notifications) should fail silently on 401
