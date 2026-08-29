@@ -5,6 +5,7 @@ import logger from '../utils/logger.js';
 import * as smileId from '../services/smileId.service.js';
 import * as kycNotify from '../services/kycNotification.service.js';
 import { auditFromReq, recordAudit } from '../services/audit.service.js';
+import { reconcileSmileJobsForUser } from './webhook.controller.js';
 
 /** DB column is `document_url` (not document_front_url). Optional back image stored as JSON in same column. */
 function buildKycDocumentUrl(frontUrl, backUrl) {
@@ -38,6 +39,11 @@ function buildCallbackUrl(path) {
 
 // Get KYC status
 export const getKYCStatus = catchAsync(async (req, res) => {
+  // Give this user's own pending Smile job(s) a live check before reading our copy — resolves
+  // the exact gap a webhook drop causes (approved on Smile's dashboard, stuck 'pending' here)
+  // the moment the user presses "Check status", rather than waiting for the next sweep tick.
+  await reconcileSmileJobsForUser(req.user.id).catch((e) => logger.warn('[KYC status] live reconcile:', e.message));
+
   const result = await query(
     `SELECT u.kyc_tier, u.kyc_status,
             kd.id as document_id, kd.document_type, kd.document_number,

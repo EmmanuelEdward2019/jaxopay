@@ -315,6 +315,28 @@ export async function submitBiometricKycJob({ userId, jobId, callbackUrl, images
   return connection.submit_job(partner_params, images, idInfo, options);
 }
 
+/**
+ * Polls Smile ID directly for a job's current result — the fallback for when their webhook
+ * callback never arrives (confirmed possible in production: a job showed approved on Smile's own
+ * dashboard while our copy sat 'pending' with no callback ever received). Same v1/v2 credentials
+ * submitBiometricKycJob/submitBasicKycAsync already use — the /job_status endpoint isn't scoped
+ * by job_type, so one query shape covers both job families. See sweepPendingSmileJobs in
+ * webhook.controller.js, which uses this to reconcile every stuck 'pending' row on an interval —
+ * the same pattern this codebase already uses for Yellow Card ramps, Obiex transfers/withdrawals,
+ * and Glyde deposits (server.js's *_SWEEP_MS intervals).
+ */
+export async function queryJobStatus({ userId, jobId }) {
+  const { apiKey, partnerId } = getSmileCredentials();
+  if (!apiKey || !partnerId) {
+    throw new AppError('Identity verification is not configured on the server', 503);
+  }
+  const connection = new WebApi(String(partnerId), null, apiKey, getSmileSidServerFlag());
+  return connection.get_job_status(
+    { user_id: String(userId), job_id: jobId },
+    { return_history: false, return_images: false }
+  );
+}
+
 /** Result codes Smile marks as approved / passed for tier decisions (Biometric + Basic KYC). */
 export const SMILE_APPROVED_RESULT_CODES = new Set([
   '0810',

@@ -204,6 +204,16 @@ const startServer = async () => {
             .then((m) => m.sweepPendingGlydeDeposits())
             .catch((e) => logger.warn('[Glyde sweep] error:', e.message));
         }, GLYDE_SWEEP_MS).unref();
+
+        // Auto-reconcile Smile ID KYC jobs stuck 'pending' — confirmed possible in production
+        // (a job showed approved on Smile's own dashboard while ours never received the webhook
+        // callback at all). Same gap as every other sweep above, just for identity verification.
+        const SMILE_KYC_SWEEP_MS = Number(process.env.SMILE_KYC_SWEEP_MS) || 60000;
+        setInterval(() => {
+          import('./controllers/webhook.controller.js')
+            .then((m) => m.sweepPendingSmileJobs())
+            .catch((e) => logger.warn('[Smile sweep] error:', e.message));
+        }, SMILE_KYC_SWEEP_MS).unref();
       })
       .catch((dbError) => {
         logger.warn('⚠️  Database connection failed - server running without database');

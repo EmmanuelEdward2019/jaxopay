@@ -5,6 +5,7 @@ import ledgerService from '../orchestration/ledger/LedgerService.js';
 import logger from '../utils/logger.js';
 import crypto from 'crypto';
 import { SMILE_APPROVED_RESULT_CODES, SMILE_PROVISIONAL_RESULT_CODES } from '../services/smileId.service.js';
+import * as smileId from '../services/smileId.service.js';
 import * as kycNotify from '../services/kycNotification.service.js';
 import { creditUserWalletByQuidax, persistQuidaxWalletAddress } from '../services/quidaxWebhook.service.js';
 import { creditUserWalletByObiex, updateObiexWithdrawal } from '../services/obiexWebhook.service.js';
@@ -247,16 +248,39 @@ async function processSmileIdentity(body) {
         return;
     }
 
-    const approved = SMILE_APPROVED_RESULT_CODES.has(resultCode);
+    await applySmileVerdict({
+        jobId,
+        userId,
+        resultCode,
+        resultText: b.ResultText || b.result_text || '',
+        mode: isV3 ? 'insert' : 'update',
+        source: 'webhook',
+    });
+}
 
+/**
+ * Applies a final (non-provisional) Smile ID result to our DB — kyc_documents status, the
+ * matching BVN/NIN row, the user's tier bump/rejection, and the result notification. Pulled out
+ * of processSmileIdentity so sweepPendingSmileJobs below (the reconciliation-poll fallback for
+ * when Smile's webhook never arrives) produces byte-for-byte the same outcome a webhook delivery
+ * would — a user who gets reconciled via the sweep sees the exact same tier bump, email, and
+ * status as one whose webhook landed normally.
+ *
+ * `mode: 'insert'` is v3-hosted-only (see processSmileIdentity's isV3 comment) — the sweep never
+ * uses it, since a row must already exist in kyc_documents for the sweep to have found it pending
+ * in the first place.
+ */
+async function applySmileVerdict({ jobId, userId, resultCode, resultText, mode, source }) {
+    const approved = SMILE_APPROVED_RESULT_CODES.has(resultCode);
     const docNumber = `SMILE:${jobId}`;
+    const logTag = source === 'sweep' ? '[SMILE SWEEP]' : '[WEBHOOK]';
 
     let docUpdate;
-    if (isV3) {
+    if (mode === 'insert') {
         // No pending row was ever created for this path (the hosted SDK talks to Smile directly,
         // with no prepare-style call to our backend first) — insert the final result directly.
         // kyc_documents has no unique constraint on (user_id, document_number), so a duplicate
-        // webhook delivery would insert a second row rather than upsert; Smile ID webhooks are
+        // delivery would insert a second row rather than upsert; Smile ID webhooks are
         // idempotent-by-intent but not guaranteed exactly-once, same as every other provider
         // webhook in this file — acceptable here since reads key off the latest row by tier logic
         // below, not row count.
@@ -269,7 +293,7 @@ async function processSmileIdentity(body) {
                 userId,
                 docNumber,
                 approved ? 'approved' : 'rejected',
-                approved ? null : (b.ResultText || b.result_text || 'Verification did not pass'),
+                approved ? null : (resultText || 'Verification did not pass'),
             ]
         );
     } else {
@@ -281,10 +305,11 @@ async function processSmileIdentity(body) {
                  updated_at = NOW()
              WHERE user_id = $3::uuid AND document_number = $4
                AND document_type IN ('smile_basic_kyc', 'smile_biometric_kyc')
+               AND status = 'pending'
              RETURNING document_type`,
             [
                 approved ? 'approved' : 'rejected',
-                approved ? null : (b.ResultText || b.result_text || 'Verification did not pass'),
+                approved ? null : (resultText || 'Verification did not pass'),
                 userId,
                 docNumber,
             ]
@@ -292,7 +317,8 @@ async function processSmileIdentity(body) {
     }
 
     if (docUpdate.rowCount === 0) {
-        logger.warn(`[WEBHOOK] Smile ID: no kyc_documents row for job ${jobId} user ${userId}`);
+        logger.warn(`${logTag} Smile ID: no pending kyc_documents row for job ${jobId} user ${userId} — already processed or not found`);
+        return { changed: false };
     }
 
     // Promote/reject a BVN/NIN captured for crypto-ramp verification (tied to this job via document_url).
@@ -302,13 +328,11 @@ async function processSmileIdentity(body) {
          WHERE user_id = $3::uuid AND document_url = $4 AND document_type IN ('bvn', 'nin')`,
         [
             approved ? 'approved' : 'rejected',
-            approved ? null : (b.ResultText || b.result_text || 'Verification did not pass'),
+            approved ? null : (resultText || 'Verification did not pass'),
             userId,
             docNumber,
         ]
-    ).catch((e) => logger.error('[WEBHOOK] Smile ID ramp BVN/NIN update:', e.message));
-
-    const smileResultText = b.ResultText || b.result_text || '';
+    ).catch((e) => logger.error(`${logTag} Smile ID ramp BVN/NIN update:`, e.message));
 
     if (approved) {
         const tierRank = { tier_0: 0, tier_1: 1, tier_2: 2 };
@@ -329,20 +353,104 @@ async function processSmileIdentity(body) {
         await query(`UPDATE users SET kyc_status = 'rejected', updated_at = NOW() WHERE id = $1::uuid`, [userId]);
     }
 
-    if (docUpdate.rowCount > 0) {
-        const docType = docUpdate.rows[0]?.document_type || 'smile_biometric_kyc';
-        kycNotify
-            .notifySmileKycWebhookResult({
-                userId,
-                jobId,
-                documentType: docType,
-                approved,
-                resultText: smileResultText,
-            })
-            .catch((err) => logger.error('[WEBHOOK] KYC email notify:', err?.message || err));
-    }
+    const docType = docUpdate.rows[0]?.document_type || 'smile_biometric_kyc';
+    kycNotify
+        .notifySmileKycWebhookResult({ userId, jobId, documentType: docType, approved, resultText })
+        .catch((err) => logger.error(`${logTag} KYC email notify:`, err?.message || err));
 
-    logger.info(`[WEBHOOK] Smile ID job ${jobId} user ${userId} → ${resultCode} (${approved ? 'approved' : 'rejected'})`);
+    logger.info(`${logTag} Smile ID job ${jobId} user ${userId} → ${resultCode} (${approved ? 'approved' : 'rejected'})`);
+    return { changed: true, approved };
+}
+
+/** Polls Smile for one pending row's live result and applies it if the job has finished. */
+async function reconcileOnePendingSmileRow(row) {
+    const jobId = row.document_number.slice('SMILE:'.length);
+    const status = await smileId.queryJobStatus({ userId: row.user_id, jobId });
+    if (!status?.job_complete) return { changed: false };
+    const result = status.result || status;
+    const rawCode = result.ResultCode ?? result.result_code ?? status.code;
+    if (rawCode === undefined || rawCode === null || rawCode === '') {
+        // job_complete but no recognizable result code — either Smile's response shape doesn't
+        // match what's assumed above, or this job type/edge case sends something new. Logged in
+        // full (unlike the silent skip on an in-progress job above) so a real mismatch is
+        // diagnosable instead of this reconciliation path quietly never resolving anything.
+        logger.warn(`[SMILE SWEEP] job ${jobId} user ${row.user_id} complete but no result code found`, {
+            payload: JSON.stringify(status).slice(0, 2000),
+        });
+        return { changed: false };
+    }
+    const resultCode = String(rawCode).padStart(4, '0');
+    if (SMILE_PROVISIONAL_RESULT_CODES.has(resultCode)) return { changed: false };
+    return applySmileVerdict({
+        jobId,
+        userId: row.user_id,
+        resultCode,
+        resultText: result.ResultText || result.result_text || '',
+        mode: 'update',
+        source: 'sweep',
+    });
+}
+
+/**
+ * Fallback for when Smile ID's webhook never arrives — confirmed possible in production (a job
+ * showed approved on Smile's own dashboard while our copy sat 'pending' indefinitely with no
+ * callback ever received). Polls Smile directly for every 'pending' kyc_documents row's real
+ * status and applies the result through the exact same path a webhook delivery uses. Same
+ * reconciliation-sweep pattern this codebase already relies on for Yellow Card ramps, Obiex
+ * transfers/withdrawals, and Glyde deposits — see server.js's *_SWEEP_MS intervals, one of which
+ * now calls this on a timer. document_number LIKE 'SMILE:%' covers every non-v3 submission path
+ * (native RN guided camera, the manual-selfie REST relay, and the BVN/NIN Basic KYC gate) — v3
+ * (the web hosted SDK) never leaves a 'pending' row to reconcile in the first place, since that
+ * path only ever writes the final result once its own webhook arrives.
+ */
+export async function sweepPendingSmileJobs(limit = 50) {
+    const rows = (await query(
+        `SELECT user_id, document_number FROM kyc_documents
+         WHERE status = 'pending' AND document_number LIKE 'SMILE:%'
+         ORDER BY updated_at ASC LIMIT $1`,
+        [limit]
+    )).rows;
+
+    let checked = 0;
+    let resolved = 0;
+    for (const row of rows) {
+        try {
+            checked++;
+            const outcome = await reconcileOnePendingSmileRow(row);
+            if (outcome.changed) resolved++;
+        } catch (e) {
+            logger.warn(`[SMILE SWEEP] error checking job for user ${row.user_id}: ${e.message}`);
+        }
+    }
+    if (rows.length) logger.info(`[SMILE SWEEP] checked ${checked}/${rows.length} pending job(s), resolved ${resolved}`);
+    return { checked, resolved };
+}
+
+/**
+ * Same reconciliation as sweepPendingSmileJobs, scoped to one user — called inline from
+ * GET /kyc/status so a user pressing "Check status" gets a genuinely live answer instead of just
+ * re-reading our (possibly stale) copy of their result. Small limit and every error swallowed by
+ * the caller: this runs on every status poll, so it must never be the reason that endpoint gets
+ * slow or fails.
+ */
+export async function reconcileSmileJobsForUser(userId, limit = 5) {
+    const rows = (await query(
+        `SELECT user_id, document_number FROM kyc_documents
+         WHERE user_id = $1::uuid AND status = 'pending' AND document_number LIKE 'SMILE:%'
+         ORDER BY updated_at ASC LIMIT $2`,
+        [userId, limit]
+    )).rows;
+
+    let resolved = 0;
+    for (const row of rows) {
+        try {
+            const outcome = await reconcileOnePendingSmileRow(row);
+            if (outcome.changed) resolved++;
+        } catch (e) {
+            logger.warn(`[SMILE SWEEP] error checking job for user ${userId}: ${e.message}`);
+        }
+    }
+    return { resolved };
 }
 
 async function refundFailedPayment(reference) {
