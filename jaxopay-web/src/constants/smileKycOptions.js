@@ -8,11 +8,8 @@ export const SMILE_ISO2_COUNTRIES = [
     { code: 'UG', name: 'Uganda' },
     { code: 'RW', name: 'Rwanda' },
     { code: 'TZ', name: 'Tanzania' },
-    { code: 'US', name: 'United States' },
-    { code: 'GB', name: 'United Kingdom' },
-    { code: 'CA', name: 'Canada' },
-    { code: 'DE', name: 'Germany' },
-    { code: 'FR', name: 'France' },
+    { code: 'ZM', name: 'Zambia' },
+    { code: 'CI', name: "Cote d'Ivoire" },
     { code: 'IN', name: 'India' },
 ].sort((a, b) => a.name.localeCompare(b.name));
 
