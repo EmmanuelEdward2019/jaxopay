@@ -11,6 +11,7 @@ import {
 import kycService from '../../services/kycService';
 import userService from '../../services/userService';
 import { SMILE_ISO2_COUNTRIES } from '../../constants/smileKycOptions';
+import { loadSmileV12Script } from '../../lib/smileWebSdk';
 
 // ── Tier ladder definitions — JAXOPAY's own requirements, always visible so a user can see the
 // whole path ahead, not just whatever they're on right now.
@@ -46,45 +47,8 @@ const ADDRESS_DOCUMENT_TYPES = [
 const KYC_DOC_NUMBER_STORAGE_KEY = 'jaxopay-kyc-doc-numbers';
 const KYC_DOC_NUMBER_HISTORY_MAX = 15;
 
-// Smile ID's hosted Web SDK (v12) — capture AND submission both happen inside its own modal
-// iframe, so there's no local camera UI to wire up on our side at all, unlike the old Smart
-// Camera Web component this replaces. Not published to npm — the script tag is the only
-// supported install path. Loaded lazily (only once a user actually opens KYC) and cached at
-// module scope so remounting this page never injects it twice.
-const SMILE_V12_SCRIPT_URL = 'https://cdn.usesmileid.com/inline/v12/js/script.min.js';
-let smileV12ScriptPromise = null;
-function loadSmileV12Script() {
-    if (window.SmileIdentity) return Promise.resolve();
-    if (!smileV12ScriptPromise) {
-        smileV12ScriptPromise = new Promise((resolve, reject) => {
-            // A script tag left over from an earlier attempt (e.g. a previous call's promise was
-            // reset by the .catch below, but the <script> element itself was never removed) may
-            // already have fired its own 'load'/'error' event before this listener attaches —
-            // browsers don't replay past events, so those listeners would sit forever and the
-            // caller's promise would never settle. The timeout below is the backstop for exactly
-            // that: without it, a stuck load leaves the button showing "Starting verification…"
-            // indefinitely with no error, which looks identical to "the button does nothing".
-            const timer = setTimeout(() => reject(new Error('Verification script timed out loading. Please try again.')), 15000);
-            const settle = (fn) => (...args) => { clearTimeout(timer); fn(...args); };
-            const existing = document.querySelector(`script[src="${SMILE_V12_SCRIPT_URL}"]`);
-            if (existing) {
-                existing.addEventListener('load', settle(resolve));
-                existing.addEventListener('error', settle(() => reject(new Error('Could not load the verification script.'))));
-                return;
-            }
-            const script = document.createElement('script');
-            script.src = SMILE_V12_SCRIPT_URL;
-            script.async = true;
-            script.onload = settle(resolve);
-            script.onerror = settle(() => reject(new Error('Could not load the verification script.')));
-            document.head.appendChild(script);
-        }).catch((err) => {
-            smileV12ScriptPromise = null; // let a retry re-attempt instead of caching a failure forever
-            throw err;
-        });
-    }
-    return smileV12ScriptPromise;
-}
+// loadSmileV12Script lives in ../../lib/smileWebSdk now — shared with NigerianIdGate.jsx, which
+// launches this same hosted SDK after a BVN/NIN ramp-gate submission (see that file's comments).
 
 function loadKycDocNumberHistory() {
     try {

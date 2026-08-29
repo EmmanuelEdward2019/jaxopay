@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { ShieldCheck, RefreshCw, CheckCircle2, Clock } from 'lucide-react';
+import { ShieldCheck, RefreshCw, CheckCircle2, Clock, Camera } from 'lucide-react';
 import fxService from '../../services/fxService';
 import kycService from '../../services/kycService';
+import userService from '../../services/userService';
+import { useAuthStore } from '../../store/authStore';
+import { openSmileBiometricVerification } from '../../lib/smileWebSdk';
 
 const IdRow = ({ idType, verified, pending, value, onChange, submitting, onSubmit }) => (
     <div className="flex items-center gap-2">
@@ -50,6 +53,14 @@ export default function NigerianIdGate({ gate, onRefresh, title, description }) 
     const [nin, setNin] = useState('');
     const [submitting, setSubmitting] = useState(null); // 'bvn' | 'nin' | null
     const [message, setMessage] = useState('');
+    // Kept around after a successful submit (the visible input is cleared) purely so the
+    // liveness launch below can pre-fill Smile's id_info and skip straight to camera — see
+    // startLiveness. If unavailable (e.g. this component remounted after the user left and came
+    // back before finishing liveness), Smile's own modal just collects the number inline instead.
+    const [lastSubmitted, setLastSubmitted] = useState({});
+    const [livenessBusy, setLivenessBusy] = useState(false);
+    const [livenessError, setLivenessError] = useState('');
+    const user = useAuthStore((s) => s.user);
 
     if (!gate?.required || gate.verified) return null;
 
@@ -64,11 +75,62 @@ export default function NigerianIdGate({ gate, onRefresh, title, description }) 
         setSubmitting(null);
         if (res.success) {
             setMessage(`${idType.toUpperCase()} submitted for verification.`);
+            setLastSubmitted((prev) => ({ ...prev, [idType]: value.trim() }));
             if (idType === 'bvn') setBvn(''); else setNin('');
             const fresh = await fxService.getRampStatus().catch(() => null);
             if (fresh?.success) onRefresh?.(fresh.data);
         } else {
             setMessage(res.error || res.message || 'Submission failed.');
+        }
+    };
+
+    // Submitting a BVN/NIN number only verifies the number itself (Smile's async Basic KYC job) —
+    // it's a separate, image-less product from the liveness/selfie check the main Tier 2 KYC flow
+    // requires, and does not on its own raise kyc_tier. Without this step, a user who only ever
+    // passed through this gate stayed stuck failing requireKYCTier(2) on every money-moving route
+    // even after BVN/NIN showed "Verified" — the exact bug being fixed here. Launching the same
+    // biometric_kyc flow KYC.jsx's Tier 2 form uses, right from here, upgrades them the same way
+    // completing KYC via the dashboard page would.
+    const rawTier = (() => {
+        const t = user?.kyc_tier;
+        if (typeof t === 'string' && t.startsWith('tier_')) return parseInt(t.replace('tier_', ''), 10) || 0;
+        return Number(t) || 0;
+    })();
+    const needsLiveness = rawTier < 2;
+    const numberOnFile = gate.bvnPending || gate.bvnVerified || gate.ninPending || gate.ninVerified;
+    const showLivenessPrompt = needsLiveness && numberOnFile;
+    const livenessIdType = lastSubmitted.nin ? 'nin' : lastSubmitted.bvn ? 'bvn' : null;
+
+    const startLiveness = async () => {
+        setLivenessError('');
+        setLivenessBusy(true);
+        try {
+            const profileRes = await userService.getProfile();
+            const u = profileRes.success ? (profileRes.data?.user || {}) : {};
+            if (!u.first_name || !u.last_name) {
+                setLivenessError('Please complete your profile (full name) before verifying.');
+                return;
+            }
+            await openSmileBiometricVerification({
+                idType: livenessIdType,
+                idNumber: livenessIdType ? lastSubmitted[livenessIdType] : null,
+                country: u.country || 'NG',
+                firstName: u.first_name,
+                lastName: u.last_name,
+                email: u.email,
+                phone: u.phone,
+                onSuccess: () => {
+                    setMessage('Verification submitted! We will update you when processing completes.');
+                },
+                onClose: () => {},
+                onError: (msg) => {
+                    setLivenessError(msg === 'SmileIdentity::ConsentDenied' ? 'Verification requires consent to continue.' : (msg || 'Could not complete verification. Please try again.'));
+                },
+            });
+        } catch (err) {
+            setLivenessError(err?.message || 'Could not start verification. Please try again.');
+        } finally {
+            setLivenessBusy(false);
         }
     };
 
@@ -90,6 +152,28 @@ export default function NigerianIdGate({ gate, onRefresh, title, description }) 
                     submitting={submitting} onSubmit={() => submit('nin', nin)} />
             </div>
             {message && <p className="text-sm mt-3 text-gray-600 dark:text-gray-300">{message}</p>}
+            {showLivenessPrompt && (
+                <div className="mt-4 p-4 rounded-xl border border-primary/30 bg-primary/5">
+                    <div className="flex items-start gap-3 mb-3">
+                        <Camera className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                        <div>
+                            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">One more step — quick liveness check</h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                A quick selfie and liveness check finishes your identity verification and unlocks this feature.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={startLiveness}
+                        disabled={livenessBusy}
+                        className="w-full px-4 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                    >
+                        <Camera className="w-4 h-4" />
+                        {livenessBusy ? 'Starting verification…' : 'Start Liveness Check - Click Here'}
+                    </button>
+                    {livenessError && <p className="text-xs mt-2 text-red-500">{livenessError}</p>}
+                </div>
+            )}
             <button
                 onClick={async () => {
                     const fresh = await fxService.getRampStatus().catch(() => null);
