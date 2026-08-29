@@ -254,15 +254,26 @@ export const createUser = catchAsync(async (req, res) => {
       [user.id, first_name, last_name, date_of_birth || null, gender || null, country || null, city || null, address || null, postal_code || null]
     );
 
-    // 3. Identity document (BVN/NIN + photo) — mirrors the self-service KYC submission, except
-    // it's marked approved immediately since the admin creating the account has already verified
-    // the person directly (e.g. an in-person/offline registration), reviewed_by = this admin.
+    // 3. Identity document (any country's ID type + optional photo) — mirrors the self-service
+    // KYC submission, except it's marked approved immediately since the admin creating the
+    // account has already verified the person directly (e.g. an in-person/offline registration),
+    // reviewed_by = this admin.
     if (id_type && id_number) {
-      const docType = String(id_type).toLowerCase().includes('bvn') ? 'bvn' : 'nin';
+      const docType = String(id_type).toLowerCase();
+      // document_url is NOT NULL with no default — every other kyc_documents insert in this
+      // codebase supplies either a real image or this same sentinel for number-only types (see
+      // NO_DOCUMENT_PHOTO_URL in kyc.controller.js). Omitting it here rolled back the entire
+      // transaction (the user + profile rows too) on a Postgres not-null violation any time an
+      // admin filled in the Identity Verification section — the exact reproducible cause of
+      // "Add User isn't working".
+      const documentUrl = photo_url || 'https://jaxopay.com/kyc/admin-manual-number-only';
+      // tier is ALSO NOT NULL with no default (found only by actually exercising this insert —
+      // every ID type this form offers is a Tier 2 identity document, same as kyc.controller.js's
+      // own tier assignment for the self-service path).
       await client.query(
-        `INSERT INTO kyc_documents (user_id, document_type, document_number, selfie_url, status, reviewed_by, reviewed_at)
-         VALUES ($1, $2, $3, $4, 'approved', $5, NOW())`,
-        [user.id, docType, id_number, photo_url || null, req.user.id]
+        `INSERT INTO kyc_documents (user_id, document_type, document_number, document_url, selfie_url, status, tier, reviewed_by, reviewed_at)
+         VALUES ($1, $2, $3, $4, $5, 'approved', 'tier_2'::kyc_tier, $6, NOW())`,
+        [user.id, docType, id_number, documentUrl, photo_url || null, req.user.id]
       );
     }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search,
@@ -16,13 +16,16 @@ import {
     RefreshCw,
     ChevronLeft,
     ChevronRight,
+    ChevronDown,
     Plus,
     CheckCircle2,
-    Trash2
+    Trash2,
+    Globe,
 } from 'lucide-react';
 import adminService from '../../services/adminService';
 import { formatDateTime } from '../../utils/formatters';
 import { useAuthStore } from '../../store/authStore';
+import { ALL_COUNTRIES } from '../../constants/allCountries';
 
 const KYC_TIERS = {
     0: { label: 'Unverified', color: 'bg-gray-100 text-gray-700' },
@@ -141,6 +144,8 @@ const UserManagement = () => {
         return result;
     };
 
+    // Returns the result so the modal can show a rejection reason inline instead of the create
+    // silently appearing to do nothing on failure — same pattern as handleDeleteUser below.
     const handleCreateUser = async (userData) => {
         setActionLoading(true);
         const result = await adminService.createUser(userData);
@@ -149,6 +154,7 @@ const UserManagement = () => {
             setShowCreateModal(false);
         }
         setActionLoading(false);
+        return result;
     };
 
     const handleSuspendUser = async (userId, reason) => {
@@ -652,6 +658,82 @@ const STAFF_ROLE_OPTIONS = [
     { value: 'support', label: 'Support', hint: 'Announcements & tickets' },
 ];
 
+// Not Nigeria-only — the admin manually verifies the person's ID before adding them, so any
+// country's document type is fair game, not just BVN/NIN.
+const ID_TYPE_OPTIONS = [
+    { value: 'nin', label: 'NIN (Nigeria)' },
+    { value: 'bvn', label: 'BVN (Nigeria)' },
+    { value: 'national_id', label: 'National ID' },
+    { value: 'passport', label: 'International Passport' },
+    { value: 'drivers_license', label: "Driver's License" },
+    { value: 'voter_id', label: "Voter's ID" },
+];
+
+// Searchable country picker — a plain <select> with 195 options is unusable without a way to
+// filter. Free-text (the previous "Country" field) let a typo or inconsistent format silently
+// through; this keeps entry just as fast (type to filter) while guaranteeing a real ISO country.
+const CountryDropdown = ({ value, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const ref = useRef(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const onClickOutside = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', onClickOutside);
+        return () => document.removeEventListener('mousedown', onClickOutside);
+    }, [open]);
+
+    const selected = ALL_COUNTRIES.find((c) => c.code === value);
+    const filtered = search.trim()
+        ? ALL_COUNTRIES.filter((c) => c.name.toLowerCase().includes(search.trim().toLowerCase()))
+        : ALL_COUNTRIES;
+
+    return (
+        <div className="relative" ref={ref}>
+            <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg flex items-center justify-between text-left"
+            >
+                <span className="flex items-center gap-2 truncate text-gray-900 dark:text-white">
+                    <Globe className="w-4 h-4 text-gray-400 shrink-0" />
+                    {selected?.name || <span className="text-gray-400 font-normal">Select country...</span>}
+                </span>
+                <ChevronDown className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open && (
+                <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-xl">
+                    <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                        <input
+                            autoFocus
+                            type="text"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder="Search countries..."
+                            className="w-full px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md"
+                        />
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                        {filtered.length === 0 && <p className="px-4 py-3 text-sm text-gray-400">No matches.</p>}
+                        {filtered.map((c) => (
+                            <button
+                                key={c.code}
+                                type="button"
+                                onClick={() => { onChange(c.code); setOpen(false); setSearch(''); }}
+                                className="w-full px-4 py-2 flex items-center justify-between text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >
+                                <span className="text-gray-900 dark:text-white">{c.name}</span>
+                                {value === c.code && <Check className="w-4 h-4 text-primary-600 shrink-0" />}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const CreateUserModal = ({ onClose, onSubmit, loading }) => {
     const [form, setForm] = useState({
         email: '',
@@ -667,13 +749,15 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
         city: '',
         address: '',
         postal_code: '',
-        // Identity verification — same as self-service KYC (BVN/NIN + photo).
+        // Identity verification — same idea as self-service KYC (a number + optional photo), any
+        // country's document type.
         id_type: '',
         id_number: '',
         photo_url: '',
     });
     const [staffRoles, setStaffRoles] = useState([]); // checkboxes; empty = plain end_user account
     const [photoPreview, setPhotoPreview] = useState(null);
+    const [error, setError] = useState(null);
 
     const toggleStaffRole = (value) => {
         setStaffRoles((prev) => prev.includes(value) ? prev.filter((r) => r !== value) : [...prev, value]);
@@ -690,12 +774,17 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
         reader.readAsDataURL(file);
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
+        setError(null);
         const payload = { ...form };
         if (staffRoles.length > 0) payload.roles = staffRoles;
         else payload.role = 'end_user';
-        onSubmit(payload);
+        const result = await onSubmit(payload);
+        // onSubmit closes the modal itself on success — only reachable here on failure.
+        if (result && !result.success) {
+            setError(result.error || 'Could not create this user. Please check the details and try again.');
+        }
     };
 
     return (
@@ -710,17 +799,28 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full"
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col"
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add New User</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add New User</h2>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Only Name, Email, Phone and Password are required — everything else is optional.</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg shrink-0">
                         <X className="w-5 h-5 text-gray-500" />
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden flex-1 min-h-0">
+                <div className="p-6 space-y-4 overflow-y-auto">
+                    {error && (
+                        <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                            <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">First Name</label>
@@ -847,13 +947,7 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
-                            <input
-                                type="text"
-                                value={form.country}
-                                onChange={(e) => setForm({ ...form, country: e.target.value })}
-                                placeholder="e.g. NG"
-                                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
-                            />
+                            <CountryDropdown value={form.country} onChange={(code) => setForm({ ...form, country: code })} />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
@@ -888,7 +982,8 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
                     </div>
 
                     <hr className="border-gray-200 dark:border-gray-700" />
-                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Identity Verification (optional — BVN/NIN, as in self-service KYC)</p>
+                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Identity Verification (optional)</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 -mt-3">Records an ID you've already verified yourself — any country. Marked approved immediately.</p>
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -899,8 +994,9 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
                                 className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
                             >
                                 <option value="">None</option>
-                                <option value="bvn">BVN</option>
-                                <option value="nin">NIN</option>
+                                {ID_TYPE_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
                             </select>
                         </div>
                         <div>
@@ -910,7 +1006,6 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
                                 value={form.id_number}
                                 onChange={(e) => setForm({ ...form, id_number: e.target.value })}
                                 disabled={!form.id_type}
-                                maxLength={11}
                                 className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg disabled:opacity-50"
                             />
                         </div>
@@ -931,7 +1026,8 @@ const CreateUserModal = ({ onClose, onSubmit, loading }) => {
                         </div>
                     </div>
 
-                    <div className="flex gap-3 pt-4">
+                </div>
+                    <div className="flex gap-3 p-6 pt-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
                         <button
                             type="button"
                             onClick={onClose}

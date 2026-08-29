@@ -162,7 +162,9 @@ router.post(
   body('city').optional({ checkFalsy: true }).isString(),
   body('address').optional({ checkFalsy: true }).isString(),
   body('postal_code').optional({ checkFalsy: true }).isString(),
-  body('id_type').optional({ checkFalsy: true }).isIn(['bvn', 'nin']),
+  // Not Nigeria-only — an admin manually verifies the person's ID before adding them, so any
+  // country's document type is acceptable here, same set the self-service KYC route accepts.
+  body('id_type').optional({ checkFalsy: true }).isIn(['bvn', 'nin', 'national_id', 'passport', 'drivers_license', 'voter_id', 'id_card']),
   body('id_number').optional({ checkFalsy: true }).isString(),
   body('photo_url').optional({ checkFalsy: true }).isString(),
   validate,
