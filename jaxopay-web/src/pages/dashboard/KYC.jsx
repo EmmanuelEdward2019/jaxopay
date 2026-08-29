@@ -7,6 +7,7 @@ import {
     FileText, Camera, CreditCard, Info, Home,
     User, ChevronRight, ChevronDown, Lock, CheckCircle2,
     Fingerprint, ScanFace, ArrowRight, Globe, PartyPopper,
+    BookOpen, Car, Vote,
 } from 'lucide-react';
 import kycService from '../../services/kycService';
 import userService from '../../services/userService';
@@ -24,17 +25,31 @@ const TIER_DEFS = [
     { num: 3, displayNum: 2, title: 'Address Verification', subtitle: 'Proof of residence', icon: Home },
 ];
 
-// Passport and Driver's License are no longer offered — Tier 2 only accepts NIN (Nigerian
-// nationals) or National ID (everyone else), number + liveness/selfie, no document photo. Which
-// one applies isn't a user choice — it follows nationality automatically (see the sync effect
-// above) — so this is keyed by id for lookup, not rendered as a selector.
+// Tier 2 is still number + liveness/selfie only — no document photo — for every ID type below.
+// Nigerian nationals are always NIN, not a choice (see the sync effect below). Everyone else picks
+// which kind of national ID they're entering a number from (NON_NG_ID_TYPES), since "National ID"
+// alone doesn't cover what a given country actually issues.
 const ID_DOCUMENT_TYPES = [
     { id: 'nin', name: 'NIN (Nigeria)', icon: Fingerprint },
     { id: 'national_id', name: 'National ID', icon: CreditCard },
+    { id: 'passport', name: 'Passport', icon: BookOpen },
+    { id: 'drivers_license', name: "Driver's License", icon: Car },
+    { id: 'voter_id', name: "Voter's ID", icon: Vote },
 ];
-// Legacy types (passport, drivers_license) are no longer selectable for new submissions, but kept
-// here so status/rejection-reason lookups still recognize documents submitted before this change.
-const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card', 'passport', 'drivers_license']);
+const NON_NG_ID_TYPES = ID_DOCUMENT_TYPES.filter((d) => d.id !== 'nin');
+// Smile's id_info.id_type value per our own document_type — NG uses NIN_V2 specifically, not
+// plain 'NIN' (see the comment on handleOpenSmileVerification below for why that distinction
+// matters); the rest match Smile's generic id_type enum directly.
+const SMILE_ID_TYPE_MAP = {
+    nin: 'NIN_V2',
+    national_id: 'NATIONAL_ID',
+    passport: 'PASSPORT',
+    drivers_license: 'DRIVERS_LICENSE',
+    voter_id: 'VOTER_ID',
+};
+// 'id_card' is a legacy value kept only so status/rejection-reason lookups still recognize
+// documents submitted before ID_DOCUMENT_TYPES existed.
+const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card']);
 const ADDRESS_DOC_TYPE_VALUES = ['proof_of_address', 'utility_bill'];
 
 const ADDRESS_DOCUMENT_TYPES = [
@@ -138,15 +153,18 @@ const KYC = () => {
         if (error || success) alertRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, [error, success]);
 
-    // NIN is Nigeria-specific — a non-Nigerian national has no NIN to enter, so Tier 2's accepted
-    // ID type follows nationality automatically: NIN for NG, National ID for everyone else. Not a
-    // user choice (there's only ever one correct answer for a given nationality), so this stays in
-    // sync with the Tier 1 nationality field rather than living as independent form state.
+    // NIN is Nigeria-specific — a non-Nigerian national has no NIN to enter, so Nigerian nationals
+    // are always forced to 'nin' (not a choice — there's only one correct answer). Everyone else
+    // picks their own ID type (see NON_NG_ID_TYPES / the dropdown in Tier2Form below); this effect
+    // only supplies a starting default the moment nationality first becomes non-Nigerian, and
+    // leaves an already-non-NIN choice alone afterward so picking e.g. Passport survives switching
+    // between two non-Nigerian countries.
     useEffect(() => {
         const isNigerian = (formData.nationality || 'NG').toUpperCase() === 'NG';
         setFormData((prev) => {
-            const next = isNigerian ? 'nin' : 'national_id';
-            return prev.documentType === next ? prev : { ...prev, documentType: next };
+            if (isNigerian) return prev.documentType === 'nin' ? prev : { ...prev, documentType: 'nin' };
+            if (NON_NG_ID_TYPES.some((d) => d.id === prev.documentType)) return prev;
+            return { ...prev, documentType: 'national_id' };
         });
     }, [formData.nationality]);
 
@@ -311,7 +329,7 @@ const KYC = () => {
             // Smile's API elsewhere). Sending the wrong key here means Smile's SDK doesn't
             // recognize this as valid pre-filled ID info, so instead of skipping straight to the
             // camera as intended, it fell back to its own country/ID-type selection screen.
-            const idType = formData.documentType === 'national_id' ? 'NATIONAL_ID' : 'NIN_V2';
+            const idType = SMILE_ID_TYPE_MAP[formData.documentType] || 'NATIONAL_ID';
             const country = (formData.nationality || 'NG').toUpperCase();
             // user_details requires at least one contact method if supplied at all, and the phone
             // (if any) must be E.164 — if neither a valid email nor E.164 phone is on file, omit
@@ -829,7 +847,10 @@ const ReqRow = ({ label, done, pending }) => (
 // KYCScreen now uses for the same field (Globe icon + selected name + chevron, opening a list
 // with a checkmark on the current selection), so the two platforms' KYC flows look and behave
 // the same way here.
-const NationalityDropdown = ({ value, onChange, nationalities }) => {
+// Generic button+list dropdown — used for both the nationality picker and the non-Nigerian ID
+// type picker (see NON_NG_ID_TYPES in Tier2Form) so both share one interaction pattern instead of
+// two near-identical implementations. `options` is [{code, name}]; `icon` is the leading glyph.
+const SelectDropdown = ({ value, onChange, options, icon: Icon, placeholder }) => {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
@@ -842,21 +863,21 @@ const NationalityDropdown = ({ value, onChange, nationalities }) => {
         return () => document.removeEventListener('mousedown', onClickOutside);
     }, [open]);
 
-    const selected = nationalities.find(c => c.code === value);
+    const selected = options.find(c => c.code === value);
 
     return (
         <div className="relative" ref={ref}>
             <button type="button" onClick={() => setOpen(v => !v)}
                 className="w-full px-4 py-3 rounded-xl border border-border bg-muted text-foreground focus:ring-2 focus:ring-ring focus:outline-none flex items-center justify-between">
                 <span className="flex items-center gap-2 truncate">
-                    <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
-                    {selected?.name || 'Select nationality'}
+                    <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                    {selected?.name || placeholder}
                 </span>
                 <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
             {open && (
                 <div className="absolute z-20 mt-2 w-full max-h-64 overflow-y-auto rounded-xl border border-border bg-card shadow-xl">
-                    {nationalities.map(c => (
+                    {options.map(c => (
                         <button key={c.code} type="button"
                             onClick={() => { onChange(c.code); setOpen(false); }}
                             className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-muted transition-colors">
@@ -887,7 +908,7 @@ const Tier1Form = ({ formData, updateField, onSave, saving, nationalities }) => 
         </div>
         <div>
             <label className="block text-sm font-medium text-foreground mb-2">Nationality</label>
-            <NationalityDropdown value={formData.nationality} onChange={v => updateField('nationality', v)} nationalities={nationalities} />
+            <SelectDropdown value={formData.nationality} onChange={v => updateField('nationality', v)} options={nationalities} icon={Globe} placeholder="Select nationality" />
         </div>
         <div>
             <label className="block text-sm font-medium text-foreground mb-2">Residential Address</label>
@@ -914,22 +935,34 @@ const Tier2Form = ({
             left no way for an already-verified user to ever set anything other than NIN. */}
         <div>
             <label className="block text-sm font-medium text-foreground mb-2">Nationality</label>
-            <NationalityDropdown value={formData.nationality} onChange={v => updateField('nationality', v)} nationalities={nationalities} />
+            <SelectDropdown value={formData.nationality} onChange={v => updateField('nationality', v)} options={nationalities} icon={Globe} placeholder="Select nationality" />
         </div>
 
-        {/* Document Type — determined by nationality (see the sync effect in the parent), not a
-            user choice, so this is an info row rather than a selector. */}
+        {/* Document Type — fixed to NIN for Nigerian nationals (info row, not a choice: there's
+            only one correct answer). Everyone else picks which kind of national ID they're
+            entering a number from, since "National ID" alone doesn't cover what a given country
+            actually issues — see NON_NG_ID_TYPES / the sync effect in the parent. */}
         <div>
             <label className="block text-sm font-medium text-foreground mb-3">Document Type</label>
-            {(() => {
-                const doc = ID_DOCUMENT_TYPES.find((d) => d.id === formData.documentType) || ID_DOCUMENT_TYPES[0];
-                return (
-                    <div className="w-full max-w-xs mx-auto p-4 rounded-xl border-2 border-primary bg-primary/10 text-center">
-                        <doc.icon className="w-6 h-6 mx-auto mb-2 text-primary" />
-                        <p className="text-xs sm:text-sm font-medium text-foreground">{doc.name}</p>
-                    </div>
-                );
-            })()}
+            {(formData.nationality || 'NG').toUpperCase() === 'NG' ? (
+                (() => {
+                    const doc = ID_DOCUMENT_TYPES.find((d) => d.id === 'nin');
+                    return (
+                        <div className="w-full max-w-xs mx-auto p-4 rounded-xl border-2 border-primary bg-primary/10 text-center">
+                            <doc.icon className="w-6 h-6 mx-auto mb-2 text-primary" />
+                            <p className="text-xs sm:text-sm font-medium text-foreground">{doc.name}</p>
+                        </div>
+                    );
+                })()
+            ) : (
+                <SelectDropdown
+                    value={formData.documentType}
+                    onChange={v => updateField('documentType', v)}
+                    options={NON_NG_ID_TYPES.map(d => ({ code: d.id, name: d.name }))}
+                    icon={CreditCard}
+                    placeholder="Select your ID type"
+                />
+            )}
         </div>
 
         {/* Document Number */}

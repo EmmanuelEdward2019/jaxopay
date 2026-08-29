@@ -19,7 +19,7 @@ function buildKycDocumentUrl(frontUrl, backUrl) {
 // the Smile-based paths below (e.g. 'https://jaxopay.com/kyc/smile-biometric') for rows with no
 // locally-stored image.
 const NO_DOCUMENT_PHOTO_URL = 'https://jaxopay.com/kyc/manual-number-only';
-const ID_DOCUMENT_TYPES_NO_PHOTO = ['nin', 'passport', 'national_id', 'drivers_license', 'id_card', 'bvn'];
+const ID_DOCUMENT_TYPES_NO_PHOTO = ['nin', 'passport', 'national_id', 'drivers_license', 'voter_id', 'id_card', 'bvn'];
 
 /**
  * Build a public `${host}/api/v1/<path>` URL for provider callbacks, tolerant of how
@@ -109,7 +109,7 @@ export const submitKYCDocument = catchAsync(async (req, res) => {
   let tier = 'tier_2';
   if (['proof_of_address', 'utility_bill', 'proof_of_income'].includes(document_type)) {
     tier = 'tier_3';
-  } else if (['nin', 'passport', 'national_id', 'drivers_license', 'id_card', 'bvn'].includes(document_type)) {
+  } else if (['nin', 'passport', 'national_id', 'drivers_license', 'voter_id', 'id_card', 'bvn'].includes(document_type)) {
     tier = 'tier_2';
   }
 
@@ -287,7 +287,7 @@ export const requestTierUpgrade = catchAsync(async (req, res) => {
     const approvedTypes = approved.map((doc) => doc.document_type);
     // NIN only exists for Nigerians — non-NG users prove identity with a passport/national ID instead.
     const hasNin = approvedTypes.includes('nin')
-      || (country !== 'NG' && ['passport', 'national_id', 'drivers_license', 'id_card'].some((t) => approvedTypes.includes(t)));
+      || (country !== 'NG' && ['passport', 'national_id', 'drivers_license', 'voter_id', 'id_card'].some((t) => approvedTypes.includes(t)));
     const hasFacial = approvedTypes.includes('smile_biometric_kyc')
       || approved.some((doc) => doc.selfie_url);
     const hasPoa = approvedTypes.includes('proof_of_address') || approvedTypes.includes('utility_bill');

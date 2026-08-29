@@ -90,7 +90,7 @@ const optionalImageDataOrUrl = (field) =>
 // NOTE: deliberately not using .optional() here — it would skip this custom() entirely for falsy
 // values, which is exactly the case we need to inspect (to decide, per document_type, whether a
 // missing value is allowed).
-const NO_PHOTO_DOC_TYPES = ['nin', 'passport', 'national_id', 'drivers_license', 'id_card', 'bvn'];
+const NO_PHOTO_DOC_TYPES = ['nin', 'passport', 'national_id', 'drivers_license', 'voter_id', 'id_card', 'bvn'];
 const documentFrontUrlField = body('document_front_url')
   .custom((value, { req }) => {
     if (!value) {
@@ -112,6 +112,7 @@ router.post(
       'national_id',
       'passport',
       'drivers_license',
+      'voter_id',
       'nin',
       'bvn',
       'proof_of_address',
