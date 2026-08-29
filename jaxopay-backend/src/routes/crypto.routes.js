@@ -101,7 +101,7 @@ router.get(
 // Exchange crypto to fiat (requires KYC Tier 2+)
 router.post(
   '/sell',
-  requireKYCTier(1),
+  requireKYCTier(2),
   body('crypto_currency').isString().isLength({ min: 1, max: 10 }),
   body('fiat_currency').isString().isLength({ min: 3, max: 6 }),
   body('crypto_amount').isFloat({ min: 0.00000001 }),
@@ -112,7 +112,7 @@ router.post(
 // Exchange fiat to crypto (requires KYC Tier 2+)
 router.post(
   '/buy',
-  requireKYCTier(1),
+  requireKYCTier(2),
   body('fiat_currency').isString().isLength({ min: 3, max: 6 }),
   body('crypto_currency').isString().isLength({ min: 1, max: 10 }),
   body('fiat_amount').isFloat({ min: 1 }),
@@ -123,7 +123,7 @@ router.post(
 // Exchange crypto to crypto
 router.post(
   '/swap',
-  requireKYCTier(1),
+  requireKYCTier(2),
   body('from_coin').isString().isLength({ min: 1, max: 10 }),
   body('to_coin').isString().isLength({ min: 1, max: 10 }),
   body('amount').isFloat({ min: 0.00000001 }),
@@ -131,12 +131,12 @@ router.post(
   exchangeCryptoToCrypto
 );
 
-// Get deposit address — requireKYCTier(1) matches /withdraw below; this route generates a real
+// Get deposit address — requireKYCTier(2) matches /withdraw below; this route generates a real
 // funding address, which is exactly the kind of action Tier 0 (Basic Profile) exists to gate.
 router.get(
   '/deposit-address',
   requireFeature('deposits_crypto'),
-  requireKYCTier(1),
+  requireKYCTier(2),
   query('coin').isString().notEmpty(),
   query('network').optional().isString(),
   validate,
@@ -147,7 +147,7 @@ router.get(
 router.post(
   '/withdraw',
   requireFeature('withdrawals_crypto'),
-  requireKYCTier(1),
+  requireKYCTier(2),
   body('coin').isString().notEmpty(),
   body('address').isString().notEmpty(),
   body('amount').isFloat({ min: 0.00000001 }),
@@ -197,25 +197,25 @@ router.get(
 router.get('/order-book', getOrderBook);
 
 // Create order (spot/limit)
-router.post('/orders', requireKYCTier(1), createOrder);
+router.post('/orders', requireKYCTier(2), createOrder);
 
 // Get swap quote (temporary preview — no timer)
-router.get('/swap/quote', requireKYCTier(1), getSwapQuote);
+router.get('/swap/quote', requireKYCTier(2), getSwapQuote);
 
 // ── Quotation-based swap lifecycle ──────────────────────────────────────────
 // Step 2: Create real quotation (15s window)
 router.post(
   '/swap/quotation',
-  requireKYCTier(1),
+  requireKYCTier(2),
   body('from_currency').isString().notEmpty(),
   body('to_currency').isString().notEmpty(),
   validate,
   createSwapQuotation
 );
 // Step 3: Refresh quotation
-router.post('/swap/quotation/:id/refresh', requireKYCTier(1), refreshSwapQuotation);
+router.post('/swap/quotation/:id/refresh', requireKYCTier(2), refreshSwapQuotation);
 // Step 4: Confirm quotation (executes swap)
-router.post('/swap/quotation/:id/confirm', requireKYCTier(1), confirmSwapQuotation);
+router.post('/swap/quotation/:id/confirm', requireKYCTier(2), confirmSwapQuotation);
 // Step 5: Poll swap transaction status
 router.get('/swap/transactions/:id', verifyToken, getSwapTransaction);
 // List all swap transactions
@@ -233,7 +233,7 @@ router.get(
 // Cancel order
 router.post(
   '/orders/:id/cancel',
-  requireKYCTier(1),
+  requireKYCTier(2),
   cancelOrder
 );
 

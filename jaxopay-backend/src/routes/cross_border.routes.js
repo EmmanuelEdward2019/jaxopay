@@ -14,14 +14,14 @@ router.use(verifyToken);
 router.get('/rates', crossBorderController.getExchangeRate);
 
 // Currency Swap
-router.post('/swap', requireKYCTier(1), crossBorderController.swapCurrency);
+router.post('/swap', requireKYCTier(2), crossBorderController.swapCurrency);
 
 // Payout destination metadata (Yellow Card)
 router.get('/countries', crossBorderController.getPayoutCountries);
 router.get('/networks', crossBorderController.getPayoutNetworks);
 
 // International Payments
-router.post('/transfers/international', requireFeature('withdrawals_fiat'), requireKYCTier(1), crossBorderController.sendInternationalPayment);
+router.post('/transfers/international', requireFeature('withdrawals_fiat'), requireKYCTier(2), crossBorderController.sendInternationalPayment);
 
 // Crypto on/off-ramp (Yellow Card Direct Settlement) — gated by its own toggle, separate from
 // deposits_crypto/withdrawals_crypto which also gate plain (non-ramp) crypto deposits/withdraws
@@ -29,8 +29,8 @@ router.post('/transfers/international', requireFeature('withdrawals_fiat'), requ
 // friendly "unavailable" state instead of erroring when the ramp is off.
 router.get('/ramp/status', crossBorderController.getRampStatus);
 router.get('/ramp/options', crossBorderController.getRampOptions);
-router.post('/ramp/deposit', requireFeature('crypto_ramp'), requireKYCTier(1), crossBorderController.cryptoRampDeposit);
-router.post('/ramp/withdraw', requireFeature('crypto_ramp'), requireKYCTier(1), crossBorderController.cryptoRampWithdraw);
+router.post('/ramp/deposit', requireFeature('crypto_ramp'), requireKYCTier(2), crossBorderController.cryptoRampDeposit);
+router.post('/ramp/withdraw', requireFeature('crypto_ramp'), requireKYCTier(2), crossBorderController.cryptoRampWithdraw);
 router.get('/ramp/:id/status', crossBorderController.getRampTransactionStatus);
 
 // Provider wallet balances (Yellow Card)

@@ -56,10 +56,11 @@ router.get(
   getCardSecureData
 );
 
-// Create virtual card (requires verified KYC)
+// Create virtual card (requires verified KYC — Tier 1 displayed / raw tier 2: NIN or National ID
+// + liveness, not just the raw-tier-1 basic-profile step)
 router.post(
   '/',
-  requireKYCTier(1),
+  requireKYCTier(2),
   body('card_type').optional().isIn(['single_use', 'multi_use']),
   body('amount_usd').isFloat({ min: 1 }),
   body('spending_limit').optional().isFloat({ min: 1 }),

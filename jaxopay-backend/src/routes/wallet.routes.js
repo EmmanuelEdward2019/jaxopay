@@ -36,7 +36,7 @@ router.get('/balances', getAllBalances);
 router.get(
   '/vba/:walletId',
   requireFeature('deposits_fiat'),
-  requireKYCTier(1),
+  requireKYCTier(2),
   param('walletId').isUUID(),
   validate,
   getOrCreateVBA
@@ -98,7 +98,7 @@ router.post(
 // `recipient_email` (legacy, email-only) is still accepted for backward compatibility.
 router.post(
   '/transfer',
-  requireKYCTier(1),
+  requireKYCTier(2),
   body('recipient').optional({ checkFalsy: true }).isString().trim(),
   body('recipient_email').optional({ checkFalsy: true }).isString().trim(),
   body('amount').isFloat({ min: 0.01 }),
@@ -113,7 +113,7 @@ router.post(
 router.post(
   '/deposit/initialize',
   requireFeature('deposits_fiat'),
-  requireKYCTier(1),
+  requireKYCTier(2),
   body('wallet_id').isUUID(),
   body('amount').isFloat({ min: 1 }),
   body('currency').optional().isString().isLength({ min: 1, max: 10 }),
@@ -132,7 +132,7 @@ router.post(
 // Add funds to wallet (for testing)
 router.post(
   '/:walletId/add-funds',
-  requireKYCTier(1),
+  requireKYCTier(2),
   param('walletId').isUUID(),
   body('amount').isFloat({ min: 0.01 }),
   body('description').optional().isString(),

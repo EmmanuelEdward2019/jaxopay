@@ -277,7 +277,7 @@ export const createCard = catchAsync(async (req, res) => {
   const amountUsd = Number(req.body.amount_usd ?? req.body.initial_amount ?? 0);
   const cardDesign = CARD_DESIGNS.includes(req.body.card_design) ? req.body.card_design : null;
 
-  if (kycTierLevel(req.user.kyc_tier) < 1) {
+  if (kycTierLevel(req.user.kyc_tier) < 2) {
     throw new AppError('Please verify your identity (KYC) to create a virtual card.', 403, 'KYC_TIER_REQUIRED');
   }
   if (!Number.isFinite(amountUsd) || amountUsd < 1) {

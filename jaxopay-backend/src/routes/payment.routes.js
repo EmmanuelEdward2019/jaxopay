@@ -70,7 +70,7 @@ router.post(
 // Send money (requires KYC Tier 1+)
 router.post(
   '/send',
-  requireKYCTier(1),
+  requireKYCTier(2),
   body('beneficiary_id').isUUID(),
   body('source_currency').isString().isLength({ min: 3, max: 3 }),
   body('destination_currency').isString().isLength({ min: 3, max: 3 }),

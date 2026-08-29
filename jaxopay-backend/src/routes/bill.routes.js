@@ -74,7 +74,7 @@ router.post(
 router.post(
   '/pay',
   useIdempotency, // Prevent duplicate bill payments on retry
-  requireKYCTier(1),
+  requireKYCTier(2),
   body('provider_id').isString(),
   body('account_number').isString(),
   body('amount').isFloat({ min: 1 }),

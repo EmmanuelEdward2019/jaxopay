@@ -54,7 +54,7 @@ router.post(
 router.post(
     '/send',
     requireFeature('withdrawals_fiat'),
-    requireKYCTier(1),
+    requireKYCTier(2),
     body('wallet_id').isUUID().withMessage('Valid wallet_id required'),
     body('bank_code').isString().notEmpty().withMessage('bank_code required'),
     body('account_number').isString().isLength({ min: 10, max: 18 }).withMessage('Valid account_number required'),
