@@ -77,7 +77,7 @@ class WebhookVerifier {
             case 'smile_identity':
             case 'smile':
             case 'smile-id':
-                return this._verifySmileIdentity(body);
+                return this._verifySmileIdentity(headers, body);
             case 'korapay':
                 // Korapay signs JSON.stringify(body.data), so it needs the PARSED object,
                 // not the raw/stringified payload used by raw-byte HMAC providers.
@@ -156,8 +156,8 @@ class WebhookVerifier {
         return incoming === secret;
     }
 
-    /** Smile ID — signature on JSON body (parsed object or string) */
-    _verifySmileIdentity(body) {
+    /** Smile ID — Response-Signature/Response-Timestamp headers (see verifySmileCallbackSignature) */
+    _verifySmileIdentity(headers, body) {
         let parsed = body;
         if (typeof body === 'string') {
             try {
@@ -171,7 +171,7 @@ class WebhookVerifier {
             logger.warn('[WEBHOOK] Smile ID verification skipped (SMILE_WEBHOOK_SKIP_VERIFY)');
             return true;
         }
-        return verifySmileCallbackSignature(parsed);
+        return verifySmileCallbackSignature(parsed, headers);
     }
 
     _verifyKorapay(headers, payload) {

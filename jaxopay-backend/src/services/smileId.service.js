@@ -79,22 +79,34 @@ export function signSmileRequest(apiKey, partnerId) {
 }
 
 /**
- * Verify callback / sync response from Smile ID
+ * Verify a webhook delivery from Smile ID.
+ *
+ * Current documented contract (docs.usesmileid.com/developer-resources/essentials/
+ * verification-webhooks/receive-webhooks/configure-your-webhook-server): the signature and
+ * timestamp are delivered in the `Response-Signature` / `Response-Timestamp` HTTP headers, not
+ * body fields. HMAC-SHA256 over `timestamp + partner_id + 'sid_request'`, keyed by the API key,
+ * base64-encoded — the same formula smile-identity-core's own Signature class uses for outbound
+ * request signing (confirmed identical), just applied to an inbound delivery instead.
+ *
+ * Falls back to `Signature`/`Timestamp` body fields (the older convention this function used to
+ * check exclusively) if the headers aren't present, in case any delivery path still uses it —
+ * costs nothing and avoids a second silent-failure mode while this is still settling in.
  */
-export function verifySmileCallbackSignature(body) {
+export function verifySmileCallbackSignature(body, headers = {}) {
   const { apiKey, partnerId } = getSmileCredentials();
   if (!apiKey || !partnerId) return false;
 
+  const h = headers || {};
   let b = body;
   if (
-    !(body.Signature || body.signature) &&
-    (body.Information || body.information)
+    !(body?.Signature || body?.signature) &&
+    (body?.Information || body?.information)
   ) {
     b = body.Information || body.information;
   }
 
-  const receivedSig = b.Signature || b.signature;
-  const receivedTs = b.Timestamp || b.timestamp;
+  const receivedSig = h['response-signature'] || b?.Signature || b?.signature;
+  const receivedTs = h['response-timestamp'] || b?.Timestamp || b?.timestamp;
   if (!receivedSig || !receivedTs) return false;
 
   const hmac = crypto.createHmac('sha256', apiKey);

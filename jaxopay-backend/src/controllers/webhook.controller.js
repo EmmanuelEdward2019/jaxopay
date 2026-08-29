@@ -66,7 +66,7 @@ export const handleWebhook = catchAsync(async (req, res) => {
             case 'smile-id':
             case 'smile_identity':
             case 'smile':
-                await processSmileIdentity(body);
+                await processSmileIdentity(body, headers);
                 break;
             case 'quidax':
                 await processQuidax(body);
@@ -194,91 +194,113 @@ async function creditUserWallet(reference, amount, currency) {
 }
 
 /**
- * Smile ID — Basic KYC / job callbacks (signature verified in webhookVerifier).
+ * Smile ID — verification job callbacks (signature verified in webhookVerifier).
  *
- * Two integration generations deliver here now:
- *  - v1/v2 (RN native SDK's direct-to-Smile submission, and the REST relay path
- *    submitBiometricKycJob uses): we chose job_id/user_id ourselves at submission time and
- *    already have a 'pending' kyc_documents row keyed on document_number = `SMILE:${job_id}`, so
- *    this is a plain UPDATE. Partner params — including user_id — arrive under PartnerParams/
- *    partner_params, per the SDK's own docs.
- *  - v3 (web dashboard's hosted Web SDK): job_id/user_id are server-generated, not partner-
- *    supplied, so there is no pre-existing pending row to find, and the correlation id is
- *    whatever we set in `partner_params` at token-mint time (postSmileV3Token below sets
- *    `internal_user_id`) rather than a real user_id. This path INSERTS the row instead.
- * The exact v3 webhook field names are Smile ID's documented ResultCode/ResultText/job_id/
- * partner_params contract, followed as closely as the available docs allow — if a payload doesn't
- * match either shape, it's logged in full below (never silently dropped) so a real example can
- * correct any mismatch.
+ * Current documented contract (docs.usesmileid.com/developer-resources/essentials/
+ * verification-webhooks) — confirmed against a real "Enhanced KYC"/"Biometric KYC" payload
+ * example: top-level `status` ("clear" | "block" | "error" | "processing"), `message`, `reason`,
+ * `product` ("biometric_kyc" | "enhanced_kyc"), and `partner_params` echoing back whatever we
+ * submitted. `Job-ID` / `User-ID` are delivered as HTTP HEADERS, not body fields — this is what
+ * every prior version of this function got wrong (it only ever looked for a numeric `ResultCode`
+ * inside the body, which this payload shape doesn't have at all), so real webhooks were arriving
+ * successfully and being silently dropped as "missing result code" on every single delivery.
+ *
+ * The older numeric-ResultCode contract is kept as a fallback below in case any path still emits
+ * it, but the modern `status` field is checked first and is what real traffic actually uses.
+ *
+ * job_id/user_id resolution, in priority order:
+ *  1. `Job-ID` / `User-ID` headers (current documented mechanism, present on every webhook).
+ *  2. `partner_params.job_id` / `partner_params.user_id` — what v1/v2 submissions
+ *     (submitBasicKycAsync, submitBiometricKycJob, prepareSmileBiometricJob) chose themselves at
+ *     submission time and expect echoed back.
+ *  3. `partner_params.internal_user_id` — what postSmileV3Token (the web hosted-SDK path) binds
+ *     at token-mint time, since v3's real job_id/user_id are server-generated and never told to us
+ *     up front.
+ * Whether this job already has a 'pending' kyc_documents row (checked in applySmileVerdict, not
+ * guessed here) decides UPDATE vs INSERT — far more reliable than inferring "is this v3" from
+ * which fields happened to be present, now that headers make job_id/user_id available uniformly
+ * across every integration path.
  */
-async function processSmileIdentity(body) {
+async function processSmileIdentity(body, headers = {}) {
+    const h = headers || {};
     const b = body?.Information || body?.information || body;
     const partnerParams = b.PartnerParams || b.partner_params || {};
-    const rawCode = b.ResultCode ?? b.result_code;
-    if (rawCode === undefined || rawCode === null || rawCode === '') {
-        logger.warn('[WEBHOOK] Smile ID: missing result code', { payload: JSON.stringify(body).slice(0, 2000) });
+
+    const jobId = h['job-id'] || partnerParams.job_id || b.job_id || b.jobId || b.JobId;
+    const userId = h['user-id'] || partnerParams.user_id || partnerParams.internal_user_id || b.internal_user_id;
+
+    if (!jobId || !userId) {
+        logger.warn('[WEBHOOK] Smile ID: missing job_id or user_id', {
+            payload: JSON.stringify(body).slice(0, 2000),
+            headerKeys: Object.keys(h),
+        });
         return;
     }
-    const resultCode = String(rawCode).padStart(4, '0');
 
-    // v1/v2: we minted job_id/user_id ourselves, both travel in partner_params.
-    let jobId = partnerParams.job_id;
-    let userId = partnerParams.user_id;
-    let isV3 = false;
+    const status = String(b.status || '').toLowerCase();
+    let approved;
+    let resultText;
 
-    // v3: job_id/user_id are server-generated (top-level, camelCase per the v12 docs), and our
-    // own correlation id is whatever we bound into partner_params at token-mint time.
-    if (!jobId || !userId) {
-        const v3JobId = b.job_id ?? b.jobId ?? b.JobId;
-        const v3UserId = partnerParams.internal_user_id ?? b.internal_user_id;
-        if (v3JobId && v3UserId) {
-            jobId = v3JobId;
-            userId = v3UserId;
-            isV3 = true;
+    if (['clear', 'block', 'error', 'processing'].includes(status)) {
+        if (status === 'processing') {
+            logger.info(`[WEBHOOK] Smile ID processing (pending human review) job ${jobId} — no user status change; a final webhook follows`);
+            return;
         }
+        approved = status === 'clear';
+        resultText = b.message || b.reason || (approved ? '' : 'Verification did not pass');
+        if (status === 'error') {
+            // Not necessarily the user's fault (could be a Smile-side processing failure) — logged
+            // at error level so this is actually visible for follow-up, but still resolved as
+            // 'rejected' rather than left pending forever, since no further webhook follows an
+            // "error" job the way "processing" promises one will.
+            logger.error(`[WEBHOOK] Smile ID job ${jobId} user ${userId} returned status "error": ${resultText}`);
+        }
+    } else {
+        // Fallback: older numeric ResultCode contract.
+        const rawCode = b.ResultCode ?? b.result_code;
+        if (rawCode === undefined || rawCode === null || rawCode === '') {
+            logger.warn('[WEBHOOK] Smile ID: unrecognized payload — no status and no ResultCode', { payload: JSON.stringify(body).slice(0, 2000) });
+            return;
+        }
+        const resultCode = String(rawCode).padStart(4, '0');
+        if (SMILE_PROVISIONAL_RESULT_CODES.has(resultCode)) {
+            logger.info(`[WEBHOOK] Smile ID provisional/in-review result ${resultCode} job ${jobId} — no user status change`);
+            return;
+        }
+        approved = SMILE_APPROVED_RESULT_CODES.has(resultCode);
+        resultText = b.ResultText || b.result_text || '';
     }
 
-    if (!jobId || !userId) {
-        logger.warn('[WEBHOOK] Smile ID: missing job_id or user_id', { payload: JSON.stringify(body).slice(0, 2000) });
-        return;
-    }
+    const product = String(b.product || '').toLowerCase();
+    const docType = product === 'enhanced_kyc' ? 'smile_basic_kyc' : 'smile_biometric_kyc';
+    const tier = product === 'enhanced_kyc' ? 'tier_1' : 'tier_2';
 
-    if (SMILE_PROVISIONAL_RESULT_CODES.has(resultCode)) {
-        logger.info(`[WEBHOOK] Smile ID provisional/in-review result ${resultCode} job ${jobId} — no user status change`);
-        return;
-    }
-
-    await applySmileVerdict({
-        jobId,
-        userId,
-        resultCode,
-        resultText: b.ResultText || b.result_text || '',
-        mode: isV3 ? 'insert' : 'update',
-        source: 'webhook',
-    });
+    await applySmileVerdict({ jobId, userId, approved, resultText, docType, tier, source: 'webhook' });
 }
 
 /**
- * Applies a final (non-provisional) Smile ID result to our DB — kyc_documents status, the
- * matching BVN/NIN row, the user's tier bump/rejection, and the result notification. Pulled out
- * of processSmileIdentity so sweepPendingSmileJobs below (the reconciliation-poll fallback for
- * when Smile's webhook never arrives) produces byte-for-byte the same outcome a webhook delivery
- * would — a user who gets reconciled via the sweep sees the exact same tier bump, email, and
- * status as one whose webhook landed normally.
+ * Applies a final Smile ID result to our DB — kyc_documents status, the matching BVN/NIN row, the
+ * user's tier bump/rejection, and the result notification. Pulled out of processSmileIdentity so
+ * sweepPendingSmileJobs below (the reconciliation fallback for when Smile's webhook never arrives)
+ * produces byte-for-byte the same outcome a webhook delivery would.
  *
- * `mode: 'insert'` is v3-hosted-only (see processSmileIdentity's isV3 comment) — the sweep never
- * uses it, since a row must already exist in kyc_documents for the sweep to have found it pending
- * in the first place.
+ * Whether to UPDATE an existing pending row or INSERT a fresh one is decided by whether one
+ * already exists for (userId, `SMILE:${jobId}`) — the web hosted-SDK path (v3) never pre-creates a
+ * row (see processSmileIdentity's doc comment), every other path does. `docType`/`tier` are only
+ * used on the INSERT branch, since an existing row already has its own correct values.
  */
-async function applySmileVerdict({ jobId, userId, resultCode, resultText, mode, source }) {
-    const approved = SMILE_APPROVED_RESULT_CODES.has(resultCode);
+async function applySmileVerdict({ jobId, userId, approved, resultText, docType, tier, source }) {
     const docNumber = `SMILE:${jobId}`;
     const logTag = source === 'sweep' ? '[SMILE SWEEP]' : '[WEBHOOK]';
 
+    const existing = await query(
+        `SELECT 1 FROM kyc_documents WHERE user_id = $1::uuid AND document_number = $2 LIMIT 1`,
+        [userId, docNumber]
+    );
+    const mode = existing.rows.length > 0 ? 'update' : 'insert';
+
     let docUpdate;
     if (mode === 'insert') {
-        // No pending row was ever created for this path (the hosted SDK talks to Smile directly,
-        // with no prepare-style call to our backend first) — insert the final result directly.
         // kyc_documents has no unique constraint on (user_id, document_number), so a duplicate
         // delivery would insert a second row rather than upsert; Smile ID webhooks are
         // idempotent-by-intent but not guaranteed exactly-once, same as every other provider
@@ -287,13 +309,15 @@ async function applySmileVerdict({ jobId, userId, resultCode, resultText, mode, 
         docUpdate = await query(
             `INSERT INTO kyc_documents
              (user_id, document_type, document_number, document_url, selfie_url, status, rejection_reason, tier, reviewed_at)
-             VALUES ($1::uuid, 'smile_biometric_kyc', $2, 'https://jaxopay.com/kyc/smile-web-v3', null, $3, $4, 'tier_2', NOW())
+             VALUES ($1::uuid, $2, $3, 'https://jaxopay.com/kyc/smile-web-v3', null, $4, $5, $6::kyc_tier, NOW())
              RETURNING document_type`,
             [
                 userId,
+                docType,
                 docNumber,
                 approved ? 'approved' : 'rejected',
                 approved ? null : (resultText || 'Verification did not pass'),
+                tier,
             ]
         );
     } else {
@@ -353,42 +377,55 @@ async function applySmileVerdict({ jobId, userId, resultCode, resultText, mode, 
         await query(`UPDATE users SET kyc_status = 'rejected', updated_at = NOW() WHERE id = $1::uuid`, [userId]);
     }
 
-    const docType = docUpdate.rows[0]?.document_type || 'smile_biometric_kyc';
+    const resolvedDocType = docUpdate.rows[0]?.document_type || docType || 'smile_biometric_kyc';
     kycNotify
-        .notifySmileKycWebhookResult({ userId, jobId, documentType: docType, approved, resultText })
+        .notifySmileKycWebhookResult({ userId, jobId, documentType: resolvedDocType, approved, resultText })
         .catch((err) => logger.error(`${logTag} KYC email notify:`, err?.message || err));
 
-    logger.info(`${logTag} Smile ID job ${jobId} user ${userId} → ${resultCode} (${approved ? 'approved' : 'rejected'})`);
+    logger.info(`${logTag} Smile ID job ${jobId} user ${userId} → ${approved ? 'approved' : 'rejected'}${resultText ? ` (${resultText})` : ''}`);
     return { changed: true, approved };
 }
 
-/** Polls Smile for one pending row's live result and applies it if the job has finished. */
+/**
+ * Polls Smile for one pending row's live result and applies it if the job has finished. Checks
+ * the same modern `status` field processSmileIdentity does first (see its doc comment), falling
+ * back to the older numeric ResultCode. docType/tier are omitted — this only ever targets a row
+ * that's already pending, so applySmileVerdict always takes the UPDATE branch, which doesn't use
+ * them.
+ */
 async function reconcileOnePendingSmileRow(row) {
     const jobId = row.document_number.slice('SMILE:'.length);
     const status = await smileId.queryJobStatus({ userId: row.user_id, jobId });
     if (!status?.job_complete) return { changed: false };
     const result = status.result || status;
-    const rawCode = result.ResultCode ?? result.result_code ?? status.code;
-    if (rawCode === undefined || rawCode === null || rawCode === '') {
-        // job_complete but no recognizable result code — either Smile's response shape doesn't
-        // match what's assumed above, or this job type/edge case sends something new. Logged in
-        // full (unlike the silent skip on an in-progress job above) so a real mismatch is
-        // diagnosable instead of this reconciliation path quietly never resolving anything.
-        logger.warn(`[SMILE SWEEP] job ${jobId} user ${row.user_id} complete but no result code found`, {
-            payload: JSON.stringify(status).slice(0, 2000),
-        });
-        return { changed: false };
+
+    const resultStatus = String(result.status || '').toLowerCase();
+    let approved;
+    let resultText;
+    if (['clear', 'block', 'error', 'processing'].includes(resultStatus)) {
+        if (resultStatus === 'processing') return { changed: false };
+        approved = resultStatus === 'clear';
+        resultText = result.message || result.reason || '';
+    } else {
+        const rawCode = result.ResultCode ?? result.result_code ?? status.code;
+        if (rawCode === undefined || rawCode === null || rawCode === '') {
+            // job_complete but no recognizable status/result code — either Smile's response shape
+            // doesn't match what's assumed above, or this job type/edge case sends something new.
+            // Logged in full (unlike the silent skip on an in-progress job above) so a real
+            // mismatch is diagnosable instead of this reconciliation path quietly never resolving
+            // anything.
+            logger.warn(`[SMILE SWEEP] job ${jobId} user ${row.user_id} complete but no status/result code found`, {
+                payload: JSON.stringify(status).slice(0, 2000),
+            });
+            return { changed: false };
+        }
+        const resultCode = String(rawCode).padStart(4, '0');
+        if (SMILE_PROVISIONAL_RESULT_CODES.has(resultCode)) return { changed: false };
+        approved = SMILE_APPROVED_RESULT_CODES.has(resultCode);
+        resultText = result.ResultText || result.result_text || '';
     }
-    const resultCode = String(rawCode).padStart(4, '0');
-    if (SMILE_PROVISIONAL_RESULT_CODES.has(resultCode)) return { changed: false };
-    return applySmileVerdict({
-        jobId,
-        userId: row.user_id,
-        resultCode,
-        resultText: result.ResultText || result.result_text || '',
-        mode: 'update',
-        source: 'sweep',
-    });
+
+    return applySmileVerdict({ jobId, userId: row.user_id, approved, resultText, source: 'sweep' });
 }
 
 /**
