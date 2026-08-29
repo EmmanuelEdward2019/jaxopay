@@ -937,6 +937,10 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
             if (res.success) {
                 setVba(res.data);
                 setVbaPending(Boolean(res.pending));
+                // Clear any stale blocked-gate state from an earlier call — otherwise the render
+                // check below (idGate?.required && !idGate?.verified) keeps showing the BVN/NIN
+                // gate even though the account we just fetched proves it's now satisfied.
+                setIdGate(null);
             } else if (['BVN_NIN_REQUIRED', 'BVN_NIN_PENDING'].includes(res.code)) {
                 const fresh = await fxService.getRampStatus().catch(() => null);
                 setIdGate(fresh?.success ? fresh.data : { required: true, verified: false });
@@ -1042,7 +1046,7 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
             <div className="p-6">
                 <NigerianIdGate
                     gate={idGate}
-                    onRefresh={setIdGate}
+                    onRefresh={(fresh) => { setIdGate(fresh); if (fresh?.verified) loadVba(); }}
                     title="Verify your BVN and NIN"
                     description="Both your BVN and NIN must be verified before depositing Naira — a Nigerian regulatory requirement. This is a one-time step."
                 />
