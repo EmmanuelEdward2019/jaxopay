@@ -7,7 +7,7 @@ import {
     FileText, Camera, CreditCard, Info, Home,
     User, ChevronRight, ChevronDown, Lock, CheckCircle2,
     Fingerprint, ScanFace, ArrowRight, Globe, PartyPopper,
-    BookOpen, Car, Vote,
+    BookOpen,
 } from 'lucide-react';
 import kycService from '../../services/kycService';
 import userService from '../../services/userService';
@@ -27,19 +27,18 @@ const TIER_DEFS = [
 
 // Tier 2 is still number + liveness/selfie only — no document photo — for every ID type below.
 // Nigerian nationals are always NIN, not a choice (see the sync effect below). Everyone else picks
-// which kind of national ID they're entering a number from (NON_NG_ID_TYPES), since "National ID"
-// alone doesn't cover what a given country actually issues.
+// International Passport or National ID.
 const ID_DOCUMENT_TYPES = [
     { id: 'nin', name: 'NIN (Nigeria)', icon: Fingerprint },
     { id: 'national_id', name: 'National ID', icon: CreditCard },
-    { id: 'passport', name: 'Passport', icon: BookOpen },
-    { id: 'drivers_license', name: "Driver's License", icon: Car },
-    { id: 'voter_id', name: "Voter's ID", icon: Vote },
+    { id: 'passport', name: 'International Passport', icon: BookOpen },
 ];
 const NON_NG_ID_TYPES = ID_DOCUMENT_TYPES.filter((d) => d.id !== 'nin');
 // Smile's id_info.id_type value per our own document_type — NG uses NIN_V2 specifically, not
 // plain 'NIN' (see the comment on handleOpenSmileVerification below for why that distinction
-// matters); the rest match Smile's generic id_type enum directly.
+// matters); the rest match Smile's generic id_type enum directly. drivers_license/voter_id are no
+// longer selectable (see ID_DOCUMENT_TYPES above) but kept here in case an old submission using
+// either ever revisits this flow.
 const SMILE_ID_TYPE_MAP = {
     nin: 'NIN_V2',
     national_id: 'NATIONAL_ID',
@@ -47,9 +46,9 @@ const SMILE_ID_TYPE_MAP = {
     drivers_license: 'DRIVERS_LICENSE',
     voter_id: 'VOTER_ID',
 };
-// 'id_card' is a legacy value kept only so status/rejection-reason lookups still recognize
-// documents submitted before ID_DOCUMENT_TYPES existed.
-const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card']);
+// id_card/drivers_license/voter_id are legacy values kept only so status/rejection-reason lookups
+// still recognize documents submitted before they were removed as selectable options.
+const ID_DOC_TYPE_VALUES = ID_DOCUMENT_TYPES.map((d) => d.id).concat(['id_card', 'drivers_license', 'voter_id']);
 const ADDRESS_DOC_TYPE_VALUES = ['proof_of_address', 'utility_bill'];
 
 const ADDRESS_DOCUMENT_TYPES = [
