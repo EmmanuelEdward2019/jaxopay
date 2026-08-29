@@ -226,8 +226,22 @@ async function processSmileIdentity(body, headers = {}) {
     const b = body?.Information || body?.information || body;
     const partnerParams = b.PartnerParams || b.partner_params || {};
 
-    const jobId = h['job-id'] || partnerParams.job_id || b.job_id || b.jobId || b.JobId;
-    const userId = h['user-id'] || partnerParams.user_id || partnerParams.internal_user_id || b.internal_user_id;
+    // Prefer OUR OWN partner_params.job_id/user_id — the value v1/v2 submissions
+    // (submitBasicKycAsync, submitBiometricKycJob, prepareSmileBiometricJob) chose themselves at
+    // submission time and used to build the 'pending' row's document_number. The Job-ID/User-ID
+    // HEADERS carry Smile's own canonical identifier instead (confirmed via the V3 Replay/Status
+    // API docs: job_id there must match Smile's TypeID format `job_[0-9a-z]{26}`, which our
+    // self-chosen UUIDs never do) — for a v1/v2 job that's a DIFFERENT value than what we stored,
+    // so preferring it here would miss the existing row and wrongly insert a duplicate. Headers
+    // are only the right choice as a fallback, for v3 (web hosted SDK), which never gets its own
+    // job_id/user_id told to it up front — see partner_params.internal_user_id below.
+    const jobId = partnerParams.job_id || h['job-id'] || b.job_id || b.jobId || b.JobId;
+    const userId = partnerParams.user_id || partnerParams.internal_user_id || h['user-id'] || b.internal_user_id;
+    // Smile's own canonical TypeID for this job (job_xxxxxxxxxxxxxxxxxxxxxxxxxx) — worth capturing
+    // whenever present so a FUTURE missed webhook for this same job can be reconciled via the V3
+    // Replay Callback API, which only accepts this ID, not our own partner-chosen one. See
+    // captureSmileTypeId below.
+    const smileTypeId = h['job-id'] || null;
 
     if (!jobId || !userId) {
         logger.warn('[WEBHOOK] Smile ID: missing job_id or user_id', {
@@ -243,6 +257,10 @@ async function processSmileIdentity(body, headers = {}) {
 
     if (['clear', 'block', 'error', 'processing'].includes(status)) {
         if (status === 'processing') {
+            // Capture Smile's canonical TypeID now, even though there's no status change yet —
+            // it's the only chance to learn it if the FINAL webhook for this job never arrives,
+            // since that's the id replayVerificationCallback needs to ask Smile to resend it.
+            await captureSmileTypeId({ jobId, userId, smileTypeId });
             logger.info(`[WEBHOOK] Smile ID processing (pending human review) job ${jobId} — no user status change; a final webhook follows`);
             return;
         }
@@ -275,7 +293,23 @@ async function processSmileIdentity(body, headers = {}) {
     const docType = product === 'enhanced_kyc' ? 'smile_basic_kyc' : 'smile_biometric_kyc';
     const tier = product === 'enhanced_kyc' ? 'tier_1' : 'tier_2';
 
-    await applySmileVerdict({ jobId, userId, approved, resultText, docType, tier, source: 'webhook' });
+    await applySmileVerdict({ jobId, userId, approved, resultText, docType, tier, smileTypeId, source: 'webhook' });
+}
+
+/**
+ * Persists Smile's canonical TypeID (see processSmileIdentity's doc comment) onto whatever row
+ * currently tracks this job, if one exists yet — a v3 job's first ('processing') delivery has
+ * nowhere to store it (no row is created until a terminal result — see applySmileVerdict), so
+ * capture there is necessarily a v1/v2-only improvement for now. COALESCE keeps the first value
+ * seen rather than overwriting on every subsequent delivery.
+ */
+async function captureSmileTypeId({ jobId, userId, smileTypeId }) {
+    if (!smileTypeId) return;
+    await query(
+        `UPDATE kyc_documents SET smile_type_id = COALESCE(smile_type_id, $1)
+         WHERE user_id = $2::uuid AND document_number = $3`,
+        [smileTypeId, userId, `SMILE:${jobId}`]
+    ).catch((e) => logger.warn('[WEBHOOK] Smile ID: could not capture smile_type_id:', e.message));
 }
 
 /**
@@ -289,7 +323,7 @@ async function processSmileIdentity(body, headers = {}) {
  * row (see processSmileIdentity's doc comment), every other path does. `docType`/`tier` are only
  * used on the INSERT branch, since an existing row already has its own correct values.
  */
-async function applySmileVerdict({ jobId, userId, approved, resultText, docType, tier, source }) {
+async function applySmileVerdict({ jobId, userId, approved, resultText, docType, tier, smileTypeId, source }) {
     const docNumber = `SMILE:${jobId}`;
     const logTag = source === 'sweep' ? '[SMILE SWEEP]' : '[WEBHOOK]';
 
@@ -308,8 +342,8 @@ async function applySmileVerdict({ jobId, userId, approved, resultText, docType,
         // below, not row count.
         docUpdate = await query(
             `INSERT INTO kyc_documents
-             (user_id, document_type, document_number, document_url, selfie_url, status, rejection_reason, tier, reviewed_at)
-             VALUES ($1::uuid, $2, $3, 'https://jaxopay.com/kyc/smile-web-v3', null, $4, $5, $6::kyc_tier, NOW())
+             (user_id, document_type, document_number, document_url, selfie_url, status, rejection_reason, tier, reviewed_at, smile_type_id)
+             VALUES ($1::uuid, $2, $3, 'https://jaxopay.com/kyc/smile-web-v3', null, $4, $5, $6::kyc_tier, NOW(), $7)
              RETURNING document_type`,
             [
                 userId,
@@ -318,6 +352,7 @@ async function applySmileVerdict({ jobId, userId, approved, resultText, docType,
                 approved ? 'approved' : 'rejected',
                 approved ? null : (resultText || 'Verification did not pass'),
                 tier,
+                smileTypeId || null,
             ]
         );
     } else {
@@ -326,7 +361,8 @@ async function applySmileVerdict({ jobId, userId, approved, resultText, docType,
              SET status = $1,
                  rejection_reason = $2,
                  reviewed_at = NOW(),
-                 updated_at = NOW()
+                 updated_at = NOW(),
+                 smile_type_id = COALESCE(smile_type_id, $5)
              WHERE user_id = $3::uuid AND document_number = $4
                AND document_type IN ('smile_basic_kyc', 'smile_biometric_kyc')
                AND status = 'pending'
@@ -336,6 +372,7 @@ async function applySmileVerdict({ jobId, userId, approved, resultText, docType,
                 approved ? null : (resultText || 'Verification did not pass'),
                 userId,
                 docNumber,
+                smileTypeId || null,
             ]
         );
     }
@@ -387,92 +424,81 @@ async function applySmileVerdict({ jobId, userId, approved, resultText, docType,
 }
 
 /**
- * Polls Smile for one pending row's live result and applies it if the job has finished. Checks
- * the same modern `status` field processSmileIdentity does first (see its doc comment), falling
- * back to the older numeric ResultCode. docType/tier are omitted — this only ever targets a row
- * that's already pending, so applySmileVerdict always takes the UPDATE branch, which doesn't use
- * them.
+ * Asks Smile to resend the webhook for one pending row, via the V3 Replay Callback API
+ * (docs.usesmileid.com/api-reference/core-resources/replay-webhook) — the documented mechanism
+ * for exactly this situation, superseding the v1 `/job_status` poll this function used before
+ * (see queryJobStatus's doc comment for why that one doesn't work for this account). Does NOT
+ * apply any result itself: a successful replay just means Smile has re-POSTed the webhook to our
+ * callback URL, which the normal processSmileIdentity path picks up and applies moments later —
+ * same as any other delivery, first or repeat.
+ *
+ * Requires `smile_type_id` to already be captured on the row (see captureSmileTypeId) — the V3
+ * API only accepts Smile's own canonical job identifier, not our self-chosen one. A row with none
+ * captured yet has never received ANY webhook (not even a "processing" one) and can't be replayed
+ * — it can only resolve once Smile's first delivery attempt actually reaches us.
  */
 async function reconcileOnePendingSmileRow(row) {
     const jobId = row.document_number.slice('SMILE:'.length);
-    const status = await smileId.queryJobStatus({ userId: row.user_id, jobId });
-    if (!status?.job_complete) return { changed: false };
-    const result = status.result || status;
-
-    const resultStatus = String(result.status || '').toLowerCase();
-    let approved;
-    let resultText;
-    if (['clear', 'block', 'error', 'processing'].includes(resultStatus)) {
-        if (resultStatus === 'processing') return { changed: false };
-        approved = resultStatus === 'clear';
-        resultText = result.message || result.reason || '';
-    } else {
-        const rawCode = result.ResultCode ?? result.result_code ?? status.code;
-        if (rawCode === undefined || rawCode === null || rawCode === '') {
-            // job_complete but no recognizable status/result code — either Smile's response shape
-            // doesn't match what's assumed above, or this job type/edge case sends something new.
-            // Logged in full (unlike the silent skip on an in-progress job above) so a real
-            // mismatch is diagnosable instead of this reconciliation path quietly never resolving
-            // anything.
-            logger.warn(`[SMILE SWEEP] job ${jobId} user ${row.user_id} complete but no status/result code found`, {
-                payload: JSON.stringify(status).slice(0, 2000),
-            });
-            return { changed: false };
-        }
-        const resultCode = String(rawCode).padStart(4, '0');
-        if (SMILE_PROVISIONAL_RESULT_CODES.has(resultCode)) return { changed: false };
-        approved = SMILE_APPROVED_RESULT_CODES.has(resultCode);
-        resultText = result.ResultText || result.result_text || '';
+    if (!row.smile_type_id) {
+        logger.info(`[SMILE SWEEP] job ${jobId} user ${row.user_id}: no smile_type_id captured yet — cannot replay, waiting for a first webhook delivery`);
+        return { replayed: false };
     }
-
-    return applySmileVerdict({ jobId, userId: row.user_id, approved, resultText, source: 'sweep' });
+    try {
+        await smileId.replayVerificationCallback({ typeId: row.smile_type_id });
+        logger.info(`[SMILE SWEEP] replay requested for job ${jobId} (type_id ${row.smile_type_id}) user ${row.user_id}`);
+        return { replayed: true };
+    } catch (e) {
+        if (e.isReplayPending) {
+            // 409 — Smile hasn't finished processing yet. Normal, not an error; try again next tick.
+            return { replayed: false };
+        }
+        throw e;
+    }
 }
 
 /**
- * Fallback for when Smile ID's webhook never arrives — confirmed possible in production (a job
- * showed approved on Smile's own dashboard while our copy sat 'pending' indefinitely with no
- * callback ever received). Polls Smile directly for every 'pending' kyc_documents row's real
- * status and applies the result through the exact same path a webhook delivery uses. Same
- * reconciliation-sweep pattern this codebase already relies on for Yellow Card ramps, Obiex
- * transfers/withdrawals, and Glyde deposits — see server.js's *_SWEEP_MS intervals, one of which
- * now calls this on a timer. document_number LIKE 'SMILE:%' covers every non-v3 submission path
- * (native RN guided camera, the manual-selfie REST relay, and the BVN/NIN Basic KYC gate) — v3
- * (the web hosted SDK) never leaves a 'pending' row to reconcile in the first place, since that
- * path only ever writes the final result once its own webhook arrives.
+ * Fallback for when Smile ID's webhook never arrives (confirmed possible in production: a job
+ * showed approved on Smile's own dashboard while our copy sat 'pending' indefinitely). Asks Smile
+ * to replay the callback for every 'pending' kyc_documents row that has a captured smile_type_id
+ * — see reconcileOnePendingSmileRow. Same reconciliation-sweep pattern this codebase already
+ * relies on for Yellow Card ramps, Obiex transfers/withdrawals, and Glyde deposits — see
+ * server.js's *_SWEEP_MS intervals, one of which now calls this on a timer.
  */
 export async function sweepPendingSmileJobs(limit = 50) {
     const rows = (await query(
-        `SELECT user_id, document_number FROM kyc_documents
+        `SELECT user_id, document_number, smile_type_id FROM kyc_documents
          WHERE status = 'pending' AND document_number LIKE 'SMILE:%'
          ORDER BY updated_at ASC LIMIT $1`,
         [limit]
     )).rows;
 
     let checked = 0;
-    let resolved = 0;
+    let replayed = 0;
     for (const row of rows) {
         try {
             checked++;
             const outcome = await reconcileOnePendingSmileRow(row);
-            if (outcome.changed) resolved++;
+            if (outcome.replayed) replayed++;
         } catch (e) {
-            logger.warn(`[SMILE SWEEP] error checking job for user ${row.user_id}: ${e.message}`);
+            logger.warn(`[SMILE SWEEP] error replaying job for user ${row.user_id}: ${e.message}`);
         }
     }
-    if (rows.length) logger.info(`[SMILE SWEEP] checked ${checked}/${rows.length} pending job(s), resolved ${resolved}`);
-    return { checked, resolved };
+    if (rows.length) logger.info(`[SMILE SWEEP] checked ${checked}/${rows.length} pending job(s), requested ${replayed} replay(s)`);
+    return { checked, replayed };
 }
 
 /**
  * Same reconciliation as sweepPendingSmileJobs, scoped to one user — called inline from
- * GET /kyc/status so a user pressing "Check status" gets a genuinely live answer instead of just
- * re-reading our (possibly stale) copy of their result. Small limit and every error swallowed by
- * the caller: this runs on every status poll, so it must never be the reason that endpoint gets
- * slow or fails.
+ * GET /kyc/status so a user pressing "Check status" actively asks Smile to resend the callback
+ * instead of just re-reading our (possibly stale) copy of their result. A successful replay's
+ * result won't be reflected in THIS same response (Smile's redelivery is asynchronous, seconds
+ * away, not instant) — but the app's own polling picks it up on the next tick. Small limit and
+ * every error swallowed by the caller: this runs on every status poll, so it must never be the
+ * reason that endpoint gets slow or fails.
  */
 export async function reconcileSmileJobsForUser(userId, limit = 5) {
     const rows = (await query(
-        `SELECT user_id, document_number FROM kyc_documents
+        `SELECT user_id, document_number, smile_type_id FROM kyc_documents
          WHERE user_id = $1::uuid AND status = 'pending' AND document_number LIKE 'SMILE:%'
          ORDER BY updated_at ASC LIMIT $2`,
         [userId, limit]
@@ -482,9 +508,9 @@ export async function reconcileSmileJobsForUser(userId, limit = 5) {
     for (const row of rows) {
         try {
             const outcome = await reconcileOnePendingSmileRow(row);
-            if (outcome.changed) resolved++;
+            if (outcome.replayed) resolved++;
         } catch (e) {
-            logger.warn(`[SMILE SWEEP] error checking job for user ${userId}: ${e.message}`);
+            logger.warn(`[SMILE SWEEP] error replaying job for user ${userId}: ${e.message}`);
         }
     }
     return { resolved };

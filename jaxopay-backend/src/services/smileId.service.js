@@ -328,14 +328,16 @@ export async function submitBiometricKycJob({ userId, jobId, callbackUrl, images
 }
 
 /**
- * Polls Smile ID directly for a job's current result — the fallback for when their webhook
- * callback never arrives (confirmed possible in production: a job showed approved on Smile's own
- * dashboard while our copy sat 'pending' with no callback ever received). Same v1/v2 credentials
- * submitBiometricKycJob/submitBasicKycAsync already use — the /job_status endpoint isn't scoped
- * by job_type, so one query shape covers both job families. See sweepPendingSmileJobs in
- * webhook.controller.js, which uses this to reconcile every stuck 'pending' row on an interval —
- * the same pattern this codebase already uses for Yellow Card ramps, Obiex transfers/withdrawals,
- * and Glyde deposits (server.js's *_SWEEP_MS intervals).
+ * The v1 `/job_status` REST poll (smile-identity-core's WebApi.get_job_status, HMAC-signed with
+ * the v1/v2 credentials) reliably returns "You are not authorized to do that" (error 2205) for
+ * this account, including against jobs that had already resolved successfully via webhook —
+ * confirmed not job-specific. Per Smile's own troubleshooting docs, 2205 covers a signature
+ * computed for the wrong environment/endpoint, which fits: this account's callback URL is
+ * registered against the V3 product family (see replayVerificationCallback below), and v1
+ * `/job_status` may no longer be reachable for accounts configured that way. Left unused
+ * rather than deleted as a documented dead end — do not wire this back in without a confirmed
+ * working call first (queried from the production server itself; this account's IP allowlisting
+ * makes the result of testing this from any other machine unreliable).
  */
 export async function queryJobStatus({ userId, jobId }) {
   const { apiKey, partnerId } = getSmileCredentials();
@@ -347,6 +349,51 @@ export async function queryJobStatus({ userId, jobId }) {
     { user_id: String(userId), job_id: jobId },
     { return_history: false, return_images: false }
   );
+}
+
+/**
+ * Asks Smile ID to resend the webhook callback for a job that already reached a terminal state
+ * (docs.usesmileid.com/api-reference/core-resources/replay-webhook/replay-a-verification-webhook)
+ * — the documented fix for exactly our situation: a verification completed on Smile's side but
+ * our copy never received (or never correctly processed) the original callback. On success Smile
+ * re-POSTs the same webhook shape to our registered callback URL, which the (now-corrected)
+ * processSmileIdentity handles identically to a first-time delivery — no separate result-parsing
+ * path needed here.
+ *
+ * `typeId` MUST be Smile's own canonical job identifier (TypeID format: `job_` + 26 base32
+ * chars) — NOT the UUID we choose ourselves at submission time for v1/v2 jobs. That id is only
+ * learned once we've received at least one webhook for the job (captured into
+ * kyc_documents.smile_type_id — see captureSmileTypeId in webhook.controller.js), so a job with
+ * no smile_type_id on file yet cannot be replayed by this call.
+ *
+ * Auth is a `SmileID-Token` JWT from POST /v3/token (mintV3Token above) — a completely different
+ * scheme from the v1/v2 HMAC signing used elsewhere in this file, per Smile's V3 API family.
+ * Returns Smile's parsed JSON response; throws AppError with Smile's own message on failure
+ * (400/401/403/404/409/415 — see the endpoint's documented error cases) so a caller can log
+ * exactly why a given job couldn't be replayed instead of a generic failure.
+ */
+export async function replayVerificationCallback({ typeId }) {
+  if (!/^job_[0-9a-z]{26}$/.test(String(typeId || ''))) {
+    throw new AppError(`Not a valid Smile ID job TypeID: ${typeId}`, 400);
+  }
+  const { token } = await mintV3Token({});
+  const base = getSmileApiBase();
+  try {
+    const res = await axios.post(`${base}/v3/replay/${typeId}`, undefined, {
+      headers: { 'SmileID-Token': token },
+      timeout: 15000,
+      signal: AbortSignal.timeout(15000),
+    });
+    return res.data;
+  } catch (err) {
+    const status = err.response?.status;
+    const msg = err.response?.data?.message || err.message;
+    // 409 = not yet terminal on Smile's side — normal/expected on a sweep tick, not a real error.
+    if (status === 409) {
+      throw Object.assign(new AppError(msg || 'Verification is still processing', 409), { isReplayPending: true });
+    }
+    throw new AppError(msg || 'Could not replay verification callback', status || 502);
+  }
 }
 
 /** Result codes Smile marks as approved / passed for tier decisions (Biometric + Basic KYC). */
