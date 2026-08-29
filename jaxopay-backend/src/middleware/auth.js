@@ -131,11 +131,29 @@ export const kycTierLevel = (tier) => {
 
 // Check KYC tier
 export const requireKYCTier = (minTier) => {
-  return (req, res, next) => {
+  return catchAsync(async (req, res, next) => {
     const userTierLevel = kycTierLevel(req.user?.kyc_tier);
     const requiredTierLevel = kycTierLevel(minTier);
 
     if (userTierLevel < requiredTierLevel) {
+      // A user who has already submitted (and is just waiting on Smile ID or compliance review)
+      // was getting the exact same "please verify your identity" prompt as someone who hasn't
+      // started anything — confusing on a gate that fires every time they try to transact while
+      // still pending. Any pending kyc_documents row is enough to know they're mid-flow, not
+      // untouched; doesn't need to match minTier specifically, since the point is just picking
+      // the right message, and KYC_TIER_PENDING mirrors the existing BVN_NIN_REQUIRED/PENDING
+      // pair's naming so both frontends' gate handlers extend the same way.
+      const pending = await query(
+        `SELECT 1 FROM kyc_documents WHERE user_id = $1 AND status = 'pending' LIMIT 1`,
+        [req.user.id]
+      );
+      if (pending.rows.length > 0) {
+        throw new AppError(
+          'Your KYC submission is pending review. Please check back shortly.',
+          403,
+          'KYC_TIER_PENDING'
+        );
+      }
       throw new AppError(
         `Please verify your identity to use this feature. Complete KYC in your dashboard to continue.`,
         403,
@@ -143,7 +161,7 @@ export const requireKYCTier = (minTier) => {
       );
     }
     next();
-  };
+  });
 };
 
 // Verify 2FA if enabled

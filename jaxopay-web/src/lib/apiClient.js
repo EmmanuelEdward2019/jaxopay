@@ -7,7 +7,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 // BVN_NIN_REQUIRED/PENDING, which Wallets.jsx/CrossBorder.jsx/CryptoRamp.jsx already catch and
 // render an inline gate for) — routing those two through here as well would show two different
 // prompts for the same condition, so this stays deliberately narrower than RN's KYC_GATE_CODES.
-const WEB_KYC_GATE_CODES = ['KYC_TIER_REQUIRED', 'LIMIT_EXCEEDED'];
+const WEB_KYC_GATE_CODES = ['KYC_TIER_REQUIRED', 'KYC_TIER_PENDING', 'LIMIT_EXCEEDED'];
 
 // Create axios instance
 const apiClient = axios.create({

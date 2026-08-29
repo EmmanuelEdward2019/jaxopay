@@ -1,14 +1,15 @@
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, TrendingUp, X } from 'lucide-react';
+import { ShieldCheck, Clock, TrendingUp, X } from 'lucide-react';
 import { useKycGateStore } from '../store/kycGateStore';
 
 // Global handler for the backend's KYC 403 codes, mounted once at the app root and driven by
 // kycGateStore (fired from apiClient.js's response interceptor). Mirrors RN's KycGateModal.tsx.
-// Deliberately scoped to KYC_TIER_REQUIRED and LIMIT_EXCEEDED only — BVN_NIN_REQUIRED/PENDING
-// already have working inline handling on the specific pages that need them (Wallets.jsx,
-// CrossBorder.jsx, CryptoRamp.jsx all render NigerianIdGate reactively already); routing those
-// through this modal too would show two different prompts for the same condition.
+// Deliberately scoped to KYC_TIER_REQUIRED, KYC_TIER_PENDING, and LIMIT_EXCEEDED —
+// BVN_NIN_REQUIRED/PENDING already have working inline handling on the specific pages that need
+// them (Wallets.jsx, CrossBorder.jsx, CryptoRamp.jsx all render NigerianIdGate reactively
+// already); routing those through this modal too would show two different prompts for the same
+// condition.
 const CONFIG = {
     KYC_TIER_REQUIRED: {
         icon: ShieldCheck,
@@ -16,6 +17,13 @@ const CONFIG = {
         fallbackBody: 'Verify your identity to use this feature. It only takes a minute.',
         cta: 'Verify identity',
         tone: 'accent',
+    },
+    KYC_TIER_PENDING: {
+        icon: Clock,
+        title: 'KYC pending review',
+        fallbackBody: 'Your identity verification is under review. Please check back shortly.',
+        cta: 'Refresh status',
+        tone: 'warn',
     },
     LIMIT_EXCEEDED: {
         icon: TrendingUp,
@@ -28,6 +36,7 @@ const CONFIG = {
 
 const TONE_CLASSES = {
     accent: { bg: 'bg-primary/10', fg: 'text-primary', btn: 'bg-primary hover:bg-primary/90' },
+    warn: { bg: 'bg-warning/10', fg: 'text-warning', btn: 'bg-warning hover:bg-warning/90' },
     crit: { bg: 'bg-danger/10', fg: 'text-danger', btn: 'bg-danger hover:bg-danger/90' },
 };
 
@@ -71,7 +80,13 @@ export default function KycGateModal() {
 
                         <button
                             type="button"
-                            onClick={() => { hide(); navigate('/dashboard/kyc'); }}
+                            onClick={() => {
+                                hide();
+                                // Already submitted and just waiting on review — there's nothing
+                                // useful to do on the KYC page they haven't already done, unlike
+                                // KYC_TIER_REQUIRED/LIMIT_EXCEEDED, which actually need that page.
+                                if (code !== 'KYC_TIER_PENDING') navigate('/dashboard/kyc');
+                            }}
                             className={`w-full py-3 text-white font-bold rounded-xl transition-all mb-2 ${tone.btn}`}
                         >
                             {cfg.cta}

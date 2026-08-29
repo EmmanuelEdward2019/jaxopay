@@ -5,7 +5,7 @@ import { create } from 'zustand';
 // useKycGateStore.ts exactly, so both platforms react to the same backend codes the same way —
 // web previously had no equivalent at all, so every one of these fell through to generic red
 // error text with no CTA back to the KYC page.
-export const KYC_GATE_CODES = ['KYC_TIER_REQUIRED', 'BVN_NIN_REQUIRED', 'BVN_NIN_PENDING', 'LIMIT_EXCEEDED'];
+export const KYC_GATE_CODES = ['KYC_TIER_REQUIRED', 'KYC_TIER_PENDING', 'BVN_NIN_REQUIRED', 'BVN_NIN_PENDING', 'LIMIT_EXCEEDED'];
 
 export const isKycGateCode = (code) => !!code && KYC_GATE_CODES.includes(code);
 
