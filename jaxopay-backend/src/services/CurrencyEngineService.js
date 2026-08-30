@@ -207,12 +207,16 @@ class CurrencyEngineService {
 
     /**
      * Preview the fee sendInternationalPayment will actually charge, without moving any money —
-     * read-only, so both frontends can disclose "Fee: X%" / "Recipient gets: Y" before the user
-     * confirms. Deliberately mirrors sendInternationalPayment's own convert-then-compute-fee steps
-     * exactly (same getRate call, same getFeeConfig/computeFee), so this can never drift out of
-     * sync with what gets charged — no fee math duplicated on the client.
+     * read-only, so both frontends can disclose "Fee: X%" / "You'll pay: Y" before the user
+     * confirms. Deliberately mirrors sendInternationalPayment's own fee-then-convert steps exactly
+     * (same getFeeConfig/computeFee, same getRate call), so this can never drift out of sync with
+     * what gets charged — no fee math duplicated on the client.
      */
     async getInternationalTransferFeeQuote(fromCurrency, targetCurrency, amount) {
+        const intlFeeCfg = await getFeeConfig('yc_international_transfer', fromCurrency);
+        const fee = computeFee(intlFeeCfg, amount);
+        const totalDebit = amount + fee;
+
         let convertedAmount = amount;
         let rate = 1;
         if (fromCurrency !== targetCurrency) {
@@ -220,15 +224,14 @@ class CurrencyEngineService {
             rate = parseFloat(rateData.rate);
             convertedAmount = amount * rate;
         }
-        const intlFeeCfg = await getFeeConfig('yc_international_transfer', targetCurrency);
-        const fee = computeFee(intlFeeCfg, convertedAmount);
         return {
             rate,
-            convertedAmount,
+            convertedAmount, // full, undiminished — what the recipient receives
             fee,
             feePercent: intlFeeCfg?.fee_type === 'percentage' ? Number(intlFeeCfg.fee_value) : null,
-            netAmount: Math.max(0, convertedAmount - fee),
-            currency: targetCurrency,
+            totalDebit, // amount + fee — what gets deducted from the sender's wallet
+            fromCurrency,
+            targetCurrency,
         };
     }
 
@@ -245,6 +248,14 @@ class CurrencyEngineService {
         // Remitter (sender) details required by Yellow Card, from the user's profile + KYC.
         const sender = await this._buildSender(userId);
 
+        // Platform fee — a percentage of the amount being sent, charged ON TOP of the sender's
+        // debit (not deducted from the payout): the recipient always receives the full converted
+        // amount, undiminished, and the sender pays `amount + fee` from their own wallet. 0% until
+        // an admin sets a real value in Rates & Fees.
+        const intlFeeCfg = await getFeeConfig('yc_international_transfer', fromCurrency);
+        const platformFee = computeFee(intlFeeCfg, amount);
+        const totalDebit = amount + platformFee;
+
         // Convert BEFORE opening a DB transaction — never hold a pooled connection
         // during external API calls (that caused 502s on the server).
         let convertedAmount = amount;
@@ -255,26 +266,27 @@ class CurrencyEngineService {
             convertedAmount = amount * rate;
         }
 
-        // Platform fee — taken from the payout (destination-currency) side, same spread
-        // convention as the currency swap above: the sender's wallet is debited the full
-        // `amount` they requested, the recipient receives slightly less than the raw converted
-        // rate would give. 0% until an admin sets a real value in Rates & Fees.
-        const intlFeeCfg = await getFeeConfig('yc_international_transfer', targetCurrency);
-        const platformFee = computeFee(intlFeeCfg, convertedAmount);
-        convertedAmount = Math.max(0, convertedAmount - platformFee);
-
-        // 1) Short transaction: lock + debit the wallet, record a PROCESSING fx tx. No external calls.
+        // 1) Short transaction: lock + debit the wallet (amount + fee), record a PROCESSING fx tx.
+        // No external calls inside here.
         const record = await transaction(async (client) => {
             const w = await client.query(
                 `SELECT id, balance FROM wallets WHERE user_id = $1 AND currency = $2 AND is_active = true FOR UPDATE`,
                 [userId, fromCurrency]
             );
             if (w.rows.length === 0) throw new AppError(`No active ${fromCurrency} wallet found`, 404);
-            if (parseFloat(w.rows[0].balance) < amount) throw new AppError('Insufficient funds for this transfer.', 400);
+            const balance = parseFloat(w.rows[0].balance);
+            if (balance < totalDebit) {
+                throw new AppError(
+                    platformFee > 0
+                        ? `Insufficient balance. Sending ${amount} ${fromCurrency} plus a ${platformFee.toFixed(2)} ${fromCurrency} transfer fee requires ${totalDebit.toFixed(2)} ${fromCurrency}, but your balance is ${balance.toFixed(2)} ${fromCurrency}.`
+                        : 'Insufficient funds for this transfer.',
+                    400
+                );
+            }
 
             await client.query(
                 `UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2`,
-                [amount, w.rows[0].id]
+                [totalDebit, w.rows[0].id]
             );
 
             const fxTxn = await client.query(
@@ -316,16 +328,17 @@ class CurrencyEngineService {
             providerStatus = 'FAILED';
         }
 
-        // 3) Reconcile (short queries). Refund on failure.
+        // 3) Reconcile (short queries). Refund the FULL debit (amount + fee) on failure — the fee
+        // was collected up front, not deducted from the payout, so it must come back too.
         if (providerStatus === 'FAILED') {
             await transaction(async (client) => {
-                await client.query(`UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`, [amount, record.walletId]);
+                await client.query(`UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`, [totalDebit, record.walletId]);
                 await client.query(`UPDATE fx_transactions SET status = 'FAILED' WHERE id = $1`, [record.txnId]);
             });
             notifyRampResult(userId, {
-                type: 'International Transfer', amount, currency: fromCurrency,
+                type: 'International Transfer', amount: totalDebit, currency: fromCurrency,
                 reference: record.txnId, status: 'failed',
-                details: `International Transfer to ${recipientName} (${recipientCountry}) — Failed: ${providerError || 'Transfer failed at provider'}. Your wallet has been refunded.`,
+                details: `International Transfer to ${recipientName} (${recipientCountry}) — Failed: ${providerError || 'Transfer failed at provider'}. Your wallet has been refunded ${totalDebit.toFixed(2)} ${fromCurrency}.`,
             });
             throw new AppError(providerError || 'International transfer failed. Your wallet has been refunded.', 400);
         }
@@ -341,7 +354,7 @@ class CurrencyEngineService {
             details: `International Transfer to ${recipientName} (${recipientCountry}) via ${networkName || recipientBank || 'bank'} — Account ${accountNumber}`,
         });
 
-        return { transactionId: record.txnId, status: providerStatus, amount, convertedAmount };
+        return { transactionId: record.txnId, status: providerStatus, amount, fee: platformFee, totalDebit, convertedAmount };
     }
 
     async getWalletBalances() {
@@ -365,11 +378,20 @@ class CurrencyEngineService {
     async reconcileYcPayment(idOrRef) {
         if (!idOrRef) return null;
         const row = (await query(
-            `SELECT id, user_id, from_currency, amount, status, provider_txn_id FROM fx_transactions
+            `SELECT id, user_id, from_currency, amount, fee_amount, type, status, provider_txn_id FROM fx_transactions
              WHERE provider_txn_id = $1 OR id::text = $1 ORDER BY created_at DESC LIMIT 1`,
             [String(idOrRef)]
         )).rows[0];
         if (!row) return null;
+
+        // international_payment charges amount + fee up front (the fee is added to the sender's
+        // debit, not deducted from the payout) — a refund must return both. Every other fx type
+        // (e.g. currency_swap) still deducts its fee from the payout side, so refunding `amount`
+        // alone remains correct there; do not widen this to all types without also changing that
+        // debit model.
+        const refundAmount = row.type === 'international_payment'
+            ? parseFloat(row.amount) + parseFloat(row.fee_amount || 0)
+            : parseFloat(row.amount);
 
         const TERMINAL = ['FAILED', 'COMPLETED', 'SUCCESS', 'REVERSED'];
         if (TERMINAL.includes(String(row.status).toUpperCase())) return row.status;
@@ -395,11 +417,11 @@ class CurrencyEngineService {
                 await client.query(
                     `UPDATE wallets SET balance = balance + $1, available_balance = COALESCE(available_balance,0) + $1, updated_at = NOW()
                      WHERE user_id = $2 AND currency = $3`,
-                    [row.amount, row.user_id, row.from_currency]
+                    [refundAmount, row.user_id, row.from_currency]
                 );
                 await client.query(`UPDATE fx_transactions SET status = 'FAILED' WHERE id = $1`, [row.id]);
             });
-            logger.info(`[YC reconcile] payout ${row.provider_txn_id} FAILED → refunded ${row.amount} ${row.from_currency} to user ${row.user_id}`);
+            logger.info(`[YC reconcile] payout ${row.provider_txn_id} FAILED → refunded ${refundAmount} ${row.from_currency} to user ${row.user_id}`);
             return 'FAILED';
         }
 

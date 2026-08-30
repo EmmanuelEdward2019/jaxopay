@@ -756,7 +756,7 @@ const CrossBorder = () => {
                                                     <span className="text-muted-foreground">Calculating...</span>
                                                 ) : transferFeeQuote && transferFeeQuote.fee > 0 ? (
                                                     <span className="font-bold">
-                                                        {transferFeeQuote.fee.toFixed(2)} {transferFeeQuote.currency}
+                                                        {transferFeeQuote.fee.toFixed(2)} {transferFeeQuote.fromCurrency}
                                                         {transferFeeQuote.feePercent != null && ` (${transferFeeQuote.feePercent}%)`}
                                                     </span>
                                                 ) : (
@@ -765,15 +765,32 @@ const CrossBorder = () => {
                                             </div>
                                             {transferFeeQuote && transferFeeQuote.fee > 0 && (
                                                 <div className="flex justify-between items-center text-sm">
+                                                    <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Total Charged</span>
+                                                    <span className="font-bold">
+                                                        {transferFeeQuote.totalDebit.toFixed(2)} {transferFeeQuote.fromCurrency}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {transferFeeQuote && (
+                                                <div className="flex justify-between items-center text-sm">
                                                     <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Recipient Gets</span>
                                                     <span className="font-bold text-primary">
-                                                        {transferFeeQuote.netAmount.toFixed(2)} {transferFeeQuote.currency}
+                                                        {transferFeeQuote.convertedAmount.toFixed(2)} {transferFeeQuote.targetCurrency}
                                                     </span>
                                                 </div>
                                             )}
                                         </>
                                     )}
                                 </div>
+
+                                {activeTab === 'transfer' && transferFeeQuote && getBalance(transferData.currency) < transferFeeQuote.totalDebit && (
+                                    <div className="mb-6 p-4 bg-danger/10 border border-red-100 rounded-2xl flex items-start gap-3 text-danger">
+                                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                                        <p className="text-sm font-medium">
+                                            Insufficient balance. This transfer needs {transferFeeQuote.totalDebit.toFixed(2)} {transferFeeQuote.fromCurrency} (including the {transferFeeQuote.fee.toFixed(2)} {transferFeeQuote.fromCurrency} fee), but your {transferData.currency} balance is {getBalance(transferData.currency).toFixed(2)} {transferData.currency}.
+                                        </p>
+                                    </div>
+                                )}
 
                                 {error && (
                                     <div className="mb-6 p-4 bg-danger/10 border border-red-100 rounded-2xl flex items-start gap-3 text-danger">
@@ -794,8 +811,8 @@ const CrossBorder = () => {
 
                                 <button
                                     onClick={activeTab === 'swap' ? handleSwap : handleTransfer}
-                                    disabled={loading}
-                                    className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-3"
+                                    disabled={loading || (activeTab === 'transfer' && transferFeeQuote && getBalance(transferData.currency) < transferFeeQuote.totalDebit)}
+                                    className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
                                 >
                                     {loading ? (
                                         <>
