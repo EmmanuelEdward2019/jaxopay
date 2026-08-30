@@ -126,6 +126,14 @@ const CrossBorder = () => {
         ...payoutCountries.flatMap(c => c.currencies || []),
     ])];
 
+    // Matches InstantSwap.jsx's getBalance — same wallets state, same "Bal: X CODE" pattern next
+    // to the field label, so a user swapping/sending currency can see what they hold without
+    // leaving the form.
+    const getBalance = (code) => {
+        const w = wallets.find((x) => x.currency?.toUpperCase() === code?.toUpperCase());
+        return parseFloat(w?.balance || 0);
+    };
+
     useEffect(() => {
         const country = transferData.recipientCountry;
         if (!country) { setPayoutNetworks([]); return; }
@@ -412,9 +420,14 @@ const CrossBorder = () => {
                                     <div className="space-y-6">
                                         <div className="grid grid-cols-1 md:grid-cols-11 items-center gap-4">
                                             <div className="md:col-span-11 p-4 bg-muted/50 rounded-2xl border border-border">
-                                                <label className="text-xs font-bold text-muted-foreground uppercase mb-2 block">You Send</label>
-                                                <div className="flex items-center gap-4">
-                                                    <div className="relative w-full">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <label className="text-xs font-bold text-muted-foreground uppercase block">You Send</label>
+                                                    <span className="text-xs text-muted-foreground">
+                                                        Bal: <span className="text-foreground font-medium">{getBalance(swapData.fromCurrency).toFixed(2)} {swapData.fromCurrency}</span>
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2 sm:gap-4">
+                                                    <div className="relative flex-1 min-w-0">
                                                         <input
                                                             type="number"
                                                             value={swapData.lastEdited === 'receive'
@@ -425,7 +438,7 @@ const CrossBorder = () => {
                                                                 setSwapData(prev => ({ ...prev, amount: val, lastEdited: 'pay' }));
                                                             }}
                                                             placeholder="0.00"
-                                                            className={`w-full bg-transparent text-3xl font-bold outline-none border-none focus:ring-0 ${loading && swapData.lastEdited === 'receive' ? 'opacity-50' : ''}`}
+                                                            className={`w-full bg-transparent text-xl sm:text-3xl font-bold outline-none border-none focus:ring-0 ${loading && swapData.lastEdited === 'receive' ? 'opacity-50' : ''}`}
                                                         />
                                                         {loading && swapData.lastEdited === 'receive' && (
                                                             <RefreshCw className="w-4 h-4 text-primary animate-spin absolute right-0 top-1/2 -translate-y-1/2" />
@@ -434,7 +447,7 @@ const CrossBorder = () => {
                                                     <select
                                                         value={swapData.fromCurrency}
                                                         onChange={(e) => setSwapData(prev => ({ ...prev, fromCurrency: e.target.value }))}
-                                                        className="bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
+                                                        className="shrink-0 bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
                                                     >
                                                         {swapCurrencyOptions.map(c => <option key={c} value={c}>{c}</option>)}
                                                     </select>
@@ -458,9 +471,14 @@ const CrossBorder = () => {
                                             </div>
 
                                             <div className="md:col-span-11 p-4 bg-muted/50 rounded-2xl border border-border">
-                                                <label className="text-xs font-bold text-muted-foreground uppercase mb-2 block">You Receive (Estimated)</label>
-                                                <div className="flex items-center gap-4">
-                                                    <div className="relative w-full">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <label className="text-xs font-bold text-muted-foreground uppercase block">You Receive (Estimated)</label>
+                                                    <span className="text-xs text-muted-foreground">
+                                                        Bal: <span className="text-foreground font-medium">{getBalance(swapData.toCurrency).toFixed(2)} {swapData.toCurrency}</span>
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2 sm:gap-4">
+                                                    <div className="relative flex-1 min-w-0">
                                                         <input
                                                             type="number"
                                                             placeholder="0.00"
@@ -471,7 +489,7 @@ const CrossBorder = () => {
                                                                 const val = e.target.value;
                                                                 setSwapData(prev => ({ ...prev, receiveAmount: val, lastEdited: 'receive' }));
                                                             }}
-                                                            className={`bg-transparent text-3xl font-bold text-foreground focus:outline-none w-full ${loading && swapData.lastEdited === 'pay' ? 'opacity-50' : ''}`}
+                                                            className={`bg-transparent text-xl sm:text-3xl font-bold text-foreground focus:outline-none w-full ${loading && swapData.lastEdited === 'pay' ? 'opacity-50' : ''}`}
                                                         />
                                                         {loading && swapData.lastEdited === 'pay' && (
                                                             <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -483,7 +501,7 @@ const CrossBorder = () => {
                                                     <select
                                                         value={swapData.toCurrency}
                                                         onChange={(e) => setSwapData(prev => ({ ...prev, toCurrency: e.target.value }))}
-                                                        className="bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
+                                                        className="shrink-0 bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
                                                     >
                                                         {swapCurrencyOptions.map(c => <option key={c} value={c}>{c}</option>)}
                                                     </select>
@@ -617,19 +635,24 @@ const CrossBorder = () => {
                                         </div>
 
                                         <div className="p-4 bg-muted/50 rounded-2xl border border-border">
-                                            <label className="text-xs font-bold text-muted-foreground uppercase mb-2 block">Amount to Send</label>
-                                            <div className="flex items-center gap-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="text-xs font-bold text-muted-foreground uppercase block">Amount to Send</label>
+                                                <span className="text-xs text-muted-foreground">
+                                                    Bal: <span className="text-foreground font-medium">{getBalance(transferData.currency).toFixed(2)} {transferData.currency}</span>
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2 sm:gap-4">
                                                 <input
                                                     type="number"
                                                     value={transferData.amount}
                                                     onChange={(e) => setTransferData(prev => ({ ...prev, amount: e.target.value }))}
                                                     placeholder="0.00"
-                                                    className="w-full bg-transparent text-3xl font-bold outline-none border-none focus:ring-0"
+                                                    className="flex-1 min-w-0 bg-transparent text-xl sm:text-3xl font-bold outline-none border-none focus:ring-0"
                                                 />
                                                 <select
                                                     value={transferData.currency}
                                                     onChange={(e) => setTransferData(prev => ({ ...prev, currency: e.target.value }))}
-                                                    className="bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
+                                                    className="shrink-0 bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
                                                 >
                                                     {/* Auto-set to the destination currency; includes every payout currency + your pay wallets */}
                                                     {[...new Set([transferData.currency, 'NGN', 'USD', ...payoutCountries.flatMap(c => c.currencies || [])].filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
