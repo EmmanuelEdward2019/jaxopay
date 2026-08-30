@@ -13,6 +13,18 @@ export const getExchangeRate = catchAsync(async (req, res) => {
     res.status(200).json({ success: true, data: rate });
 });
 
+// Read-only preview of what sendInternationalPayment will actually charge — lets both frontends
+// show "Fee: X%" / "Recipient gets: Y" before the user confirms, instead of the hardcoded "FREE"
+// label web previously had (and RN not showing any fee at all).
+export const getInternationalTransferFeeQuote = catchAsync(async (req, res) => {
+    const { fromCurrency, toCurrency, amount } = req.query;
+    if (!fromCurrency || !toCurrency || !amount) {
+        throw new AppError('params fromCurrency, toCurrency and amount are required', 400);
+    }
+    const quote = await currencyEngine.getInternationalTransferFeeQuote(fromCurrency, toCurrency, parseFloat(amount));
+    res.status(200).json({ success: true, data: quote });
+});
+
 export const swapCurrency = catchAsync(async (req, res) => {
     const { fromCurrency, toCurrency, amount } = req.body;
     if (!fromCurrency || !toCurrency || !amount) {

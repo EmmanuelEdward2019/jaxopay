@@ -21,6 +21,7 @@ router.get('/countries', crossBorderController.getPayoutCountries);
 router.get('/networks', crossBorderController.getPayoutNetworks);
 
 // International Payments
+router.get('/transfers/international/fee-quote', crossBorderController.getInternationalTransferFeeQuote);
 router.post('/transfers/international', requireFeature('withdrawals_fiat'), requireKYCTier(2), crossBorderController.sendInternationalPayment);
 
 // Crypto on/off-ramp (Yellow Card Direct Settlement) — gated by its own toggle, separate from

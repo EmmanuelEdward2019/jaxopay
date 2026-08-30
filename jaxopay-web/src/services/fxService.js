@@ -52,6 +52,20 @@ const fxService = {
     },
 
     /**
+     * Preview the fee an international transfer will actually charge, before confirming —
+     * mirrors the same computation POST /fx/transfers/international itself uses, so this can
+     * never drift out of sync with what actually gets charged.
+     */
+    getInternationalTransferFeeQuote: async (fromCurrency, toCurrency, amount) => {
+        try {
+            return await apiClient.get(`/fx/transfers/international/fee-quote?fromCurrency=${encodeURIComponent(fromCurrency)}&toCurrency=${encodeURIComponent(toCurrency)}&amount=${encodeURIComponent(amount)}`);
+        } catch (error) {
+            console.error('Error fetching international transfer fee quote:', error);
+            throw error;
+        }
+    },
+
+    /**
      * Send an international payment
      */
     sendInternationalPayment: async (payload) => {

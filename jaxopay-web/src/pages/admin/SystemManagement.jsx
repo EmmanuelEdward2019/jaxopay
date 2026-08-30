@@ -91,7 +91,7 @@ const SystemManagement = () => {
     const [showFXModal, setShowFXModal] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
     const [newFX, setNewFX] = useState({ from_currency: 'USDT', to_currency: 'NGN', rate: 0, markup_percentage: 0 });
-    const [newFee, setNewFee] = useState({ transaction_type: 'transfer', fee_type: 'fixed', fee_value: 0, min_fee: 0, max_fee: 0, currency: 'USD', country: '' });
+    const [newFee, setNewFee] = useState({ transaction_type: 'card_creation', fee_type: 'fixed', fee_value: 0, min_fee: 0, max_fee: 0, currency: 'USD', country: '' });
     // Live "Base" rate fetch state for the Add Exchange Rate modal — refetched whenever the
     // selected pair changes so the admin always sees what Obiex is quoting right now.
     const [liveBase, setLiveBase] = useState({ loading: false, error: null });
@@ -687,7 +687,12 @@ const SystemManagement = () => {
                                     value={newFee.transaction_type}
                                     onChange={e => setNewFee({ ...newFee, transaction_type: e.target.value })}
                                 >
-                                    {['transfer', 'withdrawal', 'exchange', 'bill_payment', 'card_creation', 'card_funding'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
+                                    {/* Every value here MUST be a key some backend code actually calls getFeeConfig(key, ...)
+                                        with — 'transfer'/'withdrawal'/'exchange'/'bill_payment' used to be offered here but
+                                        nothing in the codebase ever reads them, so a row created under any of those was
+                                        permanently inert (confirmed: this exact mistake already happened once for the old
+                                        'exchange' row). Keep this list in sync with feeConfig.service.js's real callers. */}
+                                    {['card_creation', 'card_funding', 'swap_buy', 'swap_sell', 'fiat_deposit', 'fiat_withdrawal', 'yc_currency_swap', 'yc_international_transfer'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">

@@ -205,6 +205,33 @@ class CurrencyEngineService {
         return result;
     }
 
+    /**
+     * Preview the fee sendInternationalPayment will actually charge, without moving any money —
+     * read-only, so both frontends can disclose "Fee: X%" / "Recipient gets: Y" before the user
+     * confirms. Deliberately mirrors sendInternationalPayment's own convert-then-compute-fee steps
+     * exactly (same getRate call, same getFeeConfig/computeFee), so this can never drift out of
+     * sync with what gets charged — no fee math duplicated on the client.
+     */
+    async getInternationalTransferFeeQuote(fromCurrency, targetCurrency, amount) {
+        let convertedAmount = amount;
+        let rate = 1;
+        if (fromCurrency !== targetCurrency) {
+            const rateData = await this.getRate(fromCurrency, targetCurrency);
+            rate = parseFloat(rateData.rate);
+            convertedAmount = amount * rate;
+        }
+        const intlFeeCfg = await getFeeConfig('yc_international_transfer', targetCurrency);
+        const fee = computeFee(intlFeeCfg, convertedAmount);
+        return {
+            rate,
+            convertedAmount,
+            fee,
+            feePercent: intlFeeCfg?.fee_type === 'percentage' ? Number(intlFeeCfg.fee_value) : null,
+            netAmount: Math.max(0, convertedAmount - fee),
+            currency: targetCurrency,
+        };
+    }
+
     async sendInternationalPayment(userId, payload) {
         const {
             fromCurrency, amount, targetCurrency, recipientName, recipientBank, accountNumber, recipientCountry,

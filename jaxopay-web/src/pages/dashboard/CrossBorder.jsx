@@ -134,6 +134,26 @@ const CrossBorder = () => {
         return parseFloat(w?.balance || 0);
     };
 
+    // International transfer fee — fetched once the user reaches the review step (every required
+    // field is set by then), from the same computation POST /fx/transfers/international itself
+    // uses, so what's disclosed here can never drift from what actually gets charged.
+    const [transferFeeQuote, setTransferFeeQuote] = useState(null);
+    const [transferFeeLoading, setTransferFeeLoading] = useState(false);
+
+    useEffect(() => {
+        if (step !== 2 || activeTab !== 'transfer' || !transferData.amount || !transferData.currency) {
+            return;
+        }
+        const destCurrency = payoutCountries.find(c => c.country === transferData.recipientCountry)?.currency || transferData.currency;
+        let active = true;
+        setTransferFeeLoading(true);
+        fxService.getInternationalTransferFeeQuote(transferData.currency, destCurrency, transferData.amount)
+            .then((res) => { if (active && res.success) setTransferFeeQuote(res.data); })
+            .catch(() => { if (active) setTransferFeeQuote(null); })
+            .finally(() => { if (active) setTransferFeeLoading(false); });
+        return () => { active = false; };
+    }, [step, activeTab, transferData.amount, transferData.currency, transferData.recipientCountry, payoutCountries]);
+
     useEffect(() => {
         const country = transferData.recipientCountry;
         if (!country) { setPayoutNetworks([]); return; }
@@ -732,8 +752,25 @@ const CrossBorder = () => {
                                             </div>
                                             <div className="flex justify-between items-center text-sm">
                                                 <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Transfer Fee</span>
-                                                <span className="font-bold text-success">FREE</span>
+                                                {transferFeeLoading ? (
+                                                    <span className="text-muted-foreground">Calculating...</span>
+                                                ) : transferFeeQuote && transferFeeQuote.fee > 0 ? (
+                                                    <span className="font-bold">
+                                                        {transferFeeQuote.fee.toFixed(2)} {transferFeeQuote.currency}
+                                                        {transferFeeQuote.feePercent != null && ` (${transferFeeQuote.feePercent}%)`}
+                                                    </span>
+                                                ) : (
+                                                    <span className="font-bold text-success">FREE</span>
+                                                )}
                                             </div>
+                                            {transferFeeQuote && transferFeeQuote.fee > 0 && (
+                                                <div className="flex justify-between items-center text-sm">
+                                                    <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Recipient Gets</span>
+                                                    <span className="font-bold text-primary">
+                                                        {transferFeeQuote.netAmount.toFixed(2)} {transferFeeQuote.currency}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </>
                                     )}
                                 </div>
