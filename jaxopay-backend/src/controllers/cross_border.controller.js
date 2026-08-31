@@ -66,6 +66,48 @@ export const sendInternationalPayment = catchAsync(async (req, res) => {
     res.status(200).json({ success: true, data: result });
 });
 
+// ── Payment Collection (receive money from a payer abroad) ──────────────────────
+
+// Read-only preview of the fee submitPaymentCollection will charge, before the user submits.
+export const getPaymentCollectionFeeQuote = catchAsync(async (req, res) => {
+    const { userCurrency, amount } = req.query;
+    if (!userCurrency || !amount) {
+        throw new AppError('params userCurrency and amount are required', 400);
+    }
+    const quote = await currencyEngine.getPaymentCollectionFeeQuote(userCurrency, parseFloat(amount));
+    res.status(200).json({ success: true, data: quote });
+});
+
+// Submit a receive request — no wallet debit happens here (nothing is at risk until the payer
+// actually pays), so unlike swap/transfer/ramp this doesn't require the transaction PIN.
+export const submitPaymentCollection = catchAsync(async (req, res) => {
+    const b = req.body;
+    if (!b.userCurrency || !b.amount || !b.payerCountry || !b.payerCurrency || !b.channelType || !b.payer || !b.networkId) {
+        throw new AppError('Missing required parameters (userCurrency, amount, payerCountry, payerCurrency, channelType, payer, networkId)', 400);
+    }
+    await assertDepositsAllowed(req.user.id, 'fiat');
+    const result = await currencyEngine.submitPaymentCollection(req.user.id, {
+        userCurrency: b.userCurrency,
+        amountLocal: parseFloat(b.amount),
+        payerCountry: b.payerCountry,
+        payerCurrency: b.payerCurrency,
+        channelType: b.channelType,
+        payer: b.payer,
+        networkId: b.networkId,
+        accountNumber: b.accountNumber,
+    });
+    auditFromReq(req, { action: 'payment_collection', entityType: 'fx_transaction', entityId: result?.transactionId || null, newValues: { amount: b.amount, currency: b.userCurrency, payerCountry: b.payerCountry } });
+    res.status(200).json({ success: true, data: result });
+});
+
+// Live status of a payment collection — reconciles against Yellow Card, so no admin/webhook
+// dependency is needed for the frontend's poll loop to see the final result.
+export const getPaymentCollectionStatus = catchAsync(async (req, res) => {
+    const result = await currencyEngine.reconcilePaymentCollection(req.params.id);
+    if (!result) throw new AppError('Payment collection request not found', 404);
+    res.status(200).json({ success: true, data: { status: result } });
+});
+
 // Supported payout countries (from active Yellow Card withdraw channels)
 export const getPayoutCountries = catchAsync(async (req, res) => {
     const data = await currencyEngine.getPayoutCountries();
@@ -159,9 +201,11 @@ export const handleYellowCardWebhook = catchAsync(async (req, res) => {
     const paymentId = b.id || b.paymentId || b.data?.id || b.payment?.id || b.data?.paymentId;
     logger.info('[YC webhook] received', { paymentId, event: b.event || b.type });
     if (paymentId) {
-        // A payout/transfer OR a crypto ramp — try both reconcilers (each no-ops if it isn't theirs).
+        // A payout/transfer, a crypto ramp, OR a payment collection — try all reconcilers
+        // (each no-ops if it isn't theirs).
         await currencyEngine.reconcileYcPayment(paymentId).catch((e) => logger.error('[YC webhook] payout reconcile error:', e.message));
         await currencyEngine.reconcileRamp(paymentId).catch((e) => logger.error('[YC webhook] ramp reconcile error:', e.message));
+        await currencyEngine.reconcilePaymentCollection(paymentId).catch((e) => logger.error('[YC webhook] collection reconcile error:', e.message));
     }
     res.status(200).json({ success: true });
 });

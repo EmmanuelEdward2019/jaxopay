@@ -424,6 +424,62 @@ class YellowCardService {
     };
   }
 
+  // ── Payment Collection (Receive Request) ──────────────────────────────────
+
+  /**
+   * Submit a receive request: JAXOPAY collects money FROM a named payer abroad. Unlike
+   * sendInternationalPayment (JAXOPAY pays someone out), here `recipient`/`source` describe
+   * the PAYER — their KYC details and the bank/momo account Yellow Card will either prompt
+   * (momo) or issue payment instructions for (bank). POST /business/receive, forceAccept:true
+   * so this is a single call (mirrors sendInternationalPayment/submitCryptoWithdrawal) — bank
+   * channel returns `bankInfo`+`reference` directly; momo channel sends the payer an approval
+   * prompt.
+   * @param {object} p payerCountry, payerCurrency, channelType ('bank'|'momo'), usdAmount,
+   *   payer {name,country,address,dob,email,idNumber,idType,phone}, source {accountType,
+   *   accountNumber,networkId}, customerUID (JAXOPAY user id), reason?
+   */
+  async submitReceiveRequest(p) {
+    if (!p.customerUID) throw { message: 'customerUID is required by Yellow Card', statusCode: 400 };
+    const sequenceId = crypto.randomUUID();
+    const body = {
+      channelType: p.channelType,
+      sequenceId,
+      country: p.payerCountry,
+      currency: p.payerCurrency,
+      amount: Number(p.usdAmount),
+      reason: p.reason || 'other',
+      customerUID: String(p.customerUID),
+      customerType: 'retail',
+      recipient: p.payer,
+      source: p.source,
+      forceAccept: true,
+    };
+    const data = await this._request('POST', '/business/receive', body);
+    return {
+      id: data?.id || sequenceId,
+      status: (data?.status || 'created').toString().toUpperCase(),
+      sequenceId,
+      bankInfo: data?.bankInfo || null,
+      reference: data?.reference || null,
+      convertedAmount: data?.convertedAmount ?? null,
+      rate: data?.rate ?? null,
+      expiresAt: data?.expiresAt || null,
+      raw: data,
+    };
+  }
+
+  /** Status of a payment collection (receive) request. */
+  async checkReceiveStatus(id) {
+    const data = await this._request('GET', `/business/receive/${encodeURIComponent(id)}`);
+    return {
+      id,
+      status: (data?.status || 'UNKNOWN').toString().toUpperCase(),
+      convertedAmount: data?.convertedAmount ?? null,
+      amount: data?.amount ?? null,
+      raw: data,
+    };
+  }
+
   async getWalletBalances() {
     const acct = await this.getAccount();
     // Real shape: { accounts: [{ available, currency, currencyType }] }

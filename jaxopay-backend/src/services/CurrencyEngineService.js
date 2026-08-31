@@ -357,6 +357,217 @@ class CurrencyEngineService {
         return { transactionId: record.txnId, status: providerStatus, amount, fee: platformFee, totalDebit, convertedAmount };
     }
 
+    // ── Payment Collection (receive money from a payer abroad, Yellow Card /receive) ──
+    //
+    // Structurally simpler than swap/transfer/ramp: there is no pre-debit, so there is no
+    // refund-on-failure path — resolution is purely additive (credit on success, no-op on
+    // failure/expiry). The fee is deducted from what the user is credited, not added on top:
+    // unlike international transfer there's no second party's payout to protect from a
+    // deduction — the JAXOPAY user IS the recipient, so they simply bear the fee directly.
+
+    /**
+     * Preview the fee submitPaymentCollection will actually charge, without submitting anything —
+     * mirrors getInternationalTransferFeeQuote's role. amountLocal is what the user wants to
+     * receive, in their OWN wallet currency (userCurrency) — not the payer's currency.
+     */
+    async getPaymentCollectionFeeQuote(userCurrency, amountLocal) {
+        const feeCfg = await getFeeConfig('yc_payment_collection', userCurrency);
+        const fee = computeFee(feeCfg, Number(amountLocal));
+        const netAmount = Math.max(0, Number(amountLocal) - fee);
+        return {
+            amount: Number(amountLocal),
+            fee,
+            feePercent: feeCfg?.fee_type === 'percentage' ? Number(feeCfg.fee_value) : null,
+            netAmount,
+            userCurrency,
+        };
+    }
+
+    /**
+     * Build Yellow Card's `recipient` (payer KYC) object for a payment collection. Verified
+     * against sandbox: Yellow Card silently requires BOTH BVN and NIN for a Nigerian payer
+     * (idType/idNumber = bvn, additionalIdType/additionalIdNumber = nin) — a single ID is
+     * rejected with a generic "Full KYC information is required" error, exactly mirroring the
+     * same undocumented quirk _buildSender already works around for the JAXOPAY user's OWN
+     * identity. Kept in one place here rather than duplicated in the web/RN forms.
+     */
+    _buildCollectionRecipient(payer, payerCountry) {
+        const country = String(payerCountry || '').toUpperCase().slice(0, 2);
+        const recipient = {
+            name: payer?.name,
+            country,
+            address: payer?.address || 'N/A',
+            dob: payer?.dob,
+            email: payer?.email,
+            phone: this._toE164(payer?.phone, country),
+        };
+        if (country === 'NG') {
+            if (!payer?.bvn || !payer?.nin) {
+                throw new AppError("The payer's BVN and NIN are both required for Nigerian payers.", 400);
+            }
+            recipient.idType = 'bvn';
+            recipient.idNumber = payer.bvn;
+            recipient.additionalIdType = 'nin';
+            recipient.additionalIdNumber = payer.nin;
+        } else {
+            if (!payer?.idType || !payer?.idNumber) {
+                throw new AppError("The payer's ID type and number are required.", 400);
+            }
+            recipient.idType = payer.idType;
+            recipient.idNumber = payer.idNumber;
+        }
+        return recipient;
+    }
+
+    /**
+     * Submit a receive request: JAXOPAY collects money FROM a payer abroad on the user's behalf.
+     * The user specifies how much they want to receive in their OWN wallet currency; we convert
+     * that (gross, before our fee) to USD to tell Yellow Card how much to collect from the payer,
+     * and store the fee-deducted net amount (already in userCurrency) so reconciliation can credit
+     * it directly with no further conversion — see reconcilePaymentCollection. For a momo channel,
+     * the "source account" IS the payer's phone number (verified against sandbox — a placeholder
+     * account number is rejected as not being international-format), so we derive it from
+     * payer.phone rather than asking the frontend to collect it twice.
+     * @param {object} payload userCurrency, amountLocal, payerCountry, payerCurrency,
+     *   channelType('bank'|'momo'), payer {name,address,dob,email,phone,idType?,idNumber?,bvn?,nin?},
+     *   networkId (bank or momo network to route through), accountNumber (payer's bank account
+     *   number — required only for channelType 'bank'; momo uses payer.phone instead)
+     */
+    async submitPaymentCollection(userId, payload) {
+        const { userCurrency, amountLocal, payerCountry, payerCurrency, channelType, payer, networkId, accountNumber } = payload;
+        if (!(Number(amountLocal) > 0)) throw new AppError('Invalid amount', 400);
+        if (!['bank', 'momo'].includes(channelType)) throw new AppError('channelType must be bank or momo', 400);
+        if (!payerCountry || !payerCurrency) throw new AppError('Payer country and currency are required', 400);
+        if (!payer?.name || !payer?.phone || !payer?.email) throw new AppError('Payer details are incomplete', 400);
+        if (channelType === 'bank' && !accountNumber) throw new AppError("The payer's bank account number is required", 400);
+
+        // Nigerian users must have both BVN and NIN verified before any Yellow Card-routed
+        // transaction — same gate every other cross-border method in this file uses.
+        await this.assertNigerianId(userId);
+
+        const recipient = this._buildCollectionRecipient(payer, payerCountry);
+        const source = channelType === 'momo'
+            ? { accountType: 'momo', accountNumber: recipient.phone, networkId }
+            : { accountType: 'bank', accountNumber, networkId };
+
+        const feeCfg = await getFeeConfig('yc_payment_collection', userCurrency);
+        const fee = computeFee(feeCfg, Number(amountLocal));
+        const netLocal = Math.max(0, Number(amountLocal) - fee);
+
+        const rateData = await this.getRate(userCurrency, 'USD');
+        const rate = parseFloat(rateData.rate);
+        const usdAmount = Number((Number(amountLocal) * rate).toFixed(2));
+
+        let res;
+        try {
+            res = await fx.submitReceiveRequest({
+                payerCountry, payerCurrency, channelType, usdAmount,
+                payer: recipient, source, customerUID: String(userId), reason: 'other',
+            });
+        } catch (e) {
+            throw new AppError(mapYcAmountError(e.message) || e.message || 'Could not submit the payment collection request.', e.statusCode || 400);
+        }
+
+        const insertRes = await query(
+            `INSERT INTO fx_transactions
+             (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, fee_amount, provider_txn_id, recipient_details, status)
+             VALUES ($1,'${FX_PROVIDER_NAME}','payment_collection',$2,$3,$4,$5,$6,$7,$8,$9,'PENDING') RETURNING id`,
+            [userId, payerCurrency, userCurrency, amountLocal, netLocal, rate, fee, String(res.id),
+                JSON.stringify({ payer: recipient, channelType, sequenceId: res.sequenceId, bankInfo: res.bankInfo, reference: res.reference, expiresAt: res.expiresAt, usdAmount })]
+        );
+        const txnId = insertRes.rows[0].id;
+
+        return {
+            transactionId: txnId, status: 'PENDING', channelType,
+            amount: Number(amountLocal), fee, netAmount: netLocal, userCurrency,
+            bankInfo: res.bankInfo, reference: res.reference, expiresAt: res.expiresAt,
+        };
+    }
+
+    /**
+     * Reconcile a payment collection against Yellow Card's authoritative status:
+     *  - completed → credit the user's wallet with the already-computed, fee-deducted
+     *    converted_amount (no re-conversion needed — see submitPaymentCollection) + mark COMPLETED.
+     *  - failed/expired → mark terminal. No refund — nothing was ever debited.
+     * Idempotent (row lock + terminal-status guard, same pattern as reconcileYcPayment/reconcileRamp).
+     */
+    async reconcilePaymentCollection(idOrRef) {
+        if (!idOrRef) return null;
+        const row = (await query(
+            `SELECT id, user_id, to_currency, converted_amount, status, provider_txn_id FROM fx_transactions
+             WHERE type = 'payment_collection' AND (provider_txn_id = $1 OR id::text = $1)
+             ORDER BY created_at DESC LIMIT 1`,
+            [String(idOrRef)]
+        )).rows[0];
+        if (!row) return null;
+
+        const TERMINAL = ['FAILED', 'COMPLETED', 'EXPIRED'];
+        if (TERMINAL.includes(String(row.status).toUpperCase())) return row.status;
+        if (!row.provider_txn_id) return row.status;
+
+        let ycStatus;
+        try {
+            const s = await fx.checkReceiveStatus(row.provider_txn_id);
+            ycStatus = String(s?.status || '').toUpperCase();
+        } catch (e) {
+            logger.warn('[collection reconcile] status fetch failed:', e.message);
+            return null;
+        }
+
+        const FAILED = ['FAILED', 'CANCELLED', 'CANCELED', 'REJECTED', 'DECLINED'];
+        const DONE = ['COMPLETE', 'COMPLETED', 'SUCCESS', 'SUCCESSFUL', 'PAID', 'PROCESSED', 'SETTLED'];
+
+        if (DONE.includes(ycStatus)) {
+            const credited = Number(row.converted_amount) || 0;
+            if (!(credited > 0)) {
+                logger.error(`[collection reconcile] Refusing to complete ${row.id}: converted_amount is ${row.converted_amount}`);
+                return row.status;
+            }
+            await transaction(async (client) => {
+                const cur = (await client.query('SELECT status FROM fx_transactions WHERE id = $1 FOR UPDATE', [row.id])).rows[0];
+                if (TERMINAL.includes(String(cur?.status).toUpperCase())) return;
+                await client.query(
+                    `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, is_active)
+                     VALUES ($1,$2,'fiat',$3,$3,true)
+                     ON CONFLICT (user_id,currency) DO UPDATE SET balance = wallets.balance + $3, available_balance = COALESCE(wallets.available_balance,0) + $3, is_active = true, updated_at = NOW()`,
+                    [row.user_id, row.to_currency, credited]
+                );
+                await client.query(`UPDATE fx_transactions SET status = 'COMPLETED' WHERE id = $1`, [row.id]);
+            });
+            logger.info(`[collection reconcile] ${row.provider_txn_id} → COMPLETED, credited ${credited} ${row.to_currency} to user ${row.user_id}`);
+            notifyRampResult(row.user_id, {
+                type: 'Payment Collection', amount: credited, currency: row.to_currency,
+                reference: row.id, status: 'completed', details: `Payment Collection: received ${credited} ${row.to_currency}`,
+            });
+            return 'COMPLETED';
+        }
+
+        if (FAILED.includes(ycStatus) || ycStatus === 'EXPIRED') {
+            const finalStatus = ycStatus === 'EXPIRED' ? 'EXPIRED' : 'FAILED';
+            await query(`UPDATE fx_transactions SET status = $1 WHERE id = $2 AND status NOT IN ('COMPLETED','FAILED','EXPIRED')`, [finalStatus, row.id]);
+            return finalStatus;
+        }
+        return ycStatus || row.status; // still pending
+    }
+
+    /** Sweep stale PENDING payment collections and reconcile against Yellow Card (safety net for closed screens/missed webhooks). */
+    async sweepPendingPaymentCollections(maxAgeMinutes = 2, limit = 50) {
+        const rows = (await query(
+            `SELECT id FROM fx_transactions
+             WHERE type = 'payment_collection' AND status = 'PENDING' AND provider_txn_id IS NOT NULL
+               AND created_at < NOW() - ($1 || ' minutes')::interval
+             ORDER BY created_at ASC LIMIT $2`,
+            [String(maxAgeMinutes), limit]
+        )).rows;
+        let changed = 0;
+        for (const r of rows) {
+            const res = await this.reconcilePaymentCollection(r.id).catch(() => null);
+            if (res && res !== 'PENDING') changed++;
+        }
+        if (rows.length) logger.info(`[collection sweep] checked ${rows.length}, resolved ${changed}`);
+        return { checked: rows.length, resolved: changed };
+    }
+
     async getWalletBalances() {
         return await fx.getWalletBalances();
     }

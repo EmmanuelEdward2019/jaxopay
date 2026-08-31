@@ -174,6 +174,14 @@ const startServer = async () => {
             .catch((e) => logger.warn('[ramp sweep] error:', e.message));
         }, RAMP_SWEEP_MS).unref();
 
+        // Auto-reconcile payment collections against Yellow Card — safety net for a missed
+        // webhook + a user who never returns to the app to poll for the result.
+        setInterval(() => {
+          import('./services/CurrencyEngineService.js')
+            .then((m) => m.default.sweepPendingPaymentCollections())
+            .catch((e) => logger.warn('[collection sweep] error:', e.message));
+        }, RAMP_SWEEP_MS).unref();
+
         // Auto-reconcile NGN bank transfers stuck "processing" against Obiex — the frontend
         // only polls for ~30s after submission, so a slower-settling (but successful) payout
         // would otherwise sit stale until the webhook fires (see transfer.controller.js).

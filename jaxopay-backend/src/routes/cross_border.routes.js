@@ -34,6 +34,12 @@ router.post('/ramp/deposit', requireFeature('crypto_ramp'), requireKYCTier(2), c
 router.post('/ramp/withdraw', requireFeature('crypto_ramp'), requireKYCTier(2), crossBorderController.cryptoRampWithdraw);
 router.get('/ramp/:id/status', crossBorderController.getRampTransactionStatus);
 
+// Payment Collection (receive money from a payer abroad) — gated by its own toggle so it can be
+// turned off centrally if Yellow Card's /receive API misbehaves, mirroring crypto_ramp's toggle.
+router.get('/collections/fee-quote', crossBorderController.getPaymentCollectionFeeQuote);
+router.post('/collections', requireFeature('payment_collection'), requireKYCTier(2), crossBorderController.submitPaymentCollection);
+router.get('/collections/:id/status', crossBorderController.getPaymentCollectionStatus);
+
 // Provider wallet balances (Yellow Card)
 router.get('/balances', crossBorderController.getFxWalletBalances);
 
