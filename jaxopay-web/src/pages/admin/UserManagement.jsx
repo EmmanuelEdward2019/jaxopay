@@ -27,6 +27,16 @@ import { formatDateTime } from '../../utils/formatters';
 import { useAuthStore } from '../../store/authStore';
 import { ALL_COUNTRIES } from '../../constants/allCountries';
 
+// Reads `roles` (an array, can hold multiple) first, falling back to the singular `role` column
+// only when `roles` is empty/absent — mirrors auth.js's restrictTo precedence on the backend
+// exactly, so the UI's permission-gated affordances (and the role badge) can never disagree with
+// what the backend will actually allow. Specifically guards against `role` going stale after
+// `roles` is edited directly (e.g. via Supabase's table editor, bypassing the app and its
+// role<->roles sync entirely) — the backend already treats `roles` as authoritative when present;
+// the UI now does too everywhere it checks a role.
+const userHasRole = (user, role) => (user?.roles?.length ? user.roles : [user?.role]).includes(role);
+const userRoleLabel = (user) => (user?.roles?.length ? user.roles : [user?.role]).filter(Boolean).join(', ') || 'User';
+
 const KYC_TIERS = {
     0: { label: 'Unverified', color: 'bg-gray-100 text-gray-700' },
     1: { label: 'Basic', color: 'bg-blue-100 text-blue-700' },
@@ -71,9 +81,9 @@ const UserManagement = () => {
     const [showMessageModal, setShowMessageModal] = useState(false);
     const [showDeletionRequestsModal, setShowDeletionRequestsModal] = useState(false);
     const { user: currentUser } = useAuthStore();
-    const isSuperAdmin = (currentUser?.roles || [currentUser?.role]).includes('super_admin');
+    const isSuperAdmin = userHasRole(currentUser, 'super_admin');
     // Backend: POST /admin/users (create) and POST /admin/messages are both admin/super_admin only.
-    const isAdminOrSuperAdmin = ['admin', 'super_admin'].includes(currentUser?.role);
+    const isAdminOrSuperAdmin = userHasRole(currentUser, 'admin') || userHasRole(currentUser, 'super_admin');
 
     const isSelected = (id) => selectedRecipients.some((r) => r.id === id);
     const toggleRecipient = (user) => {
@@ -367,7 +377,7 @@ const UserManagement = () => {
                                         </td>
                                         <td className="px-6 py-4">
                                             <span className="text-sm text-gray-700 dark:text-gray-300 capitalize">
-                                                {user.role || 'User'}
+                                                {userRoleLabel(user)}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4">
@@ -1215,9 +1225,9 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
     // Backend: PATCH /admin/users/:userId (kyc_tier/status/roles) is admin/super_admin only;
     // POST /admin/users/:userId/suspend is COMPLIANCE_ACCESS (admin/super_admin/compliance_officer);
     // POST /admin/users/:userId/delete is super_admin only (see admin.routes.js).
-    const canEditUser = ['admin', 'super_admin'].includes(currentUser?.role);
-    const canSuspendUser = ['admin', 'super_admin', 'compliance_officer'].includes(currentUser?.role);
-    const canDeleteUser = currentUser?.role === 'super_admin';
+    const canEditUser = userHasRole(currentUser, 'admin') || userHasRole(currentUser, 'super_admin');
+    const canSuspendUser = canEditUser || userHasRole(currentUser, 'compliance_officer');
+    const canDeleteUser = userHasRole(currentUser, 'super_admin');
     const deleteConfirmMatches = deleteConfirmText.trim().toUpperCase() === 'DELETE';
 
     const handleDeleteClick = async () => {
@@ -1233,7 +1243,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
     ];
 
     useEffect(() => {
-        if (currentUser?.role === 'super_admin') {
+        if (userHasRole(currentUser, 'super_admin')) {
             fetchUserFeatures();
             fetchFinancialControls();
         }
@@ -1426,7 +1436,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
                                     </div>
                                 ) : (
                                     <span className="text-gray-900 dark:text-white capitalize">
-                                        {(user.roles && user.roles.length > 0 ? user.roles : [user.role]).join(', ') || 'User'}
+                                        {userRoleLabel(user)}
                                     </span>
                                 )}
                             </div>
@@ -1468,7 +1478,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
                     </div>
 
                     {/* Product Access Control (Super Admin Only) */}
-                    {currentUser?.role === 'super_admin' && (
+                    {userHasRole(currentUser, 'super_admin') && (
                         <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
                             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Granular Product Access</h3>
                             {featuresLoading ? (
@@ -1498,7 +1508,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
                     )}
 
                     {/* Financial Controls (Super Admin Only) */}
-                    {currentUser?.role === 'super_admin' && (
+                    {userHasRole(currentUser, 'super_admin') && (
                         <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
                             <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Financial Controls</h3>
                             <p className="text-xs text-gray-400 mb-4">Per-user overrides. For platform-wide controls, see "All Users Financial Controls" above the user list.</p>
