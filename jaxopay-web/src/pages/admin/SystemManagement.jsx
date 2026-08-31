@@ -692,7 +692,7 @@ const SystemManagement = () => {
                                         nothing in the codebase ever reads them, so a row created under any of those was
                                         permanently inert (confirmed: this exact mistake already happened once for the old
                                         'exchange' row). Keep this list in sync with feeConfig.service.js's real callers. */}
-                                    {['card_creation', 'card_funding', 'swap_buy', 'swap_sell', 'fiat_deposit', 'fiat_withdrawal', 'yc_currency_swap', 'yc_international_transfer'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
+                                    {['card_creation', 'card_funding', 'swap_buy', 'swap_sell', 'fiat_deposit', 'fiat_withdrawal', 'yc_currency_swap', 'yc_international_transfer', 'yc_payment_collection'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
