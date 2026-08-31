@@ -12,7 +12,12 @@ import {
     User,
     CreditCard,
     ArrowRight,
-    Search
+    Search,
+    Landmark,
+    Smartphone,
+    Copy,
+    Clock,
+    Download
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import fxService from '../../services/fxService';
@@ -34,7 +39,7 @@ const COUNTRY_NAMES = {
 };
 
 const CrossBorder = () => {
-    const [activeTab, setActiveTab] = useState('swap'); // 'swap' | 'transfer'
+    const [activeTab, setActiveTab] = useState('swap'); // 'swap' | 'transfer' | 'collect'
     const [wallets, setWallets] = useState([]);
     const [loading, setLoading] = useState(false);
     const [ratesLoading, setRatesLoading] = useState(false);
@@ -73,6 +78,26 @@ const CrossBorder = () => {
         networkAccountType: '',
         networkChannelIds: [],
     });
+
+    // Payment Collection state — the user is the RECIPIENT here; `payer` is who they're
+    // collecting money from (must be supplied upfront — Yellow Card doesn't support an
+    // anonymous "pay this link" mode).
+    const [collectData, setCollectData] = useState({
+        amount: '',
+        userCurrency: 'NGN',      // wallet to be credited
+        payerCountry: '',
+        payerCurrency: '',
+        channelType: 'bank',       // 'bank' | 'momo'
+        networkId: '',
+        networkName: '',
+        accountNumber: '',          // payer's bank account number (bank channel only)
+        payer: { name: '', address: '', dob: '', email: '', phone: '', bvn: '', nin: '', idType: '', idNumber: '' },
+    });
+    const [collectResult, setCollectResult] = useState(null); // { transactionId, bankInfo, reference, expiresAt, status }
+    const [collectFeeQuote, setCollectFeeQuote] = useState(null);
+    const [collectFeeLoading, setCollectFeeLoading] = useState(false);
+    const [collectNetworks, setCollectNetworks] = useState([]);
+    const [collectNetworksLoading, setCollectNetworksLoading] = useState(false);
 
     // Yellow Card payout destinations
     const [payoutCountries, setPayoutCountries] = useState([]);
@@ -168,6 +193,38 @@ const CrossBorder = () => {
         })();
         return () => { active = false; };
     }, [transferData.recipientCountry]);
+
+    // Payer networks for Payment Collection — same catalog as International Transfer's recipient
+    // picker (bank/momo networks are direction-agnostic), filtered to the chosen channel type.
+    useEffect(() => {
+        const country = collectData.payerCountry;
+        if (!country) { setCollectNetworks([]); return; }
+        let active = true;
+        setCollectNetworksLoading(true);
+        (async () => {
+            try {
+                const res = await fxService.getPayoutNetworks(country);
+                if (active) setCollectNetworks(res.success ? (res.data || []) : []);
+            } catch { if (active) setCollectNetworks([]); }
+            finally { if (active) setCollectNetworksLoading(false); }
+        })();
+        return () => { active = false; };
+    }, [collectData.payerCountry]);
+
+    // Payment Collection fee — fetched once the user reaches the review step, from the same
+    // computation POST /fx/collections itself uses.
+    useEffect(() => {
+        if (step !== 2 || activeTab !== 'collect' || !collectData.amount || !collectData.userCurrency) {
+            return;
+        }
+        let active = true;
+        setCollectFeeLoading(true);
+        fxService.getPaymentCollectionFeeQuote(collectData.userCurrency, collectData.amount)
+            .then((res) => { if (active && res.success) setCollectFeeQuote(res.data); })
+            .catch(() => { if (active) setCollectFeeQuote(null); })
+            .finally(() => { if (active) setCollectFeeLoading(false); });
+        return () => { active = false; };
+    }, [step, activeTab, collectData.amount, collectData.userCurrency]);
 
     // Debounce FX rate fetching — recomputes whichever field ISN'T the one the user is typing
     // into (swapData.lastEdited), so entering an amount in either "You Send" or "You Receive"
@@ -309,6 +366,54 @@ const CrossBorder = () => {
         }
     };
 
+    // No wallet debit happens on submission (nothing is at risk until the payer actually pays),
+    // so unlike handleTransfer this doesn't go through the PIN modal.
+    const handleCollect = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const payer = { ...collectData.payer };
+            if (collectData.payerCountry === 'NG') {
+                delete payer.idType; delete payer.idNumber;
+            } else {
+                delete payer.bvn; delete payer.nin;
+            }
+            const res = await fxService.submitPaymentCollection({
+                userCurrency: collectData.userCurrency,
+                amount: collectData.amount,
+                payerCountry: collectData.payerCountry,
+                payerCurrency: collectData.payerCurrency,
+                channelType: collectData.channelType,
+                payer,
+                networkId: collectData.networkId,
+                accountNumber: collectData.channelType === 'bank' ? collectData.accountNumber : undefined,
+            });
+            if (res.success) {
+                setCollectResult({ ...res.data });
+                setStep(3);
+                pollCollectStatus(res.data.transactionId);
+            }
+        } catch (err) {
+            setError(err.message || 'Could not submit the payment collection request.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Poll the collection status a few times so completion (momo can auto-complete within
+    // seconds) or expiry reflects on screen without waiting on a webhook.
+    const pollCollectStatus = async (txId) => {
+        for (let i = 0; i < 8; i++) {
+            await new Promise(r => setTimeout(r, 4000));
+            try {
+                const s = await fxService.getPaymentCollectionStatus(txId);
+                const st = String(s.data?.status || '').toUpperCase();
+                if (st) setCollectResult(prev => (prev ? { ...prev, status: st } : prev));
+                if (['FAILED', 'COMPLETED', 'EXPIRED'].includes(st)) { fetchWallets(); break; }
+            } catch { /* keep polling */ }
+        }
+    };
+
     // direction: 'pay' → `amount` is what the user typed, compute receiveAmount = amount * rate.
     //            'receive' → `amount` here is actually the desired receive amount typed by the
     //            user, compute the required pay-side amount = receiveAmount / rate. Either way,
@@ -369,14 +474,14 @@ const CrossBorder = () => {
                         <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                         <span className="truncate"><span className="sm:hidden">Transfer</span><span className="hidden sm:inline">Intl Transfer</span></span>
                     </button>
-                    {isFeatureEnabled('crypto_ramp') && (
-                        <Link
-                            to="/dashboard/crypto-ramp"
-                            className="flex-1 sm:flex-none min-w-0 px-2 sm:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-white hover:bg-card/10"
+                    {isFeatureEnabled('payment_collection') && (
+                        <button
+                            onClick={() => { setActiveTab('collect'); setStep(1); }}
+                            className={`flex-1 sm:flex-none min-w-0 px-2 sm:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm ${activeTab === 'collect' ? 'bg-card text-primary shadow-lg' : 'text-white hover:bg-card/10'}`}
                         >
-                            <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                            <span className="truncate"><span className="sm:hidden">Crypto</span><span className="hidden sm:inline">Buy/Sell Crypto</span></span>
-                        </Link>
+                            <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                            <span className="truncate"><span className="sm:hidden">Collect</span><span className="hidden sm:inline">Payment Collection</span></span>
+                        </button>
                     )}
                 </div>
 
@@ -566,7 +671,7 @@ const CrossBorder = () => {
                                             Review Swap
                                         </button>
                                     </div>
-                                ) : (
+                                ) : activeTab === 'transfer' ? (
                                     <div className="space-y-6">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div className="space-y-2">
@@ -703,6 +808,226 @@ const CrossBorder = () => {
                                             Next Step
                                         </button>
                                     </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        <div className="p-4 bg-muted/50 rounded-2xl border border-border">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="text-xs font-bold text-muted-foreground uppercase block">Amount to Receive</label>
+                                                <span className="text-xs text-muted-foreground">
+                                                    Bal: <span className="text-foreground font-medium">{getBalance(collectData.userCurrency).toFixed(2)} {collectData.userCurrency}</span>
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2 sm:gap-4">
+                                                <input
+                                                    type="number"
+                                                    value={collectData.amount}
+                                                    onChange={(e) => setCollectData(prev => ({ ...prev, amount: e.target.value }))}
+                                                    placeholder="0.00"
+                                                    className="flex-1 min-w-0 bg-transparent text-xl sm:text-3xl font-bold outline-none border-none focus:ring-0"
+                                                />
+                                                <select
+                                                    value={collectData.userCurrency}
+                                                    onChange={(e) => setCollectData(prev => ({ ...prev, userCurrency: e.target.value }))}
+                                                    className="shrink-0 bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
+                                                >
+                                                    {[...new Set(['NGN', 'USD', ...wallets.map(w => w.currency)])].map(c => <option key={c} value={c}>{c}</option>)}
+                                                </select>
+                                            </div>
+                                            <p className="mt-2 text-xs text-muted-foreground">This lands directly in your JAXOPAY {collectData.userCurrency} wallet once the payer completes payment.</p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-foreground">Who are you collecting from?</label>
+                                            <div className="relative">
+                                                <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                                <select
+                                                    value={collectData.payerCountry}
+                                                    onChange={(e) => {
+                                                        const code = e.target.value;
+                                                        const c = payoutCountries.find(x => x.country === code);
+                                                        setCollectData(prev => ({
+                                                            ...prev,
+                                                            payerCountry: code,
+                                                            payerCurrency: c?.currency || c?.currencies?.[0] || '',
+                                                            networkId: '', networkName: '', accountNumber: '',
+                                                        }));
+                                                    }}
+                                                    className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                >
+                                                    <option value="">Payer's country…</option>
+                                                    {payoutCountries.map((c) => (
+                                                        <option key={c.country} value={c.country}>
+                                                            {(COUNTRY_NAMES[c.country] || c.country)} ({c.currencies.join('/')})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-2 p-1 bg-muted/50 rounded-xl border border-border w-full sm:w-auto sm:inline-flex">
+                                            {['bank', 'momo'].map((ct) => (
+                                                <button
+                                                    key={ct}
+                                                    type="button"
+                                                    onClick={() => setCollectData(prev => ({ ...prev, channelType: ct, networkId: '', networkName: '', accountNumber: '' }))}
+                                                    className={`flex-1 sm:flex-none px-4 py-2 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all ${collectData.channelType === ct ? 'bg-card text-primary shadow' : 'text-muted-foreground hover:text-foreground'}`}
+                                                >
+                                                    {ct === 'bank' ? <Landmark className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
+                                                    {ct === 'bank' ? 'Bank Transfer' : 'Mobile Money'}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-bold text-foreground">Payer's Full Name</label>
+                                                <div className="relative">
+                                                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                                    <input
+                                                        type="text"
+                                                        value={collectData.payer.name}
+                                                        onChange={(e) => setCollectData(prev => ({ ...prev, payer: { ...prev.payer, name: e.target.value } }))}
+                                                        placeholder="Full Name"
+                                                        className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-bold text-foreground">Payer's Phone</label>
+                                                <input
+                                                    type="text"
+                                                    value={collectData.payer.phone}
+                                                    onChange={(e) => setCollectData(prev => ({ ...prev, payer: { ...prev.payer, phone: e.target.value } }))}
+                                                    placeholder="+234..."
+                                                    className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-bold text-foreground">Payer's Email</label>
+                                                <input
+                                                    type="email"
+                                                    value={collectData.payer.email}
+                                                    onChange={(e) => setCollectData(prev => ({ ...prev, payer: { ...prev.payer, email: e.target.value } }))}
+                                                    placeholder="payer@email.com"
+                                                    className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-bold text-foreground">Payer's Date of Birth</label>
+                                                <input
+                                                    type="text"
+                                                    value={collectData.payer.dob}
+                                                    onChange={(e) => setCollectData(prev => ({ ...prev, payer: { ...prev.payer, dob: e.target.value } }))}
+                                                    placeholder="MM/DD/YYYY"
+                                                    className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                />
+                                            </div>
+                                            <div className="md:col-span-2 space-y-2">
+                                                <label className="text-sm font-bold text-foreground">Payer's Address</label>
+                                                <input
+                                                    type="text"
+                                                    value={collectData.payer.address}
+                                                    onChange={(e) => setCollectData(prev => ({ ...prev, payer: { ...prev.payer, address: e.target.value } }))}
+                                                    placeholder="Home Address"
+                                                    className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                />
+                                            </div>
+
+                                            {collectData.payerCountry === 'NG' ? (
+                                                <>
+                                                    <div className="space-y-2">
+                                                        <label className="text-sm font-bold text-foreground">Payer's BVN</label>
+                                                        <input
+                                                            type="text"
+                                                            value={collectData.payer.bvn}
+                                                            onChange={(e) => setCollectData(prev => ({ ...prev, payer: { ...prev.payer, bvn: e.target.value } }))}
+                                                            placeholder="11-digit BVN"
+                                                            className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-sm font-bold text-foreground">Payer's NIN</label>
+                                                        <input
+                                                            type="text"
+                                                            value={collectData.payer.nin}
+                                                            onChange={(e) => setCollectData(prev => ({ ...prev, payer: { ...prev.payer, nin: e.target.value } }))}
+                                                            placeholder="11-digit NIN"
+                                                            className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                        />
+                                                    </div>
+                                                    <p className="md:col-span-2 text-xs text-muted-foreground -mt-2">Nigerian regulations require both the payer's BVN and NIN to process this collection.</p>
+                                                </>
+                                            ) : collectData.payerCountry && (
+                                                <>
+                                                    <div className="space-y-2">
+                                                        <label className="text-sm font-bold text-foreground">Payer's ID Type</label>
+                                                        <select
+                                                            value={collectData.payer.idType}
+                                                            onChange={(e) => setCollectData(prev => ({ ...prev, payer: { ...prev.payer, idType: e.target.value } }))}
+                                                            className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                        >
+                                                            <option value="">Select ID type…</option>
+                                                            <option value="national_id">National ID</option>
+                                                            <option value="passport">Passport</option>
+                                                            <option value="drivers_license">Driver's License</option>
+                                                            <option value="voters_card">Voter's Card</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-sm font-bold text-foreground">Payer's ID Number</label>
+                                                        <input
+                                                            type="text"
+                                                            value={collectData.payer.idNumber}
+                                                            onChange={(e) => setCollectData(prev => ({ ...prev, payer: { ...prev.payer, idNumber: e.target.value } }))}
+                                                            placeholder="ID Number"
+                                                            className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                        />
+                                                    </div>
+                                                </>
+                                            )}
+
+                                            <div className="space-y-2">
+                                                <SearchableBankSelect
+                                                    items={collectNetworks.filter(n => n.channelType === collectData.channelType)}
+                                                    selected={collectNetworks.find(n => n.id === collectData.networkId) || null}
+                                                    loading={collectNetworksLoading}
+                                                    label={collectData.channelType === 'bank' ? "Payer's Bank" : "Payer's Mobile Network"}
+                                                    placeholder={!collectData.payerCountry ? 'Select payer country first' : 'Select bank / network'}
+                                                    getId={(n) => n.id}
+                                                    getSubLabel={() => collectData.channelType === 'bank' ? 'Bank' : 'Mobile Money'}
+                                                    onSelect={(n) => setCollectData(prev => ({ ...prev, networkId: n?.id || '', networkName: n?.name || '' }))}
+                                                />
+                                            </div>
+                                            {collectData.channelType === 'bank' && (
+                                                <div className="space-y-2">
+                                                    <label className="text-sm font-bold text-foreground">Payer's Account Number</label>
+                                                    <div className="relative">
+                                                        <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                                        <input
+                                                            type="text"
+                                                            value={collectData.accountNumber}
+                                                            onChange={(e) => setCollectData(prev => ({ ...prev, accountNumber: e.target.value }))}
+                                                            placeholder="Account Number"
+                                                            className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <button
+                                            onClick={() => setStep(2)}
+                                            disabled={
+                                                !collectData.amount || !collectData.payerCountry || !collectData.networkId ||
+                                                !collectData.payer.name || !collectData.payer.phone || !collectData.payer.email || !collectData.payer.dob ||
+                                                (collectData.payerCountry === 'NG' ? (!collectData.payer.bvn || !collectData.payer.nin) : (!collectData.payer.idType || !collectData.payer.idNumber)) ||
+                                                (collectData.channelType === 'bank' && !collectData.accountNumber)
+                                            }
+                                            className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50"
+                                        >
+                                            Next Step
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         )}
@@ -732,7 +1057,7 @@ const CrossBorder = () => {
                                                 <span className="font-medium">1 : {Number(swapData.rate).toFixed(4)}</span>
                                             </div>
                                         </>
-                                    ) : (
+                                    ) : activeTab === 'transfer' ? (
                                         <>
                                             <div className="flex justify-between items-center text-sm">
                                                 <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Amount</span>
@@ -780,6 +1105,42 @@ const CrossBorder = () => {
                                                 </div>
                                             )}
                                         </>
+                                    ) : (
+                                        <>
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">You'll Receive</span>
+                                                <span className="font-bold">{collectData.amount} {collectData.userCurrency}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">From</span>
+                                                <span className="font-bold text-right">{collectData.payer.name}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Payment Method</span>
+                                                <span className="font-medium text-right">{collectData.networkName}, {COUNTRY_NAMES[collectData.payerCountry] || collectData.payerCountry}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Collection Fee</span>
+                                                {collectFeeLoading ? (
+                                                    <span className="text-muted-foreground">Calculating...</span>
+                                                ) : collectFeeQuote ? (
+                                                    <span className="font-bold">
+                                                        {collectFeeQuote.fee.toFixed(2)} {collectData.userCurrency}
+                                                        {collectFeeQuote.feePercent != null && ` (${collectFeeQuote.feePercent}%)`}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-muted-foreground">—</span>
+                                                )}
+                                            </div>
+                                            {collectFeeQuote && (
+                                                <div className="flex justify-between items-center text-sm">
+                                                    <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">You'll Be Credited</span>
+                                                    <span className="font-bold text-primary">
+                                                        {collectFeeQuote.netAmount.toFixed(2)} {collectData.userCurrency}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
 
@@ -810,7 +1171,7 @@ const CrossBorder = () => {
                                 )}
 
                                 <button
-                                    onClick={activeTab === 'swap' ? handleSwap : handleTransfer}
+                                    onClick={activeTab === 'swap' ? handleSwap : activeTab === 'transfer' ? handleTransfer : handleCollect}
                                     disabled={loading || (activeTab === 'transfer' && transferFeeQuote && getBalance(transferData.currency) < transferFeeQuote.totalDebit)}
                                     className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
                                 >
@@ -822,14 +1183,104 @@ const CrossBorder = () => {
                                     ) : (
                                         <>
                                             <CheckCircle2 className="w-5 h-5" />
-                                            Confirm {activeTab === 'swap' ? 'Swap' : 'Transfer'}
+                                            Confirm {activeTab === 'swap' ? 'Swap' : activeTab === 'transfer' ? 'Transfer' : 'Request'}
                                         </>
                                     )}
                                 </button>
                             </div>
                         )}
 
-                        {step === 3 && (() => {
+                        {step === 3 && activeTab === 'collect' && (() => {
+                            const st = (collectResult?.status || '').toUpperCase();
+                            const failed = ['FAILED', 'EXPIRED'].includes(st);
+                            const done = st === 'COMPLETED';
+                            const pending = !failed && !done;
+                            return (
+                                <div className="py-8 animate-in fade-in zoom-in-95 duration-500">
+                                    <div className="text-center mb-8">
+                                        <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${failed ? 'bg-danger/10' : 'bg-success/10'}`}>
+                                            {failed
+                                                ? <AlertCircle className="w-10 h-10 text-danger" />
+                                                : pending
+                                                    ? <RefreshCw className="w-10 h-10 text-primary animate-spin" />
+                                                    : <CheckCircle2 className="w-10 h-10 text-success" />}
+                                        </div>
+                                        <h2 className="text-3xl font-bold mb-2">
+                                            {failed ? (st === 'EXPIRED' ? 'Request Expired' : 'Collection Failed') : done ? 'Payment Received!' : 'Waiting for Payment'}
+                                        </h2>
+                                        <p className="text-muted-foreground max-w-sm mx-auto">
+                                            {failed
+                                                ? `${collectData.payer.name} did not complete this payment in time.`
+                                                : done
+                                                    ? `${collectFeeQuote ? collectFeeQuote.netAmount.toFixed(2) : collectResult?.netAmount} ${collectData.userCurrency} has been credited to your wallet.`
+                                                    : `We're waiting for ${collectData.payer.name} to complete the payment.`}
+                                        </p>
+                                    </div>
+
+                                    {!failed && !done && collectResult?.channelType === 'bank' && collectResult?.bankInfo && (
+                                        <div className="max-w-md mx-auto bg-muted/50 rounded-3xl border border-border p-6 space-y-4 mb-8">
+                                            <p className="text-sm font-bold text-foreground">Share these details with {collectData.payer.name}:</p>
+                                            {[
+                                                ['Bank', collectResult.bankInfo.name],
+                                                ['Account Name', collectResult.bankInfo.accountName],
+                                                ['Account Number', collectResult.bankInfo.accountNumber],
+                                                ['Reference', collectResult.reference],
+                                            ].map(([label, value]) => (
+                                                <div key={label} className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{label}</p>
+                                                        <p className="font-bold text-foreground">{value}</p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => navigator.clipboard?.writeText(String(value))}
+                                                        className="p-2 hover:bg-card rounded-xl text-muted-foreground hover:text-primary transition-colors shrink-0"
+                                                        title="Copy"
+                                                    >
+                                                        <Copy className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            <div className="pt-3 border-t border-border flex items-center gap-2 text-xs text-muted-foreground">
+                                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                                <span>The payer MUST include the reference above, or the payment can't be matched to this request.</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {!failed && !done && collectResult?.channelType === 'momo' && (
+                                        <div className="max-w-md mx-auto bg-muted/50 rounded-3xl border border-border p-6 mb-8 text-center">
+                                            <Smartphone className="w-8 h-8 text-primary mx-auto mb-3" />
+                                            <p className="text-sm text-foreground">
+                                                A payment prompt has been sent to <span className="font-bold">{collectData.payer.phone}</span>. Ask {collectData.payer.name} to approve it on their phone.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {!failed && !done && collectResult?.expiresAt && (
+                                        <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground mb-8">
+                                            <Clock className="w-3.5 h-3.5" /> Expires {new Date(collectResult.expiresAt).toLocaleString()}
+                                        </p>
+                                    )}
+
+                                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                                        <button
+                                            onClick={() => { setStep(1); setError(null); setCollectResult(null); }}
+                                            className="px-8 py-3 bg-primary text-white rounded-2xl font-bold hover:bg-primary/90 transition-all"
+                                        >
+                                            New Request
+                                        </button>
+                                        <button
+                                            onClick={() => window.location.href = '/dashboard/transactions'}
+                                            className="px-8 py-3 bg-muted text-foreground rounded-2xl font-bold hover:bg-muted transition-all"
+                                        >
+                                            View History
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {step === 3 && activeTab !== 'collect' && (() => {
                             const st = (transferStatus?.status || '').toUpperCase();
                             const failed = activeTab === 'transfer' && ['FAILED', 'REVERSED'].includes(st);
                             const done = activeTab === 'transfer' && ['COMPLETED', 'SUCCESS'].includes(st);

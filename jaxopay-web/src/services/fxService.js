@@ -151,6 +151,38 @@ const fxService = {
             console.error('Error checking ramp status:', error);
             throw error;
         }
+    },
+
+    // ── Payment Collection (receive money from a payer abroad) ──
+
+    /** Preview the fee submitPaymentCollection will charge, before submitting. */
+    getPaymentCollectionFeeQuote: async (userCurrency, amount) => {
+        try {
+            return await apiClient.get(`/fx/collections/fee-quote?userCurrency=${encodeURIComponent(userCurrency)}&amount=${encodeURIComponent(amount)}`);
+        } catch (error) {
+            console.error('Error fetching payment collection fee quote:', error);
+            throw error;
+        }
+    },
+
+    /** Submit a receive request — collects money from a payer abroad into the user's own wallet. */
+    submitPaymentCollection: async (payload) => {
+        try {
+            return await apiClient.post('/fx/collections', payload);
+        } catch (error) {
+            console.error('Error submitting payment collection:', error);
+            throw error;
+        }
+    },
+
+    /** Live status of a payment collection (auto-reconciles against Yellow Card). */
+    getPaymentCollectionStatus: async (id) => {
+        try {
+            return await apiClient.get(`/fx/collections/${id}/status`);
+        } catch (error) {
+            console.error('Error checking payment collection status:', error);
+            throw error;
+        }
     }
 };
 
