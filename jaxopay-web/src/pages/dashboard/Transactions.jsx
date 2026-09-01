@@ -31,11 +31,33 @@ import {
     Image as ImageIcon,
     Flag,
     Send,
+    ExternalLink,
 } from 'lucide-react';
 import transactionService from '../../services/transactionService';
 import ticketService from '../../services/ticketService';
 import ReceiptShareButton from '../../components/common/ReceiptShareButton';
 import { formatCurrency, formatDateTime, formatTransactionType, getStatusColor } from '../../utils/formatters';
+
+// Block explorer for a given network, so the on-chain hash can be tapped straight through to
+// independent verification — the whole point of showing a hash at all. Mirrors RN's
+// TransactionsScreen.tsx EXPLORER_BASE exactly, keep both in sync if a network is added.
+const EXPLORER_BASE = {
+    ETH: 'https://etherscan.io/tx/', ETHEREUM: 'https://etherscan.io/tx/', ERC20: 'https://etherscan.io/tx/',
+    BSC: 'https://bscscan.com/tx/', BEP20: 'https://bscscan.com/tx/',
+    POLYGON: 'https://polygonscan.com/tx/', MATIC: 'https://polygonscan.com/tx/',
+    ARBITRUM: 'https://arbiscan.io/tx/',
+    OPTIMISM: 'https://optimistic.etherscan.io/tx/',
+    BASE: 'https://basescan.org/tx/',
+    AVAXC: 'https://snowtrace.io/tx/', AVALANCHE: 'https://snowtrace.io/tx/',
+    TRC20: 'https://tronscan.org/#/transaction/', TRON: 'https://tronscan.org/#/transaction/',
+    SOL: 'https://solscan.io/tx/', SOLANA: 'https://solscan.io/tx/',
+    CELO: 'https://celoscan.io/tx/',
+};
+const explorerUrlFor = (network, hash) => {
+    if (!network || !hash) return null;
+    const base = EXPLORER_BASE[String(network).toUpperCase()];
+    return base ? `${base}${hash}` : null;
+};
 
 const TRANSACTION_TYPES = [
     { value: 'all', label: 'All Types' },
@@ -126,6 +148,9 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
         if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
         if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
         if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });
+        // On-chain proof — populated for crypto deposits/withdrawals (see obiexWebhook.service.js).
+        // Plain text here (no link) since this component renders to a static PNG export.
+        if (meta.hash) result.push({ label: 'Hash', value: meta.hash });
         return result;
     };
 
@@ -308,6 +333,12 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
         if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
         if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
         if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });
+        // On-chain proof — populated for crypto deposits/withdrawals (see obiexWebhook.service.js).
+        // Clickable straight through to the matching block explorer when the network is one we
+        // recognize; falls back to plain (still copyable) text otherwise.
+        if (meta.hash) {
+            result.push({ label: 'Hash', value: meta.hash, link: explorerUrlFor(network, meta.hash), copyable: true });
+        }
         return result;
     };
 
@@ -405,8 +436,31 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
                             {fields.map((field, i) => (
                                 <div key={i} className="flex items-start justify-between gap-4">
                                     <span className="text-sm text-muted-foreground shrink-0">{field.label}</span>
-                                    <span className="text-sm font-medium text-foreground text-right break-all">
-                                        {field.value}
+                                    <span className="flex items-center gap-1.5 justify-end">
+                                        {field.link ? (
+                                            <a
+                                                href={field.link}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-sm font-medium text-primary hover:underline text-right break-all"
+                                            >
+                                                {field.value}
+                                            </a>
+                                        ) : (
+                                            <span className="text-sm font-medium text-foreground text-right break-all">
+                                                {field.value}
+                                            </span>
+                                        )}
+                                        {field.link && <ExternalLink className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                        {field.copyable && (
+                                            <button
+                                                onClick={() => navigator.clipboard.writeText(field.value)}
+                                                className="shrink-0 p-1 rounded hover:bg-muted transition-colors"
+                                                title="Copy"
+                                            >
+                                                <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                                            </button>
+                                        )}
                                     </span>
                                 </div>
                             ))}
