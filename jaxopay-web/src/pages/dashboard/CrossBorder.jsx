@@ -38,6 +38,11 @@ const COUNTRY_NAMES = {
     PE: 'Peru', CO: 'Colombia', EC: 'Ecuador', LK: 'Sri Lanka', KH: 'Cambodia',
 };
 
+// Payment Collection always credits a stablecoin wallet — matches Yellow Card's own "hold in
+// USD stablecoins, protect against local devaluation" model. Swapping to local currency or
+// withdrawing externally uses the existing Currency Swap / crypto withdraw features.
+const STABLECOINS = ['USDT', 'USDC'];
+
 const CrossBorder = () => {
     const [activeTab, setActiveTab] = useState('swap'); // 'swap' | 'transfer' | 'collect'
     const [wallets, setWallets] = useState([]);
@@ -84,7 +89,7 @@ const CrossBorder = () => {
     // anonymous "pay this link" mode).
     const [collectData, setCollectData] = useState({
         amount: '',
-        userCurrency: 'NGN',      // wallet to be credited
+        userCurrency: 'USDT',     // stablecoin wallet credited — see STABLECOINS below
         payerCountry: '',
         payerCurrency: '',
         channelType: 'bank',       // 'bank' | 'momo'
@@ -830,10 +835,12 @@ const CrossBorder = () => {
                                                     onChange={(e) => setCollectData(prev => ({ ...prev, userCurrency: e.target.value }))}
                                                     className="shrink-0 bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
                                                 >
-                                                    {[...new Set(['NGN', 'USD', ...wallets.map(w => w.currency)])].map(c => <option key={c} value={c}>{c}</option>)}
+                                                    {STABLECOINS.map(c => <option key={c} value={c}>{c}</option>)}
                                                 </select>
                                             </div>
-                                            <p className="mt-2 text-xs text-muted-foreground">This lands directly in your JAXOPAY {collectData.userCurrency} wallet once the payer completes payment.</p>
+                                            <p className="mt-2 text-xs text-muted-foreground">
+                                                Held as {collectData.userCurrency} in your JAXOPAY wallet, protected from local currency devaluation — swap to your local currency or withdraw to an external wallet anytime from Wallets.
+                                            </p>
                                         </div>
 
                                         <div className="space-y-2">
@@ -1212,7 +1219,7 @@ const CrossBorder = () => {
                                             {failed
                                                 ? `${collectData.payer.name} did not complete this payment in time.`
                                                 : done
-                                                    ? `${collectFeeQuote ? collectFeeQuote.netAmount.toFixed(2) : collectResult?.netAmount} ${collectData.userCurrency} has been credited to your wallet.`
+                                                    ? `${collectFeeQuote ? collectFeeQuote.netAmount.toFixed(2) : collectResult?.netAmount} ${collectData.userCurrency} has been credited to your wallet. Swap it to your local currency or withdraw to an external wallet anytime from Wallets.`
                                                     : `We're waiting for ${collectData.payer.name} to complete the payment.`}
                                         </p>
                                     </div>
