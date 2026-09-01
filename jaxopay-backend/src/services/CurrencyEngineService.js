@@ -365,12 +365,22 @@ class CurrencyEngineService {
     // unlike international transfer there's no second party's payout to protect from a
     // deduction — the JAXOPAY user IS the recipient, so they simply bear the fee directly.
 
+    // Collected funds always settle to a stablecoin balance (not the user's local fiat wallet) —
+    // matches Yellow Card's own "hold in USD stablecoins, protect against local devaluation" model,
+    // and the existing crypto ramp's internal-credit pattern. The user later swaps to local
+    // currency or withdraws externally using the ALREADY-EXISTING Currency Swap / crypto withdraw
+    // features — Payment Collection's own job stops at crediting the stablecoin wallet.
+    static COLLECTION_STABLECOINS = ['USDT', 'USDC'];
+
     /**
      * Preview the fee submitPaymentCollection will actually charge, without submitting anything —
      * mirrors getInternationalTransferFeeQuote's role. amountLocal is what the user wants to
-     * receive, in their OWN wallet currency (userCurrency) — not the payer's currency.
+     * receive, in their OWN stablecoin wallet (userCurrency — 'USDT' or 'USDC').
      */
     async getPaymentCollectionFeeQuote(userCurrency, amountLocal) {
+        if (!CurrencyEngineService.COLLECTION_STABLECOINS.includes(String(userCurrency || '').toUpperCase())) {
+            throw new AppError('userCurrency must be USDT or USDC', 400);
+        }
         const feeCfg = await getFeeConfig('yc_payment_collection', userCurrency);
         const fee = computeFee(feeCfg, Number(amountLocal));
         const netAmount = Math.max(0, Number(amountLocal) - fee);
@@ -428,13 +438,17 @@ class CurrencyEngineService {
      * the "source account" IS the payer's phone number (verified against sandbox — a placeholder
      * account number is rejected as not being international-format), so we derive it from
      * payer.phone rather than asking the frontend to collect it twice.
-     * @param {object} payload userCurrency, amountLocal, payerCountry, payerCurrency,
-     *   channelType('bank'|'momo'), payer {name,address,dob,email,phone,idType?,idNumber?,bvn?,nin?},
+     * @param {object} payload userCurrency('USDT'|'USDC' — the stablecoin credited), amountLocal,
+     *   payerCountry, payerCurrency, channelType('bank'|'momo'),
+     *   payer {name,address,dob,email,phone,idType?,idNumber?,bvn?,nin?},
      *   networkId (bank or momo network to route through), accountNumber (payer's bank account
      *   number — required only for channelType 'bank'; momo uses payer.phone instead)
      */
     async submitPaymentCollection(userId, payload) {
         const { userCurrency, amountLocal, payerCountry, payerCurrency, channelType, payer, networkId, accountNumber } = payload;
+        if (!CurrencyEngineService.COLLECTION_STABLECOINS.includes(String(userCurrency || '').toUpperCase())) {
+            throw new AppError('userCurrency must be USDT or USDC', 400);
+        }
         if (!(Number(amountLocal) > 0)) throw new AppError('Invalid amount', 400);
         if (!['bank', 'momo'].includes(channelType)) throw new AppError('channelType must be bank or momo', 400);
         if (!payerCountry || !payerCurrency) throw new AppError('Payer country and currency are required', 400);
@@ -526,9 +540,10 @@ class CurrencyEngineService {
             await transaction(async (client) => {
                 const cur = (await client.query('SELECT status FROM fx_transactions WHERE id = $1 FOR UPDATE', [row.id])).rows[0];
                 if (TERMINAL.includes(String(cur?.status).toUpperCase())) return;
+                // Always a stablecoin wallet — see COLLECTION_STABLECOINS / submitPaymentCollection.
                 await client.query(
                     `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, is_active)
-                     VALUES ($1,$2,'fiat',$3,$3,true)
+                     VALUES ($1,$2,'crypto',$3,$3,true)
                      ON CONFLICT (user_id,currency) DO UPDATE SET balance = wallets.balance + $3, available_balance = COALESCE(wallets.available_balance,0) + $3, is_active = true, updated_at = NOW()`,
                     [row.user_id, row.to_currency, credited]
                 );
