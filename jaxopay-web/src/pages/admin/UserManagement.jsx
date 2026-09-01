@@ -38,10 +38,10 @@ const userHasRole = (user, role) => (user?.roles?.length ? user.roles : [user?.r
 const userRoleLabel = (user) => (user?.roles?.length ? user.roles : [user?.role]).filter(Boolean).join(', ') || 'User';
 
 const KYC_TIERS = {
-    0: { label: 'Unverified', color: 'bg-gray-100 text-gray-700' },
-    1: { label: 'Basic', color: 'bg-blue-100 text-blue-700' },
-    2: { label: 'Verified', color: 'bg-primary-100 text-primary-700' },
-    3: { label: 'Premium', color: 'bg-purple-100 text-purple-700' },
+    0: { label: 'Tier 0 · Unverified', color: 'bg-gray-100 text-gray-700' },
+    1: { label: 'Tier 1 · Basic', color: 'bg-blue-100 text-blue-700' },
+    2: { label: 'Tier 2 · Verified', color: 'bg-primary-100 text-primary-700' },
+    3: { label: 'Tier 3 · Premium', color: 'bg-purple-100 text-purple-700' },
 };
 
 // The API returns kyc_tier as the Postgres enum string ('tier_0'/'tier_1'/'tier_2'/'tier_3'), but
@@ -378,7 +378,7 @@ const UserManagement = () => {
                                         <td className="px-6 py-4">
                                             <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${KYC_TIERS[normalizeKycTier(user.kyc_tier)]?.color || KYC_TIERS[0].color
                                                 }`}>
-                                                {KYC_TIERS[normalizeKycTier(user.kyc_tier)]?.label || 'Unverified'}
+                                                {KYC_TIERS[normalizeKycTier(user.kyc_tier)]?.label || 'Tier 0 · Unverified'}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4">
@@ -1397,14 +1397,14 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
                                         onChange={(e) => setForm({ ...form, kyc_tier: parseInt(e.target.value) })}
                                         className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
                                     >
-                                        <option value={0}>Unverified</option>
-                                        <option value={1}>Basic</option>
-                                        <option value={2}>Verified</option>
+                                        <option value={0}>Tier 0 · Unverified</option>
+                                        <option value={1}>Tier 1 · Basic</option>
+                                        <option value={2}>Tier 2 · Verified</option>
                                     </select>
                                 ) : (
                                     <span className={`px-3 py-1 text-xs font-medium rounded-full ${KYC_TIERS[normalizeKycTier(user.kyc_tier)]?.color || KYC_TIERS[0].color
                                         }`}>
-                                        {KYC_TIERS[normalizeKycTier(user.kyc_tier)]?.label || 'Unverified'}
+                                        {KYC_TIERS[normalizeKycTier(user.kyc_tier)]?.label || 'Tier 0 · Unverified'}
                                     </span>
                                 )}
                             </div>
