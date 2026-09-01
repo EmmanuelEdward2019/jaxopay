@@ -21,7 +21,7 @@ export function createObiexWebhookService({
   async function findWalletByAddress(client, address, currency) {
     if (!address || !currency) return null;
     const res = await client.query(
-      `SELECT id, user_id FROM wallets
+      `SELECT id, user_id, crypto_network FROM wallets
        WHERE (crypto_address = $1 OR LOWER(crypto_address) = LOWER($1))
          AND currency = $2 AND wallet_type = 'crypto' AND is_active = true
        LIMIT 1`,
@@ -32,7 +32,7 @@ export function createObiexWebhookService({
 
   /** DEPOSIT event, status CONFIRMED — credit the matched user's wallet. */
   async function creditUserWalletByObiex(data) {
-    const { amount, currency, address, transactionId, reference, status } = data || {};
+    const { amount, currency, address, transactionId, reference, status, hash } = data || {};
     const currencyUpper = String(currency || '').toUpperCase();
 
     if (String(status).toUpperCase() !== 'CONFIRMED') {
@@ -80,7 +80,13 @@ export function createObiexWebhookService({
             parseFloat(amount),
             currencyUpper,
             `Crypto deposit (${transactionId})`,
-            JSON.stringify({ obiex_tx_id: String(transactionId), reference, address, source: 'obiex' }),
+            // hash comes straight from Obiex's own deposit webhook payload. network does NOT —
+            // deposits never carry one (confirmed against Obiex's docs, unlike withdrawals) — so
+            // it's read from the wallet's own crypto_network, set when the deposit address was
+            // originally generated (see getCryptoDepositAddress). Both surface directly in the
+            // transaction-detail receipt (TransactionsScreen.tsx / web equivalent) since the
+            // unified transactions endpoint already returns this whole metadata blob as-is.
+            JSON.stringify({ obiex_tx_id: String(transactionId), reference, address, source: 'obiex', hash: hash || null, network: wallet.crypto_network || null }),
           ]
         );
 
@@ -177,6 +183,11 @@ export function createObiexWebhookService({
         }
 
         const table = txType === 'wallet_transactions' ? 'wallet_transactions' : 'transactions';
+        // hash/network only mean anything for the crypto case (wallet_transactions) — the Obiex
+        // withdrawal webhook carries both directly (unlike the deposit one, which omits network).
+        // Elevated to top-level metadata keys (not just nested under webhook_data) so the
+        // transaction-detail receipt can read them the same way it already does for deposits.
+        const cryptoFields = txType === 'wallet_transactions' ? { hash: data?.hash || null, network: data?.network || null } : {};
         await client.query(
           `UPDATE ${table}
            SET status = $1,
@@ -184,7 +195,7 @@ export function createObiexWebhookService({
                updated_at = NOW(),
                completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
            WHERE id = $3`,
-          [newStatus, JSON.stringify({ webhook_data: data, updated_at: new Date().toISOString() }), tx.id]
+          [newStatus, JSON.stringify({ webhook_data: data, updated_at: new Date().toISOString(), ...cryptoFields }), tx.id]
         );
 
         if (newStatus === 'failed') {

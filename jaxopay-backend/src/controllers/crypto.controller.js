@@ -925,13 +925,18 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
 
   await assertDepositsAllowed(req.user.id, 'crypto');
 
+  // Persisted alongside the address below — the Obiex deposit webhook itself never carries a
+  // `network` field (confirmed against their docs; only the withdrawal webhook does), so this is
+  // the only reliable source for which network a deposit actually arrived on.
+  const effectiveNetwork = network || coin.toUpperCase();
+
   try {
     let dataResponse;
     if (CRYPTO_PROVIDER === 'obiex') {
       // Obiex is a single pooled broker account — no sub-account provisioning needed.
       // uniqueUserIdentifier=our own user id is enough; Obiex returns the same address on
       // repeat calls (idempotent), and the deposit webhook is matched back by this address.
-      dataResponse = await obiex.getDepositAddress(req.user.id, coin.toUpperCase(), network || coin.toUpperCase());
+      dataResponse = await obiex.getDepositAddress(req.user.id, coin.toUpperCase(), effectiveNetwork);
     } else {
       // ── Self-custody: fetch/create the Quidax sub-account for this user ──────
       // Each user has their own Quidax sub-user with unique wallet addresses.
@@ -964,14 +969,15 @@ export const getCryptoDepositAddress = catchAsync(async (req, res) => {
       // Upsert here because the backend should not depend on the frontend having
       // already created the crypto wallet row.
       await query(
-        `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, crypto_address, crypto_tag, is_active)
-         VALUES ($1, $2, 'crypto', 0, 0, $3, $4, true)
+        `INSERT INTO wallets (user_id, currency, wallet_type, balance, available_balance, crypto_address, crypto_tag, crypto_network, is_active)
+         VALUES ($1, $2, 'crypto', 0, 0, $3, $4, $5, true)
          ON CONFLICT (user_id, currency) DO UPDATE
            SET crypto_address = EXCLUDED.crypto_address,
                crypto_tag = EXCLUDED.crypto_tag,
+               crypto_network = EXCLUDED.crypto_network,
                is_active = true,
                updated_at = NOW()`,
-        [req.user.id, coin.toUpperCase(), address, tag]
+        [req.user.id, coin.toUpperCase(), address, tag, effectiveNetwork]
       );
     }
 
