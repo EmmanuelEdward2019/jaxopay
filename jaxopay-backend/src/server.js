@@ -182,6 +182,17 @@ const startServer = async () => {
             .catch((e) => logger.warn('[collection sweep] error:', e.message));
         }, RAMP_SWEEP_MS).unref();
 
+        // Auto-reconcile international transfers against Yellow Card — safety net for a missed
+        // webhook, or a transfer that resolves after the frontend's ~17s post-submit poll window
+        // has already closed (normal for a real cross-border payout). Confirmed 2026-09-01: several
+        // real transfers sat stuck at Yellow Card's initial "created" status indefinitely without
+        // this — the crypto ramp and Payment Collection already had an equivalent sweep.
+        setInterval(() => {
+          import('./services/CurrencyEngineService.js')
+            .then((m) => m.default.sweepPendingInternationalPayments())
+            .catch((e) => logger.warn('[intl transfer sweep] error:', e.message));
+        }, RAMP_SWEEP_MS).unref();
+
         // Auto-reconcile NGN bank transfers stuck "processing" against Obiex — the frontend
         // only polls for ~30s after submission, so a slower-settling (but successful) payout
         // would otherwise sit stale until the webhook fires (see transfer.controller.js).

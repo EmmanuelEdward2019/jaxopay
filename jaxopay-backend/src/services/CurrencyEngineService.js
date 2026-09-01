@@ -658,6 +658,31 @@ class CurrencyEngineService {
         return ycStatus || row.status; // still pending
     }
 
+    /**
+     * Sweep stale non-terminal international_payment rows and reconcile against Yellow Card —
+     * safety net for a missed webhook, or a transfer that resolves after the frontend's ~17s
+     * post-submit poll window has already closed (normal for a real cross-border payout).
+     * Confirmed missing 2026-09-01: several real transfers sat at Yellow Card's own initial
+     * "created" status indefinitely because nothing ever re-checked them after that window —
+     * the crypto ramp and Payment Collection already had an equivalent sweep, this type didn't.
+     */
+    async sweepPendingInternationalPayments(maxAgeMinutes = 2, limit = 50) {
+        const rows = (await query(
+            `SELECT id FROM fx_transactions
+             WHERE type = 'international_payment' AND status NOT IN ('FAILED','COMPLETED','SUCCESS','REVERSED')
+               AND provider_txn_id IS NOT NULL AND created_at < NOW() - ($1 || ' minutes')::interval
+             ORDER BY created_at ASC LIMIT $2`,
+            [String(maxAgeMinutes), limit]
+        )).rows;
+        let changed = 0;
+        for (const r of rows) {
+            const res = await this.reconcileYcPayment(r.id).catch(() => null);
+            if (res && !['PENDING', 'PROCESSING', 'CREATED'].includes(String(res).toUpperCase())) changed++;
+        }
+        if (rows.length) logger.info(`[intl transfer sweep] checked ${rows.length}, resolved ${changed}`);
+        return { checked: rows.length, resolved: changed };
+    }
+
     // ── Payout destination metadata (Yellow Card) ───────────────────────────────
     async getPayoutCountries() {
         if (FX_PROVIDER_NAME !== 'yellowcard' || typeof fx.getPayoutCountries !== 'function') return [];
