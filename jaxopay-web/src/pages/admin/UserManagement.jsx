@@ -44,6 +44,18 @@ const KYC_TIERS = {
     3: { label: 'Premium', color: 'bg-purple-100 text-purple-700' },
 };
 
+// The API returns kyc_tier as the Postgres enum string ('tier_0'/'tier_1'/'tier_2'/'tier_3'), but
+// KYC_TIERS (and the edit form's <select>) key off the plain number — looking KYC_TIERS up with
+// the raw string always missed and silently fell back to "Unverified" for every single user,
+// regardless of their real tier. Also affected pre-populating the edit form: `user.kyc_tier || 0`
+// left the string in `form.kyc_tier`, which didn't match any numeric <option>, so the dropdown
+// looked reset even for an already-verified user.
+const normalizeKycTier = (tier) => {
+    if (tier == null || tier === '') return 0;
+    const n = typeof tier === 'string' ? parseInt(tier.replace('tier_', ''), 10) : Number(tier);
+    return Number.isFinite(n) ? n : 0;
+};
+
 const STATUS_COLORS = {
     active: 'bg-primary-100 text-primary-700',
     suspended: 'bg-red-100 text-red-700',
@@ -364,9 +376,9 @@ const UserManagement = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${KYC_TIERS[user.kyc_tier]?.color || KYC_TIERS[0].color
+                                            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${KYC_TIERS[normalizeKycTier(user.kyc_tier)]?.color || KYC_TIERS[0].color
                                                 }`}>
-                                                {KYC_TIERS[user.kyc_tier]?.label || 'Unverified'}
+                                                {KYC_TIERS[normalizeKycTier(user.kyc_tier)]?.label || 'Unverified'}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4">
@@ -1197,7 +1209,7 @@ const DeletionRequestsModal = ({ onClose }) => {
 const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading }) => {
     const [editMode, setEditMode] = useState(false);
     const [form, setForm] = useState({
-        kyc_tier: user.kyc_tier || 0,
+        kyc_tier: normalizeKycTier(user.kyc_tier),
         status: user.status || 'active',
     });
     const [staffRoles, setStaffRoles] = useState(
@@ -1390,9 +1402,9 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
                                         <option value={2}>Verified</option>
                                     </select>
                                 ) : (
-                                    <span className={`px-3 py-1 text-xs font-medium rounded-full ${KYC_TIERS[user.kyc_tier]?.color || KYC_TIERS[0].color
+                                    <span className={`px-3 py-1 text-xs font-medium rounded-full ${KYC_TIERS[normalizeKycTier(user.kyc_tier)]?.color || KYC_TIERS[0].color
                                         }`}>
-                                        {KYC_TIERS[user.kyc_tier]?.label || 'Unverified'}
+                                        {KYC_TIERS[normalizeKycTier(user.kyc_tier)]?.label || 'Unverified'}
                                     </span>
                                 )}
                             </div>
