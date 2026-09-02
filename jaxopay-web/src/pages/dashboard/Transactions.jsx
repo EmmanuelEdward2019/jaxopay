@@ -32,6 +32,7 @@ import {
     Flag,
     Send,
     ExternalLink,
+    Mail,
 } from 'lucide-react';
 import transactionService from '../../services/transactionService';
 import ticketService from '../../services/ticketService';
@@ -579,6 +580,272 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
     );
 };
 
+// ─── Statement filters ─────────────────────────────────────────────────────────
+const STATEMENT_PRESETS = [
+    { value: 'today', label: 'Today' },
+    { value: 'this_week', label: 'This Week' },
+    { value: 'last_7_days', label: 'Last 7 Days' },
+    { value: 'this_month', label: 'This Month' },
+    { value: 'last_month', label: 'Last Month' },
+    { value: 'last_30_days', label: 'Last 30 Days' },
+    { value: '6_months', label: '6 Months' },
+    { value: '1_year', label: '1 Year' },
+    { value: 'custom', label: 'Custom' },
+];
+
+const STATEMENT_DIRECTIONS = [
+    { value: 'all', label: 'All' },
+    { value: 'credit', label: 'Credit' },
+    { value: 'debit', label: 'Debit' },
+];
+
+const STATEMENT_CATEGORIES = [
+    { value: 'all', label: 'All' },
+    { value: 'fiat', label: 'Fiat' },
+    { value: 'crypto', label: 'Crypto' },
+    { value: 'swap', label: 'Swap' },
+    { value: 'bills', label: 'Bills' },
+];
+
+// ─── Download Statement modal ─────────────────────────────────────────────────
+const StatementModal = ({ onClose }) => {
+    const [preset, setPreset] = useState('last_30_days');
+    const [customStart, setCustomStart] = useState('');
+    const [customEnd, setCustomEnd] = useState('');
+    const [direction, setDirection] = useState('all');
+    const [category, setCategory] = useState('all');
+    const [emailFormat, setEmailFormat] = useState('pdf');
+    const [busy, setBusy] = useState(null); // 'pdf' | 'csv' | 'email' | null
+    const [error, setError] = useState('');
+    const [emailSent, setEmailSent] = useState(false);
+    const [summary, setSummary] = useState(null);
+
+    const isCustomReady = preset !== 'custom' || (customStart && customEnd);
+
+    const buildParams = () => {
+        const params = { preset, direction, category };
+        if (preset === 'custom') { params.start_date = customStart; params.end_date = customEnd; }
+        return params;
+    };
+
+    // Live preview of how many transactions/how much money match the current filters, before
+    // committing to a download — cheap since it reuses the same query the download itself runs.
+    useEffect(() => {
+        let cancelled = false;
+        if (!isCustomReady) {
+            const t = setTimeout(() => { if (!cancelled) setSummary(null); }, 0);
+            return () => { cancelled = true; clearTimeout(t); };
+        }
+        const timer = setTimeout(async () => {
+            const result = await transactionService.getStatementSummary(buildParams());
+            if (!cancelled) setSummary(result.success ? result.data : null);
+        }, 350);
+        return () => { cancelled = true; clearTimeout(timer); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [preset, direction, category, customStart, customEnd]);
+
+    const triggerBlobDownload = (blob, filename) => {
+        const url = URL.createObjectURL(blob);
+        Object.assign(document.createElement('a'), { href: url, download: filename }).click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleDownload = async (format) => {
+        if (!isCustomReady) { setError('Pick a start and end date.'); return; }
+        setBusy(format); setError('');
+        const fn = format === 'pdf' ? transactionService.downloadStatementPDF : transactionService.downloadStatementCSV;
+        const result = await fn(buildParams());
+        setBusy(null);
+        if (result.success) {
+            triggerBlobDownload(result.blob, `jaxopay-statement-${new Date().toISOString().split('T')[0]}.${format}`);
+        } else {
+            setError(result.error || 'Could not generate the statement. Please try again.');
+        }
+    };
+
+    const handleEmail = async () => {
+        if (!isCustomReady) { setError('Pick a start and end date.'); return; }
+        setBusy('email'); setError(''); setEmailSent(false);
+        const result = await transactionService.emailStatement({ ...buildParams(), format: emailFormat });
+        setBusy(null);
+        if (result.success) setEmailSent(true);
+        else setError(result.error || 'Could not send the statement. Please try again.');
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm"
+            onClick={onClose}
+        >
+            <motion.div
+                initial={{ y: 60, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 60, opacity: 0 }}
+                transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+                className="w-full sm:max-w-md max-h-[90vh] bg-card border border-border rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex justify-center pt-3 pb-1 sm:hidden">
+                    <div className="w-10 h-1 rounded-full bg-border" />
+                </div>
+
+                <div className="relative px-6 pt-4 pb-2 flex items-center justify-between shrink-0">
+                    <h2 className="text-lg font-bold text-foreground">Download Statement</h2>
+                    <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors">
+                        <X className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                </div>
+
+                <div className="px-6 pb-6 pt-2 space-y-5 overflow-y-auto">
+                    <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-2">Date range</label>
+                        <div className="grid grid-cols-3 gap-2">
+                            {STATEMENT_PRESETS.map((p) => (
+                                <button
+                                    key={p.value}
+                                    onClick={() => setPreset(p.value)}
+                                    className={`px-2 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                                        preset === p.value
+                                            ? 'bg-primary text-white border-primary'
+                                            : 'bg-background border-border text-foreground hover:bg-muted'
+                                    }`}
+                                >
+                                    {p.label}
+                                </button>
+                            ))}
+                        </div>
+                        {preset === 'custom' && (
+                            <div className="grid grid-cols-2 gap-2 mt-2">
+                                <input
+                                    type="date"
+                                    value={customStart}
+                                    onChange={(e) => setCustomStart(e.target.value)}
+                                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm"
+                                />
+                                <input
+                                    type="date"
+                                    value={customEnd}
+                                    onChange={(e) => setCustomEnd(e.target.value)}
+                                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm"
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-2">Direction</label>
+                        <div className="flex gap-2">
+                            {STATEMENT_DIRECTIONS.map((d) => (
+                                <button
+                                    key={d.value}
+                                    onClick={() => setDirection(d.value)}
+                                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+                                        direction === d.value
+                                            ? 'bg-primary text-white border-primary'
+                                            : 'bg-background border-border text-foreground hover:bg-muted'
+                                    }`}
+                                >
+                                    {d.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-2">Type</label>
+                        <div className="flex flex-wrap gap-2">
+                            {STATEMENT_CATEGORIES.map((c) => (
+                                <button
+                                    key={c.value}
+                                    onClick={() => setCategory(c.value)}
+                                    className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+                                        category === c.value
+                                            ? 'bg-primary text-white border-primary'
+                                            : 'bg-background border-border text-foreground hover:bg-muted'
+                                    }`}
+                                >
+                                    {c.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {summary && (
+                        <div className="rounded-xl bg-muted/40 border border-border p-3 text-xs space-y-1">
+                            <p className="text-foreground font-medium">
+                                {summary.count} transaction{summary.count === 1 ? '' : 's'} match{summary.count === 1 ? 'es' : ''} these filters
+                            </p>
+                            {Object.entries(summary.byCurrency || {}).map(([ccy, v]) => (
+                                <p key={ccy} className="text-muted-foreground">
+                                    {ccy}: <span className="text-emerald-500">+{formatCurrency(v.credit || 0, ccy)}</span>
+                                    {'  '}
+                                    <span className="text-rose-500">-{formatCurrency(v.debit || 0, ccy)}</span>
+                                </p>
+                            ))}
+                        </div>
+                    )}
+
+                    {error && <p className="text-xs text-rose-500 text-center">{error}</p>}
+
+                    {emailSent && (
+                        <div className="bg-success/10 border border-success/20 rounded-xl p-3 flex items-center gap-2 justify-center">
+                            <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+                            <p className="text-xs text-foreground">Statement sent to your email.</p>
+                        </div>
+                    )}
+
+                    <div className="space-y-2 pt-1">
+                        <div className="grid grid-cols-2 gap-3">
+                            <button
+                                onClick={() => handleDownload('pdf')}
+                                disabled={busy !== null}
+                                className="flex items-center justify-center gap-2 py-3 px-4 bg-primary/10 hover:bg-primary/20 text-primary font-semibold text-sm rounded-xl transition-colors disabled:opacity-60"
+                            >
+                                {busy === 'pdf' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                                {busy === 'pdf' ? 'Generating…' : 'Download PDF'}
+                            </button>
+                            <button
+                                onClick={() => handleDownload('csv')}
+                                disabled={busy !== null}
+                                className="flex items-center justify-center gap-2 py-3 px-4 bg-primary/10 hover:bg-primary/20 text-primary font-semibold text-sm rounded-xl transition-colors disabled:opacity-60"
+                            >
+                                {busy === 'csv' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                                {busy === 'csv' ? 'Generating…' : 'Download CSV'}
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 shrink-0">
+                                {['pdf', 'csv'].map((f) => (
+                                    <button
+                                        key={f}
+                                        onClick={() => setEmailFormat(f)}
+                                        className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold uppercase transition-colors ${
+                                            emailFormat === f ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                    >
+                                        {f}
+                                    </button>
+                                ))}
+                            </div>
+                            <button
+                                onClick={handleEmail}
+                                disabled={busy !== null}
+                                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-primary text-white font-semibold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20 disabled:opacity-60"
+                            >
+                                {busy === 'email' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                                {busy === 'email' ? 'Sending…' : 'Email Me'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </motion.div>
+        </motion.div>
+    );
+};
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 const Transactions = () => {
     const [transactions, setTransactions] = useState([]);
@@ -589,6 +856,7 @@ const Transactions = () => {
     const [statusFilter, setStatusFilter] = useState('all');
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     const [showFilters, setShowFilters] = useState(false);
+    const [showStatement, setShowStatement] = useState(false);
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0 });
     const [stats, setStats] = useState(null);
     const [error, setError] = useState(null);
@@ -666,13 +934,22 @@ const Transactions = () => {
                     <h1 className="text-2xl font-bold text-foreground">Transactions</h1>
                     <p className="text-sm text-muted-foreground">Tap any transaction to view and share proof</p>
                 </div>
-                <button
-                    onClick={exportCSV}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-muted hover:bg-muted/80 text-foreground text-sm font-medium rounded-xl transition-colors"
-                >
-                    <Download className="w-4 h-4" />
-                    Export CSV
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                        onClick={exportCSV}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-muted hover:bg-muted/80 text-foreground text-sm font-medium rounded-xl transition-colors"
+                    >
+                        <Download className="w-4 h-4" />
+                        Export CSV
+                    </button>
+                    <button
+                        onClick={() => setShowStatement(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
+                    >
+                        <FileText className="w-4 h-4" />
+                        Statement
+                    </button>
+                </div>
             </div>
 
             {error && (
@@ -911,6 +1188,13 @@ const Transactions = () => {
                         transaction={selectedTransaction}
                         onClose={() => setSelectedTransaction(null)}
                     />
+                )}
+            </AnimatePresence>
+
+            {/* Download Statement modal */}
+            <AnimatePresence>
+                {showStatement && (
+                    <StatementModal onClose={() => setShowStatement(false)} />
                 )}
             </AnimatePresence>
         </div>
