@@ -1,6 +1,16 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import PDFDocument from 'pdfkit';
 import { AppError } from '../middleware/errorHandler.js';
 import { query } from '../config/database.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const LOGO_BUFFER = fs.readFileSync(path.join(__dirname, '../assets/jaxopay-logo.png'));
+
+const BRAND_GREEN = '#16A34A';
+const BRAND_GREEN_DARK = '#15803D';
+const BRAND_CREDIT = '#059669';
 
 const PRESET_LABELS = {
   today: 'Today', this_week: 'This Week', last_7_days: 'Last 7 Days',
@@ -235,12 +245,32 @@ export function buildStatementPDF(user, { rows, summary }, filterLabel) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    doc.fontSize(20).fillColor('#0F172A').text('JAXOPAY Statement', { align: 'left' });
-    doc.moveDown(0.3);
-    doc.fontSize(10).fillColor('#64748B').text(`${user.name || user.email}  ·  ${user.email}`);
-    doc.text(filterLabel);
-    doc.text(`Generated ${new Date().toLocaleString()}`);
-    doc.moveDown(1);
+    const pageWidth = doc.page.width;
+    const contentWidth = pageWidth - 80;
+
+    // A thin brand strip along the very top edge of every page (continuation pages included —
+    // drawn again from the table's addPage branch below), so a multi-page statement still reads
+    // as JAXOPAY's on every sheet, not just the cover page.
+    const drawAccentBar = () => doc.rect(0, 0, pageWidth, 6).fill(BRAND_GREEN);
+
+    // Letterhead: logo top-left, statement title top-right on the same band, a brand-green rule
+    // underneath, then the account/filter meta — only drawn once, on the cover page.
+    const drawLetterhead = () => {
+      drawAccentBar();
+      doc.image(LOGO_BUFFER, 40, 22, { width: 92 });
+      doc.fontSize(15).fillColor(BRAND_GREEN_DARK)
+        .text('ACCOUNT STATEMENT', 40, 34, { width: contentWidth, align: 'right', characterSpacing: 0.6 });
+      doc.y = 84;
+      doc.moveTo(40, doc.y).lineTo(pageWidth - 40, doc.y).strokeColor(BRAND_GREEN).lineWidth(1.2).stroke();
+      doc.moveDown(0.8);
+      doc.fontSize(10).fillColor('#64748B');
+      doc.text(`${user.name || user.email}  ·  ${user.email}`);
+      doc.text(filterLabel);
+      doc.text(`Generated ${new Date().toLocaleString()}`);
+      doc.moveDown(1);
+    };
+
+    drawLetterhead();
 
     doc.fontSize(12).fillColor('#0F172A').text('Summary', { underline: true });
     doc.moveDown(0.3);
@@ -274,23 +304,42 @@ export function buildStatementPDF(user, { rows, summary }, filterLabel) {
       doc.moveTo(40, doc.y).lineTo(560, doc.y).strokeColor('#E2E8F0').stroke();
       doc.moveDown(0.3);
     };
+    // Continuation pages get the accent bar again (so a multi-page statement stays branded
+    // throughout) plus a fresh set of column headers, since pdfkit resets doc.y to the top
+    // margin on addPage().
+    const newPageBreak = () => {
+      doc.addPage();
+      drawAccentBar();
+      doc.y = 22;
+      drawHeader();
+    };
     drawHeader();
 
-    doc.fontSize(8).fillColor('#0F172A');
     for (const r of rows) {
-      if (doc.y > 760) {
-        doc.addPage();
-        drawHeader();
-      }
+      if (doc.y > 760) newPageBreak();
       const y = doc.y;
+      doc.fillColor('#0F172A');
       doc.text(new Date(r.created_at).toLocaleDateString(), colX.date, y, { width: 85 });
       doc.text(String(r.type || '').replace(/_/g, ' '), colX.type, y, { width: 85 });
       doc.text(String(r.description || ''), colX.desc, y, { width: 155 });
+      // Credits shown in brand green (mirrors how credits are colored everywhere else in the
+      // app — web/RN transaction lists) so a printed/emailed statement reads the same way.
+      doc.fillColor(r.is_credit ? BRAND_CREDIT : '#0F172A');
       doc.text(r.is_credit ? 'Credit' : 'Debit', colX.dir, y, { width: 45 });
-      doc.text(`${r.amount} ${r.currency}`, colX.amount, y, { width: 65 });
+      doc.text(`${r.is_credit ? '+' : '-'}${r.amount} ${r.currency}`, colX.amount, y, { width: 65 });
+      doc.fillColor('#0F172A');
       doc.text(String(r.status || ''), colX.status, y, { width: 60 });
       doc.y = y + rowH;
     }
+
+    doc.moveDown(1.2);
+    if (doc.y > 740) newPageBreak();
+    doc.moveTo(40, doc.y).lineTo(pageWidth - 40, doc.y).strokeColor('#E2E8F0').stroke();
+    doc.moveDown(0.6);
+    doc.fontSize(8).fillColor(BRAND_GREEN_DARK)
+      .text('POWERED BY JAXOPAY', 40, doc.y, { width: contentWidth, align: 'center', characterSpacing: 1 });
+    doc.fontSize(7).fillColor('#94A3B8')
+      .text('jaxopay.com  ·  This statement is system-generated and does not require a signature.', 40, doc.y + 10, { width: contentWidth, align: 'center' });
 
     doc.end();
   });
