@@ -17,7 +17,14 @@ export const formatCurrency = (amount, currencyCode, showSymbol = true) => {
     maximumFractionDigits: 8,
   }).format(numericAmount);
 
-  return showSymbol ? `${symbol}${formatted}` : formatted;
+  if (!showSymbol) return formatted;
+
+  // When a currency's "symbol" is just its own code spelled out (BTC, ETH, USDT, USDC — none of
+  // these have a real distinct glyph the way $/₦/£ do), show it as a spaced-out suffix — "101.90
+  // USDT" — instead of glued on as a prefix ("USDT101.90"), matching how every other crypto
+  // platform's receipt formats it.
+  if (symbol === currencyCode) return `${formatted} ${symbol}`;
+  return `${symbol}${formatted}`;
 };
 
 /**
