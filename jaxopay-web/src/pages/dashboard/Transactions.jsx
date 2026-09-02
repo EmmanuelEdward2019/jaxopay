@@ -258,6 +258,9 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
     const colors = getTransactionColors(transaction.transaction_type, transaction.direction);
     const displayAmount = Math.abs(transaction.amount || transaction.from_amount || 0);
     const displayCurrency = transaction.currency || transaction.from_currency;
+    const txHash = transaction.metadata?.hash;
+    const txNetwork = transaction.metadata?.network || transaction.metadata?.cryptoNetwork;
+    const blockExplorerUrl = explorerUrlFor(txNetwork, txHash);
 
     const copyReference = async () => {
         try {
@@ -334,11 +337,10 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
         if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
         if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });
         // On-chain proof — populated for crypto deposits/withdrawals (see obiexWebhook.service.js).
-        // Clickable straight through to the matching block explorer when the network is one we
-        // recognize; falls back to plain (still copyable) text otherwise.
-        if (meta.hash) {
-            result.push({ label: 'Hash', value: meta.hash, link: explorerUrlFor(network, meta.hash), copyable: true });
-        }
+        // Copyable here; the actual "go verify it" action is the dedicated Verify on Blockchain
+        // button below, not this text itself — a labeled button reads as an obvious action, an
+        // underlined value easily doesn't.
+        if (meta.hash) result.push({ label: 'Hash', value: meta.hash, copyable: true });
         return result;
     };
 
@@ -437,21 +439,9 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
                                 <div key={i} className="flex items-start justify-between gap-4">
                                     <span className="text-sm text-muted-foreground shrink-0">{field.label}</span>
                                     <span className="flex items-center gap-1.5 justify-end">
-                                        {field.link ? (
-                                            <a
-                                                href={field.link}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm font-medium text-primary hover:underline text-right break-all"
-                                            >
-                                                {field.value}
-                                            </a>
-                                        ) : (
-                                            <span className="text-sm font-medium text-foreground text-right break-all">
-                                                {field.value}
-                                            </span>
-                                        )}
-                                        {field.link && <ExternalLink className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                        <span className="text-sm font-medium text-foreground text-right break-all">
+                                            {field.value}
+                                        </span>
                                         {field.copyable && (
                                             <button
                                                 onClick={() => navigator.clipboard.writeText(field.value)}
@@ -482,6 +472,22 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
                                         </button>
                                     </div>
                                 </div>
+                            )}
+
+                            {/* Verify on Blockchain — a labeled button, not just a clickable hash value,
+                                so the action is obvious rather than something a user has to notice.
+                                Only shown when we actually have a hash AND recognize the network (an
+                                unmapped network has no explorer to send them to). */}
+                            {blockExplorerUrl && (
+                                <a
+                                    href={blockExplorerUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mt-3 flex items-center justify-center gap-2 py-3 px-4 bg-primary/10 hover:bg-primary/20 text-primary font-semibold text-sm rounded-xl transition-colors"
+                                >
+                                    <ExternalLink className="w-4 h-4" />
+                                    Verify on Blockchain
+                                </a>
                             )}
                         </div>
                     </div>
