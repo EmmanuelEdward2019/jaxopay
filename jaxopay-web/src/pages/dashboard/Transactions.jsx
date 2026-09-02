@@ -608,7 +608,16 @@ const Transactions = () => {
         const result = await transactionService.getTransactions(params);
         if (result.success) {
             setTransactions(result.data.transactions || []);
-            setPagination(prev => ({ ...prev, total: result.data.total || 0 }));
+            // GET /transactions responds { data: { transactions, pagination: { total, ... } } } — total
+            // was being read off `data.total`, which doesn't exist (it's one level deeper, under
+            // `data.pagination.total`), so it was silently always 0. The entire pagination control
+            // block below is gated on `pagination.total > pagination.limit`, so with total stuck at 0
+            // it never rendered at all — there was no Next Page button, ever, regardless of how many
+            // transactions actually existed. Since the list is ORDER BY created_at DESC, that meant
+            // only the newest `limit` (20) transactions were ever reachable — anything older, once a
+            // user had 20+ transactions in the current month alone, was completely stuck on an
+            // unreachable page 2+, explaining "only current month transactions show" exactly.
+            setPagination(prev => ({ ...prev, total: result.data.pagination?.total || 0 }));
         } else {
             setError(result.error);
         }

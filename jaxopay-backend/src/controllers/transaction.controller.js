@@ -181,7 +181,11 @@ export const getTransactions = catchAsync(async (req, res) => {
 
   if (end_date) {
     paramCount++;
-    conditions += ` AND created_at <= $${paramCount}`;
+    // end_date arrives as a plain date (YYYY-MM-DD, no time) from the web date picker — comparing
+    // with <= against a timestamp column means it's compared at midnight (00:00:00) of that day,
+    // silently excluding every transaction from later that same day. Compare against the START of
+    // the FOLLOWING day instead so the whole end_date day is actually included.
+    conditions += ` AND created_at < ($${paramCount}::date + INTERVAL '1 day')`;
     params.push(end_date);
   }
 
