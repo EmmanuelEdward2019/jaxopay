@@ -120,8 +120,14 @@ const combinedQuery = `
        WHEN 'crypto_onramp' THEN 'exchange'
        ELSE fx.type
      END)::varchar as transaction_type,
-    fx.amount::numeric,
-    fx.from_currency::varchar as currency,
+    -- international_payment/payment_collection both involve a third party (a recipient, or a
+    -- payer) where the meaningful amount is what actually moved on THEIR side, not the JAXOPAY
+    -- user's own from_currency/amount (which for international_payment is the base amount before
+    -- the platform fee, i.e. neither "amount sent" nor "amount debited" — see CurrencyEngineService
+    -- sendInternationalPayment). onramp/offramp/swap stay on from_currency/amount since those are
+    -- self-directed (the description text already frames them as "what you put in").
+    (CASE fx.type WHEN 'international_payment' THEN fx.converted_amount WHEN 'payment_collection' THEN fx.converted_amount ELSE fx.amount END)::numeric as amount,
+    (CASE fx.type WHEN 'international_payment' THEN fx.to_currency WHEN 'payment_collection' THEN fx.to_currency ELSE fx.from_currency END)::varchar as currency,
     (CASE UPPER(fx.status) WHEN 'SUCCESS' THEN 'completed' WHEN 'PROCESSING' THEN 'pending' WHEN 'FAILED' THEN 'failed' ELSE LOWER(fx.status) END)::varchar as status,
     (CASE fx.type
        WHEN 'swap' THEN 'Currency Swap: ' || fx.from_currency || ' → ' || fx.to_currency

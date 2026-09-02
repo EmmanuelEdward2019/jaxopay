@@ -16,7 +16,6 @@ import {
     Bitcoin,
     X,
     Copy,
-    Check,
     Share2,
     CheckCircle2,
     XCircle,
@@ -159,7 +158,7 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
         { label: 'Transaction Type', value: formatTransactionType(transaction.transaction_type) },
         { label: 'Status', value: transaction.status?.charAt(0).toUpperCase() + transaction.status?.slice(1) },
         { label: 'Date & Time', value: formatDateTime(transaction.created_at) },
-        transaction.reference && { label: 'Reference', value: transaction.reference },
+        transaction.reference && { label: 'Transaction ID', value: transaction.reference },
         transaction.description && { label: 'Description', value: transaction.description },
         transaction.fee && parseFloat(transaction.fee) > 0 && {
             label: 'Fee',
@@ -237,7 +236,7 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
                     POWERED BY JAXOPAY · jaxopay.com
                 </p>
                 <p style={{ color: '#94a3b8', fontSize: 10.5, marginTop: 5 }}>
-                    Transaction ID: {transaction.id?.slice(0, 8).toUpperCase()}
+                    Receipt Ref: {transaction.id?.slice(0, 8).toUpperCase()}
                 </p>
             </div>
         </div>
@@ -247,7 +246,6 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
 // ─── Full-screen modal ────────────────────────────────────────────────────────
 export const TransactionDetailModal = ({ transaction, onClose }) => {
     const receiptRef = useRef(null);
-    const [copied, setCopied] = useState(false);
     const [downloading, setDownloading] = useState(false);
     const [showReport, setShowReport] = useState(false);
     const [reportText, setReportText] = useState('');
@@ -262,14 +260,6 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
     const txHash = transaction.metadata?.hash;
     const txNetwork = transaction.metadata?.network || transaction.metadata?.cryptoNetwork;
     const blockExplorerUrl = explorerUrlFor(txNetwork, txHash);
-
-    const copyReference = async () => {
-        try {
-            await navigator.clipboard.writeText(transaction.reference || transaction.id);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        } catch { /* clipboard not available */ }
-    };
 
     const downloadReceipt = async () => {
         if (!receiptRef.current) return;
@@ -349,7 +339,10 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
         { label: 'Transaction Type', value: formatTransactionType(transaction.transaction_type) },
         { label: 'Status', value: transaction.status?.charAt(0).toUpperCase() + transaction.status?.slice(1) },
         { label: 'Date & Time', value: formatDateTime(transaction.created_at) },
-        transaction.reference && { label: 'Reference', value: transaction.reference },
+        // Yellow Card's own dashboard (and Quidax/Obiex for crypto) calls this same value
+        // "Transaction ID" — matching that avoids a support back-and-forth over what "Reference"
+        // means when a user is cross-checking against the provider's own records.
+        transaction.reference && { label: 'Transaction ID', value: transaction.reference, copyable: true },
         transaction.description && { label: 'Description', value: transaction.description },
         transaction.fee && parseFloat(transaction.fee) > 0 && {
             label: 'Fee',
@@ -455,25 +448,6 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
                                     </span>
                                 </div>
                             ))}
-
-                            {/* Reference with copy */}
-                            {transaction.reference && (
-                                <div className="mt-3 p-3 bg-muted/50 rounded-xl">
-                                    <p className="text-xs text-muted-foreground mb-1">Transaction ID</p>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="font-mono text-xs text-foreground break-all">{transaction.id}</span>
-                                        <button
-                                            onClick={copyReference}
-                                            className="shrink-0 p-1.5 rounded-lg hover:bg-muted transition-colors"
-                                        >
-                                            {copied
-                                                ? <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                                : <Copy className="w-3.5 h-3.5 text-muted-foreground" />
-                                            }
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
 
                             {/* Verify on Blockchain — a labeled button, not just a clickable hash value,
                                 so the action is obvious rather than something a user has to notice.
