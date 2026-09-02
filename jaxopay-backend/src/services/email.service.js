@@ -57,10 +57,15 @@ const getTransporter = () => {
  * Returns { delivered: false } when no provider is configured so callers can
  * fall back to dev-mode logging.
  */
-const deliverEmail = async ({ from, to, subject, html }) => {
+const deliverEmail = async ({ from, to, subject, html, attachments }) => {
   const resend = getResend();
   if (resend) {
-    const { data, error } = await resend.emails.send({ from, to, subject, html });
+    // Resend's SDK expects attachment content as a base64 string, not a raw Buffer.
+    const resendAttachments = attachments?.map((a) => ({
+      filename: a.filename,
+      content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : a.content,
+    }));
+    const { data, error } = await resend.emails.send({ from, to, subject, html, attachments: resendAttachments });
     if (error) {
       throw new Error(error.message || JSON.stringify(error));
     }
@@ -69,7 +74,8 @@ const deliverEmail = async ({ from, to, subject, html }) => {
 
   const emailTransporter = getTransporter();
   if (emailTransporter) {
-    const info = await emailTransporter.sendMail({ from, to, subject, html });
+    // nodemailer accepts a raw Buffer directly.
+    const info = await emailTransporter.sendMail({ from, to, subject, html, attachments });
     return { delivered: true, messageId: info.messageId, provider: 'smtp' };
   }
 
@@ -79,7 +85,7 @@ const deliverEmail = async ({ from, to, subject, html }) => {
 /**
  * Send a single email via the configured provider (Resend preferred, SMTP fallback)
  */
-export const sendEmail = async ({ to, subject, template, data, html }) => {
+export const sendEmail = async ({ to, subject, template, data, html, attachments }) => {
   try {
     const from = `${process.env.FROM_NAME || 'JAXOPAY'} <${process.env.FROM_EMAIL || 'noreply@jaxopay.com'}>`;
 
@@ -88,7 +94,7 @@ export const sendEmail = async ({ to, subject, template, data, html }) => {
       ? templates[template](data)
       : (html || data?.html);
 
-    const result = await deliverEmail({ from, to, subject, html: htmlContent });
+    const result = await deliverEmail({ from, to, subject, html: htmlContent, attachments });
 
     if (!result.delivered) {
       // Development mode — no email provider configured

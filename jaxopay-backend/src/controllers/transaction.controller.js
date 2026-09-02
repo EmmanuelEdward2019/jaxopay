@@ -2,6 +2,8 @@ import { query } from '../config/database.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
+import { getStatementRows, buildStatementCSV, buildStatementPDF, resolveDateRange } from '../services/statement.service.js';
+import { sendEmail } from '../services/email.service.js';
 
 // Same provider selection as crypto.controller.js — used only for read-only rate lookups here.
 const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() === 'quidax' ? 'quidax' : 'obiex';
@@ -338,5 +340,85 @@ export const getTransactionStats = catchAsync(async (req, res) => {
       status_breakdown: statusBreakdown.rows,
     },
   });
+});
+
+// ── Statement (download/email a filtered PDF or CSV) ────────────────────────────
+// A separate, purpose-built path from the paginated list above — always fetches every matching
+// row (up to a sane ceiling), not just the current page, since a statement is meant to be
+// complete for its filtered range. See statement.service.js for the category/direction logic.
+
+async function loadStatement(req) {
+  const { preset, direction = 'all', category = 'all', start_date, end_date } = req.query;
+  if (!preset) throw new AppError('preset is required', 400);
+  const { startDate, endDate, label } = resolveDateRange(preset, start_date, end_date);
+  const directionLabel = direction === 'all' ? '' : direction === 'credit' ? 'Credits · ' : 'Debits · ';
+  const categoryLabel = category === 'all' ? 'All Transactions' : category.charAt(0).toUpperCase() + category.slice(1);
+  const filterLabel = `${directionLabel}${categoryLabel} · ${label}`;
+  const data = await getStatementRows(req.user.id, { direction, category, startDate, endDate });
+  return { ...data, filterLabel };
+}
+
+async function loadUserForStatement(userId) {
+  const res = await query(
+    `SELECT u.email, COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name
+     FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = $1`,
+    [userId]
+  );
+  return res.rows[0] || {};
+}
+
+export const getStatementSummary = catchAsync(async (req, res) => {
+  const { summary, filterLabel } = await loadStatement(req);
+  res.status(200).json({ success: true, data: { ...summary, filterLabel } });
+});
+
+export const downloadStatementPDF = catchAsync(async (req, res) => {
+  const statement = await loadStatement(req);
+  const user = await loadUserForStatement(req.user.id);
+  const pdf = await buildStatementPDF(user, statement, statement.filterLabel);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="jaxopay-statement-${new Date().toISOString().split('T')[0]}.pdf"`);
+  res.send(pdf);
+});
+
+export const downloadStatementCSV = catchAsync(async (req, res) => {
+  const statement = await loadStatement(req);
+  const csv = buildStatementCSV(statement.rows);
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="jaxopay-statement-${new Date().toISOString().split('T')[0]}.csv"`);
+  res.send(csv);
+});
+
+// Emails to the account's OWN registered address only — never an arbitrary recipient, this is
+// financial data. format defaults to pdf.
+export const emailStatement = catchAsync(async (req, res) => {
+  const { format = 'pdf' } = req.body;
+  if (!['pdf', 'csv'].includes(format)) throw new AppError('format must be pdf or csv', 400);
+
+  // loadStatement reads filters off req.query; the email action sends them in the body instead
+  // (POST, not GET) — reuse the same resolver by mapping body -> query shape.
+  req.query = req.body;
+  const statement = await loadStatement(req);
+  const user = await loadUserForStatement(req.user.id);
+
+  const attachment = format === 'pdf'
+    ? { filename: 'jaxopay-statement.pdf', content: await buildStatementPDF(user, statement, statement.filterLabel), contentType: 'application/pdf' }
+    : { filename: 'jaxopay-statement.csv', content: Buffer.from(buildStatementCSV(statement.rows), 'utf-8'), contentType: 'text/csv' };
+
+  await sendEmail({
+    to: user.email,
+    subject: `Your JAXOPAY Statement — ${statement.filterLabel}`,
+    template: 'statement',
+    data: {
+      name: user.name,
+      filterLabel: statement.filterLabel,
+      count: statement.summary.count,
+      format: format.toUpperCase(),
+      date: new Date().toLocaleString(),
+    },
+    attachments: [attachment],
+  });
+
+  res.status(200).json({ success: true, message: `Statement sent to ${user.email}` });
 });
 

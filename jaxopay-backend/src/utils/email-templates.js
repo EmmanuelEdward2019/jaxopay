@@ -191,6 +191,19 @@ export const templates = {
   `);
   },
 
+  statement: (data) => layout(`
+    ${heading('Your JAXOPAY Statement')}
+    ${p(`Hello ${data.name},`)}
+    ${p(`Attached is the statement you requested for <strong>${data.filterLabel}</strong>.`)}
+    ${infoBox(`
+      ${row('Date Range', data.filterLabel)}
+      ${row('Transactions', data.count)}
+      ${row('Format', data.format)}
+      ${row('Generated', data.date || new Date().toLocaleString())}
+    `)}
+    ${p('If you didn\'t request this statement, please contact support immediately.')}
+  `),
+
   withdrawalSuccess: (data) => layout(`
     ${heading('Withdrawal Successful ✅')}
     ${p(`Hello ${data.name},`)}
