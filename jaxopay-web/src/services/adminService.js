@@ -234,6 +234,16 @@ const adminService = {
         }
     },
 
+    // Distinct currency codes Yellow Card quotes — populates the Global Finance markup pair pickers.
+    getYcCurrencies: async () => {
+        try {
+            const response = await apiClient.get('/admin/fx/yc-currencies');
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error?.response?.data?.message || error.message };
+        }
+    },
+
     getExchangeRates: async () => {
         try {
             const response = await apiClient.get('/admin/fx/rates');

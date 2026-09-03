@@ -22,6 +22,7 @@ import {
   createExchangeRate,
   updateExchangeRate,
   getYcLiveRate,
+  getYcCurrencies,
   getLiveFxBaseRate,
   getFeeConfigs,
   createFeeConfig,
@@ -265,6 +266,7 @@ router.get(
   validate,
   getYcLiveRate
 );
+router.get('/fx/yc-currencies', restrictTo(...FINANCE_ACCESS), getYcCurrencies);
 router.get('/fx/rates', restrictTo(...FINANCE_ACCESS), getExchangeRates);
 router.post(
   '/fx/rates',

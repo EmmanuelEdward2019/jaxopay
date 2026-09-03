@@ -8,6 +8,7 @@ import { providerRegistry } from '../orchestration/index.js';
 import { circuitBreakers } from '../utils/circuitBreaker.js';
 import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
+import yellowCard from '../orchestration/adapters/fx/YellowCardService.js';
 import * as kycNotify from '../services/kycNotification.service.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
 import { auditFromReq } from '../services/audit.service.js';
@@ -1270,6 +1271,28 @@ export const getYcLiveRate = catchAsync(async (req, res) => {
     success: true,
     data: { from_currency: from.toUpperCase(), to_currency: to.toUpperCase(), base_rate: base },
   });
+});
+
+// Every currency Yellow Card actually quotes, for the Global Finance markup pair pickers. Read
+// live rather than hardcoded: Yellow Card owns this list and changes it (it currently spans ~38
+// codes across Africa, Europe and LatAm plus stablecoins), and a stale local copy would silently
+// make real corridors unpriceable — which is exactly how XOF ended up unconfigurable before.
+// Their /business/rates returns one entry per country-currency pairing, so the same code appears
+// many times (XOF x8, XAF x6); dedupe to distinct codes.
+export const getYcCurrencies = catchAsync(async (req, res) => {
+  let rates;
+  try {
+    rates = await yellowCard.getRates();
+  } catch (e) {
+    throw new AppError(`Could not reach Yellow Card for its currency list: ${e.message || 'unknown error'}`, 503);
+  }
+  const codes = [...new Set(
+    (rates || [])
+      .map(r => String(r?.code || r?.currency || '').toUpperCase())
+      .filter(c => /^[A-Z0-9]{2,10}$/.test(c))
+  )].sort();
+  if (codes.length === 0) throw new AppError('Yellow Card returned no currencies', 503);
+  res.status(200).json({ success: true, data: codes });
 });
 
 // Get all exchange rates (admin only)

@@ -99,10 +99,9 @@ const computeYcCustomerRate = (rate, markupPct) => {
 // to move their money. Legitimate as a deliberate promo, never as a typo.
 const isYcMarkupBackwards = (markupPct) => Number(markupPct) < 0;
 
-// Corridors seen in real transfers plus the majors — a starting point for the pair picker, not a
-// whitelist: Yellow Card controls which corridors exist and the backend enforces no list, so the
-// field stays free-text.
-const YC_CURRENCY_SUGGESTIONS = ['NGN', 'USD', 'GBP', 'EUR', 'XOF', 'KES', 'ZAR', 'GHS', 'UGX', 'TZS', 'XAF', 'RWF', 'ZMW', 'MWK', 'USDT', 'USDC'];
+// Last-resort list if /admin/fx/yc-currencies can't be reached — the real one is fetched live from
+// Yellow Card, since they own it and it spans far more than the obvious corridors.
+const FALLBACK_YC_CURRENCIES = ['NGN', 'USD', 'GBP', 'EUR', 'XOF', 'XAF', 'KES', 'ZAR', 'GHS', 'UGX', 'TZS', 'RWF', 'ZMW', 'MWK', 'BWP', 'USDT', 'USDC'];
 
 const computeCustomerRate = (rate, markupPct) => {
     const r = Number(rate);
@@ -150,6 +149,7 @@ const SystemManagement = () => {
     const [newYc, setNewYc] = useState({ from_currency: 'NGN', to_currency: 'XOF', rate: 0, markup_percentage: 0 });
     const [ycLiveBase, setYcLiveBase] = useState({ loading: false, error: null });
     const [ycBaseRefreshKey, setYcBaseRefreshKey] = useState(0);
+    const [ycCurrencies, setYcCurrencies] = useState(FALLBACK_YC_CURRENCIES);
     const [newFX, setNewFX] = useState({ from_currency: 'USDT', to_currency: 'NGN', rate: 0, markup_percentage: 0 });
     const [newFee, setNewFee] = useState({ transaction_type: 'card_creation', fee_type: 'fixed', fee_value: 0, min_fee: 0, max_fee: 0, currency: 'USD', country: '' });
     // Live "Base" rate fetch state for the Add Exchange Rate modal — refetched whenever the
@@ -163,16 +163,19 @@ const SystemManagement = () => {
 
     const fetchData = async () => {
         setLoading(true);
-        const [fxRes, feeRes, toggleRes, cryptoRes] = await Promise.all([
+        const [fxRes, feeRes, toggleRes, cryptoRes, ycCurRes] = await Promise.all([
             adminService.getExchangeRates(),
             adminService.getFeeConfigs(),
             adminService.getFeatureToggles(),
-            cryptoService.getSupportedCryptos()
+            cryptoService.getSupportedCryptos(),
+            adminService.getYcCurrencies()
         ]);
 
         if (fxRes.success) setExchangeRates(fxRes.data || []);
         if (feeRes.success) setFeeConfigs(feeRes.data || []);
         if (cryptoRes.success) setSupportedCurrencies(cryptoRes.data || []);
+        // Keep the fallback list if Yellow Card is unreachable — an empty picker would be worse.
+        if (ycCurRes.success && ycCurRes.data?.length) setYcCurrencies(ycCurRes.data);
 
         const platformToggle = toggleRes.data?.find(t => t.feature_name === 'PLATFORM_GLOBAL');
         setIsGlobalShutdown(platformToggle ? !platformToggle.is_enabled : false);
@@ -987,26 +990,28 @@ const SystemManagement = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">From</label>
-                                    <input
-                                        list="yc-currency-options"
+                                    <select
                                         value={newYc.from_currency}
-                                        onChange={e => setNewYc({ ...newYc, from_currency: e.target.value.toUpperCase() })}
-                                        className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-3 dark:text-white uppercase"
-                                    />
+                                        onChange={e => setNewYc({ ...newYc, from_currency: e.target.value })}
+                                        className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-3 dark:text-white"
+                                    >
+                                        {ycCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">To</label>
-                                    <input
-                                        list="yc-currency-options"
+                                    <select
                                         value={newYc.to_currency}
-                                        onChange={e => setNewYc({ ...newYc, to_currency: e.target.value.toUpperCase() })}
-                                        className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-3 dark:text-white uppercase"
-                                    />
+                                        onChange={e => setNewYc({ ...newYc, to_currency: e.target.value })}
+                                        className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-3 dark:text-white"
+                                    >
+                                        {ycCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
                                 </div>
-                                <datalist id="yc-currency-options">
-                                    {YC_CURRENCY_SUGGESTIONS.map(c => <option key={c} value={c} />)}
-                                </datalist>
                             </div>
+                            <p className="text-[11px] text-gray-400 -mt-2">
+                                {ycCurrencies.length} currencies, live from Yellow Card.
+                            </p>
 
                             {samePair ? (
                                 <p className="text-xs text-amber-600 font-medium">Pick two different currencies.</p>
