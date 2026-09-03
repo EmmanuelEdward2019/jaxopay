@@ -12,7 +12,10 @@ import {
     Cpu,
     Network,
     Zap,
-    Plus
+    Plus,
+    Globe,
+    ArrowLeftRight,
+    Download
 } from 'lucide-react';
 import adminService from '../../services/adminService';
 import cryptoService from '../../services/cryptoService';
@@ -49,6 +52,34 @@ const isInverseDirection = (from, to, fiatCodes) =>
 
 const priceOfCode = (from, to, fiatCodes) => (isInverseDirection(from, to, fiatCodes) ? to : from);
 const priceInCode = (from, to, fiatCodes) => (isInverseDirection(from, to, fiatCodes) ? from : to);
+
+// Yellow Card's Global Finance products (International Transfer, Currency Swap, Payment
+// Collection) already write/read fee_configurations rows under these three transaction_type
+// keys — CurrencyEngineService.js's sendInternationalPayment/swapCurrency/handlePaymentCollection
+// all call getFeeConfig(key, currency) and add the result on top of the amount. That data layer
+// already exists; what was missing was a dedicated, clearly-labeled place for an admin to find
+// and edit these three specifically, instead of them being mixed anonymously into the generic
+// Fee Configuration list below alongside card_creation/swap_buy/fiat_deposit etc.
+const YC_FEE_TYPES = [
+    {
+        key: 'yc_international_transfer',
+        label: 'International Transfer',
+        description: 'Added on top of the amount for cross-border payouts (e.g. NGN to a Wave/mobile-money account abroad).',
+        icon: Globe,
+    },
+    {
+        key: 'yc_currency_swap',
+        label: 'Currency Swap',
+        description: 'Deducted from the converted amount when a user swaps between currencies via Global Finance.',
+        icon: ArrowLeftRight,
+    },
+    {
+        key: 'yc_payment_collection',
+        label: 'Payment Collection',
+        description: 'Deducted from what a user receives via Global Pay before it credits their wallet.',
+        icon: Download,
+    },
+];
 
 const computeCustomerRate = (rate, markupPct) => {
     const r = Number(rate);
@@ -398,8 +429,81 @@ const SystemManagement = () => {
                 <motion.div
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="grid grid-cols-1 lg:grid-cols-2 gap-8"
+                    className="space-y-8"
                 >
+                    {/* Yellow Card — Global Finance Markup */}
+                    <section className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-md border border-gray-100 dark:border-gray-700">
+                        <div className="flex items-center gap-3 mb-2">
+                            <Globe className="w-5 h-5 text-emerald-500" />
+                            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Yellow Card — Global Finance Markup</h2>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-6 max-w-2xl">
+                            JAXOPAY's own margin on top of Yellow Card's rate for each product — a fee added to or
+                            deducted from the amount, not baked into the exchange rate shown to the customer (that's
+                            a separate mechanism, used only for crypto swap — see FX Rates &amp; Markups below).
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {YC_FEE_TYPES.map((ycType) => {
+                                const { key, label, description, icon: Icon } = ycType;
+                                const fee = feeConfigs.find(f => f.transaction_type === key);
+                                if (!fee) {
+                                    return (
+                                        <div key={key} className="p-4 rounded-xl border border-dashed border-gray-200 dark:border-gray-600 text-center text-xs text-gray-400">
+                                            {label} — not configured yet.
+                                        </div>
+                                    );
+                                }
+                                return (
+                                    <div key={fee.id} className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <Icon className="w-4 h-4 text-emerald-500 shrink-0" />
+                                                <span className="font-bold text-sm text-gray-900 dark:text-white">{label}</span>
+                                            </div>
+                                            <button
+                                                onClick={() => handleUpdateFee(fee.id, { is_active: !fee.is_active })}
+                                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-colors shrink-0 ${fee.is_active ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                                            >
+                                                {fee.is_active ? 'Active' : 'Inactive'}
+                                            </button>
+                                        </div>
+                                        <p className="text-[11px] text-gray-500 mb-3">{description}</p>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <div className="relative">
+                                                <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">{fee.fee_type === 'fixed' ? 'Amount' : 'Percent %'}</label>
+                                                <input
+                                                    type="number"
+                                                    defaultValue={fee.fee_value}
+                                                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary-500 outline-none"
+                                                    onBlur={(e) => handleUpdateFee(fee.id, { fee_value: parseFloat(e.target.value) })}
+                                                />
+                                            </div>
+                                            <div className="relative">
+                                                <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Min</label>
+                                                <input
+                                                    type="number"
+                                                    defaultValue={fee.min_fee}
+                                                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary-500 outline-none"
+                                                    onBlur={(e) => handleUpdateFee(fee.id, { min_fee: parseFloat(e.target.value) })}
+                                                />
+                                            </div>
+                                            <div className="relative">
+                                                <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Max</label>
+                                                <input
+                                                    type="number"
+                                                    defaultValue={fee.max_fee}
+                                                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary-500 outline-none"
+                                                    onBlur={(e) => handleUpdateFee(fee.id, { max_fee: parseFloat(e.target.value) })}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* FX Rates */}
                     <section className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-md border border-gray-100 dark:border-gray-700">
                         <div className="flex items-center justify-between mb-6">
@@ -544,6 +648,7 @@ const SystemManagement = () => {
                             ))}
                         </div>
                     </section >
+                    </div>
                 </motion.div >
             )}
 
