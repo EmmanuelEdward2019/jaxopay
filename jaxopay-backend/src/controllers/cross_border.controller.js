@@ -4,24 +4,32 @@ import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { auditFromReq } from '../services/audit.service.js';
 import logger from '../utils/logger.js';
 import { assertDepositsAllowed, assertWithdrawalsAllowed } from '../services/financialControls.service.js';
+import { getYcMarkupPercentage, applyYcMarkup } from '../services/ycMarkup.service.js';
 
+// The rate shown on the Currency Swap tab. Returns the marked-up customer rate, not Yellow Card's
+// raw one, so the preview can never quote a better rate than swapCurrency actually executes at —
+// the same single-rate, no-breakdown treatment the crypto swap rate endpoint already gives.
 export const getExchangeRate = catchAsync(async (req, res) => {
     const { from, to } = req.query;
     if (!from || !to) throw new AppError('params from and to are required', 400);
 
-    const rate = await currencyEngine.getRate(from, to);
-    res.status(200).json({ success: true, data: rate });
+    const rateData = await currencyEngine.getRate(from, to);
+    const markupPct = await getYcMarkupPercentage('yc_swap', from, to);
+    res.status(200).json({
+        success: true,
+        data: { ...rateData, rate: applyYcMarkup(parseFloat(rateData.rate), markupPct) },
+    });
 });
 
-// Read-only preview of what sendInternationalPayment will actually charge — lets both frontends
-// show "Fee: X%" / "Recipient gets: Y" before the user confirms, instead of the hardcoded "FREE"
-// label web previously had (and RN not showing any fee at all).
-export const getInternationalTransferFeeQuote = catchAsync(async (req, res) => {
+// Read-only preview of what sendInternationalPayment will do — the customer rate and what the
+// recipient receives. There is no fee to disclose: JAXOPAY's margin is inside the rate, and the
+// sender is debited exactly the amount they entered.
+export const getInternationalTransferQuote = catchAsync(async (req, res) => {
     const { fromCurrency, toCurrency, amount } = req.query;
     if (!fromCurrency || !toCurrency || !amount) {
         throw new AppError('params fromCurrency, toCurrency and amount are required', 400);
     }
-    const quote = await currencyEngine.getInternationalTransferFeeQuote(fromCurrency, toCurrency, parseFloat(amount));
+    const quote = await currencyEngine.getInternationalTransferQuote(fromCurrency, toCurrency, parseFloat(amount));
     res.status(200).json({ success: true, data: quote });
 });
 

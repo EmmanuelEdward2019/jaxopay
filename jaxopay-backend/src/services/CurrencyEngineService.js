@@ -4,6 +4,7 @@ import logger from '../utils/logger.js';
 import yellowCard from '../orchestration/adapters/fx/YellowCardService.js';
 import { sendTransactionEmails } from './email.service.js';
 import { getFeeConfig, computeFee } from './feeConfig.service.js';
+import { getYcMarkupPercentage, applyYcMarkup } from './ycMarkup.service.js';
 
 /** Human label for a ramp's fx_transactions.type — onramp buys crypto with fiat, offramp sells it. */
 function rampTypeLabel(type) {
@@ -110,16 +111,18 @@ class CurrencyEngineService {
                 toWallet = created.rows[0];
             }
 
-            // 2. Get Exchange Rate
+            // 2. Get Exchange Rate, then apply JAXOPAY's margin to the rate itself — the customer
+            // sees one final rate, never a base rate plus a fee. 0% (raw Yellow Card rate) until
+            // an admin configures this pair in Rates & Fees.
             const rateData = await this.getRate(fromCurrency, toCurrency);
-            const rate = parseFloat(rateData.rate);
-            const rawConvertedAmount = amount * rate;
-
-            // Platform spread — taken from the credited (destination) side, same convention as
-            // the crypto swap spread. 0% until an admin sets a real value in Rates & Fees.
-            const swapFeeCfg = await getFeeConfig('yc_currency_swap', toCurrency);
-            const platformFee = computeFee(swapFeeCfg, rawConvertedAmount);
-            const convertedAmount = Math.max(0, rawConvertedAmount - platformFee);
+            const baseRate = parseFloat(rateData.rate);
+            const markupPct = await getYcMarkupPercentage('yc_swap', fromCurrency, toCurrency);
+            const rate = applyYcMarkup(baseRate, markupPct);
+            const rawConvertedAmount = amount * baseRate;
+            const convertedAmount = Math.max(0, amount * rate);
+            // What the markup earned on this swap. Internal/accounting only — never surfaced to
+            // the customer, who only ever sees `rate` and what they received.
+            const margin = Math.max(0, rawConvertedAmount - convertedAmount);
 
             // 3. Debit / Credit Wallets internally first
             await client.query(
@@ -138,7 +141,9 @@ class CurrencyEngineService {
          (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, fee_amount, status)
          VALUES ($1, '${FX_PROVIDER_NAME}', 'swap', $2, $3, $4, $5, $6, $7, 'PROCESSING')
          RETURNING id`,
-                [userId, fromCurrency, toCurrency, amount, convertedAmount, rate, platformFee]
+                // exchange_rate is the marked-up rate the customer actually transacted at (what a
+                // receipt should show); fee_amount carries the margin for internal reporting.
+                [userId, fromCurrency, toCurrency, amount, convertedAmount, rate, margin]
             );
 
             const txnId = fxTxn.rows[0].id;
@@ -189,7 +194,6 @@ class CurrencyEngineService {
                 amount,
                 convertedAmount,
                 rate,
-                fee: platformFee,
                 status: providerStatus
             };
         });
@@ -206,32 +210,42 @@ class CurrencyEngineService {
     }
 
     /**
-     * Preview the fee sendInternationalPayment will actually charge, without moving any money —
-     * read-only, so both frontends can disclose "Fee: X%" / "You'll pay: Y" before the user
-     * confirms. Deliberately mirrors sendInternationalPayment's own fee-then-convert steps exactly
-     * (same getFeeConfig/computeFee, same getRate call), so this can never drift out of sync with
-     * what gets charged — no fee math duplicated on the client.
+     * Preview what sendInternationalPayment will actually do, without moving any money — read-only,
+     * so both frontends can show the rate and what the recipient gets before the user confirms.
+     * Deliberately mirrors sendInternationalPayment's own rate-and-markup steps exactly, so the
+     * quote can never drift out of sync with what executes — no rate math duplicated on the client.
+     *
+     * Returns only the final customer rate and the resulting payout. There is deliberately no fee
+     * breakdown to return: JAXOPAY's margin lives inside `rate`, and the sender is debited exactly
+     * the amount they entered.
      */
-    async getInternationalTransferFeeQuote(fromCurrency, targetCurrency, amount) {
-        const intlFeeCfg = await getFeeConfig('yc_international_transfer', fromCurrency);
-        const fee = computeFee(intlFeeCfg, amount);
-        const totalDebit = amount + fee;
-
-        let convertedAmount = amount;
-        let rate = 1;
+    async getInternationalTransferQuote(fromCurrency, targetCurrency, amount) {
+        // A same-currency corridor still has a rate — it's just 1 — and the markup applies to it
+        // the same way, so those transfers stay monetizable (they were under the old fee model).
+        // Unconfigured pairs resolve to 0%, leaving rate 1 and the payout untouched.
+        let baseRate = 1;
         if (fromCurrency !== targetCurrency) {
             const rateData = await this.getRate(fromCurrency, targetCurrency);
-            rate = parseFloat(rateData.rate);
-            convertedAmount = amount * rate;
+            baseRate = parseFloat(rateData.rate);
         }
+        const markupPct = await getYcMarkupPercentage('yc_international_transfer', fromCurrency, targetCurrency);
+        const rate = applyYcMarkup(baseRate, markupPct);
+        const convertedAmount = amount * rate;
         return {
             rate,
-            convertedAmount, // full, undiminished — what the recipient receives
-            fee,
-            feePercent: intlFeeCfg?.fee_type === 'percentage' ? Number(intlFeeCfg.fee_value) : null,
-            totalDebit, // amount + fee — what gets deducted from the sender's wallet
+            convertedAmount, // what the recipient receives, at the customer rate
             fromCurrency,
             targetCurrency,
+            // Back-compat for clients still running a pre-markup bundle (notably RN, where an OTA
+            // only lands on next launch). Those builds read .fee/.totalDebit unconditionally —
+            // .fee.toFixed() would throw and crash their review screen, and their
+            // insufficient-balance check compares against .totalDebit. These values are truthful
+            // under the new model (there is no separate fee; the debit IS the amount), so an old
+            // build degrades to showing "FREE" and a correct total. Safe to delete once no
+            // meaningful traffic is on a pre-markup build.
+            fee: 0,
+            feePercent: null,
+            totalDebit: amount,
         };
     }
 
@@ -248,25 +262,29 @@ class CurrencyEngineService {
         // Remitter (sender) details required by Yellow Card, from the user's profile + KYC.
         const sender = await this._buildSender(userId);
 
-        // Platform fee — a percentage of the amount being sent, charged ON TOP of the sender's
-        // debit (not deducted from the payout): the recipient always receives the full converted
-        // amount, undiminished, and the sender pays `amount + fee` from their own wallet. 0% until
-        // an admin sets a real value in Rates & Fees.
-        const intlFeeCfg = await getFeeConfig('yc_international_transfer', fromCurrency);
-        const platformFee = computeFee(intlFeeCfg, amount);
-        const totalDebit = amount + platformFee;
-
         // Convert BEFORE opening a DB transaction — never hold a pooled connection
         // during external API calls (that caused 502s on the server).
-        let convertedAmount = amount;
-        let rate = 1;
+        //
+        // JAXOPAY's margin is baked into the rate rather than charged as a separate fee: the
+        // sender is debited exactly the amount they entered, and the payout is computed at the
+        // marked-up customer rate. 0% (raw Yellow Card rate) until an admin configures the pair.
+        // A same-currency corridor still has a rate — it's just 1 — and the markup applies to it
+        // the same way, so those transfers stay monetizable (they were under the old fee model).
+        // Unconfigured pairs resolve to 0%, leaving rate 1 and the payout untouched.
+        let baseRate = 1;
         if (fromCurrency !== targetCurrency) {
             const rateData = await this.getRate(fromCurrency, targetCurrency);
-            rate = parseFloat(rateData.rate);
-            convertedAmount = amount * rate;
+            baseRate = parseFloat(rateData.rate);
         }
+        const markupPct = await getYcMarkupPercentage('yc_international_transfer', fromCurrency, targetCurrency);
+        const rate = applyYcMarkup(baseRate, markupPct);
+        const convertedAmount = amount * rate;
+        // Internal/accounting only, expressed in the destination currency — never shown to the
+        // sender, who sees only the rate and what the recipient receives.
+        const margin = Math.max(0, (amount * baseRate) - convertedAmount);
 
-        // 1) Short transaction: lock + debit the wallet (amount + fee), record a PROCESSING fx tx.
+        // 1) Short transaction: lock + debit the wallet (exactly the amount sent — the margin is
+        // already inside the rate, nothing extra is charged), record a PROCESSING fx tx.
         // No external calls inside here.
         const record = await transaction(async (client) => {
             const w = await client.query(
@@ -275,18 +293,13 @@ class CurrencyEngineService {
             );
             if (w.rows.length === 0) throw new AppError(`No active ${fromCurrency} wallet found`, 404);
             const balance = parseFloat(w.rows[0].balance);
-            if (balance < totalDebit) {
-                throw new AppError(
-                    platformFee > 0
-                        ? `Insufficient balance. Sending ${amount} ${fromCurrency} plus a ${platformFee.toFixed(2)} ${fromCurrency} transfer fee requires ${totalDebit.toFixed(2)} ${fromCurrency}, but your balance is ${balance.toFixed(2)} ${fromCurrency}.`
-                        : 'Insufficient funds for this transfer.',
-                    400
-                );
+            if (balance < amount) {
+                throw new AppError('Insufficient funds for this transfer.', 400);
             }
 
             await client.query(
                 `UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2`,
-                [totalDebit, w.rows[0].id]
+                [amount, w.rows[0].id]
             );
 
             const fxTxn = await client.query(
@@ -294,7 +307,9 @@ class CurrencyEngineService {
           (user_id, provider, type, from_currency, to_currency, amount, converted_amount, exchange_rate, fee_amount, recipient_details, status)
           VALUES ($1, '${FX_PROVIDER_NAME}', 'international_payment', $2, $3, $4, $5, $6, $7, $8, 'PROCESSING')
           RETURNING id`,
-                [userId, fromCurrency, targetCurrency, amount, convertedAmount, rate, platformFee, JSON.stringify({
+                // exchange_rate is the marked-up customer rate (what a receipt should show);
+                // fee_amount carries the margin, in the destination currency, for reporting only.
+                [userId, fromCurrency, targetCurrency, amount, convertedAmount, rate, margin, JSON.stringify({
                     name: recipientName, bank: networkName || recipientBank, account: accountNumber, country: recipientCountry, networkId
                 })]
             );
@@ -328,17 +343,18 @@ class CurrencyEngineService {
             providerStatus = 'FAILED';
         }
 
-        // 3) Reconcile (short queries). Refund the FULL debit (amount + fee) on failure — the fee
-        // was collected up front, not deducted from the payout, so it must come back too.
+        // 3) Reconcile (short queries). Refund exactly what was debited — the amount sent. The
+        // margin was never a separate charge (it lives in the rate, and only materializes on a
+        // successful payout), so there is nothing extra to give back.
         if (providerStatus === 'FAILED') {
             await transaction(async (client) => {
-                await client.query(`UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`, [totalDebit, record.walletId]);
+                await client.query(`UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`, [amount, record.walletId]);
                 await client.query(`UPDATE fx_transactions SET status = 'FAILED' WHERE id = $1`, [record.txnId]);
             });
             notifyRampResult(userId, {
-                type: 'International Transfer', amount: totalDebit, currency: fromCurrency,
+                type: 'International Transfer', amount, currency: fromCurrency,
                 reference: record.txnId, status: 'failed',
-                details: `International Transfer to ${recipientName} (${recipientCountry}) — Failed: ${providerError || 'Transfer failed at provider'}. Your wallet has been refunded ${totalDebit.toFixed(2)} ${fromCurrency}.`,
+                details: `International Transfer to ${recipientName} (${recipientCountry}) — Failed: ${providerError || 'Transfer failed at provider'}. Your wallet has been refunded ${amount.toFixed(2)} ${fromCurrency}.`,
             });
             throw new AppError(providerError || 'International transfer failed. Your wallet has been refunded.', 400);
         }
@@ -354,7 +370,7 @@ class CurrencyEngineService {
             details: `International Transfer to ${recipientName} (${recipientCountry}) via ${networkName || recipientBank || 'bank'} — Account ${accountNumber}`,
         });
 
-        return { transactionId: record.txnId, status: providerStatus, amount, fee: platformFee, totalDebit, convertedAmount };
+        return { transactionId: record.txnId, status: providerStatus, amount, rate, convertedAmount };
     }
 
     // ── Payment Collection (receive money from a payer abroad, Yellow Card /receive) ──
@@ -610,14 +626,13 @@ class CurrencyEngineService {
         )).rows[0];
         if (!row) return null;
 
-        // international_payment charges amount + fee up front (the fee is added to the sender's
-        // debit, not deducted from the payout) — a refund must return both. Every other fx type
-        // (e.g. currency_swap) still deducts its fee from the payout side, so refunding `amount`
-        // alone remains correct there; do not widen this to all types without also changing that
-        // debit model.
-        const refundAmount = row.type === 'international_payment'
-            ? parseFloat(row.amount) + parseFloat(row.fee_amount || 0)
-            : parseFloat(row.amount);
+        // Every fx type now debits exactly `amount` from the sender — JAXOPAY's margin lives inside
+        // the exchange rate, so it is only ever realised out of the converted (payout) side and was
+        // never separately taken from the wallet. fee_amount on these rows records that margin for
+        // reporting; it must NOT be added to a refund (doing so would hand back money that was
+        // never debited). This replaced an earlier amount + fee_amount formula that was correct
+        // when international_payment charged an additive fee up front.
+        const refundAmount = parseFloat(row.amount);
 
         const TERMINAL = ['FAILED', 'COMPLETED', 'SUCCESS', 'REVERSED'];
         if (TERMINAL.includes(String(row.status).toUpperCase())) return row.status;

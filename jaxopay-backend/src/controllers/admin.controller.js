@@ -1248,28 +1248,69 @@ export const getLiveFxBaseRate = catchAsync(async (req, res) => {
   });
 });
 
+// Live base rate straight from Yellow Card, for the Global Finance markup panel. Separate from
+// getLiveFxBaseRate above, which quotes Obiex/Quidax for crypto swap — different provider,
+// different pairs (YC covers fiat corridors like NGN/XOF that Obiex doesn't trade at all).
+export const getYcLiveRate = catchAsync(async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) throw new AppError('from and to are required', 400);
+
+  let base;
+  try {
+    const rateData = await currencyEngine.getRate(from, to);
+    base = Number(rateData?.rate);
+  } catch {
+    base = null;
+  }
+  if (!base || Number.isNaN(base)) {
+    throw new AppError(`Yellow Card has no live rate for ${from.toUpperCase()}/${to.toUpperCase()} right now — try again shortly.`, 503);
+  }
+
+  res.status(200).json({
+    success: true,
+    data: { from_currency: from.toUpperCase(), to_currency: to.toUpperCase(), base_rate: base },
+  });
+});
+
 // Get all exchange rates (admin only)
 export const getExchangeRates = catchAsync(async (req, res) => {
   const result = await query(
-    'SELECT * FROM exchange_rates ORDER BY from_currency, to_currency'
+    'SELECT * FROM exchange_rates ORDER BY product, from_currency, to_currency'
   );
   res.status(200).json({ success: true, data: result.rows });
 });
+
+/**
+ * final_rate is the stored, informational "what the customer sees" preview. The two markup
+ * mechanisms sharing this table compute it in opposite directions, so it must be derived per
+ * product: crypto swap treats markup as moving the quoted rate number up (swapMarkup.service.js),
+ * while Yellow Card treats it as JAXOPAY's margin coming off the customer's rate
+ * (ycMarkup.service.js). Using one formula for both would show an admin a preview with the wrong
+ * sign — a live-pricing footgun, not a cosmetic bug.
+ */
+const computeFinalRate = (rate, markupPct, product) =>
+  product === 'crypto_swap'
+    ? Number(rate) * (1 + Number(markupPct) / 100)
+    : Number(rate) * (1 - Number(markupPct) / 100);
 
 // Create exchange rate (admin only)
 export const createExchangeRate = catchAsync(async (req, res) => {
   const from_currency = String(req.body.from_currency).toUpperCase();
   const to_currency = String(req.body.to_currency).toUpperCase();
   const { rate, markup_percentage, source } = req.body;
+  // Defaults to crypto swap so the existing FX Rates & Markups panel, which predates this column
+  // and doesn't send it, keeps behaving exactly as before.
+  const product = req.body.product || 'crypto_swap';
 
-  // Check if exists
+  // Uniqueness is per product: the same pair can legitimately carry one margin as a crypto swap
+  // and a different one as a Yellow Card transfer.
   const existing = await query(
-    'SELECT id FROM exchange_rates WHERE from_currency = $1 AND to_currency = $2',
-    [from_currency, to_currency]
+    'SELECT id FROM exchange_rates WHERE from_currency = $1 AND to_currency = $2 AND product = $3',
+    [from_currency, to_currency, product]
   );
 
   if (existing.rows.length > 0) {
-    throw new AppError('Exchange rate pair already exists', 409);
+    throw new AppError('Exchange rate pair already exists for this product', 409);
   }
 
   const markupPct = Number(markup_percentage) || 0;
@@ -1278,14 +1319,14 @@ export const createExchangeRate = catchAsync(async (req, res) => {
   // a placeholder both as a plain value and inside an arithmetic expression can make it deduce
   // conflicting types (seen live: "inconsistent types deduced for parameter $3: integer versus
   // numeric" whenever `rate` was a whole number). A dedicated parameter sidesteps that entirely.
-  const finalRate = Number(rate) * (1 + markupPct / 100);
+  const finalRate = computeFinalRate(rate, markupPct, product);
 
   const result = await query(
     `INSERT INTO exchange_rates
-     (from_currency, to_currency, rate, markup_percentage, final_rate, source, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6, true)
+     (from_currency, to_currency, rate, markup_percentage, final_rate, source, product, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true)
      RETURNING *`,
-    [from_currency, to_currency, rate, markupPct, finalRate, source || 'manual']
+    [from_currency, to_currency, rate, markupPct, finalRate, source || 'manual', product]
   );
 
   await logAdminAction({
@@ -1313,7 +1354,7 @@ export const updateExchangeRate = catchAsync(async (req, res) => {
   // final_rate can be computed in JS as its own parameter — see createExchangeRate for why an
   // in-SQL expression reusing the same placeholder as a plain SET value is unsafe (Postgres can
   // deduce conflicting types for it). This also gives us the 404 check before writing anything.
-  const current = await query('SELECT rate, markup_percentage FROM exchange_rates WHERE id = $1', [rateId]);
+  const current = await query('SELECT rate, markup_percentage, product FROM exchange_rates WHERE id = $1', [rateId]);
   if (current.rows.length === 0) {
     throw new AppError('Exchange rate not found', 404);
   }
@@ -1341,7 +1382,8 @@ export const updateExchangeRate = catchAsync(async (req, res) => {
   if (rate !== undefined || markup_percentage !== undefined) {
     const newRate = rate !== undefined ? Number(rate) : Number(current.rows[0].rate);
     const newMarkup = markup_percentage !== undefined ? Number(markup_percentage) : (Number(current.rows[0].markup_percentage) || 0);
-    params.push(newRate * (1 + newMarkup / 100));
+    // Derived with the row's OWN product's formula — see computeFinalRate.
+    params.push(computeFinalRate(newRate, newMarkup, current.rows[0].product));
     updates.push(`final_rate = $${params.length}`);
   }
 

@@ -21,6 +21,7 @@ import {
   getExchangeRates,
   createExchangeRate,
   updateExchangeRate,
+  getYcLiveRate,
   getLiveFxBaseRate,
   getFeeConfigs,
   createFeeConfig,
@@ -256,6 +257,14 @@ router.get(
   validate,
   getLiveFxBaseRate
 );
+router.get(
+  '/fx/yc-live-rate',
+  restrictTo(...FINANCE_ACCESS),
+  query('from').notEmpty().isLength({ min: 2, max: 10 }),
+  query('to').notEmpty().isLength({ min: 2, max: 10 }),
+  validate,
+  getYcLiveRate
+);
 router.get('/fx/rates', restrictTo(...FINANCE_ACCESS), getExchangeRates);
 router.post(
   '/fx/rates',
@@ -264,6 +273,7 @@ router.post(
   body('to_currency').notEmpty().isLength({ min: 2, max: 10 }),
   body('rate').isFloat({ gt: 0 }),
   body('markup_percentage').optional().isFloat({ min: -50, max: 50 }),
+  body('product').optional().isIn(['crypto_swap', 'yc_swap', 'yc_international_transfer']),
   validate,
   createExchangeRate
 );

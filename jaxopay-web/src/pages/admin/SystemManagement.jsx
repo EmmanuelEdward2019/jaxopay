@@ -53,26 +53,29 @@ const isInverseDirection = (from, to, fiatCodes) =>
 const priceOfCode = (from, to, fiatCodes) => (isInverseDirection(from, to, fiatCodes) ? to : from);
 const priceInCode = (from, to, fiatCodes) => (isInverseDirection(from, to, fiatCodes) ? from : to);
 
-// Yellow Card's Global Finance products (International Transfer, Currency Swap, Payment
-// Collection) already write/read fee_configurations rows under these three transaction_type
-// keys — CurrencyEngineService.js's sendInternationalPayment/swapCurrency/handlePaymentCollection
-// all call getFeeConfig(key, currency) and add the result on top of the amount. That data layer
-// already exists; what was missing was a dedicated, clearly-labeled place for an admin to find
-// and edit these three specifically, instead of them being mixed anonymously into the generic
-// Fee Configuration list below alongside card_creation/swap_buy/fiat_deposit etc.
-const YC_FEE_TYPES = [
+// Yellow Card's Currency Swap and International Transfer are priced by a markup baked into the
+// exchange rate (the "Global Finance Markup" panel below, backed by exchange_rates rows scoped to
+// these product keys — see ycMarkup.service.js). The customer only ever sees the resulting rate;
+// there is no fee line anywhere in the product.
+const YC_RATE_PRODUCTS = [
     {
         key: 'yc_international_transfer',
         label: 'International Transfer',
-        description: 'Added on top of the amount for cross-border payouts (e.g. NGN to a Wave/mobile-money account abroad).',
+        description: 'Cross-border payouts — e.g. NGN to a mobile-money account abroad.',
         icon: Globe,
     },
     {
-        key: 'yc_currency_swap',
+        key: 'yc_swap',
         label: 'Currency Swap',
-        description: 'Deducted from the converted amount when a user swaps between currencies via Global Finance.',
+        description: 'Swapping between currencies inside Global Finance.',
         icon: ArrowLeftRight,
     },
+];
+
+// Payment Collection is the one Global Finance product that stays fee-based: the user asks to
+// receive X USDT and is credited X minus our cut — same currency in and out, so there is no
+// exchange rate to mark up. It keeps its fee_configurations row.
+const YC_FEE_TYPES = [
     {
         key: 'yc_payment_collection',
         label: 'Payment Collection',
@@ -80,6 +83,26 @@ const YC_FEE_TYPES = [
         icon: Download,
     },
 ];
+
+// Yellow Card's markup math, mirroring ycMarkup.service.js on the backend. Deliberately NOT the
+// crypto helpers above: Yellow Card's rate always means "amount_to = amount_from * rate" in every
+// direction, so a positive markup always means our margin — the rate the customer gets goes DOWN.
+// Crypto's equivalent moves the quoted rate UP and flips meaning by direction. Sharing one
+// formula between them would show an admin a preview with the wrong sign.
+const computeYcCustomerRate = (rate, markupPct) => {
+    const r = Number(rate);
+    if (!r || Number.isNaN(r)) return null;
+    return r * (1 - (Number(markupPct) || 0) / 100);
+};
+
+// A negative markup would hand the customer a better rate than Yellow Card's own — we'd be paying
+// to move their money. Legitimate as a deliberate promo, never as a typo.
+const isYcMarkupBackwards = (markupPct) => Number(markupPct) < 0;
+
+// Corridors seen in real transfers plus the majors — a starting point for the pair picker, not a
+// whitelist: Yellow Card controls which corridors exist and the backend enforces no list, so the
+// field stays free-text.
+const YC_CURRENCY_SUGGESTIONS = ['NGN', 'USD', 'GBP', 'EUR', 'XOF', 'KES', 'ZAR', 'GHS', 'UGX', 'TZS', 'XAF', 'RWF', 'ZMW', 'MWK', 'USDT', 'USDC'];
 
 const computeCustomerRate = (rate, markupPct) => {
     const r = Number(rate);
@@ -121,6 +144,12 @@ const SystemManagement = () => {
     // Create Modal States
     const [showFXModal, setShowFXModal] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
+    // Yellow Card rate markup
+    const [ycProduct, setYcProduct] = useState('yc_international_transfer');
+    const [showYcModal, setShowYcModal] = useState(false);
+    const [newYc, setNewYc] = useState({ from_currency: 'NGN', to_currency: 'XOF', rate: 0, markup_percentage: 0 });
+    const [ycLiveBase, setYcLiveBase] = useState({ loading: false, error: null });
+    const [ycBaseRefreshKey, setYcBaseRefreshKey] = useState(0);
     const [newFX, setNewFX] = useState({ from_currency: 'USDT', to_currency: 'NGN', rate: 0, markup_percentage: 0 });
     const [newFee, setNewFee] = useState({ transaction_type: 'card_creation', fee_type: 'fixed', fee_value: 0, min_fee: 0, max_fee: 0, currency: 'USD', country: '' });
     // Live "Base" rate fetch state for the Add Exchange Rate modal — refetched whenever the
@@ -169,6 +198,17 @@ const SystemManagement = () => {
 
     const fiatCodes = useMemo(() => new Set(FIAT_CURRENCIES.map(c => c.code)), []);
 
+    // One endpoint returns every product's rows; each panel shows only its own. Rows predating the
+    // product column default to crypto_swap server-side, so the fallback here is just belt-and-braces.
+    const cryptoRates = useMemo(
+        () => exchangeRates.filter(r => (r.product || 'crypto_swap') === 'crypto_swap'),
+        [exchangeRates]
+    );
+    const ycRates = useMemo(
+        () => exchangeRates.filter(r => r.product === ycProduct),
+        [exchangeRates, ycProduct]
+    );
+
     // Auto-fetch the live Obiex "Base" rate whenever the modal is open and a valid, distinct
     // pair is selected — this is what lets the admin just type a markup instead of hand-entering
     // a rate that's already changing by the second.
@@ -210,6 +250,48 @@ const SystemManagement = () => {
         const result = await adminService.updateExchangeRate(rateId, data);
         if (result.success) {
             setMessage({ type: 'success', text: 'FX rate updated successfully' });
+            fetchData();
+        } else {
+            setMessage({ type: 'error', text: result.error });
+        }
+        setSaving(null);
+    };
+
+    // Live Yellow Card base rate for the markup modal, refetched whenever the pair changes — same
+    // pattern as the crypto modal's Obiex fetch above, different provider.
+    useEffect(() => {
+        if (!showYcModal) return;
+        const from = newYc.from_currency;
+        const to = newYc.to_currency;
+        if (!from || !to || from === to) return;
+        let cancelled = false;
+        (async () => {
+            setYcLiveBase({ loading: true, error: null });
+            const result = await adminService.getYcLiveRate(from, to);
+            if (cancelled) return;
+            if (result.success) {
+                setYcLiveBase({ loading: false, error: null });
+                setNewYc(prev => ({ ...prev, rate: result.data?.base_rate }));
+            } else {
+                setYcLiveBase({ loading: false, error: result.error });
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [showYcModal, newYc.from_currency, newYc.to_currency, ycBaseRefreshKey]);
+
+    const handleCreateYcRate = async () => {
+        setSaving('yc');
+        const result = await adminService.createExchangeRate({
+            from_currency: String(newYc.from_currency || '').toUpperCase(),
+            to_currency: String(newYc.to_currency || '').toUpperCase(),
+            rate: Number(newYc.rate),
+            markup_percentage: Number(newYc.markup_percentage) || 0,
+            product: ycProduct,
+        });
+        if (result.success) {
+            setMessage({ type: 'success', text: 'Markup saved' });
+            setShowYcModal(false);
+            setNewYc({ from_currency: 'NGN', to_currency: 'XOF', rate: 0, markup_percentage: 0 });
             fetchData();
         } else {
             setMessage({ type: 'error', text: result.error });
@@ -431,16 +513,125 @@ const SystemManagement = () => {
                     animate={{ opacity: 1, x: 0 }}
                     className="space-y-8"
                 >
-                    {/* Yellow Card — Global Finance Markup */}
+                    {/* Yellow Card — Global Finance rate markup */}
+                    <section className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-md border border-gray-100 dark:border-gray-700">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-3">
+                                <Globe className="w-5 h-5 text-emerald-500" />
+                                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Yellow Card — Global Finance Markup</h2>
+                            </div>
+                            <button
+                                onClick={() => setShowYcModal(true)}
+                                className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"
+                            >
+                                <Plus className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-5 max-w-3xl">
+                            Yellow Card's base rate plus our markup gives the JAXOPAY rate used in Global transactions.
+                            Customers only ever see that final rate — the base rate and our margin are never shown or
+                            broken out anywhere in the app. A pair with no row here transacts at Yellow Card's raw rate
+                            (no margin).
+                        </p>
+
+                        {/* Product tabs — swap and transfer are priced independently. */}
+                        <div className="flex gap-2 mb-5">
+                            {YC_RATE_PRODUCTS.map((p) => {
+                                const Icon = p.icon;
+                                return (
+                                    <button
+                                        key={p.key}
+                                        onClick={() => setYcProduct(p.key)}
+                                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-colors ${
+                                            ycProduct === p.key
+                                                ? 'bg-emerald-500 text-white shadow-sm'
+                                                : 'bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 hover:bg-gray-100'
+                                        }`}
+                                    >
+                                        <Icon className="w-4 h-4" />
+                                        {p.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <p className="text-[11px] text-gray-400 mb-4">
+                            {YC_RATE_PRODUCTS.find(p => p.key === ycProduct)?.description}
+                        </p>
+
+                        <div className="space-y-4">
+                            {ycRates.length === 0 ? (
+                                <div className="p-8 text-center text-gray-500 bg-gray-50 dark:bg-gray-900/20 rounded-xl border border-dashed border-gray-200">
+                                    No markup configured for {YC_RATE_PRODUCTS.find(p => p.key === ycProduct)?.label} —
+                                    these transactions currently use Yellow Card's raw rate with no margin.
+                                </div>
+                            ) : ycRates.map(rate => {
+                                const backwards = isYcMarkupBackwards(rate.markup_percentage);
+                                const customerRate = computeYcCustomerRate(rate.rate, rate.markup_percentage);
+                                return (
+                                    <div key={rate.id} className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <span className="font-bold text-gray-900 dark:text-white uppercase">{rate.from_currency} → {rate.to_currency}</span>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-[10px] text-gray-400">UP: {new Date(rate.updated_at).toLocaleDateString()}</span>
+                                                <button
+                                                    onClick={() => handleUpdateFX(rate.id, { is_active: !rate.is_active })}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-colors ${rate.is_active ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                                                >
+                                                    {rate.is_active ? 'Active' : 'Inactive'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center justify-between mb-3 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/10 rounded-lg border border-emerald-100 dark:border-emerald-900/20">
+                                            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase">JAXOPAY Rate</span>
+                                            <span className="text-sm font-bold text-emerald-800 dark:text-emerald-200">
+                                                {customerRate != null ? `1 ${rate.from_currency} = ${Number(customerRate).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${rate.to_currency}` : '—'}
+                                            </span>
+                                        </div>
+                                        {backwards && (
+                                            <div className="flex items-center gap-1.5 mb-3 text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                                                Negative markup — this pair gives customers a better rate than Yellow Card's own.
+                                            </div>
+                                        )}
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="relative">
+                                                <label className="text-xs text-gray-500 uppercase font-bold mb-1 block">Base Rate</label>
+                                                <input
+                                                    type="number"
+                                                    defaultValue={rate.rate}
+                                                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-2 text-sm pr-10 focus:ring-2 focus:ring-primary-500 outline-none"
+                                                    onBlur={(e) => handleUpdateFX(rate.id, { rate: parseFloat(e.target.value) })}
+                                                />
+                                                <Save className="w-3 h-3 absolute right-3 bottom-3 text-gray-300" />
+                                            </div>
+                                            <div className="relative">
+                                                <label className="text-xs text-gray-500 uppercase font-bold mb-1 block">Markup (%)</label>
+                                                <input
+                                                    type="number"
+                                                    step="0.0001"
+                                                    defaultValue={rate.markup_percentage}
+                                                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-2 text-sm pr-10 focus:ring-2 focus:ring-primary-500 outline-none"
+                                                    onBlur={(e) => handleUpdateFX(rate.id, { markup_percentage: parseFloat(e.target.value) })}
+                                                />
+                                                <Save className="w-3 h-3 absolute right-3 bottom-3 text-gray-300" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+
+                    {/* Payment Collection — the one Global Finance product still priced as a fee */}
                     <section className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-md border border-gray-100 dark:border-gray-700">
                         <div className="flex items-center gap-3 mb-2">
-                            <Globe className="w-5 h-5 text-emerald-500" />
-                            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Yellow Card — Global Finance Markup</h2>
+                            <Download className="w-5 h-5 text-emerald-500" />
+                            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Yellow Card — Payment Collection</h2>
                         </div>
-                        <p className="text-xs text-gray-500 mb-6 max-w-2xl">
-                            JAXOPAY's own margin on top of Yellow Card's rate for each product — a fee added to or
-                            deducted from the amount, not baked into the exchange rate shown to the customer (that's
-                            a separate mechanism, used only for crypto swap — see FX Rates &amp; Markups below).
+                        <p className="text-xs text-gray-500 mb-6 max-w-3xl">
+                            Priced as a percentage rather than a rate markup: the user asks to receive an amount in
+                            USDT/USDC and is credited that amount minus our cut — same currency in and out, so there's
+                            no exchange rate to mark up. The customer sees only the net amount they'll receive.
                         </p>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {YC_FEE_TYPES.map((ycType) => {
@@ -519,11 +710,11 @@ const SystemManagement = () => {
                             </button>
                         </div>
                         <div className="space-y-4">
-                            {exchangeRates.length === 0 ? (
+                            {cryptoRates.length === 0 ? (
                                 <div className="p-8 text-center text-gray-500 bg-gray-50 dark:bg-gray-900/20 rounded-xl border border-dashed border-gray-200">
                                     No FX rates configured.
                                 </div>
-                            ) : exchangeRates.map(rate => {
+                            ) : cryptoRates.map(rate => {
                                 const backwards = isBackwardsMarkup(rate.from_currency, rate.to_currency, rate.markup_percentage, fiatCodes);
                                 const customerRate = rate.final_rate ?? computeCustomerRate(rate.rate, rate.markup_percentage);
                                 return (
@@ -779,6 +970,109 @@ const SystemManagement = () => {
                 );
             })()}
 
+            {/* Add Yellow Card Markup Modal */}
+            {showYcModal && (() => {
+                const samePair = newYc.from_currency === newYc.to_currency;
+                const customerRate = computeYcCustomerRate(newYc.rate, newYc.markup_percentage);
+                const backwards = isYcMarkupBackwards(newYc.markup_percentage);
+                const productLabel = YC_RATE_PRODUCTS.find(p => p.key === ycProduct)?.label;
+                return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowYcModal(false)}>
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold mb-1 dark:text-white">Add Markup — {productLabel}</h3>
+                        <p className="text-xs text-gray-500 mb-4">
+                            Base rate comes live from Yellow Card. Your markup is what the customer's rate is reduced by.
+                        </p>
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">From</label>
+                                    <input
+                                        list="yc-currency-options"
+                                        value={newYc.from_currency}
+                                        onChange={e => setNewYc({ ...newYc, from_currency: e.target.value.toUpperCase() })}
+                                        className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-3 dark:text-white uppercase"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">To</label>
+                                    <input
+                                        list="yc-currency-options"
+                                        value={newYc.to_currency}
+                                        onChange={e => setNewYc({ ...newYc, to_currency: e.target.value.toUpperCase() })}
+                                        className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-3 dark:text-white uppercase"
+                                    />
+                                </div>
+                                <datalist id="yc-currency-options">
+                                    {YC_CURRENCY_SUGGESTIONS.map(c => <option key={c} value={c} />)}
+                                </datalist>
+                            </div>
+
+                            {samePair ? (
+                                <p className="text-xs text-amber-600 font-medium">Pick two different currencies.</p>
+                            ) : (
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-xs uppercase font-bold text-gray-500">Base Rate (Yellow Card)</label>
+                                        <button
+                                            onClick={() => setYcBaseRefreshKey(k => k + 1)}
+                                            className="text-[10px] font-bold text-primary-600 hover:underline inline-flex items-center gap-1"
+                                        >
+                                            <RefreshCw className={`w-3 h-3 ${ycLiveBase.loading ? 'animate-spin' : ''}`} /> Refresh
+                                        </button>
+                                    </div>
+                                    <input
+                                        type="number"
+                                        value={newYc.rate}
+                                        onChange={e => setNewYc({ ...newYc, rate: parseFloat(e.target.value) })}
+                                        className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-3 dark:text-white"
+                                    />
+                                    {ycLiveBase.loading && <p className="text-[11px] text-gray-400 mt-1">Fetching Yellow Card's live rate…</p>}
+                                    {ycLiveBase.error && <p className="text-[11px] text-amber-600 mt-1">{ycLiveBase.error}</p>}
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">Markup (%)</label>
+                                <input
+                                    type="number"
+                                    step="0.0001"
+                                    value={newYc.markup_percentage}
+                                    onChange={e => setNewYc({ ...newYc, markup_percentage: parseFloat(e.target.value) })}
+                                    className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-3 dark:text-white"
+                                />
+                            </div>
+
+                            {!samePair && customerRate != null && (
+                                <div className="px-3 py-2 bg-emerald-50 dark:bg-emerald-900/10 rounded-lg border border-emerald-100 dark:border-emerald-900/20">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase">JAXOPAY Rate</span>
+                                        <span className="text-sm font-bold text-emerald-800 dark:text-emerald-200">
+                                            1 {newYc.from_currency} = {Number(customerRate).toLocaleString(undefined, { maximumFractionDigits: 6 })} {newYc.to_currency}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                            {backwards && (
+                                <div className="flex items-start gap-1.5 text-[11px] font-bold text-amber-700 dark:text-amber-400">
+                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                                    A negative markup gives customers a better rate than Yellow Card's own — JAXOPAY absorbs the difference.
+                                </div>
+                            )}
+
+                            <button
+                                onClick={handleCreateYcRate}
+                                disabled={saving === 'yc' || samePair || !newYc.rate}
+                                className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                            >
+                                {saving === 'yc' ? 'Saving...' : 'Save Markup'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                );
+            })()}
+
             {/* Create Fee Modal */}
             {showFeeModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowFeeModal(false)}>
@@ -797,7 +1091,11 @@ const SystemManagement = () => {
                                         nothing in the codebase ever reads them, so a row created under any of those was
                                         permanently inert (confirmed: this exact mistake already happened once for the old
                                         'exchange' row). Keep this list in sync with feeConfig.service.js's real callers. */}
-                                    {['card_creation', 'card_funding', 'swap_buy', 'swap_sell', 'fiat_deposit', 'fiat_withdrawal', 'yc_currency_swap', 'yc_international_transfer', 'yc_payment_collection'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
+                                    {/* yc_currency_swap / yc_international_transfer are deliberately absent: those two
+                                    moved to the rate-markup model (exchange_rates, see the Global Finance Markup
+                                    panel), so nothing reads a fee row for them any more — offering them here would
+                                    let an admin create a row that silently does nothing. */}
+                                {['card_creation', 'card_funding', 'swap_buy', 'swap_sell', 'fiat_deposit', 'fiat_withdrawal', 'yc_payment_collection'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').toUpperCase()}</option>)}
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">

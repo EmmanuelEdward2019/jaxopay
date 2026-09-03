@@ -223,6 +223,17 @@ const adminService = {
         }
     },
 
+    // Live base rate from Yellow Card, for the Global Finance markup panel. Separate endpoint from
+    // getLiveFxBaseRate above, which quotes Obiex/Quidax — different provider, different corridors.
+    getYcLiveRate: async (from, to) => {
+        try {
+            const response = await apiClient.get('/admin/fx/yc-live-rate', { params: { from, to } });
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error?.response?.data?.message || error.message };
+        }
+    },
+
     getExchangeRates: async () => {
         try {
             const response = await apiClient.get('/admin/fx/rates');

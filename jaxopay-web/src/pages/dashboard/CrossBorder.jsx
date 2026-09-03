@@ -1082,25 +1082,20 @@ const CrossBorder = () => {
                                                 <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Account</span>
                                                 <span className="font-medium">{transferData.accountNumber}</span>
                                             </div>
-                                            <div className="flex justify-between items-center text-sm">
-                                                <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Transfer Fee</span>
-                                                {transferFeeLoading ? (
-                                                    <span className="text-muted-foreground">Calculating...</span>
-                                                ) : transferFeeQuote && transferFeeQuote.fee > 0 ? (
-                                                    <span className="font-bold">
-                                                        {transferFeeQuote.fee.toFixed(2)} {transferFeeQuote.fromCurrency}
-                                                        {transferFeeQuote.feePercent != null && ` (${transferFeeQuote.feePercent}%)`}
-                                                    </span>
-                                                ) : (
-                                                    <span className="font-bold text-success">FREE</span>
-                                                )}
-                                            </div>
-                                            {transferFeeQuote && transferFeeQuote.fee > 0 && (
+                                            {/* The rate is the whole story — our margin is inside it and is never
+                                                broken out into a fee line. What they send is exactly the amount above. */}
+                                            {transferData.currency !== transferFeeQuote?.targetCurrency && (
                                                 <div className="flex justify-between items-center text-sm">
-                                                    <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Total Charged</span>
-                                                    <span className="font-bold">
-                                                        {transferFeeQuote.totalDebit.toFixed(2)} {transferFeeQuote.fromCurrency}
-                                                    </span>
+                                                    <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Exchange Rate</span>
+                                                    {transferFeeLoading ? (
+                                                        <span className="text-muted-foreground">Calculating...</span>
+                                                    ) : transferFeeQuote ? (
+                                                        <span className="font-medium">
+                                                            1 {transferFeeQuote.fromCurrency} = {Number(transferFeeQuote.rate).toFixed(4)} {transferFeeQuote.targetCurrency}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-muted-foreground">—</span>
+                                                    )}
                                                 </div>
                                             )}
                                             {transferFeeQuote && (
@@ -1115,7 +1110,7 @@ const CrossBorder = () => {
                                     ) : (
                                         <>
                                             <div className="flex justify-between items-center text-sm">
-                                                <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">You'll Receive</span>
+                                                <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Payer Sends</span>
                                                 <span className="font-bold">{collectData.amount} {collectData.userCurrency}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-sm">
@@ -1126,36 +1121,31 @@ const CrossBorder = () => {
                                                 <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Payment Method</span>
                                                 <span className="font-medium text-right">{collectData.networkName}, {COUNTRY_NAMES[collectData.payerCountry] || collectData.payerCountry}</span>
                                             </div>
+                                            {/* Net figure only — no fee breakdown, same treatment as every other
+                                                Global Finance product. */}
                                             <div className="flex justify-between items-center text-sm">
-                                                <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">Collection Fee</span>
+                                                <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">You'll Be Credited</span>
                                                 {collectFeeLoading ? (
                                                     <span className="text-muted-foreground">Calculating...</span>
                                                 ) : collectFeeQuote ? (
-                                                    <span className="font-bold">
-                                                        {collectFeeQuote.fee.toFixed(2)} {collectData.userCurrency}
-                                                        {collectFeeQuote.feePercent != null && ` (${collectFeeQuote.feePercent}%)`}
+                                                    <span className="font-bold text-primary">
+                                                        {collectFeeQuote.netAmount.toFixed(2)} {collectData.userCurrency}
                                                     </span>
                                                 ) : (
                                                     <span className="text-muted-foreground">—</span>
                                                 )}
                                             </div>
-                                            {collectFeeQuote && (
-                                                <div className="flex justify-between items-center text-sm">
-                                                    <span className="text-muted-foreground uppercase font-bold text-[10px] tracking-wider">You'll Be Credited</span>
-                                                    <span className="font-bold text-primary">
-                                                        {collectFeeQuote.netAmount.toFixed(2)} {collectData.userCurrency}
-                                                    </span>
-                                                </div>
-                                            )}
                                         </>
                                     )}
                                 </div>
 
-                                {activeTab === 'transfer' && transferFeeQuote && getBalance(transferData.currency) < transferFeeQuote.totalDebit && (
+                                {/* The debit is exactly the amount entered — nothing is added on top — so this
+                                    checks against that directly rather than against a quoted total. */}
+                                {activeTab === 'transfer' && parseFloat(transferData.amount) > 0 && getBalance(transferData.currency) < parseFloat(transferData.amount) && (
                                     <div className="mb-6 p-4 bg-danger/10 border border-red-100 rounded-2xl flex items-start gap-3 text-danger">
                                         <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                                         <p className="text-sm font-medium">
-                                            Insufficient balance. This transfer needs {transferFeeQuote.totalDebit.toFixed(2)} {transferFeeQuote.fromCurrency} (including the {transferFeeQuote.fee.toFixed(2)} {transferFeeQuote.fromCurrency} fee), but your {transferData.currency} balance is {getBalance(transferData.currency).toFixed(2)} {transferData.currency}.
+                                            Insufficient balance. This transfer needs {parseFloat(transferData.amount).toFixed(2)} {transferData.currency}, but your {transferData.currency} balance is {getBalance(transferData.currency).toFixed(2)} {transferData.currency}.
                                         </p>
                                     </div>
                                 )}
@@ -1179,7 +1169,7 @@ const CrossBorder = () => {
 
                                 <button
                                     onClick={activeTab === 'swap' ? handleSwap : activeTab === 'transfer' ? handleTransfer : handleCollect}
-                                    disabled={loading || (activeTab === 'transfer' && transferFeeQuote && getBalance(transferData.currency) < transferFeeQuote.totalDebit)}
+                                    disabled={loading || (activeTab === 'transfer' && parseFloat(transferData.amount) > 0 && getBalance(transferData.currency) < parseFloat(transferData.amount))}
                                     className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
                                 >
                                     {loading ? (
@@ -1343,7 +1333,7 @@ const CrossBorder = () => {
                             Jaxopay Safeguard
                         </h3>
                         <p className="text-xs text-white/80 leading-relaxed">
-                            International transfers are processed through licensed partners. You'll always see the exchange rate and any fee before you confirm — no hidden charges.
+                            International transfers are processed through licensed partners. You'll always see the exchange rate and exactly what your recipient gets before you confirm.
                         </p>
                     </div>
 

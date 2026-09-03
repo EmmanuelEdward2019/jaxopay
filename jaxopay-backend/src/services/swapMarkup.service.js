@@ -31,13 +31,19 @@ export async function getSwapBaseRate(fromCurrency, toCurrency) {
   return rate == null ? null : Number(rate);
 }
 
+// exchange_rates is shared with Yellow Card's own rate markup (ycMarkup.service.js) since
+// migration 042, so every read here must be scoped to this product — the same currency pair can
+// carry a different margin as a YC swap/transfer than it does as an Obiex/Quidax crypto swap, and
+// the two use opposite markup sign conventions.
+const PRODUCT = 'crypto_swap';
+
 /** Admin-configured markup % for a FROM->TO pair. 0 (no-op) if unconfigured or inactive — an
  *  unconfigured pair behaves exactly like before this feature existed: raw provider passthrough. */
 export async function getSwapMarkupPercentage(fromCurrency, toCurrency) {
   const result = await query(
     `SELECT markup_percentage FROM exchange_rates
-     WHERE from_currency = $1 AND to_currency = $2 AND is_active = true`,
-    [String(fromCurrency).toUpperCase(), String(toCurrency).toUpperCase()]
+     WHERE product = $1 AND from_currency = $2 AND to_currency = $3 AND is_active = true`,
+    [PRODUCT, String(fromCurrency).toUpperCase(), String(toCurrency).toUpperCase()]
   );
   if (result.rows.length === 0) return 0;
   return Number(result.rows[0].markup_percentage) || 0;
@@ -57,8 +63,13 @@ export async function getAllSwapMarkups() {
     return _markupCache;
   }
   try {
+    // Product-scoped for the same reason getSwapMarkupPercentage is — without it a Yellow Card
+    // row for an overlapping pair would silently overwrite the crypto one in this cache (the Map
+    // is keyed by pair alone), corrupting the public "JAXOPAY Rate" ticker.
     const result = await query(
-      `SELECT from_currency, to_currency, markup_percentage FROM exchange_rates WHERE is_active = true`
+      `SELECT from_currency, to_currency, markup_percentage FROM exchange_rates
+       WHERE product = $1 AND is_active = true`,
+      [PRODUCT]
     );
     const next = new Map();
     for (const row of result.rows) {
