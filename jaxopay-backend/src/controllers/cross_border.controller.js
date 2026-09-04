@@ -4,20 +4,30 @@ import { verifyTransactionPin } from '../services/transactionPin.service.js';
 import { auditFromReq } from '../services/audit.service.js';
 import logger from '../utils/logger.js';
 import { assertDepositsAllowed, assertWithdrawalsAllowed } from '../services/financialControls.service.js';
-import { getYcMarkupPercentage, applyYcMarkup } from '../services/ycMarkup.service.js';
+import { getYcMarkupPercentage, applyYcMarkup, YC_MARKUP_PRODUCTS } from '../services/ycMarkup.service.js';
 
-// The rate shown on the Currency Swap tab. Returns the marked-up customer rate, not Yellow Card's
-// raw one, so the preview can never quote a better rate than swapCurrency actually executes at —
-// the same single-rate, no-breakdown treatment the crypto swap rate endpoint already gives.
+// The customer-facing rate for a pair — marked up, never Yellow Card's raw rate, so a preview can
+// never quote better than what actually executes.
+//
+// Swap and International Transfer are priced independently, so the caller must say which one it's
+// quoting for: ?product=yc_swap (default) or yc_international_transfer. Getting this wrong shows a
+// rate from the other product's markup — which is exactly what happened when the Global Finance
+// rate strip and RN's transfer form both defaulted to the swap markup and so never reflected a
+// transfer markup at all.
 export const getExchangeRate = catchAsync(async (req, res) => {
-    const { from, to } = req.query;
+    const { from, to, product } = req.query;
     if (!from || !to) throw new AppError('params from and to are required', 400);
 
+    const forProduct = YC_MARKUP_PRODUCTS.includes(product) ? product : 'yc_swap';
     const rateData = await currencyEngine.getRate(from, to);
-    const markupPct = await getYcMarkupPercentage('yc_swap', from, to);
+    const markupPct = await getYcMarkupPercentage(forProduct, from, to);
     res.status(200).json({
         success: true,
-        data: { ...rateData, rate: applyYcMarkup(parseFloat(rateData.rate), markupPct) },
+        data: {
+            ...rateData,
+            rate: applyYcMarkup(parseFloat(rateData.rate), markupPct),
+            product: forProduct,
+        },
     });
 });
 

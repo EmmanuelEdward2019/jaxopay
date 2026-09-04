@@ -123,11 +123,14 @@ const CrossBorder = () => {
         fxService.getRampStatus().then((res) => { if (res.success) setGate(res.data); }).catch(() => {});
     }, []);
 
+    // Refetches when the tab changes: swap and transfer carry independent markups, so the strip has
+    // to quote whichever product the user is actually looking at, or it shows a rate they can't get.
     useEffect(() => {
         fetchLiveRates();
         const interval = setInterval(fetchLiveRates, 30000);
         return () => clearInterval(interval);
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
 
     const [quoteExpiry, setQuoteExpiry] = useState(0);
 
@@ -255,6 +258,10 @@ const CrossBorder = () => {
         }
     };
 
+    // Which product's markup the strip should quote. Collections have no exchange rate of their
+    // own, so that tab falls back to the transfer rate (these pairs are remittance corridors).
+    const liveRatesProduct = activeTab === 'swap' ? 'yc_swap' : 'yc_international_transfer';
+
     const fetchLiveRates = async () => {
         // Pairs Yellow Card supports (Africa-focused + majors). CNY is not supported.
         const pairs = [
@@ -276,7 +283,7 @@ const CrossBorder = () => {
             // allSettled → one unsupported pair can't blank the whole panel.
             const settled = await Promise.allSettled(
                 pairs.map(async ({ from, to }) => {
-                    const res = await fxService.getRates(from, to);
+                    const res = await fxService.getRates(from, to, liveRatesProduct);
                     return { pair: `${from}/${to}`, rate: res.data?.rate };
                 })
             );
@@ -500,6 +507,9 @@ const CrossBorder = () => {
                 <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
                         <TrendingUp className="w-4 h-4 text-primary" /> Live Rates
+                        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            {activeTab === 'swap' ? 'Currency Swap' : 'International Transfer'}
+                        </span>
                     </h3>
                     {ratesLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
                 </div>

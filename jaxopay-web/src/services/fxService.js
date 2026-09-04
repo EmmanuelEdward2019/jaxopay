@@ -6,9 +6,13 @@ const fxService = {
      * @param {string} from - Source currency (e.g., NGN)
      * @param {string} to - Target currency (e.g., USD)
      */
-    getRates: async (from, to) => {
+    // `product` picks which markup applies — 'yc_swap' (default) or 'yc_international_transfer'.
+    // Swap and transfer are priced independently, so quoting under the wrong one shows a rate the
+    // user won't actually get.
+    getRates: async (from, to, product) => {
         try {
-            return await apiClient.get(`/fx/rates?from=${from}&to=${to}`);
+            const q = product ? `&product=${encodeURIComponent(product)}` : '';
+            return await apiClient.get(`/fx/rates?from=${from}&to=${to}${q}`);
         } catch (error) {
             console.error('Error fetching FX rates:', error);
             throw error;
