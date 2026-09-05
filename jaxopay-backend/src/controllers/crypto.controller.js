@@ -1197,6 +1197,44 @@ export const withdrawCrypto = catchAsync(async (req, res) => {
 // withdrawal whose webhook never arrives (or never fires at all) stays "Processing" in the
 // transaction history forever, even though the crypto genuinely left the wallet successfully.
 // ─────────────────────────────────────────────
+/**
+ * Pull the on-chain transaction hash out of a provider payload, whatever they called it.
+ *
+ * Deliberately strict about what counts: writing the provider's own UUID here would render a
+ * "Verify on Blockchain" button that leads to a dead explorer page, which is worse than showing
+ * no hash at all. Real hashes are long, unbroken alphanumerics (64 hex on EVM/BTC/TRON, base58 on
+ * Solana); a UUID contains dashes and is far shorter, so both are excluded.
+ */
+function extractTxHash(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+    const keys = ['hash', 'txHash', 'transactionHash', 'blockchainHash', 'onChainHash', 'chainHash', 'blockchainTxId'];
+    const sources = [payload, payload.payout, payload.transaction, payload.data, payload.raw];
+    for (const src of sources) {
+        if (!src || typeof src !== 'object') continue;
+        for (const key of keys) {
+            const v = src[key];
+            if (v == null) continue;
+            const s = String(v).trim();
+            if (/^[A-Za-z0-9]{40,120}$/.test(s)) return s;
+        }
+    }
+    return null;
+}
+
+/** Network, for pairing with the hash so the receipt can link to the right explorer. */
+function extractTxNetwork(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+    const sources = [payload, payload.payout, payload.transaction, payload.data, payload.raw];
+    for (const src of sources) {
+        if (!src || typeof src !== 'object') continue;
+        for (const key of ['network', 'networkCode', 'chain', 'cryptoNetwork']) {
+            const v = src[key];
+            if (v != null && String(v).trim()) return String(v).trim();
+        }
+    }
+    return null;
+}
+
 async function reconcileCryptoWithdrawal(txId) {
   const txRes = await query(
     `SELECT wt.id, wt.wallet_id, wt.amount, wt.currency, wt.status, wt.metadata, w.user_id
@@ -1208,25 +1246,53 @@ async function reconcileCryptoWithdrawal(txId) {
   if (txRes.rows.length === 0) return { status: 'not_found' };
   const tx = txRes.rows[0];
 
+  const obiexWithdrawId = tx.metadata?.obiex_withdraw_id;
+
+  // A withdrawal that already finished but never captured its on-chain hash is still worth one
+  // poll: this reconciler — not the webhook, which never arrives for withdrawals — is what
+  // finalises them, and it used to keep only the status and discard the hash entirely. Fills the
+  // hash in and stops there; nothing about the status or balance is reconsidered.
   if (['completed', 'failed'].includes(tx.status)) {
+    if (tx.status === 'completed' && !tx.metadata?.hash && obiexWithdrawId) {
+      try {
+        const result = await obiex.getTransactionById(obiexWithdrawId);
+        const hash = extractTxHash(result);
+        if (hash) {
+          await query(
+            `UPDATE wallet_transactions
+             SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
+             WHERE id = $1`,
+            [txId, JSON.stringify({ hash, network: extractTxNetwork(result) || tx.metadata?.network || null })]
+          );
+          logger.info(`[CryptoWithdraw] backfilled on-chain hash for ${txId}`);
+        }
+      } catch (err) {
+        logger.warn(`[CryptoWithdraw] hash backfill for ${txId} failed: ${err.message}`);
+      }
+    }
     return { status: tx.status, userId: tx.user_id };
   }
 
-  const obiexWithdrawId = tx.metadata?.obiex_withdraw_id;
   if (!obiexWithdrawId) {
     // No provider id recorded yet — nothing to poll; leave as-is for the webhook to finalize.
     return { status: tx.status, userId: tx.user_id, pending: true };
   }
 
   let providerStatus;
+  let providerResult;
   try {
-    const result = await obiex.getTransactionById(obiexWithdrawId);
-    providerStatus = String(result?.payout?.status || result?.status || '').toLowerCase();
+    providerResult = await obiex.getTransactionById(obiexWithdrawId);
+    providerStatus = String(providerResult?.payout?.status || providerResult?.status || '').toLowerCase();
     logger.info(`[CryptoWithdraw] reconcile ${txId}: provider status = ${providerStatus || 'unknown'}`);
   } catch (err) {
     logger.warn(`[CryptoWithdraw] reconcile ${txId} provider query failed: ${err.message}`);
     return { status: tx.status, userId: tx.user_id, pending: true };
   }
+
+  // The on-chain hash is the whole point of a crypto receipt, and this poll is the only place it
+  // ever becomes available.
+  const onChainHash = extractTxHash(providerResult);
+  const onChainNetwork = extractTxNetwork(providerResult);
 
   if (['success', 'successful', 'completed'].includes(providerStatus)) {
     let didFinalize = false;
@@ -1234,8 +1300,15 @@ async function reconcileCryptoWithdrawal(txId) {
       const cur = await client.query(`SELECT status FROM wallet_transactions WHERE id = $1 FOR UPDATE`, [txId]);
       if (['completed', 'failed'].includes(cur.rows[0]?.status)) return;
       await client.query(
-        `UPDATE wallet_transactions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE id = $1`,
-        [txId]
+        `UPDATE wallet_transactions
+         SET status = 'completed', completed_at = NOW(), updated_at = NOW(),
+             metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+         WHERE id = $1`,
+        [txId, JSON.stringify({
+          hash: onChainHash,
+          // Keep the network already recorded at creation if the provider doesn't restate it.
+          network: onChainNetwork || tx.metadata?.network || null,
+        })]
       );
       didFinalize = true;
     });
@@ -1310,9 +1383,18 @@ export const verifyCryptoWithdrawal = catchAsync(async (req, res) => {
 export async function sweepPendingCryptoWithdrawals(maxAgeMinutes = 2, limit = 50) {
   const rows = (await query(
     `SELECT id FROM wallet_transactions
-     WHERE transaction_type = 'withdrawal' AND status = 'pending'
+     WHERE transaction_type = 'withdrawal'
        AND metadata->>'provider' = 'obiex'
        AND created_at < NOW() - ($1 || ' minutes')::interval
+       AND (
+         status = 'pending'
+         -- Completed withdrawals that never captured an on-chain hash. Bounded to the last week
+         -- so this stays a backfill for the recent gap rather than an unbounded re-poll of all
+         -- history, and each row drops out as soon as its hash lands.
+         OR (status = 'completed'
+             AND metadata->>'hash' IS NULL
+             AND created_at > NOW() - INTERVAL '7 days')
+       )
      ORDER BY created_at ASC LIMIT $2`,
     [String(maxAgeMinutes), limit]
   )).rows;
