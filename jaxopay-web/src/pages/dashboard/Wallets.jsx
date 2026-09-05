@@ -1416,12 +1416,17 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
         return () => { active = false; };
     }, [isCrypto, code]);
 
-    // Resolve account name
+    // Resolve account name for every currency the server can verify (NGN and GHS, both via Obiex)
+    // — not just NGN. The payout needs a resolved name, so gating this to Nigeria meant a Ghanaian
+    // withdrawal could never be completed. Nigerian account numbers are exactly 10 digits, while
+    // Ghanaian bank accounts run longer and MoMo numbers differ, hence the looser gate elsewhere.
     useEffect(() => {
-        if (isCrypto || !selectedBank || recipient.length < 10 || code !== 'NGN') return;
+        const RESOLVABLE = ['NGN', 'GHS'];
+        const minLength = code === 'NGN' ? 10 : 9;
+        if (isCrypto || !selectedBank || recipient.length < minLength || !RESOLVABLE.includes(code)) return;
         const resolve = async () => {
             setResolvingAccount(true); setAccountName('');
-            const res = await transferService.resolveAccount(selectedBank, recipient, 'NGN');
+            const res = await transferService.resolveAccount(selectedBank, recipient, code);
             if (res.success) setAccountName(res.data.account_name);
             setResolvingAccount(false);
         };
@@ -1917,12 +1922,17 @@ const ExternalTransferForm = ({ code, type, balanceMap, onClose, onRefresh }) =>
         });
     }, [code, isCrypto]);
 
-    // Resolve account name
+    // Resolve account name for every currency the server can verify (NGN and GHS, both via Obiex)
+    // — not just NGN. The payout needs a resolved name, so gating this to Nigeria meant a Ghanaian
+    // withdrawal could never be completed. Nigerian account numbers are exactly 10 digits, while
+    // Ghanaian bank accounts run longer and MoMo numbers differ, hence the looser gate elsewhere.
     useEffect(() => {
-        if (isCrypto || !selectedBank || recipient.length < 10 || code !== 'NGN') return;
+        const RESOLVABLE = ['NGN', 'GHS'];
+        const minLength = code === 'NGN' ? 10 : 9;
+        if (isCrypto || !selectedBank || recipient.length < minLength || !RESOLVABLE.includes(code)) return;
         const resolve = async () => {
             setResolvingAccount(true); setAccountName('');
-            const res = await transferService.resolveAccount(selectedBank, recipient, 'NGN');
+            const res = await transferService.resolveAccount(selectedBank, recipient, code);
             if (res.success) setAccountName(res.data.account_name);
             setResolvingAccount(false);
         };
