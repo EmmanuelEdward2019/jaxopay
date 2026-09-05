@@ -5,7 +5,7 @@ import {
     Wallet, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, ArrowRight,
     Eye, EyeOff, Search, X, ChevronDown, RefreshCw,
     Copy, Check, Info, AlertCircle, ShieldCheck, CheckCircle,
-    Star, TrendingUp, Plus, Building2, Users, Send, Trash2
+    Star, TrendingUp, Plus, Building2, Users, Send, Trash2, Smartphone
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import QRCodeSVG from 'react-qr-code';
@@ -1431,6 +1431,14 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
     const [done, setDone] = useState(null);
     const [oldBalance, setOldBalance] = useState(null);
 
+    // Bank vs mobile money. Only meaningful where the provider actually offers both (Ghana today);
+    // elsewhere the destination list has no MoMo entries and the choice stays hidden on 'bank'.
+    const [payoutChannel, setPayoutChannel] = useState('bank');
+    const hasMomoOption = !isCrypto && banks.some((b) => b.channel === 'momo');
+    const destinationOptions = hasMomoOption
+        ? banks.filter((b) => (b.channel || 'bank') === payoutChannel)
+        : banks;
+
     // Saved bank recipients, shared with the mobile app through the same /beneficiaries API.
     const [savedBeneficiaries, setSavedBeneficiaries] = useState([]);
     const [saveBeneficiary, setSaveBeneficiary] = useState(false);
@@ -1574,23 +1582,56 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                     </div>
                 )}
 
+                {/* Ghana payouts go to either a bank or a mobile-money wallet, so the method is
+                    chosen first and filters the destination list — matching Obiex's own flow.
+                    Obiex returns both kinds in one list tagged with `channel`; currencies whose
+                    list has no MoMo entries skip this entirely and just show the bank picker. */}
+                {!isCrypto && hasMomoOption && (
+                    <div>
+                        <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Payment Method</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {[
+                                { key: 'bank', label: 'Bank Account', icon: Building2 },
+                                { key: 'momo', label: 'Mobile Money', icon: Smartphone },
+                            ].map((opt) => {
+                                const Icon = opt.icon;
+                                return (
+                                    <button
+                                        key={opt.key}
+                                        type="button"
+                                        onClick={() => { setPayoutChannel(opt.key); setSelectedBank(''); }}
+                                        className={`flex items-center justify-center gap-2 py-3 px-3 rounded-xl border text-sm font-semibold transition-colors ${
+                                            payoutChannel === opt.key
+                                                ? 'bg-primary text-white border-primary'
+                                                : 'bg-muted border-border text-foreground hover:border-primary'
+                                        }`}
+                                    >
+                                        <Icon className="w-4 h-4" />
+                                        {opt.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
                 {!isCrypto && (
                     <SearchableBankSelect
-                        items={banks}
-                        selected={banks.find(b => b.code === selectedBank) || null}
+                        items={destinationOptions}
+                        selected={destinationOptions.find(b => b.code === selectedBank) || null}
                         onSelect={(bank) => setSelectedBank(bank.code)}
-                        label="Select Bank"
-                        placeholder="Choose bank..."
+                        label={payoutChannel === 'momo' ? 'Network' : 'Select Bank'}
+                        placeholder={payoutChannel === 'momo' ? 'Choose network...' : 'Choose bank...'}
                     />
                 )}
 
                 <div>
                     <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-                        {isCrypto ? 'Wallet Address' : 'Account Number'}
+                        {isCrypto ? 'Wallet Address' : payoutChannel === 'momo' ? 'Mobile Money Number' : 'Account Number'}
                     </label>
                     <div className="relative">
                         <input type="text" value={recipient} onChange={(e) => setRecipient(e.target.value)}
-                            placeholder={isCrypto ? 'Paste wallet address' : '0123456789'}
+                            placeholder={isCrypto ? 'Paste wallet address' : payoutChannel === 'momo' ? '0244123456' : '0123456789'}
                             className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground font-medium focus:ring-2 focus:ring-ring focus:outline-none placeholder:text-muted-foreground" />
                         {resolvingAccount && <RefreshCw className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary" />}
                     </div>

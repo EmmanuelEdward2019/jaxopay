@@ -43,6 +43,27 @@ const korapay = new KorapayAdapter();
 // are used consistently across list → resolve → payout, see resolveAccount/sendTransfer below).
 // Other currencies via Korapay (Obiex bank payouts are NGN-only).
 // ─────────────────────────────────────────────
+/**
+ * Is this Ghanaian destination a mobile-money operator rather than a bank?
+ *
+ * Obiex returns banks and MoMo operators in one list with no separate endpoint, so the split has
+ * to be derived. Prefers whatever the payload says (their field naming for this isn't documented,
+ * and this machine can't read the live list — the endpoint is IP-allowlisted to the droplet), and
+ * falls back to matching Ghana's three operators by name. Both paths are checked, so a payload
+ * that does carry a type wins and the name match is only a backstop.
+ */
+function isGhsMobileMoney(entry) {
+    const declared = String(
+        entry?.type ?? entry?.channel ?? entry?.category ?? entry?.accountType ?? entry?.channelType ?? ''
+    ).toLowerCase();
+    if (declared) {
+        if (/momo|mobile/.test(declared)) return true;
+        if (/bank/.test(declared)) return false;
+    }
+    // Ghana has exactly three: MTN, Telecel (formerly Vodafone) and AirtelTigo.
+    return /\b(mtn|vodafone|telecel|airteltigo|airtel|tigo)\b|momo|mobile\s*money/i.test(String(entry?.name || ''));
+}
+
 export const listBanks = catchAsync(async (req, res) => {
     const currency = req.query.currency || 'NGN';
 
@@ -55,6 +76,22 @@ export const listBanks = catchAsync(async (req, res) => {
                 name: b.name,
             })).filter((b) => b.code && b.name);
             logger.info(`[Transfer] Fetched ${normalized.length} banks from Obiex (NGN)`);
+        } else if (currency.toUpperCase() === 'GHS') {
+            // Ghana is an Obiex rail too, not Korapay. One list carries both banks and mobile-money
+            // operators (Obiex exposes no separate MoMo endpoint), so each entry is tagged with a
+            // channel the client can filter on to build the Bank / Mobile money choice.
+            const banks = await obiex.getGhsBanks();
+            normalized = (banks || []).map((b) => ({
+                code: b.uuid || b.sortCode || b.code,
+                name: b.name,
+                channel: isGhsMobileMoney(b) ? 'momo' : 'bank',
+            })).filter((b) => b.code && b.name);
+            const momoCount = normalized.filter((b) => b.channel === 'momo').length;
+            logger.info(
+                `[Transfer] Fetched ${normalized.length} GHS destinations from Obiex ` +
+                `(${momoCount} mobile money, ${normalized.length - momoCount} bank). ` +
+                `Raw sample: ${JSON.stringify((banks || [])[0] || {}).slice(0, 200)}`
+            );
         } else {
             const banks = await korapay.listBanks(currency);
             normalized = (banks || []).map((b) => ({
@@ -113,12 +150,16 @@ export const resolveAccount = catchAsync(async (req, res) => {
     if (!bank_code || !account_number) {
         throw new AppError('bank_code and account_number are required', 400);
     }
-    const isNgn = currency.toUpperCase() === 'NGN';
+    const cur = currency.toUpperCase();
 
     try {
-        const data = isNgn
+        // Resolve through whichever provider will actually make the payout, so the code the user
+        // picked stays valid end to end: Obiex for NGN and GHS, Korapay for the rest.
+        const data = cur === 'NGN'
             ? await obiex.resolveNgnAccount(bank_code, account_number)
-            : await korapay.resolveAccount(bank_code, account_number, currency.toUpperCase());
+            : cur === 'GHS'
+                ? await obiex.resolveGhsAccount(bank_code, account_number)
+                : await korapay.resolveAccount(bank_code, account_number, cur);
 
         const accountName = data?.account_name || data?.account_holder_name || data?.name;
         if (!accountName) {
@@ -136,8 +177,9 @@ export const resolveAccount = catchAsync(async (req, res) => {
         });
     } catch (err) {
         if (err instanceof AppError) throw err;
-        const message = isNgn ? (err.message || 'Bank account verification failed') : getKorapayErrorDetails(err).message;
-        logger.error(`[Transfer] ${isNgn ? 'Obiex' : 'Korapay'} account resolve failed: ${message}`);
+        const viaObiex = cur === 'NGN' || cur === 'GHS';
+        const message = viaObiex ? (err.message || 'Bank account verification failed') : getKorapayErrorDetails(err).message;
+        logger.error(`[Transfer] ${viaObiex ? 'Obiex' : 'Korapay'} account resolve failed (${cur}): ${message}`);
         throw new AppError(`Could not verify bank account: ${message}`, err.statusCode || 502);
     }
 });
@@ -320,25 +362,29 @@ export const sendTransfer = catchAsync(async (req, res) => {
         );
     });
 
-    // 2. Call the payout provider — NGN goes through Obiex (real bank-account payout via
-    // POST /wallets/ext/debit/fiat), other supported currencies remain on Korapay.
-    const useObiex = transferCurrency === 'NGN';
+    // 2. Call the payout provider — NGN and GHS go through Obiex (real bank/mobile-money payout
+    // via POST /wallets/ext/debit/fiat), other supported currencies remain on Korapay.
+    const useObiex = transferCurrency === 'NGN' || transferCurrency === 'GHS';
     try {
         let transferStatus, providerReference, providerMetadata, isComplete;
 
         if (useObiex) {
-            // bank_code is already an Obiex-native code — the bank list (listBanks) and account
-            // resolution (resolveAccount) both source from Obiex for NGN, so no code translation
-            // needed. The frontend never sends bank_name though, and withdrawFiat requires it —
-            // resolve it server-side from Obiex's own bank list by code.
-            const obiexBanks = await obiex.getNgnBanks();
-            const matchedBank = obiexBanks.find((b) => (b.uuid || b.sortCode) === bank_code);
+            // bank_code is already an Obiex-native code — the destination list (listBanks) and
+            // account resolution (resolveAccount) both source from Obiex for these currencies, so
+            // no code translation is needed. The frontend never sends bank_name though, and
+            // withdrawFiat requires it — resolve it server-side from Obiex's own list by code.
+            // For GHS that list also carries mobile-money operators, so this covers MoMo payouts
+            // without a separate branch.
+            const obiexBanks = transferCurrency === 'GHS'
+                ? await obiex.getGhsBanks()
+                : await obiex.getNgnBanks();
+            const matchedBank = obiexBanks.find((b) => (b.uuid || b.sortCode || b.code) === bank_code);
             const resolvedBankName = bank_name || matchedBank?.name;
             if (!resolvedBankName) {
-                throw new AppError('Could not identify the selected bank. Please try again.', 422);
+                throw new AppError('Could not identify the selected destination. Please try again.', 422);
             }
 
-            logger.info(`[Transfer] Initiating Obiex NGN payout: ${reference} → ${account_name} (${resolvedBankName}/${account_number}) ${netAmount} (debited ${amountValue}, fee ${platformFee})`);
+            logger.info(`[Transfer] Initiating Obiex ${transferCurrency} payout: ${reference} → ${account_name} (${resolvedBankName}/${account_number}) ${netAmount} (debited ${amountValue}, fee ${platformFee})`);
 
             const transferData = await obiex.withdrawFiat({
                 currency: transferCurrency,

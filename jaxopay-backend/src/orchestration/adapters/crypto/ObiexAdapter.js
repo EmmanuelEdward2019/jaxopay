@@ -303,6 +303,40 @@ class ObiexAdapter {
   }
 
   /**
+   * Destination list for Cedi withdrawal — GET /ghs-payments/banks. Mirrors the Naira endpoint
+   * exactly (same shape, same 10-minute cache).
+   *
+   * Obiex has no separate mobile-money endpoint for Ghana (/ghs-payments/momo and friends 404),
+   * so MoMo operators come back in this same list alongside the banks — which matches their own
+   * app, where "Payment method" simply switches which subset of one list is offered. Classifying
+   * them is left to the caller (see isGhsMobileMoney in transfer.controller.js).
+   */
+  async getGhsBanks() {
+    const cacheKey = 'ghs:banks';
+    const cached = this._getFromCache(cacheKey, this._cacheTTL.currencies);
+    if (cached) return cached;
+    const data = await this._request('GET', '/ghs-payments/banks');
+    const list = data?.data || [];
+    this._setCache(cacheKey, list);
+    return list;
+  }
+
+  /**
+   * Resolve a Cedi account (bank account or MoMo number) to its holder's name —
+   * GET /ghs-payments/accounts/resolve. Same contract as resolveNgnAccount.
+   */
+  async resolveGhsAccount(sortCode, accountNumber) {
+    const data = await this._request('GET', '/ghs-payments/accounts/resolve', undefined, {
+      sortCode, accountNumber,
+    });
+    const d = data?.data || {};
+    return {
+      account_name: d.accountName || null,
+      account_number: d.accountNumber || accountNumber,
+    };
+  }
+
+  /**
    * Resolve a Naira account number to its holder's name — GET /ngn-payments/accounts/resolve.
    * sortCode is the SAME code returned by getNgnBanks() (uuid/sortCode), so the bank the user
    * picks from getNgnBanks() can be resolved and paid out using one consistent code throughout.
