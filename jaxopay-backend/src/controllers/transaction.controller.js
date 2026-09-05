@@ -76,10 +76,19 @@ const combinedQuery = `
     bp.currency::varchar,
     bp.status::varchar,
     ('Bill Payment: ' || bp.service_type)::text as description,
-    bp.metadata,
+    -- The columns a bill receipt is actually useful for — which biller, and which meter/phone/
+    -- card the payment went to — live outside metadata, so they're folded in here rather than
+    -- left invisible. Existing metadata keys (electricity token, units) are preserved.
+    (COALESCE(bp.metadata, '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
+        'biller', bp.provider_id,
+        'bill_account', bp.account_number,
+        'customer_name', bp.customer_name,
+        'service_type', bp.service_type,
+        'receipt_number', bp.receipt_number
+    ))) as metadata,
     bp.created_at,
     bp.reference::varchar,
-    NULL::numeric as fee,
+    bp.fee::numeric as fee,
     bp.user_id
   FROM bill_payments bp
 

@@ -108,6 +108,17 @@ export const listBanks = catchAsync(async (req, res) => {
         res.status(200).json({ success: true, data: normalized, total: normalized.length });
 
     } catch (err) {
+        // The static fallback below is Nigerian. Serving it for any other currency would offer
+        // Nigerian banks for, say, a Ghanaian withdrawal — codes the payout provider will reject,
+        // and a convincing-looking list is worse than an honest failure. Only NGN gets it.
+        if (currency.toUpperCase() !== 'NGN') {
+            logger.error(`[Transfer] Bank list failed for ${currency}: ${err.message}`);
+            throw new AppError(
+                `Could not load ${currency.toUpperCase()} payout destinations right now. Please try again shortly.`,
+                503
+            );
+        }
+
         // Fallback to static common Nigerian banks so the UI isn't blocked
         const fallbackBanks = [
             { code: "044", name: "Access Bank" },

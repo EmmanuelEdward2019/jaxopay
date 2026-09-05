@@ -72,6 +72,18 @@ const explorerUrlFor = (network, hash) => {
     return base ? `${base}${hash}` : null;
 };
 
+// What the number a bill was paid to is actually called, per bill type — a meter number isn't an
+// "Account", and showing it as one makes a receipt harder to check against the biller's own record.
+const BILL_ACCOUNT_LABELS = {
+    airtime: 'Phone Number',
+    data: 'Phone Number',
+    electricity: 'Meter Number',
+    cable: 'Smart Card Number',
+    tv: 'Smart Card Number',
+    internet: 'Account Number',
+    water: 'Account Number',
+};
+
 const TRANSACTION_TYPES = [
     { value: 'all', label: 'All Types' },
     { value: 'transfer', label: 'Transfers' },
@@ -155,6 +167,12 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
         if (acctNumber) result.push({ label: 'Account', value: acctNumber });
         if (acctName) result.push({ label: 'Account Name', value: acctName });
         if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
+        // Bill payments — the biller and the thing being paid for. What the account number is
+        // called depends entirely on the bill type, and "Account" for a meter reads as wrong.
+        if (meta.biller) result.push({ label: 'Biller', value: formatTransactionType(meta.biller) });
+        if (meta.bill_account) result.push({ label: BILL_ACCOUNT_LABELS[meta.service_type] || 'Account', value: meta.bill_account });
+        if (meta.customer_name) result.push({ label: 'Customer Name', value: meta.customer_name });
+        if (meta.units) result.push({ label: 'Units', value: meta.units });
         if (network) result.push({ label: 'Network', value: network });
         if (address) result.push({ label: 'Address', value: address });
         if (meta.country) result.push({ label: 'Country', value: meta.country });
@@ -338,6 +356,12 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
         if (acctNumber) result.push({ label: 'Account', value: acctNumber });
         if (acctName) result.push({ label: 'Account Name', value: acctName });
         if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
+        // Bill payments — the biller and the thing being paid for. What the account number is
+        // called depends entirely on the bill type, and "Account" for a meter reads as wrong.
+        if (meta.biller) result.push({ label: 'Biller', value: formatTransactionType(meta.biller) });
+        if (meta.bill_account) result.push({ label: BILL_ACCOUNT_LABELS[meta.service_type] || 'Account', value: meta.bill_account });
+        if (meta.customer_name) result.push({ label: 'Customer Name', value: meta.customer_name });
+        if (meta.units) result.push({ label: 'Units', value: meta.units });
         if (network) result.push({ label: 'Network', value: network });
         if (address) result.push({ label: 'Address', value: address });
         if (meta.country) result.push({ label: 'Country', value: meta.country });
