@@ -5,7 +5,7 @@ import {
     Wallet, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, ArrowRight,
     Eye, EyeOff, Search, X, ChevronDown, RefreshCw,
     Copy, Check, Info, AlertCircle, ShieldCheck, CheckCircle,
-    Star, TrendingUp, Plus, Building2, Users, Send
+    Star, TrendingUp, Plus, Building2, Users, Send, Trash2
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import QRCodeSVG from 'react-qr-code';
@@ -14,6 +14,7 @@ import cryptoService from '../../services/cryptoService';
 import transferService from '../../services/transferService';
 import kycService from '../../services/kycService';
 import fxService from '../../services/fxService';
+import beneficiaryService from '../../services/beneficiaryService';
 import PinModal from '../../components/common/PinModal';
 import SearchableBankSelect from '../../components/common/SearchableBankSelect';
 import NigerianIdGate from '../../components/common/NigerianIdGate';
@@ -1430,6 +1431,32 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
     const [done, setDone] = useState(null);
     const [oldBalance, setOldBalance] = useState(null);
 
+    // Saved bank recipients, shared with the mobile app through the same /beneficiaries API.
+    const [savedBeneficiaries, setSavedBeneficiaries] = useState([]);
+    const [saveBeneficiary, setSaveBeneficiary] = useState(false);
+
+    const loadBeneficiaries = useCallback(() => {
+        if (isCrypto) return;
+        beneficiaryService.list('bank_account').then((res) => {
+            if (!res.success) return;
+            setSavedBeneficiaries((res.data || []).map((r) => ({
+                id: r.id,
+                label: r.label || r.account_name,
+                account_name: r.account_name,
+                account_number: r.value,
+                bank_code: r.provider_code,
+                bank_name: r.provider,
+            })));
+        }).catch(() => {});
+    }, [isCrypto]);
+
+    useEffect(() => { loadBeneficiaries(); }, [loadBeneficiaries]);
+
+    const handleDeleteBeneficiary = async (id) => {
+        const res = await beneficiaryService.remove(id);
+        if (res.success) setSavedBeneficiaries((prev) => prev.filter((b) => b.id !== id));
+    };
+
     // Fiat withdrawal fee, read from the server rather than hardcoded so it tracks whatever an
     // admin has configured for this currency.
     const [withdrawalFee, setWithdrawalFee] = useState(null);
@@ -1456,6 +1483,19 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
             });
         if (res.success) {
             setShowPin(false); onRefresh();
+            // Save only after the transfer actually went through, so a failed attempt doesn't
+            // leave a recipient behind. Best-effort — never block the success screen on it.
+            if (!isCrypto && saveBeneficiary && accountName) {
+                beneficiaryService.create({
+                    type: 'bank_account',
+                    value: recipient,
+                    label: accountName,
+                    account_name: accountName,
+                    provider: banks.find(b => b.code === selectedBank)?.name || undefined,
+                    provider_code: selectedBank,
+                    currency: code,
+                }).then(loadBeneficiaries).catch(() => {});
+            }
             setDone({ ok: true, reference: res.data?.reference || res.data?.data?.reference });
         } else if (isPinError(res.code)) { setPinError(res.error || 'Incorrect PIN. Please try again.'); }
         else { setShowPin(false); setError(res.error || (isCrypto ? 'Withdrawal failed' : 'Transfer failed')); }
@@ -1503,6 +1543,37 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
             )}
 
             <div className="space-y-4">
+                {/* Saved recipients. These are the same saved_beneficiaries the mobile app writes,
+                    so an account saved on either platform now shows on both — web's withdrawal
+                    flow simply never read them. */}
+                {!isCrypto && savedBeneficiaries.length > 0 && (
+                    <div className="p-3 bg-muted/50 border border-border rounded-xl">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Saved recipients</p>
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                            {savedBeneficiaries.map((b) => (
+                                <div key={b.id} className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setSelectedBank(b.bank_code); setRecipient(b.account_number); }}
+                                        className="flex-1 text-left px-3 py-2 bg-card border border-border rounded-lg hover:border-primary transition-colors"
+                                    >
+                                        <p className="text-xs font-semibold text-foreground truncate">{b.label || b.account_name}</p>
+                                        <p className="text-[11px] text-muted-foreground truncate">{b.bank_name} · {b.account_number}</p>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDeleteBeneficiary(b.id)}
+                                        className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
+                                        title="Remove"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {!isCrypto && (
                     <SearchableBankSelect
                         items={banks}
@@ -1528,6 +1599,19 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                             <ShieldCheck className="w-4 h-4 text-primary" />
                             <span className="text-xs font-bold text-primary">{accountName}</span>
                         </div>
+                    )}
+                    {/* Offered only once the account name resolves, so what gets saved is a
+                        provider-verified name rather than a half-typed number. Mirrors mobile. */}
+                    {!isCrypto && accountName && !savedBeneficiaries.some(b => b.account_number === recipient && b.bank_code === selectedBank) && (
+                        <label className="mt-2 flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={saveBeneficiary}
+                                onChange={(e) => setSaveBeneficiary(e.target.checked)}
+                                className="rounded border-border"
+                            />
+                            <span className="text-xs text-muted-foreground">Save this recipient for next time</span>
+                        </label>
                     )}
                 </div>
 

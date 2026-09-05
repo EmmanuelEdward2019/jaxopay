@@ -41,6 +41,12 @@ import { formatCurrency, formatDateTime, formatTransactionType, getStatusColor }
 // Block explorer for a given network, so the on-chain hash can be tapped straight through to
 // independent verification — the whole point of showing a hash at all. Mirrors RN's
 // TransactionsScreen.tsx EXPLORER_BASE exactly, keep both in sync if a network is added.
+// Keys must cover every networkCode Obiex can emit (GET /currencies/networks/active currently
+// returns ARBITRUM, AVAXC, BACC, BASE, BCH, BSC, BTC, DOGE, ETH, LTC, MATIC, MOMO, SOL, SUI, TON,
+// TRX) plus the aliases our own code writes. A network that isn't here simply shows the hash as
+// plain text with no link — which is how BTC deposits ended up with an unlinked hash, and why TRX
+// needs its own key even though TRC20/TRON were already mapped.
+// BACC and MOMO are deliberately absent: they're account/mobile-money rails, not chains.
 const EXPLORER_BASE = {
     ETH: 'https://etherscan.io/tx/', ETHEREUM: 'https://etherscan.io/tx/', ERC20: 'https://etherscan.io/tx/',
     BSC: 'https://bscscan.com/tx/', BEP20: 'https://bscscan.com/tx/',
@@ -50,8 +56,15 @@ const EXPLORER_BASE = {
     BASE: 'https://basescan.org/tx/',
     AVAXC: 'https://snowtrace.io/tx/', AVALANCHE: 'https://snowtrace.io/tx/',
     TRC20: 'https://tronscan.org/#/transaction/', TRON: 'https://tronscan.org/#/transaction/',
+    TRX: 'https://tronscan.org/#/transaction/',
     SOL: 'https://solscan.io/tx/', SOLANA: 'https://solscan.io/tx/',
     CELO: 'https://celoscan.io/tx/',
+    BTC: 'https://mempool.space/tx/', BITCOIN: 'https://mempool.space/tx/',
+    BCH: 'https://blockchair.com/bitcoin-cash/transaction/',
+    LTC: 'https://blockchair.com/litecoin/transaction/',
+    DOGE: 'https://blockchair.com/dogecoin/transaction/',
+    SUI: 'https://suiscan.xyz/mainnet/tx/',
+    TON: 'https://tonviewer.com/transaction/',
 };
 const explorerUrlFor = (network, hash) => {
     if (!network || !hash) return null;
@@ -145,6 +158,10 @@ const TransactionReceipt = ({ transaction, receiptRef }) => {
         if (network) result.push({ label: 'Network', value: network });
         if (address) result.push({ label: 'Address', value: address });
         if (meta.country) result.push({ label: 'Country', value: meta.country });
+        // NIBSS session ID — what a Nigerian bank asks for when tracing a transfer, so it's the
+        // single most useful thing on a NGN withdrawal receipt. Only present once the provider
+        // returns one.
+        if (meta.session_id) result.push({ label: 'Session ID', value: meta.session_id, copyable: true });
         if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
         if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
         if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });
@@ -324,6 +341,10 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
         if (network) result.push({ label: 'Network', value: network });
         if (address) result.push({ label: 'Address', value: address });
         if (meta.country) result.push({ label: 'Country', value: meta.country });
+        // NIBSS session ID — what a Nigerian bank asks for when tracing a transfer, so it's the
+        // single most useful thing on a NGN withdrawal receipt. Only present once the provider
+        // returns one.
+        if (meta.session_id) result.push({ label: 'Session ID', value: meta.session_id, copyable: true });
         if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
         if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
         if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });

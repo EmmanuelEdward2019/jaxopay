@@ -146,6 +146,26 @@ export const resolveAccount = catchAsync(async (req, res) => {
 // POST /transfers/send  — initiate bank transfer via Korapay disbursement
 // ─────────────────────────────────────────────
 /**
+ * Pull a NIBSS session ID out of a payout response, whatever the provider decided to call it.
+ * Nigerian banks quote this when tracing a transfer, so it belongs on the receipt — but the field
+ * name varies by provider and isn't documented for Obiex, so check the plausible spellings at both
+ * the top level and inside the raw payload. Returns null when there genuinely isn't one, so the
+ * receipt simply omits the row rather than inventing a value.
+ */
+function extractSessionId(payoutResponse) {
+    const candidates = ['sessionId', 'session_id', 'nibssSessionId', 'nibss_session_id', 'sessionID'];
+    const sources = [payoutResponse, payoutResponse?.raw, payoutResponse?.raw?.data, payoutResponse?.raw?.payout];
+    for (const src of sources) {
+        if (!src || typeof src !== 'object') continue;
+        for (const key of candidates) {
+            const v = src[key];
+            if (v != null && String(v).trim()) return String(v).trim();
+        }
+    }
+    return null;
+}
+
+/**
  * What a fiat withdrawal will cost and what the recipient will get, before committing to it.
  * Read-only, and deliberately computed from the same getFeeConfig/computeFee the withdrawal
  * itself uses, so the quoted fee can never drift from the charged one.
@@ -337,7 +357,22 @@ export const sendTransfer = catchAsync(async (req, res) => {
             // updateObiexWithdrawal) — an accepted submission ("approved"/"pending") is NOT
             // final completion, unlike Korapay which can return an immediate success.
             isComplete = false;
-            providerMetadata = { provider: 'obiex', obiex_withdraw_id: providerReference, obiex_reference: reference, obiex_status: transferStatus };
+            providerMetadata = {
+                provider: 'obiex',
+                obiex_withdraw_id: providerReference,
+                obiex_reference: reference,
+                obiex_status: transferStatus,
+                // What the provider actually charged, so the configured provider_payout_cost used
+                // to gross this payout up can be checked against reality instead of assumed.
+                provider_fee_charged: transferData?.fee ?? null,
+                // NIBSS session ID, which Nigerian banks quote when tracing a transfer. Obiex's
+                // field name for it isn't documented and this machine can't call their
+                // account-scoped endpoints (IP allowlist), so take whichever spelling shows up
+                // rather than guessing one — and keep the raw payout object so the next
+                // withdrawal in production tells us definitively what they return.
+                session_id: extractSessionId(transferData),
+                provider_payout_raw: transferData?.raw ?? null,
+            };
 
             logger.info(`[Transfer] Obiex response for ${reference}: status=${transferStatus}`);
         } else {
