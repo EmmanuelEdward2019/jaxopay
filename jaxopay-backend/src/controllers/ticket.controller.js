@@ -8,7 +8,14 @@ export const createTicket = catchAsync(async (req, res) => {
     if (!['user', 'end_user'].includes(req.user.role)) {
         throw new AppError('Only customers can create support tickets.', 403);
     }
-    const { subject, description, category, priority = 'medium' } = req.body;
+    // The mobile app posts this field as `message`, web posts it as `description`. Accept either:
+    // ticket_messages.message is NOT NULL, so an unrecognised field name meant the insert below
+    // blew up and no ticket could be created from mobile at all.
+    const { subject, category, priority = 'medium' } = req.body;
+    const description = req.body.description ?? req.body.message;
+    if (!subject || !description) {
+        throw new AppError('subject and description are required', 400);
+    }
 
     const result = await transaction(async (client) => {
         // Create ticket
