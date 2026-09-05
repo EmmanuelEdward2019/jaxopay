@@ -10,6 +10,7 @@ import {
     verifyTransfer,
     getTransferHistory,
     getMerchantBalances,
+    getWithdrawalQuote,
 } from '../controllers/transfer.controller.js';
 
 const router = express.Router();
@@ -19,6 +20,15 @@ router.use(verifyToken);
 
 // GET /transfers/banks?currency=NGN — list all banks
 router.get('/banks', listBanks);
+
+// GET /transfers/withdrawal-quote?currency=NGN&amount=1200 — fee + what the recipient receives
+router.get(
+    '/withdrawal-quote',
+    query('currency').isString().notEmpty(),
+    query('amount').optional().isFloat({ gt: 0 }),
+    validate,
+    getWithdrawalQuote
+);
 
 // GET /transfers/merchant-balances — Korapay merchant balances
 router.get('/merchant-balances', restrictTo('admin', 'super_admin'), getMerchantBalances);

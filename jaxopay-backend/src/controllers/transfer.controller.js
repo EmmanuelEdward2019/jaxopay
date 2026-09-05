@@ -145,6 +145,35 @@ export const resolveAccount = catchAsync(async (req, res) => {
 // ─────────────────────────────────────────────
 // POST /transfers/send  — initiate bank transfer via Korapay disbursement
 // ─────────────────────────────────────────────
+/**
+ * What a fiat withdrawal will cost and what the recipient will get, before committing to it.
+ * Read-only, and deliberately computed from the same getFeeConfig/computeFee the withdrawal
+ * itself uses, so the quoted fee can never drift from the charged one.
+ *
+ * Only the fee and the recipient amount are exposed — the provider's own cost is absorbed inside
+ * our fee and is nobody's business but ours.
+ */
+export const getWithdrawalQuote = catchAsync(async (req, res) => {
+    const currency = String(req.query.currency || '').toUpperCase();
+    const amount = parseFloat(req.query.amount);
+    if (!currency) throw new AppError('currency is required', 400);
+
+    const cfg = await getFeeConfig('fiat_withdrawal', currency);
+    // With no amount we can still answer for a flat fee, which is the common case for the
+    // "before you withdraw" panel that renders before anything is typed.
+    const fee = computeFee(cfg, Number.isFinite(amount) ? amount : 0);
+
+    res.status(200).json({
+        success: true,
+        data: {
+            currency,
+            fee,
+            feeType: cfg?.fee_type || null,
+            recipientAmount: Number.isFinite(amount) ? Math.max(0, amount - fee) : null,
+        },
+    });
+});
+
 export const sendTransfer = catchAsync(async (req, res) => {
     const {
         wallet_id,
@@ -179,12 +208,33 @@ export const sendTransfer = catchAsync(async (req, res) => {
         );
     }
 
-    // Platform withdrawal fee — debited from the wallet as part of amountValue (so the balance
-    // check above already covers it), but only netAmount is actually sent to the payout
-    // provider; the difference is the platform's fee. 0% until an admin sets a real value.
+    // The fee we quote is all-in: the user is debited `amountValue` and the recipient receives
+    // exactly `amountValue - platformFee`, with our margin being whatever is left after the payout
+    // provider takes their own cut.
+    //
+    // Obiex deducts their charge from whatever we ask them to send, so asking for the recipient's
+    // amount would land short — which is exactly what used to happen: a 1,200 withdrawal quoted a
+    // 100 fee, sent 1,100, and the user received 1,046.25 because Obiex took a further 53.75. The
+    // payout is therefore grossed up by that cost so the deduction lands the recipient on target.
     const withdrawalFeeCfg = await getFeeConfig('fiat_withdrawal', transferCurrency);
     const platformFee = computeFee(withdrawalFeeCfg, amountValue);
-    const netAmount = amountValue - platformFee;
+    const recipientAmount = amountValue - platformFee;
+
+    const providerCostCfg = await getFeeConfig('provider_payout_cost', transferCurrency);
+    const providerCost = computeFee(providerCostCfg, amountValue);
+    const netAmount = recipientAmount + providerCost;
+
+    // Our margin. Negative means the configured withdrawal fee doesn't cover what the provider
+    // charges, so every withdrawal loses money — honour the quoted fee (the user was promised it)
+    // but make it loud, because it needs an admin to raise the fee.
+    const platformMargin = platformFee - providerCost;
+    if (platformMargin < 0) {
+        logger.warn(
+            `[Transfer] ${transferCurrency} withdrawal fee (${platformFee}) is below the provider payout cost ` +
+            `(${providerCost}) — JAXOPAY absorbs ${Math.abs(platformMargin)} ${transferCurrency} on this transfer. ` +
+            `Raise fiat_withdrawal for ${transferCurrency} in Rates & Fees.`
+        );
+    }
 
     const reference = `TXF-${req.user.id.slice(0, 8)}-${Date.now()}`;
 
@@ -235,7 +285,17 @@ export const sendTransfer = catchAsync(async (req, res) => {
                 req.user.id, wallet_id, amountValue, transferCurrency, netAmount, platformFee,
                 narration || `Transfer to ${account_name}`,
                 reference,
-                JSON.stringify({ bank_code, account_number, account_name, bank_name, currency: transferCurrency, platform_fee: platformFee }),
+                // recipient_amount is what actually lands in their account — worth storing
+                // explicitly since it is neither from_amount nor net_amount (net_amount is the
+                // grossed-up figure handed to the provider). provider_cost/platform_margin are
+                // internal, for reconciliation; only the fee and recipient amount are ever shown.
+                JSON.stringify({
+                    bank_code, account_number, account_name, bank_name, currency: transferCurrency,
+                    platform_fee: platformFee,
+                    recipient_amount: recipientAmount,
+                    provider_cost: providerCost,
+                    platform_margin: platformMargin,
+                }),
             ]
         );
     });
@@ -349,7 +409,9 @@ export const sendTransfer = catchAsync(async (req, res) => {
                 status: isComplete ? 'completed' : 'processing',
                 amount: amountValue,
                 fee: platformFee,
-                net_amount: netAmount,
+                // What the recipient actually receives. NOT netAmount — that's the grossed-up
+                // figure handed to the provider, which is larger and would overstate the payout.
+                net_amount: recipientAmount,
                 currency: transferCurrency,
                 recipient: { account_name, account_number, bank_name, bank_code },
                 provider_reference: providerReference,

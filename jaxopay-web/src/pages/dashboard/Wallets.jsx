@@ -1430,6 +1430,21 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
     const [done, setDone] = useState(null);
     const [oldBalance, setOldBalance] = useState(null);
 
+    // Fiat withdrawal fee, read from the server rather than hardcoded so it tracks whatever an
+    // admin has configured for this currency.
+    const [withdrawalFee, setWithdrawalFee] = useState(null);
+    useEffect(() => {
+        let active = true;
+        if (isCrypto || !code) {
+            const t = setTimeout(() => { if (active) setWithdrawalFee(null); }, 0);
+            return () => { active = false; clearTimeout(t); };
+        }
+        transferService.getWithdrawalQuote(code)
+            .then((res) => { if (active && res.success) setWithdrawalFee(Number(res.data?.fee ?? 0)); })
+            .catch(() => { if (active) setWithdrawalFee(null); });
+        return () => { active = false; };
+    }, [code, isCrypto]);
+
     const handleWithdraw = async (pin) => {
         setPinProcessing(true); setPinError(''); setError(null);
         setOldBalance(balance);
@@ -1572,6 +1587,24 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                                 <div className="flex items-center justify-between text-xs">
                                     <span className="text-muted-foreground">Network fee ({selectedNetworkInfo?.name || network})</span>
                                     <span className="font-semibold text-foreground">{netFee} {code}</span>
+                                </div>
+                            )}
+                            {/* Fiat withdrawals carry a flat platform fee that was never disclosed here.
+                                It's all-in — nothing further is deducted along the way. */}
+                            {!isCrypto && withdrawalFee != null && (
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="text-muted-foreground">Withdrawal fee</span>
+                                    <span className="font-semibold text-foreground">
+                                        {withdrawalFee > 0 ? `${withdrawalFee.toLocaleString()} ${code}` : 'Free'}
+                                    </span>
+                                </div>
+                            )}
+                            {!isCrypto && withdrawalFee > 0 && parseFloat(amount) > 0 && (
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="text-muted-foreground">Recipient receives</span>
+                                    <span className="font-semibold text-foreground">
+                                        {Math.max(0, parseFloat(amount) - withdrawalFee).toLocaleString()} {code}
+                                    </span>
                                 </div>
                             )}
                             {currentTierLimit && (

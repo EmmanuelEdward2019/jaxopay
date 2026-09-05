@@ -1,0 +1,13 @@
+-- Record what the payout provider charges us, so the fee we quote the user can absorb it.
+--
+-- Until now a NGN withdrawal debited the user `amount`, kept our `fiat_withdrawal` fee, and sent
+-- the remainder to Obiex — who then deducted their own charge from that remainder. A user
+-- withdrawing 1,200 with a 100 fee was told 100 and actually received 1,046.25, because Obiex took
+-- a further 53.75 (50 + 7.5% VAT) out of the 1,100 we sent. The fee shown has to be all-in.
+--
+-- Obiex does not expose this over the API (/currencies/networks/active has no NGN entry, and
+-- getWithdrawFee('NGN') returns 0), so it has to be configured. It lives in fee_configurations
+-- because it is per-currency and admin-tunable — Obiex changing their pricing must not need a
+-- deploy — but note it is a COST TO US, not a fee charged to the customer: the withdrawal payout
+-- is grossed up by this so the customer nets exactly (amount - our fee).
+ALTER TYPE transaction_type ADD VALUE IF NOT EXISTS 'provider_payout_cost';

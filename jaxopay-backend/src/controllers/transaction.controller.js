@@ -56,9 +56,13 @@ const combinedQuery = `
     wt.from_currency::varchar as currency,
     wt.status::varchar,
     wt.description::text,
-    wt.metadata, 
+    wt.metadata,
     wt.created_at,
     wt.reference::varchar,
+    -- Fiat deposit/withdrawal fees are real charges the customer paid, so receipts show them.
+    -- Only this branch exposes one: fx_transactions.fee_amount now holds the implied margin from
+    -- the rate markup, which is internal and must never surface as a fee line.
+    wt.fee_amount::numeric as fee,
     wt.user_id
   FROM transactions wt
 
@@ -72,9 +76,10 @@ const combinedQuery = `
     bp.currency::varchar,
     bp.status::varchar,
     ('Bill Payment: ' || bp.service_type)::text as description,
-    bp.metadata, 
+    bp.metadata,
     bp.created_at,
     bp.reference::varchar,
+    NULL::numeric as fee,
     bp.user_id
   FROM bill_payments bp
 
@@ -99,6 +104,7 @@ const combinedQuery = `
       wtx.metadata->>'quidax_reference',
       wtx.metadata->>'obiex_reference'
     )::varchar as reference,
+    NULL::numeric as fee,
     w.user_id
   FROM wallet_transactions wtx
   JOIN wallets w ON w.id = wtx.wallet_id
@@ -138,6 +144,9 @@ const combinedQuery = `
     fx.recipient_details as metadata,
     fx.created_at,
     fx.provider_txn_id::varchar as reference,
+    -- Deliberately NULL: fee_amount on these rows is the margin taken inside the exchange rate,
+    -- which is internal. Surfacing it would put back the fee breakdown the rate model removed.
+    NULL::numeric as fee,
     fx.user_id
   FROM fx_transactions fx
 `;

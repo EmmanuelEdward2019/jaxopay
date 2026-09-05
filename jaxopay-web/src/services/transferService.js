@@ -26,6 +26,19 @@ const transferService = {
     },
 
     // Initiate a bank transfer
+    // Withdrawal fee + what the recipient receives. Read from the server so the figure shown can
+    // never drift from what's actually charged when an admin changes the fee.
+    getWithdrawalQuote: async (currency, amount) => {
+        try {
+            const response = await apiClient.get('/transfers/withdrawal-quote', {
+                params: amount ? { currency, amount } : { currency },
+            });
+            return { success: true, data: response.data ?? response };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
     sendTransfer: async (payload) => {
         try {
             const response = await apiClient.post('/transfers/send', payload);
