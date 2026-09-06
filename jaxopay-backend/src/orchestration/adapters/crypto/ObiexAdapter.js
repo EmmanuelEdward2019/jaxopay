@@ -325,11 +325,17 @@ class ObiexAdapter {
     return !!ObiexAdapter.FIAT_PAYOUT_NAMESPACES[String(currency || '').toUpperCase()];
   }
 
-  /** Destination list for any supported payout currency, without the caller knowing the namespace. */
+  /**
+   * Destination list for any supported payout currency, without the caller knowing the namespace.
+   *
+   * Every entry carries a `channel` ('bank' | 'momo') so the caller can offer the payment-method
+   * choice without inspecting names. Nigeria has banks only; Ghana has both, from two separate
+   * endpoints (see getGhsPayoutDestinations).
+   */
   async getFiatPayoutBanks(currency) {
     const cur = String(currency || '').toUpperCase();
-    if (cur === 'NGN') return this.getNgnBanks();
-    if (cur === 'GHS') return this.getGhsBanks();
+    if (cur === 'NGN') return (await this.getNgnBanks()).map((b) => ({ ...b, channel: 'bank' }));
+    if (cur === 'GHS') return this.getGhsPayoutDestinations();
     throw new Error(`No Obiex payout rail for ${cur}`);
   }
 
@@ -342,13 +348,33 @@ class ObiexAdapter {
   }
 
   /**
-   * Destination list for Cedi withdrawal — GET /ghs-payments/banks. Mirrors the Naira endpoint
-   * exactly (same shape, same 10-minute cache).
+   * Every Cedi payout destination — banks and mobile-money networks — as one tagged list.
    *
-   * Obiex has no separate mobile-money endpoint for Ghana (/ghs-payments/momo and friends 404),
-   * so MoMo operators come back in this same list alongside the banks — which matches their own
-   * app, where "Payment method" simply switches which subset of one list is offered. Classifying
-   * them is left to the caller (see isGhsMobileMoney in transfer.controller.js).
+   * Ghana genuinely has two endpoints, which an earlier version of this adapter got wrong: it
+   * assumed MoMo operators were mixed into /ghs-payments/banks and left the caller to pick them
+   * out by name. They are not in that list at all, so Ghana never offered Mobile Money however
+   * the names were matched. The operators come from /ghs-payments/mobile/networks instead.
+   *
+   * A failure to load the networks is not fatal — banks are still a usable payout route, and a
+   * withdrawal screen with only bank transfer beats one that won't open.
+   */
+  async getGhsPayoutDestinations() {
+    const [banks, networks] = await Promise.all([
+      this.getGhsBanks(),
+      this.getGhsMobileNetworks().catch((e) => {
+        logger.warn(`[Obiex] GHS mobile networks unavailable, offering banks only: ${e.message}`);
+        return [];
+      }),
+    ]);
+    return [
+      ...banks.map((b) => ({ ...b, channel: 'bank' })),
+      ...networks.map((n) => ({ ...n, channel: 'momo' })),
+    ];
+  }
+
+  /**
+   * Banks for Cedi withdrawal — GET /ghs-payments/banks. Mirrors the Naira endpoint exactly
+   * (same shape, same 10-minute cache). Banks only; mobile money has its own endpoint.
    */
   async getGhsBanks() {
     const cacheKey = 'ghs:banks';
@@ -361,12 +387,35 @@ class ObiexAdapter {
   }
 
   /**
-   * Resolve a Cedi account (bank account or MoMo number) to its holder's name —
-   * GET /ghs-payments/accounts/resolve. Same contract as resolveNgnAccount.
+   * Mobile-money operators for Cedi withdrawal — GET /ghs-payments/mobile/networks.
+   *
+   * Returns { name, sortCode } only — no uuid, unlike the bank list — so the sortCode is the
+   * code carried through resolve and payout. Today that's AIRTELTIGO MONEY (ATM), MTN MOBILE
+   * MONEY (MTN) and VODAFONE CASH (VOD), but the list is never hardcoded: an operator Obiex
+   * adds appears here without a release.
    */
-  async resolveGhsAccount(sortCode, accountNumber) {
+  async getGhsMobileNetworks() {
+    const cacheKey = 'ghs:momo-networks';
+    const cached = this._getFromCache(cacheKey, this._cacheTTL.currencies);
+    if (cached) return cached;
+    const data = await this._request('GET', '/ghs-payments/mobile/networks');
+    const list = data?.data || [];
+    this._setCache(cacheKey, list);
+    return list;
+  }
+
+  /**
+   * Resolve a Cedi account — bank account or MoMo number — to its holder's name via
+   * GET /ghs-payments/accounts/resolve.
+   *
+   * The query parameter is `bankCode`, NOT the `sortCode` the Naira endpoint takes. The
+   * asymmetry is Obiex's, and getting it wrong here silently resolved nothing, which blocked
+   * every Ghanaian withdrawal — the form won't submit without a verified account name. The
+   * same endpoint handles mobile money: their own documented example resolves "VOD".
+   */
+  async resolveGhsAccount(bankCode, accountNumber) {
     const data = await this._request('GET', '/ghs-payments/accounts/resolve', undefined, {
-      sortCode, accountNumber,
+      bankCode, accountNumber,
     });
     const d = data?.data || {};
     return {

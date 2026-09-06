@@ -1669,15 +1669,20 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChann
     // Fiat withdrawal fee, read from the server rather than hardcoded so it tracks whatever an
     // admin has configured for this currency.
     const [withdrawalFee, setWithdrawalFee] = useState(null);
+    const [withdrawalMinimum, setWithdrawalMinimum] = useState(null);
     useEffect(() => {
         let active = true;
         if (isCrypto || !code) {
-            const t = setTimeout(() => { if (active) setWithdrawalFee(null); }, 0);
+            const t = setTimeout(() => { if (active) { setWithdrawalFee(null); setWithdrawalMinimum(null); } }, 0);
             return () => { active = false; clearTimeout(t); };
         }
         transferService.getWithdrawalQuote(code)
-            .then((res) => { if (active && res.success) setWithdrawalFee(Number(res.data?.fee ?? 0)); })
-            .catch(() => { if (active) setWithdrawalFee(null); });
+            .then((res) => {
+                if (!active || !res.success) return;
+                setWithdrawalFee(Number(res.data?.fee ?? 0));
+                setWithdrawalMinimum(res.data?.minimumAmount != null ? Number(res.data.minimumAmount) : null);
+            })
+            .catch(() => { if (active) { setWithdrawalFee(null); setWithdrawalMinimum(null); } });
         return () => { active = false; };
     }, [code, isCrypto]);
 
@@ -1890,7 +1895,11 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChann
                     const selectedNetworkInfo = isCrypto ? networks.find(n => n.network === network) : null;
                     const currentTierKey = user?.kyc_tier || 'tier_0';
                     const currentTierLimit = tierLimits?.limits?.[currentTierKey];
-                    const minWithdraw = isCrypto ? selectedNetworkInfo?.withdrawMin : 1000;
+                    // Crypto minimums come from the network; fiat's only real floor is the fee,
+                    // since anything at or below it leaves the recipient nothing. This used to be
+                    // a flat 1000 for every fiat currency — a Naira assumption that read as
+                    // "minimum ₵1,000" (~$65) on Ghana.
+                    const minWithdraw = isCrypto ? selectedNetworkInfo?.withdrawMin : withdrawalMinimum;
                     const netFee = isCrypto ? selectedNetworkInfo?.withdrawFee : null;
                     if (!currentTierLimit && minWithdraw == null && netFee == null) return null;
                     return (
@@ -1899,7 +1908,11 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChann
                             {minWithdraw != null && (
                                 <div className="flex items-center justify-between text-xs">
                                     <span className="text-muted-foreground">Minimum withdrawal</span>
-                                    <span className="font-semibold text-foreground">{minWithdraw} {code}</span>
+                                    {/* Fiat's floor is the fee, and at exactly the fee nothing
+                                        reaches the recipient — so it reads "more than". */}
+                                    <span className="font-semibold text-foreground">
+                                        {isCrypto ? `${minWithdraw} ${code}` : `More than ${minWithdraw.toLocaleString()} ${code}`}
+                                    </span>
                                 </div>
                             )}
                             {isCrypto && netFee != null && (
@@ -1943,8 +1956,16 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChann
                 })()}
             </div>
 
+            {/* At or below the fee the recipient receives nothing, and the server rejects it.
+                Saying so here beats letting the user reach the PIN prompt first. */}
+            {!isCrypto && withdrawalFee != null && parseFloat(amount) > 0 && parseFloat(amount) <= withdrawalFee && (
+                <p className="text-xs text-danger font-medium">
+                    Enter more than the {withdrawalFee.toLocaleString()} {code} fee — at this amount the recipient receives nothing.
+                </p>
+            )}
+
             <button onClick={() => { setPinError(''); setShowPin(true); }}
-                disabled={loading || !recipient || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > balance || (isCrypto && !network) || (!isCrypto && !selectedBank)}
+                disabled={loading || !recipient || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > balance || (isCrypto && !network) || (!isCrypto && !selectedBank) || (!isCrypto && withdrawalFee != null && parseFloat(amount) <= withdrawalFee)}
                 className="w-full py-4 bg-danger hover:bg-danger/90 text-white font-bold rounded-xl shadow-lg shadow-danger/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                 {`Withdraw ${code}`}
             </button>

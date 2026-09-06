@@ -44,32 +44,6 @@ const korapay = new KorapayAdapter();
 // Other currencies via Korapay (Obiex bank payouts are NGN-only).
 // ─────────────────────────────────────────────
 /**
- * Is this Ghanaian destination a mobile-money operator rather than a bank?
- *
- * Obiex has one Ghana endpoint — /ghs-payments/banks — and no separate mobile-money route (every
- * other /ghs-payments/* path 404s, verified against production), so banks and MoMo operators
- * arrive in a single list and the split has to be derived here.
- *
- * The name is checked FIRST and is decisive. An earlier version asked the payload's own type
- * field first and returned `false` on anything bank-ish, which is exactly what that endpoint
- * labels its entries wholesale — so every operator was vetoed back into the bank column, the
- * name match below became unreachable, and Ghana was left with no Mobile Money option at all.
- * A name test is safe to trust: Ghana's operators are a tiny fixed set and no Ghanaian bank
- * shares their names. The declared type is kept only as a backstop for an operator not named
- * after a telco.
- */
-function isGhsMobileMoney(entry) {
-    const name = String(entry?.name || '');
-    if (/\b(mtn|vodafone|telecel|airteltigo|airtel|tigo|zeepay|g[-\s]?money)\b|momo|mobile\s*money/i.test(name)) {
-        return true;
-    }
-    const declared = String(
-        entry?.type ?? entry?.channel ?? entry?.category ?? entry?.accountType ?? entry?.channelType ?? ''
-    ).toLowerCase();
-    return /momo|mobile/.test(declared);
-}
-
-/**
  * Which fiat currencies a withdrawal may actually be made in.
  *
  * Offering a currency with no payout rail behind it produces a dead end the user only discovers
@@ -93,31 +67,24 @@ export const listBanks = catchAsync(async (req, res) => {
             })).filter((b) => b.code && b.name);
             logger.info(`[Transfer] Fetched ${normalized.length} banks from Obiex (NGN)`);
         } else if (currency.toUpperCase() === 'GHS') {
-            // Ghana is an Obiex rail too, not Korapay. One list carries both banks and mobile-money
-            // operators (Obiex exposes no separate MoMo endpoint), so each entry is tagged with a
-            // channel the client can filter on to build the Bank / Mobile money choice.
-            const banks = await obiex.getGhsBanks();
+            // Ghana is an Obiex rail too, not Korapay, and it has two destination endpoints —
+            // banks, and mobile-money networks. The adapter merges them and tags each entry with
+            // the channel it came from, so the Bank / Mobile Money choice is the provider's own
+            // answer rather than a guess made from operator names.
+            //
+            // Mobile-money entries carry only { name, sortCode } — no uuid — so the code has to
+            // fall through to sortCode for them to be selectable at all.
+            const banks = await obiex.getFiatPayoutBanks('GHS');
             normalized = (banks || []).map((b) => ({
                 code: b.uuid || b.sortCode || b.code,
                 name: b.name,
-                channel: isGhsMobileMoney(b) ? 'momo' : 'bank',
+                channel: b.channel === 'momo' ? 'momo' : 'bank',
             })).filter((b) => b.code && b.name);
             const momoCount = normalized.filter((b) => b.channel === 'momo').length;
             logger.info(
                 `[Transfer] Fetched ${normalized.length} GHS destinations from Obiex ` +
                 `(${momoCount} mobile money, ${normalized.length - momoCount} bank).`
             );
-            // Ghana always has mobile money, so none surviving the split means the classifier
-            // missed rather than the market being bank-only. Dump enough of the payload to fix it
-            // without another round trip — the endpoint is IP-allowlisted, so this log is the
-            // only place its real shape is observable.
-            if (momoCount === 0) {
-                logger.warn(
-                    `[Transfer] GHS list classified 0 mobile-money operators — likely a naming ` +
-                    `mismatch. Entry keys: ${JSON.stringify(Object.keys((banks || [])[0] || {}))}. ` +
-                    `Names: ${JSON.stringify((banks || []).map((b) => b.name).slice(0, 40))}`
-                );
-            }
         } else {
             const banks = await korapay.listBanks(currency);
             normalized = (banks || []).map((b) => ({
@@ -262,12 +229,19 @@ export const getWithdrawalQuote = catchAsync(async (req, res) => {
     // "before you withdraw" panel that renders before anything is typed.
     const fee = computeFee(cfg, Number.isFinite(amount) ? amount : 0);
 
+    // The only real floor on a withdrawal is the fee: at or below it the recipient receives
+    // nothing. Nothing else in the system configures a minimum — the frontends used to print a
+    // flat "1000", which was a Naira assumption shown against every currency (₵1,000 is ~$65).
+    // A percentage fee scales with the amount, so it has no fixed floor to quote.
+    const minimumAmount = cfg?.fee_type === 'flat' ? fee : null;
+
     res.status(200).json({
         success: true,
         data: {
             currency,
             fee,
             feeType: cfg?.fee_type || null,
+            minimumAmount,
             recipientAmount: Number.isFinite(amount) ? Math.max(0, amount - fee) : null,
         },
     });
@@ -318,6 +292,17 @@ export const sendTransfer = catchAsync(async (req, res) => {
     const withdrawalFeeCfg = await getFeeConfig('fiat_withdrawal', transferCurrency);
     const platformFee = computeFee(withdrawalFeeCfg, amountValue);
     const recipientAmount = amountValue - platformFee;
+
+    // Below the fee there is nothing left to send. Unchecked, this debited the user and asked the
+    // provider for a negative payout — there was no minimum enforced anywhere on the server, and
+    // the "1000" the frontends showed was a display constant, not a rule.
+    if (recipientAmount <= 0) {
+        throw new AppError(
+            `A ${transferCurrency} withdrawal must be more than the ${platformFee} ${transferCurrency} fee — ` +
+            `at ${amountValue} the recipient would receive nothing.`,
+            400
+        );
+    }
 
     const providerCostCfg = await getFeeConfig('provider_payout_cost', transferCurrency);
     const providerCost = computeFee(providerCostCfg, amountValue);
