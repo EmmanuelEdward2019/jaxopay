@@ -15,6 +15,7 @@ import {
     Search,
     Landmark,
     Smartphone,
+    Building2,
     Copy,
     Clock,
     Download
@@ -49,6 +50,10 @@ const CrossBorder = () => {
     const [loading, setLoading] = useState(false);
     const [ratesLoading, setRatesLoading] = useState(false);
     const [liveRates, setLiveRates] = useState([]);
+    // Bank vs mobile money for an international payout. Yellow Card flags each network's
+    // accountNumberType, so the split is theirs, not a guess — and the choice only appears for
+    // countries that genuinely support both.
+    const [intlMethod, setIntlMethod] = useState('bank');
     const [ratesError, setRatesError] = useState(null);
     const [error, setError] = useState(null);
     const [needsProfile, setNeedsProfile] = useState(false); // show a Profile link on incomplete-profile errors
@@ -107,6 +112,13 @@ const CrossBorder = () => {
     // Yellow Card payout destinations
     const [payoutCountries, setPayoutCountries] = useState([]);
     const [payoutNetworks, setPayoutNetworks] = useState([]);
+    const isMomoNetwork = (n) => n?.accountNumberType === 'phone';
+    // Only worth asking the question where the country offers both kinds.
+    const intlHasBothMethods =
+        payoutNetworks.some(isMomoNetwork) && payoutNetworks.some((n) => !isMomoNetwork(n));
+    const intlNetworkOptions = intlHasBothMethods
+        ? payoutNetworks.filter((n) => (intlMethod === 'momo' ? isMomoNetwork(n) : !isMomoNetwork(n)))
+        : payoutNetworks;
     const [networksLoading, setNetworksLoading] = useState(false);
 
     // Nigerian BVN/NIN gate — both must be verified before swap or international transfer.
@@ -731,13 +743,48 @@ const CrossBorder = () => {
                                                     </select>
                                                 </div>
                                             </div>
+                                            {/* Payment method, mirroring the withdrawal flow. Yellow Card
+                                                already marks each network as a phone (mobile money) or a
+                                                bank, so this filters what follows rather than leaving the
+                                                two mixed in one long list. Only shown where the country
+                                                actually offers both. */}
+                                            {transferData.recipientCountry && intlHasBothMethods && (
+                                                <div className="space-y-2">
+                                                    <label className="text-sm font-bold text-foreground">Payment Method</label>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        {[
+                                                            { key: 'bank', label: 'Bank Account' },
+                                                            { key: 'momo', label: 'Mobile Money' },
+                                                        ].map((opt) => (
+                                                            <button
+                                                                key={opt.key}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setIntlMethod(opt.key);
+                                                                    setTransferData(prev => ({ ...prev, networkId: '', networkName: '', networkAccountType: '', networkChannelIds: [] }));
+                                                                }}
+                                                                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-semibold transition-colors ${
+                                                                    intlMethod === opt.key
+                                                                        ? 'bg-primary text-white border-primary'
+                                                                        : 'bg-muted/50 border-border text-foreground hover:border-primary'
+                                                                }`}
+                                                            >
+                                                                {opt.key === 'momo'
+                                                                    ? <Smartphone className="w-4 h-4" />
+                                                                    : <Building2 className="w-4 h-4" />}
+                                                                {opt.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                             <div className="space-y-2">
                                                 <SearchableBankSelect
-                                                    items={payoutNetworks}
-                                                    selected={payoutNetworks.find(n => n.id === transferData.networkId) || null}
+                                                    items={intlNetworkOptions}
+                                                    selected={intlNetworkOptions.find(n => n.id === transferData.networkId) || null}
                                                     loading={networksLoading}
-                                                    label="Recipient Bank / Network"
-                                                    placeholder={!transferData.recipientCountry ? 'Select a country first' : 'Select bank / network'}
+                                                    label={intlMethod === 'momo' ? 'Mobile Money Network' : 'Recipient Bank'}
+                                                    placeholder={!transferData.recipientCountry ? 'Select a country first' : intlMethod === 'momo' ? 'Select network' : 'Select bank'}
                                                     getId={(n) => n.id}
                                                     getSubLabel={(n) => n.accountNumberType === 'phone' ? 'Mobile Money' : 'Bank'}
                                                     onSelect={(n) => {
