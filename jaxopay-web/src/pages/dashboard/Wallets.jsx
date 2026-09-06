@@ -611,6 +611,10 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
     const [step, setStep] = useState(1);
     const [assetType, setAssetType] = useState(''); // 'crypto' | 'fiat'
     const [transferMode, setTransferMode] = useState(''); // 'internal' | 'external'
+    // Where a fiat withdrawal is headed: an external bank/mobile-money payout, or another
+    // JAXOPAY user. Chosen on its own step after the currency, per the reference flow.
+    const [withdrawDestination, setWithdrawDestination] = useState(''); // 'external' | 'p2p'
+    const [destinationHasMomo, setDestinationHasMomo] = useState(false);
     const [selectedCode, setSelectedCode] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -681,11 +685,31 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
 
     const handleSelectCurrency = (code) => {
         setSelectedCode(code);
+        // A fiat withdrawal gets a destination step of its own; crypto has only one destination
+        // (an on-chain address), so it goes straight to the form.
+        if (action === 'withdraw' && assetType === 'fiat') {
+            setWithdrawDestination('');
+            setDestinationHasMomo(false);
+            setStep(2.5);
+            // Whether this currency can pay out to mobile money is the provider's answer, not a
+            // hardcoded country list — fetched so the option is only offered when it's real.
+            transferService.getBanks(code)
+                .then((res) => setDestinationHasMomo(!!res.success && (res.data || []).some((b) => b.channel === 'momo')))
+                .catch(() => setDestinationHasMomo(false));
+        } else {
+            setStep(3);
+        }
+    };
+
+    const handleSelectWithdrawDestination = (dest) => {
+        setWithdrawDestination(dest);
         setStep(3);
     };
 
     const handleBack = () => {
-        if (step === 3) { setStep(2); setSelectedCode(''); }
+        if (step === 3 && action === 'withdraw' && assetType === 'fiat') { setStep(2.5); setWithdrawDestination(''); }
+        else if (step === 3) { setStep(2); setSelectedCode(''); }
+        else if (step === 2.5) { setStep(2); setSelectedCode(''); setWithdrawDestination(''); }
         else if (step === 2 && isTransfer) { setStep(1.5); setTransferMode(''); }
         else if (step === 2) { setStep(1); setAssetType(''); }
         else if (step === 1.5) { setStep(1); setAssetType(''); }
@@ -711,7 +735,7 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                         <h2 className="text-lg font-bold text-foreground">{actionLabel}</h2>
                         {step > 1 && (
                             <span className="px-2 py-0.5 bg-muted rounded-md text-xs font-bold text-muted-foreground uppercase">
-                                {assetType}{transferMode ? ` · ${transferMode}` : ''}{selectedCode ? ` · ${selectedCode}` : ''}
+                                {assetType}{transferMode ? ` · ${transferMode}` : ''}{selectedCode ? ` · ${selectedCode}` : ''}{withdrawDestination === 'p2p' ? ' · to user' : ''}
                             </span>
                         )}
                     </div>
@@ -765,6 +789,45 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                                 </div>
                                 <p className="font-bold text-foreground">External</p>
                                 <p className="text-xs text-muted-foreground mt-1">{assetType === 'fiat' ? 'Bank transfer' : 'Blockchain withdrawal'}</p>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 2.5: where a fiat withdrawal should go. Matches the reference flow —
+                    currency is chosen first, then the destination for that currency, rather than
+                    dropping the user straight into a form and hiding the choice inside it. */}
+                {step === 2.5 && (
+                    <div className="p-6 space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                            Where should your {selectedCode} go?
+                        </p>
+                        <div className="space-y-3">
+                            <button onClick={() => handleSelectWithdrawDestination('external')}
+                                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-border hover:border-primary bg-muted/30 hover:bg-primary/5 transition-all text-left group">
+                                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                                    <Building2 className="w-6 h-6 text-primary" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="font-bold text-foreground">
+                                        {destinationHasMomo ? 'Bank account or mobile money' : 'Bank account'}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                        {destinationHasMomo
+                                            ? `Pay out to a ${selectedCode} bank account or mobile money wallet`
+                                            : `Pay out to a ${selectedCode} bank account`}
+                                    </p>
+                                </div>
+                            </button>
+                            <button onClick={() => handleSelectWithdrawDestination('p2p')}
+                                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-border hover:border-primary bg-muted/30 hover:bg-primary/5 transition-all text-left group">
+                                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                                    <Users className="w-6 h-6 text-primary" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="font-bold text-foreground">Another JAXOPAY user</p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Instant and free, using their email or username</p>
+                                </div>
                             </button>
                         </div>
                     </div>
@@ -828,7 +891,20 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                                 onRefresh={onRefresh}
                             />
                         )}
-                        {action === 'withdraw' && (
+                        {/* A withdrawal to another JAXOPAY user is the same internal transfer the
+                            Transfer action performs, so it reuses that form rather than a second
+                            implementation of the same thing. */}
+                        {action === 'withdraw' && withdrawDestination === 'p2p' && (
+                            <TransferForm
+                                code={selectedCode}
+                                type={assetType}
+                                wallets={wallets}
+                                balanceMap={balanceMap}
+                                onClose={onClose}
+                                onRefresh={onRefresh}
+                            />
+                        )}
+                        {action === 'withdraw' && withdrawDestination !== 'p2p' && (
                             <WithdrawForm
                                 code={selectedCode}
                                 type={assetType}
