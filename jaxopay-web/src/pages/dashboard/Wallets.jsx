@@ -607,15 +607,23 @@ const Wallets = () => {
 // ── Unified Action Modal ─────────────────────────────────────────────────
 // Handles Deposit, Withdraw, Transfer flows with Crypto/Fiat selector
 const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefresh }) => {
-    // Steps: 1=Choose type, 1.5=Transfer mode (internal/external), 2=Choose currency, 3=Form
+    // Steps: 1=Choose type, 1.5=Transfer mode (internal/external), 2=Choose currency,
+    // 2.5=Payout method, 2.75=Bank/network, 3=Form
     const [step, setStep] = useState(1);
     const [assetType, setAssetType] = useState(''); // 'crypto' | 'fiat'
     const [transferMode, setTransferMode] = useState(''); // 'internal' | 'external'
-    // Where a fiat withdrawal is headed: an external bank/mobile-money payout, or another
-    // JAXOPAY user. Chosen on its own step after the currency, per the reference flow.
-    const [withdrawDestination, setWithdrawDestination] = useState(''); // 'bank' | 'momo' | 'p2p'
-    const [destinationHasMomo, setDestinationHasMomo] = useState(false);
+    // How a fiat withdrawal pays out — chosen on its own step after the currency, per the
+    // reference flow. Sending to another JAXOPAY user isn't here: that's internal P2P, which
+    // already has its own mode under the Transfer action rather than being a payout rail.
+    const [withdrawDestination, setWithdrawDestination] = useState(''); // 'bank' | 'momo'
+    // The provider's destination list for the chosen currency, fetched once on the method step
+    // and reused for the bank/network list that follows.
+    const [destinationBanks, setDestinationBanks] = useState([]);
+    const [destinationSearch, setDestinationSearch] = useState('');
+    const [selectedDestination, setSelectedDestination] = useState('');
     const [payoutCurrencies, setPayoutCurrencies] = useState([]);
+
+    const destinationHasMomo = destinationBanks.some((b) => b.channel === 'momo');
 
     useEffect(() => {
         if (action !== 'withdraw') return;
@@ -697,32 +705,54 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
         setStep(2);
     };
 
+    // Where the provider tags nothing as mobile money (Nigeria today), every entry is a bank and
+    // filtering on channel would empty the list.
+    const getDestinationList = () => {
+        const scoped = destinationHasMomo
+            ? destinationBanks.filter((b) => (b.channel || 'bank') === withdrawDestination)
+            : destinationBanks;
+        const q = destinationSearch.trim().toLowerCase();
+        return q ? scoped.filter((b) => String(b.name || '').toLowerCase().includes(q)) : scoped;
+    };
+
     const handleSelectCurrency = (code) => {
         setSelectedCode(code);
         // A fiat withdrawal gets a destination step of its own; crypto has only one destination
         // (an on-chain address), so it goes straight to the form.
         if (action === 'withdraw' && assetType === 'fiat') {
             setWithdrawDestination('');
-            setDestinationHasMomo(false);
+            setSelectedDestination('');
+            setDestinationBanks([]);
             setStep(2.5);
             // Whether this currency can pay out to mobile money is the provider's answer, not a
-            // hardcoded country list — fetched so the option is only offered when it's real.
+            // hardcoded country list — fetched so the option is only offered when it's real, and
+            // kept for the bank/network list on the next step.
             transferService.getBanks(code)
-                .then((res) => setDestinationHasMomo(!!res.success && (res.data || []).some((b) => b.channel === 'momo')))
-                .catch(() => setDestinationHasMomo(false));
+                .then((res) => setDestinationBanks(res.success ? (res.data || []) : []))
+                .catch(() => setDestinationBanks([]));
         } else {
             setStep(3);
         }
     };
 
+    // Choosing a method leads to that method's own destination list — the banks, or the mobile
+    // money networks — rather than dropping into the form with a dropdown to hunt through.
     const handleSelectWithdrawDestination = (dest) => {
         setWithdrawDestination(dest);
+        setSelectedDestination('');
+        setDestinationSearch('');
+        setStep(2.75);
+    };
+
+    const handleSelectDestinationBank = (bank) => {
+        setSelectedDestination(bank.code);
         setStep(3);
     };
 
     const handleBack = () => {
-        if (step === 3 && action === 'withdraw' && assetType === 'fiat') { setStep(2.5); setWithdrawDestination(''); }
+        if (step === 3 && action === 'withdraw' && assetType === 'fiat') { setStep(2.75); setSelectedDestination(''); }
         else if (step === 3) { setStep(2); setSelectedCode(''); }
+        else if (step === 2.75) { setStep(2.5); setWithdrawDestination(''); setSelectedDestination(''); setDestinationSearch(''); }
         else if (step === 2.5) { setStep(2); setSelectedCode(''); setWithdrawDestination(''); }
         else if (step === 2 && isTransfer) { setStep(1.5); setTransferMode(''); }
         else if (step === 2) { setStep(1); setAssetType(''); }
@@ -749,7 +779,7 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                         <h2 className="text-lg font-bold text-foreground">{actionLabel}</h2>
                         {step > 1 && (
                             <span className="px-2 py-0.5 bg-muted rounded-md text-xs font-bold text-muted-foreground uppercase">
-                                {assetType}{transferMode ? ` · ${transferMode}` : ''}{selectedCode ? ` · ${selectedCode}` : ''}{withdrawDestination === 'p2p' ? ' · to user' : ''}
+                                {assetType}{transferMode ? ` · ${transferMode}` : ''}{selectedCode ? ` · ${selectedCode}` : ''}
                             </span>
                         )}
                     </div>
@@ -841,16 +871,52 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                                     </div>
                                 </button>
                             )}
-                            <button onClick={() => handleSelectWithdrawDestination('p2p')}
-                                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-border hover:border-primary bg-muted/30 hover:bg-primary/5 transition-all text-left group">
-                                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                                    <Users className="w-6 h-6 text-primary" />
-                                </div>
-                                <div className="min-w-0">
-                                    <p className="font-bold text-foreground">Another JAXOPAY user</p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">Instant and free, using their email or username</p>
-                                </div>
-                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 2.75: the destination list for the method just chosen — the banks, or the
+                    mobile money networks as a step of their own rather than a dropdown buried in
+                    the form. Entries are the provider's own, split on `channel`. */}
+                {step === 2.75 && (
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                        <div className="px-6 pt-5 pb-3">
+                            <p className="text-sm text-muted-foreground">
+                                {withdrawDestination === 'momo'
+                                    ? `Choose the mobile money network that will receive your ${selectedCode}`
+                                    : `Choose the bank that will receive your ${selectedCode}`}
+                            </p>
+                        </div>
+                        <div className="px-4 pb-3 border-b border-border">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                <input type="text"
+                                    placeholder={withdrawDestination === 'momo' ? 'Search network...' : 'Search bank name...'}
+                                    value={destinationSearch} onChange={e => setDestinationSearch(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-muted border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-ring focus:outline-none" />
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-2" style={{ maxHeight: '50vh' }}>
+                            {getDestinationList().map((b) => (
+                                <button key={b.code} onClick={() => handleSelectDestinationBank(b)}
+                                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-muted/50 transition-colors text-left">
+                                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                                        {withdrawDestination === 'momo'
+                                            ? <Smartphone className="w-4.5 h-4.5 text-primary" />
+                                            : <Building2 className="w-4.5 h-4.5 text-primary" />}
+                                    </div>
+                                    <p className="flex-1 text-sm font-semibold text-foreground">{b.name}</p>
+                                </button>
+                            ))}
+                            {getDestinationList().length === 0 && (
+                                <p className="text-center text-muted-foreground text-sm py-8">
+                                    {destinationSearch
+                                        ? `No ${withdrawDestination === 'momo' ? 'network' : 'bank'} matches "${destinationSearch}"`
+                                        : destinationBanks.length === 0
+                                            ? 'Loading...'
+                                            : `No ${withdrawDestination === 'momo' ? 'networks' : 'banks'} available for ${selectedCode} right now.`}
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}
@@ -913,24 +979,12 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                                 onRefresh={onRefresh}
                             />
                         )}
-                        {/* A withdrawal to another JAXOPAY user is the same internal transfer the
-                            Transfer action performs, so it reuses that form rather than a second
-                            implementation of the same thing. */}
-                        {action === 'withdraw' && withdrawDestination === 'p2p' && (
-                            <TransferForm
-                                code={selectedCode}
-                                type={assetType}
-                                wallets={wallets}
-                                balanceMap={balanceMap}
-                                onClose={onClose}
-                                onRefresh={onRefresh}
-                            />
-                        )}
-                        {action === 'withdraw' && withdrawDestination !== 'p2p' && (
+                        {action === 'withdraw' && (
                             <WithdrawForm
                                 code={selectedCode}
                                 type={assetType}
                                 initialChannel={withdrawDestination || 'bank'}
+                                initialBankCode={selectedDestination}
                                 wallets={wallets}
                                 balanceMap={balanceMap}
                                 onClose={onClose}
@@ -1457,7 +1511,7 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
 };
 
 // ── Withdraw Form ────────────────────────────────────────────────────────
-const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChannel = 'bank' }) => {
+const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChannel = 'bank', initialBankCode = '' }) => {
     const { user } = useAuthStore();
     const [amount, setAmount] = useState('');
     const [recipient, setRecipient] = useState('');
@@ -1473,7 +1527,9 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChann
 
     // Bank transfer states (fiat)
     const [banks, setBanks] = useState([]);
-    const [selectedBank, setSelectedBank] = useState('');
+    // Already settled on the destination step before this form opened, so the form only has to ask
+    // for the account number. Still changeable here if the wrong one was picked.
+    const [selectedBank, setSelectedBank] = useState(initialBankCode);
     const [accountName, setAccountName] = useState('');
     const [resolvingAccount, setResolvingAccount] = useState(false);
 
