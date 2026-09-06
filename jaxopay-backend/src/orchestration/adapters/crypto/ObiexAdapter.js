@@ -303,6 +303,45 @@ class ObiexAdapter {
   }
 
   /**
+   * The fiat currencies Obiex can actually pay out to, and the API namespace each one uses.
+   *
+   * Verified by probe rather than assumed: only /ngn-payments/* and /ghs-payments/* exist —
+   * kes, zar, ugx, tzs, xof, xaf, usd, eur, gbp, rwf, zmw, mwk, egp and mad all 404, versus a
+   * 403 "IP not whitelisted" for the two that are real. This matches Obiex's own app, which
+   * offers exactly NGN and GHS under "Select currency to send".
+   *
+   * Anything not listed here has no bank list and no payout route, so it must not be offered as a
+   * withdrawal destination — a currency the user can select but never complete is worse than one
+   * that isn't shown.
+   */
+  static FIAT_PAYOUT_NAMESPACES = { NGN: 'ngn-payments', GHS: 'ghs-payments' };
+
+  /** Currencies withdrawal may offer. */
+  getFiatPayoutCurrencies() {
+    return Object.keys(ObiexAdapter.FIAT_PAYOUT_NAMESPACES);
+  }
+
+  supportsFiatPayout(currency) {
+    return !!ObiexAdapter.FIAT_PAYOUT_NAMESPACES[String(currency || '').toUpperCase()];
+  }
+
+  /** Destination list for any supported payout currency, without the caller knowing the namespace. */
+  async getFiatPayoutBanks(currency) {
+    const cur = String(currency || '').toUpperCase();
+    if (cur === 'NGN') return this.getNgnBanks();
+    if (cur === 'GHS') return this.getGhsBanks();
+    throw new Error(`No Obiex payout rail for ${cur}`);
+  }
+
+  /** Account resolution for any supported payout currency. */
+  async resolveFiatPayoutAccount(currency, sortCode, accountNumber) {
+    const cur = String(currency || '').toUpperCase();
+    if (cur === 'NGN') return this.resolveNgnAccount(sortCode, accountNumber);
+    if (cur === 'GHS') return this.resolveGhsAccount(sortCode, accountNumber);
+    throw new Error(`No Obiex payout rail for ${cur}`);
+  }
+
+  /**
    * Destination list for Cedi withdrawal — GET /ghs-payments/banks. Mirrors the Naira endpoint
    * exactly (same shape, same 10-minute cache).
    *

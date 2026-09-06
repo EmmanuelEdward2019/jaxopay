@@ -613,8 +613,16 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
     const [transferMode, setTransferMode] = useState(''); // 'internal' | 'external'
     // Where a fiat withdrawal is headed: an external bank/mobile-money payout, or another
     // JAXOPAY user. Chosen on its own step after the currency, per the reference flow.
-    const [withdrawDestination, setWithdrawDestination] = useState(''); // 'external' | 'p2p'
+    const [withdrawDestination, setWithdrawDestination] = useState(''); // 'bank' | 'momo' | 'p2p'
     const [destinationHasMomo, setDestinationHasMomo] = useState(false);
+    const [payoutCurrencies, setPayoutCurrencies] = useState([]);
+
+    useEffect(() => {
+        if (action !== 'withdraw') return;
+        transferService.getPayoutCurrencies()
+            .then((res) => { if (res.success && Array.isArray(res.data)) setPayoutCurrencies(res.data); })
+            .catch(() => {});
+    }, [action]);
     const [selectedCode, setSelectedCode] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -638,7 +646,13 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                 list.push({ code, name: c.name || code, balance: balanceMap[code]?.balance || 0 });
             });
         } else {
-            FIAT_CURRENCIES.forEach(f => {
+            // A withdrawal can only go to a currency the payout provider actually has a rail for
+            // (NGN and GHS today). Offering USD/EUR/GBP here produced a dead end the user only
+            // hit after picking a recipient. Every other action still offers the full fiat set.
+            const allowed = action === 'withdraw' && payoutCurrencies.length > 0
+                ? FIAT_CURRENCIES.filter(f => payoutCurrencies.includes(f.code))
+                : FIAT_CURRENCIES;
+            allowed.forEach(f => {
                 list.push({ code: f.code, name: f.name, flag: f.flag, balance: balanceMap[f.code]?.balance || 0 });
             });
         }
@@ -803,22 +817,30 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                             Where should your {selectedCode} go?
                         </p>
                         <div className="space-y-3">
-                            <button onClick={() => handleSelectWithdrawDestination('external')}
+                            <button onClick={() => handleSelectWithdrawDestination('bank')}
                                 className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-border hover:border-primary bg-muted/30 hover:bg-primary/5 transition-all text-left group">
                                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
                                     <Building2 className="w-6 h-6 text-primary" />
                                 </div>
                                 <div className="min-w-0">
-                                    <p className="font-bold text-foreground">
-                                        {destinationHasMomo ? 'Bank account or mobile money' : 'Bank account'}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                        {destinationHasMomo
-                                            ? `Pay out to a ${selectedCode} bank account or mobile money wallet`
-                                            : `Pay out to a ${selectedCode} bank account`}
-                                    </p>
+                                    <p className="font-bold text-foreground">Bank Account</p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Pay out to a {selectedCode} bank account</p>
                                 </div>
                             </button>
+                            {/* Only where the provider's own destination list for this currency
+                                actually contains mobile-money operators. */}
+                            {destinationHasMomo && (
+                                <button onClick={() => handleSelectWithdrawDestination('momo')}
+                                    className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-border hover:border-primary bg-muted/30 hover:bg-primary/5 transition-all text-left group">
+                                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                                        <Smartphone className="w-6 h-6 text-primary" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-foreground">Mobile Money (MoMo)</p>
+                                        <p className="text-xs text-muted-foreground mt-0.5">Pay out to a mobile money wallet</p>
+                                    </div>
+                                </button>
+                            )}
                             <button onClick={() => handleSelectWithdrawDestination('p2p')}
                                 className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-border hover:border-primary bg-muted/30 hover:bg-primary/5 transition-all text-left group">
                                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
@@ -908,6 +930,7 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                             <WithdrawForm
                                 code={selectedCode}
                                 type={assetType}
+                                initialChannel={withdrawDestination || 'bank'}
                                 wallets={wallets}
                                 balanceMap={balanceMap}
                                 onClose={onClose}
@@ -1434,7 +1457,7 @@ const DepositForm = ({ code, type, wallets, balanceMap, onClose, onRefresh }) =>
 };
 
 // ── Withdraw Form ────────────────────────────────────────────────────────
-const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
+const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChannel = 'bank' }) => {
     const { user } = useAuthStore();
     const [amount, setAmount] = useState('');
     const [recipient, setRecipient] = useState('');
@@ -1514,7 +1537,9 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
 
     // Bank vs mobile money. Only meaningful where the provider actually offers both (Ghana today);
     // elsewhere the destination list has no MoMo entries and the choice stays hidden on 'bank'.
-    const [payoutChannel, setPayoutChannel] = useState('bank');
+    // Chosen on the destination step before this form opens, so it's fixed for the life of the
+    // form — going back a step is how you change it.
+    const payoutChannel = initialChannel;
     const hasMomoOption = !isCrypto && banks.some((b) => b.channel === 'momo');
     const destinationOptions = hasMomoOption
         ? banks.filter((b) => (b.channel || 'bank') === payoutChannel)
@@ -1676,36 +1701,16 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                     </div>
                 )}
 
-                {/* Ghana payouts go to either a bank or a mobile-money wallet, so the method is
-                    chosen first and filters the destination list — matching Obiex's own flow.
-                    Obiex returns both kinds in one list tagged with `channel`; currencies whose
-                    list has no MoMo entries skip this entirely and just show the bank picker. */}
+                {/* The method was chosen on its own step before this form opened, so it's shown
+                    here as context rather than asked again. */}
                 {!isCrypto && hasMomoOption && (
-                    <div>
-                        <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Payment Method</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {[
-                                { key: 'bank', label: 'Bank Account', icon: Building2 },
-                                { key: 'momo', label: 'Mobile Money', icon: Smartphone },
-                            ].map((opt) => {
-                                const Icon = opt.icon;
-                                return (
-                                    <button
-                                        key={opt.key}
-                                        type="button"
-                                        onClick={() => { setPayoutChannel(opt.key); setSelectedBank(''); }}
-                                        className={`flex items-center justify-center gap-2 py-3 px-3 rounded-xl border text-sm font-semibold transition-colors ${
-                                            payoutChannel === opt.key
-                                                ? 'bg-primary text-white border-primary'
-                                                : 'bg-muted border-border text-foreground hover:border-primary'
-                                        }`}
-                                    >
-                                        <Icon className="w-4 h-4" />
-                                        {opt.label}
-                                    </button>
-                                );
-                            })}
-                        </div>
+                    <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border border-border rounded-xl">
+                        {payoutChannel === 'momo'
+                            ? <Smartphone className="w-4 h-4 text-primary shrink-0" />
+                            : <Building2 className="w-4 h-4 text-primary shrink-0" />}
+                        <span className="text-xs font-semibold text-foreground">
+                            {payoutChannel === 'momo' ? 'Mobile Money' : 'Bank Account'}
+                        </span>
                     </div>
                 )}
 

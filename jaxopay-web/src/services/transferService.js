@@ -26,6 +26,17 @@ const transferService = {
     },
 
     // Initiate a bank transfer
+    // Fiat currencies a withdrawal can actually be paid out in (the provider has a bank list and
+    // a payout rail for these, and only these).
+    getPayoutCurrencies: async () => {
+        try {
+            const response = await apiClient.get('/transfers/payout-currencies');
+            return { success: true, data: response.data ?? response };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+
     // Withdrawal fee + what the recipient receives. Read from the server so the figure shown can
     // never drift from what's actually charged when an admin changes the fee.
     getWithdrawalQuote: async (currency, amount) => {

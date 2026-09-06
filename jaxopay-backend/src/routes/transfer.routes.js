@@ -11,12 +11,16 @@ import {
     getTransferHistory,
     getMerchantBalances,
     getWithdrawalQuote,
+    listPayoutCurrencies,
 } from '../controllers/transfer.controller.js';
 
 const router = express.Router();
 
 // All transfer routes require authentication
 router.use(verifyToken);
+
+// GET /transfers/payout-currencies — fiat currencies a withdrawal can actually be made in
+router.get('/payout-currencies', listPayoutCurrencies);
 
 // GET /transfers/banks?currency=NGN — list all banks
 router.get('/banks', listBanks);

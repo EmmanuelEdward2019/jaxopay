@@ -64,6 +64,17 @@ function isGhsMobileMoney(entry) {
     return /\b(mtn|vodafone|telecel|airteltigo|airtel|tigo)\b|momo|mobile\s*money/i.test(String(entry?.name || ''));
 }
 
+/**
+ * Which fiat currencies a withdrawal may actually be made in.
+ *
+ * Offering a currency with no payout rail behind it produces a dead end the user only discovers
+ * after picking a recipient, so the withdrawal currency picker is driven by this rather than by
+ * whatever wallets happen to exist.
+ */
+export const listPayoutCurrencies = catchAsync(async (req, res) => {
+    res.status(200).json({ success: true, data: obiex.getFiatPayoutCurrencies() });
+});
+
 export const listBanks = catchAsync(async (req, res) => {
     const currency = req.query.currency || 'NGN';
 
