@@ -46,22 +46,27 @@ const korapay = new KorapayAdapter();
 /**
  * Is this Ghanaian destination a mobile-money operator rather than a bank?
  *
- * Obiex returns banks and MoMo operators in one list with no separate endpoint, so the split has
- * to be derived. Prefers whatever the payload says (their field naming for this isn't documented,
- * and this machine can't read the live list — the endpoint is IP-allowlisted to the droplet), and
- * falls back to matching Ghana's three operators by name. Both paths are checked, so a payload
- * that does carry a type wins and the name match is only a backstop.
+ * Obiex has one Ghana endpoint — /ghs-payments/banks — and no separate mobile-money route (every
+ * other /ghs-payments/* path 404s, verified against production), so banks and MoMo operators
+ * arrive in a single list and the split has to be derived here.
+ *
+ * The name is checked FIRST and is decisive. An earlier version asked the payload's own type
+ * field first and returned `false` on anything bank-ish, which is exactly what that endpoint
+ * labels its entries wholesale — so every operator was vetoed back into the bank column, the
+ * name match below became unreachable, and Ghana was left with no Mobile Money option at all.
+ * A name test is safe to trust: Ghana's operators are a tiny fixed set and no Ghanaian bank
+ * shares their names. The declared type is kept only as a backstop for an operator not named
+ * after a telco.
  */
 function isGhsMobileMoney(entry) {
+    const name = String(entry?.name || '');
+    if (/\b(mtn|vodafone|telecel|airteltigo|airtel|tigo|zeepay|g[-\s]?money)\b|momo|mobile\s*money/i.test(name)) {
+        return true;
+    }
     const declared = String(
         entry?.type ?? entry?.channel ?? entry?.category ?? entry?.accountType ?? entry?.channelType ?? ''
     ).toLowerCase();
-    if (declared) {
-        if (/momo|mobile/.test(declared)) return true;
-        if (/bank/.test(declared)) return false;
-    }
-    // Ghana has exactly three: MTN, Telecel (formerly Vodafone) and AirtelTigo.
-    return /\b(mtn|vodafone|telecel|airteltigo|airtel|tigo)\b|momo|mobile\s*money/i.test(String(entry?.name || ''));
+    return /momo|mobile/.test(declared);
 }
 
 /**
@@ -100,9 +105,19 @@ export const listBanks = catchAsync(async (req, res) => {
             const momoCount = normalized.filter((b) => b.channel === 'momo').length;
             logger.info(
                 `[Transfer] Fetched ${normalized.length} GHS destinations from Obiex ` +
-                `(${momoCount} mobile money, ${normalized.length - momoCount} bank). ` +
-                `Raw sample: ${JSON.stringify((banks || [])[0] || {}).slice(0, 200)}`
+                `(${momoCount} mobile money, ${normalized.length - momoCount} bank).`
             );
+            // Ghana always has mobile money, so none surviving the split means the classifier
+            // missed rather than the market being bank-only. Dump enough of the payload to fix it
+            // without another round trip — the endpoint is IP-allowlisted, so this log is the
+            // only place its real shape is observable.
+            if (momoCount === 0) {
+                logger.warn(
+                    `[Transfer] GHS list classified 0 mobile-money operators — likely a naming ` +
+                    `mismatch. Entry keys: ${JSON.stringify(Object.keys((banks || [])[0] || {}))}. ` +
+                    `Names: ${JSON.stringify((banks || []).map((b) => b.name).slice(0, 40))}`
+                );
+            }
         } else {
             const banks = await korapay.listBanks(currency);
             normalized = (banks || []).map((b) => ({

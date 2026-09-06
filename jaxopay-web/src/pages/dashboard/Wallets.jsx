@@ -621,6 +621,7 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
     const [destinationBanks, setDestinationBanks] = useState([]);
     const [destinationSearch, setDestinationSearch] = useState('');
     const [selectedDestination, setSelectedDestination] = useState('');
+    const [destinationError, setDestinationError] = useState(false);
     const [payoutCurrencies, setPayoutCurrencies] = useState([]);
 
     const destinationHasMomo = destinationBanks.some((b) => b.channel === 'momo');
@@ -723,13 +724,27 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
             setWithdrawDestination('');
             setSelectedDestination('');
             setDestinationBanks([]);
+            setDestinationError(false);
             setStep(2.5);
             // Whether this currency can pay out to mobile money is the provider's answer, not a
             // hardcoded country list — fetched so the option is only offered when it's real, and
             // kept for the bank/network list on the next step.
             transferService.getBanks(code)
-                .then((res) => setDestinationBanks(res.success ? (res.data || []) : []))
-                .catch(() => setDestinationBanks([]));
+                .then((res) => {
+                    const list = res.success ? (res.data || []) : [];
+                    setDestinationBanks(list);
+                    setDestinationError(!res.success);
+                    // Nigeria pays out to banks only, so "Where should your money go?" would be a
+                    // single-option page. Skip straight to the bank list wherever the provider
+                    // offers just the one method — which keeps this correct if mobile money ever
+                    // arrives on another currency, rather than hardcoding NGN.
+                    if (res.success && list.length > 0 && !list.some((b) => b.channel === 'momo')) {
+                        setWithdrawDestination('bank');
+                        setDestinationSearch('');
+                        setStep(2.75);
+                    }
+                })
+                .catch(() => { setDestinationBanks([]); setDestinationError(true); });
         } else {
             setStep(3);
         }
@@ -752,6 +767,9 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
     const handleBack = () => {
         if (step === 3 && action === 'withdraw' && assetType === 'fiat') { setStep(2.75); setSelectedDestination(''); }
         else if (step === 3) { setStep(2); setSelectedCode(''); }
+        // Where the method step was skipped for want of a second option, going back to it would
+        // land on a page the user never saw and that immediately forwards again.
+        else if (step === 2.75 && !destinationHasMomo) { setStep(2); setSelectedCode(''); setWithdrawDestination(''); setSelectedDestination(''); setDestinationSearch(''); }
         else if (step === 2.75) { setStep(2.5); setWithdrawDestination(''); setSelectedDestination(''); setDestinationSearch(''); }
         else if (step === 2.5) { setStep(2); setSelectedCode(''); setWithdrawDestination(''); }
         else if (step === 2 && isTransfer) { setStep(1.5); setTransferMode(''); }
@@ -841,7 +859,28 @@ const ActionModal = ({ action, onClose, wallets, allCryptos, balanceMap, onRefre
                 {/* Step 2.5: where a fiat withdrawal should go. Matches the reference flow —
                     currency is chosen first, then the destination for that currency, rather than
                     dropping the user straight into a form and hiding the choice inside it. */}
-                {step === 2.5 && (
+                {step === 2.5 && (destinationBanks.length === 0 || destinationError) && (
+                    <div className="p-6">
+                        {destinationError ? (
+                            <div className="text-center py-8 space-y-3">
+                                <p className="text-sm text-foreground font-semibold">Couldn't load {selectedCode} destinations</p>
+                                <p className="text-xs text-muted-foreground">The payout provider didn't respond. Please try again.</p>
+                                <button onClick={() => handleSelectCurrency(selectedCode)}
+                                    className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-bold">
+                                    Retry
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-center py-12">
+                                <RefreshCw className="w-5 h-5 animate-spin text-primary" />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Only once the provider's list is in hand — rendering early showed Bank Account
+                    alone while the fetch was still running, which reads as "no mobile money". */}
+                {step === 2.5 && destinationBanks.length > 0 && !destinationError && (
                     <div className="p-6 space-y-4">
                         <p className="text-sm text-muted-foreground">
                             Where should your {selectedCode} go?
