@@ -1528,12 +1528,15 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
             } : null} />
     );
 
-    if (!walletId || balance <= 0) {
+    // Only a missing wallet is a genuine dead end. An empty one still shows the full form: the
+    // destination options are worth seeing (and setting up a recipient for) before funding, and
+    // the submit button already refuses any amount above the balance, so nothing can be sent.
+    if (!walletId) {
         return (
             <div className="p-8 text-center">
                 <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-bold text-foreground mb-2">No {code} Balance</h3>
-                <p className="text-sm text-muted-foreground">You need to deposit {code} first before you can withdraw.</p>
+                <h3 className="text-lg font-bold text-foreground mb-2">No {code} Wallet</h3>
+                <p className="text-sm text-muted-foreground">You need a {code} wallet before you can withdraw.</p>
             </div>
         );
     }
@@ -1547,6 +1550,16 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh }) => {
                     <p className="text-xs text-muted-foreground">Available: {balance.toFixed(isCrypto ? 6 : 2)}</p>
                 </div>
             </div>
+
+            {balance <= 0 && (
+                <div className="p-3 bg-muted/50 border border-border rounded-lg flex items-start gap-2">
+                    <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <p className="text-xs text-muted-foreground">
+                        This {code} wallet is empty. You can still set up the recipient below — you'll
+                        just need to fund the wallet before the withdrawal can go through.
+                    </p>
+                </div>
+            )}
 
             {error && (
                 <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg flex items-start gap-2">
