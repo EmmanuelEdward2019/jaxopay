@@ -31,6 +31,16 @@ import { useRecentInputs } from '../../hooks/useRecentInputs';
 import { useAppStore } from '../../store/appStore';
 
 // Friendly names for Yellow Card payout country codes (falls back to the code).
+// The order an international payout is actually assembled in — destination first, then how it's
+// paid, then who receives it, then how much. Drives the progress rail on the transfer tab.
+const INTL_STEPS = [
+    { key: 'country', label: 'Destination' },
+    { key: 'method', label: 'Method' },
+    { key: 'network', label: 'Bank' },
+    { key: 'recipient', label: 'Recipient' },
+    { key: 'amount', label: 'Amount' },
+];
+
 const COUNTRY_NAMES = {
     NG: 'Nigeria', GH: 'Ghana', KE: 'Kenya', ZA: 'South Africa', UG: 'Uganda', TZ: 'Tanzania',
     CM: 'Cameroon', CI: "Côte d'Ivoire", SN: 'Senegal', ZM: 'Zambia', RW: 'Rwanda', BF: 'Burkina Faso',
@@ -54,6 +64,9 @@ const CrossBorder = () => {
     // accountNumberType, so the split is theirs, not a guess — and the choice only appears for
     // countries that genuinely support both.
     const [intlMethod, setIntlMethod] = useState('bank');
+    // Sub-steps within the transfer tab, so each screen asks one thing in the order the payout is
+    // actually assembled. Step 2 of the outer flow remains Review, step 3 the result.
+    const [intlStep, setIntlStep] = useState(1);
     const [ratesError, setRatesError] = useState(null);
     const [error, setError] = useState(null);
     const [needsProfile, setNeedsProfile] = useState(false); // show a Profile link on incomplete-profile errors
@@ -492,7 +505,7 @@ const CrossBorder = () => {
                         <span className="truncate"><span className="sm:hidden">Swap</span><span className="hidden sm:inline">Currency Swap</span></span>
                     </button>
                     <button
-                        onClick={() => { setActiveTab('transfer'); setStep(1); }}
+                        onClick={() => { setActiveTab('transfer'); setStep(1); setIntlStep(1); }}
                         className={`flex-1 sm:flex-none min-w-0 px-2 sm:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm ${activeTab === 'transfer' ? 'bg-card text-primary shadow-lg' : 'text-white hover:bg-card/10'}`}
                     >
                         <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
@@ -700,93 +713,114 @@ const CrossBorder = () => {
                                     </div>
                                 ) : activeTab === 'transfer' ? (
                                     <div className="space-y-6">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="space-y-2">
-                                                <label className="text-sm font-bold text-foreground">Recipient Name</label>
-                                                <div className="relative">
-                                                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                                    <input
-                                                        type="text"
-                                                        value={transferData.recipientName}
-                                                        onChange={(e) => setTransferData(prev => ({ ...prev, recipientName: e.target.value }))}
-                                                        placeholder="Full Name"
-                                                        className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
-                                                    />
+                                        {/* Stepped rather than one long form: each screen asks one
+                                            thing, in the order the payout is actually built up —
+                                            country, then how it's paid, then to whom, then how much.
+                                            Mirrors the withdrawal flow. */}
+                                        <div className="flex items-center gap-2">
+                                            {INTL_STEPS.map((s, i) => (
+                                                <div key={s.key} className="flex items-center gap-2 flex-1 last:flex-none">
+                                                    <div className={`flex items-center gap-2 ${i + 1 <= intlStep ? 'text-primary' : 'text-muted-foreground'}`}>
+                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${
+                                                            i + 1 < intlStep ? 'bg-primary text-white'
+                                                                : i + 1 === intlStep ? 'bg-primary/15 text-primary border-2 border-primary'
+                                                                    : 'bg-muted text-muted-foreground'
+                                                        }`}>
+                                                            {i + 1 < intlStep ? '✓' : i + 1}
+                                                        </div>
+                                                        <span className="text-[11px] font-semibold hidden sm:inline">{s.label}</span>
+                                                    </div>
+                                                    {i < INTL_STEPS.length - 1 && (
+                                                        <div className={`h-px flex-1 ${i + 1 < intlStep ? 'bg-primary' : 'bg-border'}`} />
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {intlStep === 1 && (
+                                            <div className="space-y-3">
+                                                <label className="text-sm font-bold text-foreground">Where are you sending to?</label>
+                                                <div className="grid grid-cols-1 gap-2 max-h-80 overflow-y-auto pr-1">
+                                                    {payoutCountries.map((c) => (
+                                                        <button
+                                                            key={c.country}
+                                                            onClick={() => {
+                                                                const destCur = c.currency || c.currencies?.[0];
+                                                                setTransferData(prev => ({
+                                                                    ...prev,
+                                                                    recipientCountry: c.country,
+                                                                    targetCurrency: destCur || prev.targetCurrency,
+                                                                    currency: destCur || prev.currency,
+                                                                    networkId: '', networkName: '', networkAccountType: '', networkChannelIds: [],
+                                                                }));
+                                                                setIntlMethod('bank');
+                                                                setIntlStep(2);
+                                                            }}
+                                                            className={`w-full flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 transition-all text-left ${
+                                                                transferData.recipientCountry === c.country
+                                                                    ? 'border-primary bg-primary/5'
+                                                                    : 'border-border bg-muted/30 hover:border-primary'
+                                                            }`}
+                                                        >
+                                                            <span className="font-semibold text-foreground">{COUNTRY_NAMES[c.country] || c.country}</span>
+                                                            <span className="text-xs text-muted-foreground shrink-0">{(c.currencies || []).join(' / ')}</span>
+                                                        </button>
+                                                    ))}
+                                                    {payoutCountries.length === 0 && (
+                                                        <p className="text-sm text-muted-foreground py-6 text-center">Loading destinations…</p>
+                                                    )}
                                                 </div>
                                             </div>
-                                            <div className="space-y-2">
-                                                <label className="text-sm font-bold text-foreground">Destination Country</label>
-                                                <div className="relative">
-                                                    <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                                    <select
-                                                        value={transferData.recipientCountry}
-                                                        onChange={(e) => {
-                                                            const code = e.target.value;
-                                                            const c = payoutCountries.find(x => x.country === code);
-                                                            const destCur = c?.currency || c?.currencies?.[0];
-                                                            setTransferData(prev => ({
-                                                                ...prev,
-                                                                recipientCountry: code,
-                                                                targetCurrency: destCur || prev.targetCurrency,
-                                                                currency: destCur || prev.currency,   // auto-select the destination currency
-                                                                networkId: '', networkName: '', networkAccountType: '', networkChannelIds: [],
-                                                            }));
-                                                        }}
-                                                        className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
-                                                    >
-                                                        <option value="">Select country…</option>
-                                                        {payoutCountries.map((c) => (
-                                                            <option key={c.country} value={c.country}>
-                                                                {(COUNTRY_NAMES[c.country] || c.country)} ({c.currencies.join('/')})
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            {/* Payment method, mirroring the withdrawal flow. Yellow Card
-                                                already marks each network as a phone (mobile money) or a
-                                                bank, so this filters what follows rather than leaving the
-                                                two mixed in one long list. Only shown where the country
-                                                actually offers both. */}
-                                            {transferData.recipientCountry && intlHasBothMethods && (
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-foreground">Payment Method</label>
-                                                    <div className="grid grid-cols-2 gap-2">
+                                        )}
+
+                                        {intlStep === 2 && (
+                                            <div className="space-y-3">
+                                                <label className="text-sm font-bold text-foreground">How should it be paid out?</label>
+                                                {networksLoading ? (
+                                                    <p className="text-sm text-muted-foreground py-6 text-center">Loading payout options…</p>
+                                                ) : (
+                                                    <div className="space-y-2">
                                                         {[
-                                                            { key: 'bank', label: 'Bank Account' },
-                                                            { key: 'momo', label: 'Mobile Money' },
-                                                        ].map((opt) => (
+                                                            { key: 'bank', label: 'Bank Account', desc: 'Pay into a bank account', show: payoutNetworks.some(n => !isMomoNetwork(n)) },
+                                                            { key: 'momo', label: 'Mobile Money', desc: 'Pay into a mobile money wallet', show: payoutNetworks.some(isMomoNetwork) },
+                                                        ].filter(o => o.show).map((opt) => (
                                                             <button
                                                                 key={opt.key}
-                                                                type="button"
                                                                 onClick={() => {
                                                                     setIntlMethod(opt.key);
                                                                     setTransferData(prev => ({ ...prev, networkId: '', networkName: '', networkAccountType: '', networkChannelIds: [] }));
+                                                                    setIntlStep(3);
                                                                 }}
-                                                                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-semibold transition-colors ${
-                                                                    intlMethod === opt.key
-                                                                        ? 'bg-primary text-white border-primary'
-                                                                        : 'bg-muted/50 border-border text-foreground hover:border-primary'
-                                                                }`}
+                                                                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-border hover:border-primary bg-muted/30 transition-all text-left"
                                                             >
-                                                                {opt.key === 'momo'
-                                                                    ? <Smartphone className="w-4 h-4" />
-                                                                    : <Building2 className="w-4 h-4" />}
-                                                                {opt.label}
+                                                                <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                                                                    {opt.key === 'momo' ? <Smartphone className="w-5 h-5 text-primary" /> : <Building2 className="w-5 h-5 text-primary" />}
+                                                                </div>
+                                                                <div>
+                                                                    <p className="font-bold text-foreground">{opt.label}</p>
+                                                                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                                                                </div>
                                                             </button>
                                                         ))}
+                                                        {payoutNetworks.length === 0 && (
+                                                            <p className="text-sm text-muted-foreground py-6 text-center">
+                                                                No payout options available for this destination right now.
+                                                            </p>
+                                                        )}
                                                     </div>
-                                                </div>
-                                            )}
-                                            <div className="space-y-2">
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {intlStep === 3 && (
+                                            <div className="space-y-3">
                                                 <SearchableBankSelect
                                                     items={intlNetworkOptions}
                                                     selected={intlNetworkOptions.find(n => n.id === transferData.networkId) || null}
                                                     loading={networksLoading}
                                                     label={intlMethod === 'momo' ? 'Mobile Money Network' : 'Recipient Bank'}
-                                                    placeholder={!transferData.recipientCountry ? 'Select a country first' : intlMethod === 'momo' ? 'Select network' : 'Select bank'}
+                                                    placeholder={intlMethod === 'momo' ? 'Select network' : 'Select bank'}
                                                     getId={(n) => n.id}
-                                                    getSubLabel={(n) => n.accountNumberType === 'phone' ? 'Mobile Money' : 'Bank'}
                                                     onSelect={(n) => {
                                                         setTransferData(prev => ({
                                                             ...prev,
@@ -797,78 +831,123 @@ const CrossBorder = () => {
                                                         }));
                                                     }}
                                                 />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <label className="text-sm font-bold text-foreground">Account Number / IBAN</label>
-                                                <div className="relative">
-                                                    <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                                    <input
-                                                        type="text"
-                                                        list="recent-global-accounts"
-                                                        value={transferData.accountNumber}
-                                                        onChange={(e) => setTransferData(prev => ({ ...prev, accountNumber: e.target.value }))}
-                                                        placeholder="Account Details"
-                                                        className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
-                                                    />
-                                                    {recentAccounts.length > 0 && (
-                                                        <datalist id="recent-global-accounts">
-                                                            {recentAccounts.map((val, idx) => (
-                                                                <option key={`${val}-${idx}`} value={val} />
-                                                            ))}
-                                                        </datalist>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="p-4 bg-muted/50 rounded-2xl border border-border">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <label className="text-xs font-bold text-muted-foreground uppercase block">Amount to Send</label>
-                                                <span className="text-xs text-muted-foreground">
-                                                    Bal: <span className="text-foreground font-medium">{getBalance(transferData.currency).toFixed(2)} {transferData.currency}</span>
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-2 sm:gap-4">
-                                                <input
-                                                    type="number"
-                                                    value={transferData.amount}
-                                                    onChange={(e) => setTransferData(prev => ({ ...prev, amount: e.target.value }))}
-                                                    placeholder="0.00"
-                                                    className="flex-1 min-w-0 bg-transparent text-xl sm:text-3xl font-bold outline-none border-none focus:ring-0"
-                                                />
-                                                <select
-                                                    value={transferData.currency}
-                                                    onChange={(e) => setTransferData(prev => ({ ...prev, currency: e.target.value }))}
-                                                    className="shrink-0 bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
+                                                <button
+                                                    onClick={() => setIntlStep(4)}
+                                                    disabled={!transferData.networkId}
+                                                    className="w-full py-3.5 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-all disabled:opacity-50"
                                                 >
-                                                    {/* Auto-set to the destination currency; includes every payout currency + your pay wallets */}
-                                                    {[...new Set([transferData.currency, 'NGN', 'USD', ...payoutCountries.flatMap(c => c.currencies || [])].filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
-                                                </select>
+                                                    Continue
+                                                </button>
                                             </div>
-                                            {transferData.recipientCountry && (() => {
-                                                const sc = payoutCountries.find(c => c.country === transferData.recipientCountry);
-                                                const localCur = sc?.currency;
-                                                return (
-                                                    <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                                                        <p>
-                                                            Auto-set to <span className="font-semibold text-foreground">{localCur}</span> — you can change the send currency above.
-                                                            {transferData.currency !== localCur && ` Your ${transferData.currency} is converted to ${localCur} at the live rate.`}
-                                                        </p>
-                                                        {sc?.min > 0 && transferData.currency === localCur && (
-                                                            <p>Minimum payout to {COUNTRY_NAMES[sc.country] || sc.country}: <span className="font-semibold text-foreground">{sc.min.toLocaleString()} {localCur}</span></p>
+                                        )}
+
+                                        {intlStep === 4 && (
+                                            <div className="space-y-4">
+                                                <div className="space-y-2">
+                                                    <label className="text-sm font-bold text-foreground">Recipient Name</label>
+                                                    <div className="relative">
+                                                        <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                                        <input
+                                                            type="text"
+                                                            value={transferData.recipientName}
+                                                            onChange={(e) => setTransferData(prev => ({ ...prev, recipientName: e.target.value }))}
+                                                            placeholder="Full Name"
+                                                            className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-sm font-bold text-foreground">
+                                                        {intlMethod === 'momo' ? 'Mobile Money Number' : 'Account Number / IBAN'}
+                                                    </label>
+                                                    <div className="relative">
+                                                        <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                                        <input
+                                                            type="text"
+                                                            list="recent-global-accounts"
+                                                            value={transferData.accountNumber}
+                                                            onChange={(e) => setTransferData(prev => ({ ...prev, accountNumber: e.target.value }))}
+                                                            placeholder={intlMethod === 'momo' ? 'Mobile money number' : 'Account Details'}
+                                                            className="w-full pl-11 pr-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring transition-all"
+                                                        />
+                                                        {recentAccounts.length > 0 && (
+                                                            <datalist id="recent-global-accounts">
+                                                                {recentAccounts.map((val, idx) => (
+                                                                    <option key={`${val}-${idx}`} value={val} />
+                                                                ))}
+                                                            </datalist>
                                                         )}
                                                     </div>
-                                                );
-                                            })()}
-                                        </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => setIntlStep(5)}
+                                                    disabled={!transferData.recipientName || !transferData.accountNumber}
+                                                    className="w-full py-3.5 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-all disabled:opacity-50"
+                                                >
+                                                    Continue
+                                                </button>
+                                            </div>
+                                        )}
 
-                                        <button
-                                            onClick={() => setStep(2)}
-                                            disabled={!transferData.amount || !transferData.recipientName || !transferData.accountNumber || !transferData.recipientCountry || !transferData.networkId}
-                                            className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50"
-                                        >
-                                            Next Step
-                                        </button>
+                                        {intlStep === 5 && (
+                                            <div className="space-y-4">
+                                                <div className="p-4 bg-muted/50 rounded-2xl border border-border">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <label className="text-xs font-bold text-muted-foreground uppercase block">Amount to Send</label>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            Bal: <span className="text-foreground font-medium">{getBalance(transferData.currency).toFixed(2)} {transferData.currency}</span>
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 sm:gap-4">
+                                                        <input
+                                                            type="number"
+                                                            value={transferData.amount}
+                                                            onChange={(e) => setTransferData(prev => ({ ...prev, amount: e.target.value }))}
+                                                            placeholder="0.00"
+                                                            className="flex-1 min-w-0 bg-transparent text-xl sm:text-3xl font-bold outline-none border-none focus:ring-0"
+                                                        />
+                                                        <select
+                                                            value={transferData.currency}
+                                                            onChange={(e) => setTransferData(prev => ({ ...prev, currency: e.target.value }))}
+                                                            className="shrink-0 bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
+                                                        >
+                                                            {[...new Set([transferData.currency, 'NGN', 'USD', ...payoutCountries.flatMap(c => c.currencies || [])].filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    {transferData.recipientCountry && (() => {
+                                                        const sc = payoutCountries.find(c => c.country === transferData.recipientCountry);
+                                                        const localCur = sc?.currency;
+                                                        return (
+                                                            <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                                                                <p>
+                                                                    Auto-set to <span className="font-semibold text-foreground">{localCur}</span> — you can change the send currency above.
+                                                                    {transferData.currency !== localCur && ` Your ${transferData.currency} is converted to ${localCur} at the live rate.`}
+                                                                </p>
+                                                                {sc?.min > 0 && transferData.currency === localCur && (
+                                                                    <p>Minimum payout to {COUNTRY_NAMES[sc.country] || sc.country}: <span className="font-semibold text-foreground">{sc.min.toLocaleString()} {localCur}</span></p>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </div>
+                                                <button
+                                                    onClick={() => setStep(2)}
+                                                    disabled={!transferData.amount || !transferData.recipientName || !transferData.accountNumber || !transferData.recipientCountry || !transferData.networkId}
+                                                    className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50"
+                                                >
+                                                    Review Transfer
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {intlStep > 1 && (
+                                            <button
+                                                onClick={() => setIntlStep(intlStep - 1)}
+                                                className="w-full py-2.5 text-sm font-semibold text-muted-foreground hover:text-primary transition-colors"
+                                            >
+                                                Back
+                                            </button>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
@@ -1098,7 +1177,7 @@ const CrossBorder = () => {
 
                         {step === 2 && (
                             <div className="max-w-md mx-auto py-8 animate-in zoom-in-95 duration-300">
-                                <button onClick={() => setStep(1)} className="mb-6 flex items-center gap-2 text-muted-foreground hover:text-primary font-medium">
+                                <button onClick={() => { setStep(1); if (activeTab === 'transfer') setIntlStep(INTL_STEPS.length); }} className="mb-6 flex items-center gap-2 text-muted-foreground hover:text-primary font-medium">
                                     <ArrowLeftRight className="w-4 h-4" /> Back to edit
                                 </button>
 
