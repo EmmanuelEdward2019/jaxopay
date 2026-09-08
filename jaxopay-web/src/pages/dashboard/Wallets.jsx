@@ -1931,14 +1931,6 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChann
                                     </span>
                                 </div>
                             )}
-                            {!isCrypto && withdrawalFee > 0 && parseFloat(amount) > 0 && (
-                                <div className="flex items-center justify-between text-xs">
-                                    <span className="text-muted-foreground">Recipient receives</span>
-                                    <span className="font-semibold text-foreground">
-                                        {Math.max(0, parseFloat(amount) - withdrawalFee).toLocaleString()} {code}
-                                    </span>
-                                </div>
-                            )}
                             {currentTierLimit && (
                                 <div className="flex items-center justify-between text-xs">
                                     <span className="text-muted-foreground">Daily {isCrypto ? 'crypto' : 'fiat'} limit ({currentTierLimit.name})</span>
@@ -1954,6 +1946,29 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChann
                         </div>
                     );
                 })()}
+
+                {/* What actually lands in the recipient's account. The fee is deducted from the
+                    amount entered, so "withdraw 5,000" does NOT mean they receive 5,000 — this was
+                    previously one grey 12px row among five inside the box above, which is not where
+                    anyone looks before confirming. Its own block, in the brand colour. */}
+                {!isCrypto && withdrawalFee > 0 && parseFloat(amount) > 0 && parseFloat(amount) > withdrawalFee && (
+                    <div className="p-4 bg-primary/10 border border-primary/30 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">Amount</span>
+                            <span className="font-semibold text-foreground">{parseFloat(amount).toLocaleString()} {code}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">Withdrawal fee</span>
+                            <span className="font-semibold text-foreground">− {withdrawalFee.toLocaleString()} {code}</span>
+                        </div>
+                        <div className="pt-2 border-t border-primary/25 flex items-center justify-between">
+                            <span className="text-sm font-bold text-foreground">Recipient gets</span>
+                            <span className="text-lg font-extrabold text-primary">
+                                {Math.max(0, parseFloat(amount) - withdrawalFee).toLocaleString()} {code}
+                            </span>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* At or below the fee the recipient receives nothing, and the server rejects it.
@@ -1977,7 +1992,11 @@ const WithdrawForm = ({ code, type, balanceMap, onClose, onRefresh, initialChann
                 processing={pinProcessing}
                 errorMessage={pinError}
                 title={`Authorize ${code} Withdrawal`}
-                description={`Enter your 4-digit PIN to withdraw ${amount || ''} ${code}.`}
+                description={
+                    !isCrypto && withdrawalFee > 0 && parseFloat(amount) > withdrawalFee
+                        ? `${parseFloat(amount).toLocaleString()} ${code} will be debited and the recipient will receive ${Math.max(0, parseFloat(amount) - withdrawalFee).toLocaleString()} ${code} after the ${withdrawalFee.toLocaleString()} ${code} fee. Enter your 4-digit PIN to authorize.`
+                        : `Enter your 4-digit PIN to withdraw ${amount || ''} ${code}.`
+                }
             />
         </div>
     );
