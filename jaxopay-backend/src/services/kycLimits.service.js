@@ -71,8 +71,9 @@ export async function usdRate(currency) {
 /**
  * Sum the user's money-out in USD since `since`, split into crypto vs fiat buckets (the two
  * halves of a tier's cap). Sources: bank transfers & other outflows in `transactions`
- * (everything except deposits), `bill_payments`, and `fx_transactions` (international
- * transfers + crypto ramp; internal swaps excluded). Failed/reversed rows and refunds don't count.
+ * (everything except deposits), `bill_payments`, `wallet_transactions` (crypto withdrawals to an
+ * external address), and `fx_transactions` (international transfers + crypto ramp; internal swaps
+ * excluded). Failed/reversed rows and refunds don't count.
  */
 async function usdOutflowSince(userId, since) {
   const rows = (await query(
@@ -87,6 +88,20 @@ async function usdOutflowSince(userId, since) {
        FROM bill_payments
       WHERE user_id = $1 AND created_at >= $2
         AND status::text NOT IN ('failed','reversed','cancelled')
+      GROUP BY 1
+     UNION ALL
+     -- Crypto withdrawals to an external address are written ONLY to wallet_transactions (see
+     -- crypto.controller.js withdrawCrypto), so leaving this branch out meant the crypto half of
+     -- every cap counted nothing but the transaction being attempted: a $100/day crypto limit
+     -- passed an unlimited number of $99 withdrawals. Restricted to 'withdrawal' on purpose —
+     -- exchange_in/exchange_out are the two legs of an internal swap and net to zero, matching
+     -- the fx branch's own exclusion of type 'swap' below.
+     SELECT wtx.currency::text, SUM(wtx.amount)::numeric
+       FROM wallet_transactions wtx
+       JOIN wallets w ON w.id = wtx.wallet_id
+      WHERE w.user_id = $1 AND wtx.created_at >= $2
+        AND wtx.transaction_type::text = 'withdrawal'
+        AND wtx.status::text NOT IN ('failed','reversed','cancelled')
       GROUP BY 1
      UNION ALL
      SELECT from_currency::text, SUM(amount)::numeric
@@ -122,16 +137,30 @@ export async function enforceTierLimit(userId, amount, currency, kycTier) {
   let caps = tierCapFor(kycTier, currency);
   const kind = isFiat(currency) ? 'fiat' : 'crypto';
 
-  // An admin-set custom override always replaces the tier default (both daily and monthly,
-  // monthly scaled 10x like every other cap on this platform) — see financialControls.service.js.
-  const customDaily = await getCustomWithdrawalLimitUsd(userId).catch(() => null);
-  if (customDaily != null) {
+  // An admin-set custom override replaces the tier default for THIS half of the user's activity
+  // (both daily and monthly, monthly scaled 10x like every other cap on this platform) — crypto
+  // and fiat are capped independently, so restricting one never silently restricts the other.
+  // See financialControls.service.js.
+  const customDaily = await getCustomWithdrawalLimitUsd(userId, kind).catch(() => null);
+  const hasOverride = customDaily != null;
+  if (hasOverride) {
     caps = { daily: customDaily, monthly: customDaily * 10 };
   }
 
   const rate = await usdRate(currency);
   if (rate == null) {
-    // Can't price the transaction — don't hard-block payments on an FX outage, but log loudly.
+    // An admin override exists precisely because someone decided this account needs holding down
+    // — usually after irregular activity. Failing open there would make the override do nothing
+    // at exactly the moment it matters, and an FX outage is not a reason to hand a flagged
+    // account an uncapped withdrawal. So: block when an override is set, and keep failing open
+    // (loudly) for the ordinary tier path, where a payments outage would be the worse harm.
+    if (hasOverride) {
+      logger.error(`[KYCLimits] cannot convert ${amount} ${currency} to USD and user ${userId} has an admin ${kind} limit — blocking`);
+      throw new AppError(
+        'We could not verify this transaction against your account limit right now. Please try again in a few minutes.',
+        503, 'LIMIT_CHECK_UNAVAILABLE'
+      );
+    }
     logger.error(`[KYCLimits] cannot convert ${amount} ${currency} to USD — limit check skipped for user ${userId}`);
     return;
   }
@@ -148,17 +177,23 @@ export async function enforceTierLimit(userId, amount, currency, kycTier) {
   const daySpentUsd = kind === 'fiat' ? daySpent.fiatUsd : daySpent.cryptoUsd;
   const monthSpentUsd = kind === 'fiat' ? monthSpent.fiatUsd : monthSpent.cryptoUsd;
 
+  // A tier cap is lifted by verifying further; an admin override is not, so pointing the user at
+  // KYC when the cap was set by hand just sends them down a dead end.
+  const nextStep = hasOverride
+    ? 'This limit was set on your account — please contact support.'
+    : 'Upgrade your KYC tier for higher limits.';
+
   if (daySpentUsd + txUsd > caps.daily) {
     const left = Math.max(0, caps.daily - daySpentUsd);
     throw new AppError(
-      `This transaction exceeds your daily ${kind} limit of $${caps.daily.toLocaleString()} (about $${left.toFixed(2)} remaining today). Upgrade your KYC tier for higher limits.`,
+      `This transaction exceeds your daily ${kind} limit of $${caps.daily.toLocaleString()} (about $${left.toFixed(2)} remaining today). ${nextStep}`,
       403, 'LIMIT_EXCEEDED'
     );
   }
   if (monthSpentUsd + txUsd > caps.monthly) {
     const left = Math.max(0, caps.monthly - monthSpentUsd);
     throw new AppError(
-      `This transaction exceeds your monthly ${kind} limit of $${caps.monthly.toLocaleString()} (about $${left.toFixed(2)} remaining this month). Upgrade your KYC tier for higher limits.`,
+      `This transaction exceeds your monthly ${kind} limit of $${caps.monthly.toLocaleString()} (about $${left.toFixed(2)} remaining this month). ${nextStep}`,
       403, 'LIMIT_EXCEEDED'
     );
   }

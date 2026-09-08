@@ -4,6 +4,7 @@ import quidax from '../orchestration/adapters/crypto/QuidaxAdapter.js';
 import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
 import { getStatementRows, buildStatementCSV, buildStatementPDF, resolveDateRange } from '../services/statement.service.js';
 import { sendEmail } from '../services/email.service.js';
+import { ensureSessionId, backfillSessionIds } from '../services/payoutSession.service.js';
 
 // Same provider selection as crypto.controller.js — used only for read-only rate lookups here.
 const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() === 'quidax' ? 'quidax' : 'obiex';
@@ -232,6 +233,11 @@ export const getTransactions = catchAsync(async (req, res) => {
     )
   ]);
 
+  // Fill in any NIBSS session IDs Obiex had not published yet when the payout webhook landed.
+  // Bounded and best-effort (see backfillSessionIds) so a slow provider can never stall the list;
+  // a row it can't resolve this time is simply retried the next time the list is loaded.
+  await backfillSessionIds(result.rows).catch(() => {});
+
   res.status(200).json({
     success: true,
     data: {
@@ -261,9 +267,17 @@ export const getTransaction = catchAsync(async (req, res) => {
     throw new AppError('Transaction not found', 404);
   }
 
+  // This is the receipt endpoint, so it's the one place worth waiting on a provider call: the
+  // NIBSS session ID is what a customer needs to trace a stalled bank transfer, and Obiex only
+  // publishes it after the payout settles (see payoutSession.service.js). Resolved once, then
+  // persisted onto the row, so every later open is a plain metadata read.
+  const tx = result.rows[0];
+  const sessionId = await ensureSessionId(tx).catch(() => null);
+  if (sessionId) tx.metadata = { ...(tx.metadata || {}), session_id: sessionId };
+
   res.status(200).json({
     success: true,
-    data: result.rows[0],
+    data: tx,
   });
 });
 

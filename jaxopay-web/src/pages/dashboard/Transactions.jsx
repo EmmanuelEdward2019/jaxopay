@@ -36,53 +36,13 @@ import {
 import transactionService from '../../services/transactionService';
 import ticketService from '../../services/ticketService';
 import ReceiptShareButton from '../../components/common/ReceiptShareButton';
+// The printable receipt itself — shared with the admin Transaction Monitor so both download the
+// identical document (see components/common/TransactionReceipt.jsx).
+import TransactionReceipt from '../../components/common/TransactionReceipt';
 import { formatCurrency, formatDateTime, formatTransactionType, getStatusColor } from '../../utils/formatters';
-
-// Block explorer for a given network, so the on-chain hash can be tapped straight through to
-// independent verification — the whole point of showing a hash at all. Mirrors RN's
-// TransactionsScreen.tsx EXPLORER_BASE exactly, keep both in sync if a network is added.
-// Keys must cover every networkCode Obiex can emit (GET /currencies/networks/active currently
-// returns ARBITRUM, AVAXC, BACC, BASE, BCH, BSC, BTC, DOGE, ETH, LTC, MATIC, MOMO, SOL, SUI, TON,
-// TRX) plus the aliases our own code writes. A network that isn't here simply shows the hash as
-// plain text with no link — which is how BTC deposits ended up with an unlinked hash, and why TRX
-// needs its own key even though TRC20/TRON were already mapped.
-// BACC and MOMO are deliberately absent: they're account/mobile-money rails, not chains.
-const EXPLORER_BASE = {
-    ETH: 'https://etherscan.io/tx/', ETHEREUM: 'https://etherscan.io/tx/', ERC20: 'https://etherscan.io/tx/',
-    BSC: 'https://bscscan.com/tx/', BEP20: 'https://bscscan.com/tx/',
-    POLYGON: 'https://polygonscan.com/tx/', MATIC: 'https://polygonscan.com/tx/',
-    ARBITRUM: 'https://arbiscan.io/tx/',
-    OPTIMISM: 'https://optimistic.etherscan.io/tx/',
-    BASE: 'https://basescan.org/tx/',
-    AVAXC: 'https://snowtrace.io/tx/', AVALANCHE: 'https://snowtrace.io/tx/',
-    TRC20: 'https://tronscan.org/#/transaction/', TRON: 'https://tronscan.org/#/transaction/',
-    TRX: 'https://tronscan.org/#/transaction/',
-    SOL: 'https://solscan.io/tx/', SOLANA: 'https://solscan.io/tx/',
-    CELO: 'https://celoscan.io/tx/',
-    BTC: 'https://mempool.space/tx/', BITCOIN: 'https://mempool.space/tx/',
-    BCH: 'https://blockchair.com/bitcoin-cash/transaction/',
-    LTC: 'https://blockchair.com/litecoin/transaction/',
-    DOGE: 'https://blockchair.com/dogecoin/transaction/',
-    SUI: 'https://suiscan.xyz/mainnet/tx/',
-    TON: 'https://tonviewer.com/transaction/',
-};
-const explorerUrlFor = (network, hash) => {
-    if (!network || !hash) return null;
-    const base = EXPLORER_BASE[String(network).toUpperCase()];
-    return base ? `${base}${hash}` : null;
-};
-
-// What the number a bill was paid to is actually called, per bill type — a meter number isn't an
-// "Account", and showing it as one makes a receipt harder to check against the biller's own record.
-const BILL_ACCOUNT_LABELS = {
-    airtime: 'Phone Number',
-    data: 'Phone Number',
-    electricity: 'Meter Number',
-    cable: 'Smart Card Number',
-    tv: 'Smart Card Number',
-    internet: 'Account Number',
-    water: 'Account Number',
-};
+// One shared definition of what a receipt shows, used by the PNG export below, the detail modal
+// below that, and the admin panel's copy of the same receipt — see utils/receiptFields.js.
+import { buildReceiptFields, explorerUrlFor } from '../../utils/receiptFields';
 
 const TRANSACTION_TYPES = [
     { value: 'all', label: 'All Types' },
@@ -144,138 +104,6 @@ const StatusIcon = ({ status, size = 'md' }) => {
     const cfg = configs[status?.toLowerCase()] || { icon: AlertCircle, className: `${sz} text-muted-foreground` };
     const Icon = cfg.icon;
     return <Icon className={cfg.className} />;
-};
-
-// ─── Receipt component (rendered off-screen for PNG export) ──────────────────
-const TransactionReceipt = ({ transaction, receiptRef }) => {
-    const colors = getTransactionColors(transaction.transaction_type, transaction.direction);
-    const isCredit = transaction.direction === 'credit' || transaction.transaction_type === 'deposit';
-    const displayAmount = Math.abs(transaction.amount || transaction.from_amount || 0);
-    const displayCurrency = transaction.currency || transaction.from_currency;
-
-    const getMetadataFields = (meta) => {
-        if (!meta) return [];
-        const result = [];
-        // Bank transfers/crypto withdrawals store snake_case keys; international transfer and
-        // crypto ramp (fx_transactions.recipient_details) store camelCase keys instead — check both.
-        const bankName = meta.bank_name || meta.networkName || meta.bank;
-        const acctNumber = meta.account_number || meta.accountNumber || meta.account;
-        const acctName = meta.account_name || meta.recipientName || meta.name;
-        const network = meta.network || meta.cryptoNetwork;
-        const address = meta.address || meta.walletAddress;
-        if (bankName) result.push({ label: 'Bank', value: bankName });
-        if (acctNumber) result.push({ label: 'Account', value: acctNumber });
-        if (acctName) result.push({ label: 'Account Name', value: acctName });
-        if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
-        // Bill payments — the biller and the thing being paid for. What the account number is
-        // called depends entirely on the bill type, and "Account" for a meter reads as wrong.
-        if (meta.biller) result.push({ label: 'Biller', value: formatTransactionType(meta.biller) });
-        if (meta.bill_account) result.push({ label: BILL_ACCOUNT_LABELS[meta.service_type] || 'Account', value: meta.bill_account });
-        if (meta.customer_name) result.push({ label: 'Customer Name', value: meta.customer_name });
-        if (meta.units) result.push({ label: 'Units', value: meta.units });
-        if (network) result.push({ label: 'Network', value: network });
-        if (address) result.push({ label: 'Address', value: address });
-        if (meta.country) result.push({ label: 'Country', value: meta.country });
-        // NIBSS session ID — what a Nigerian bank asks for when tracing a transfer, so it's the
-        // single most useful thing on a NGN withdrawal receipt. Only present once the provider
-        // returns one.
-        if (meta.session_id) result.push({ label: 'Session ID', value: meta.session_id, copyable: true });
-        if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
-        if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
-        if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });
-        // On-chain proof — populated for crypto deposits/withdrawals (see obiexWebhook.service.js).
-        // Plain text here (no link) since this component renders to a static PNG export.
-        if (meta.hash) result.push({ label: 'Hash', value: meta.hash });
-        return result;
-    };
-
-    const fields = [
-        { label: 'Transaction Type', value: formatTransactionType(transaction.transaction_type) },
-        { label: 'Status', value: transaction.status?.charAt(0).toUpperCase() + transaction.status?.slice(1) },
-        { label: 'Date & Time', value: formatDateTime(transaction.created_at) },
-        transaction.reference && { label: 'Transaction ID', value: transaction.reference },
-        transaction.description && { label: 'Description', value: transaction.description },
-        transaction.fee && parseFloat(transaction.fee) > 0 && {
-            label: 'Fee',
-            value: formatCurrency(transaction.fee, transaction.currency),
-        },
-        transaction.exchange_rate && { label: 'Exchange Rate', value: `1 ${transaction.from_currency || ''} = ${transaction.exchange_rate} ${transaction.to_currency || ''}` },
-        ...getMetadataFields(transaction.metadata),
-    ].filter(Boolean);
-
-    const statusKey = (transaction.status || '').toLowerCase();
-    const statusColor = statusKey === 'completed' ? '#16a34a'
-        : (statusKey === 'pending' || statusKey === 'processing') ? '#d97706'
-            : '#dc2626';
-    const statusBg = statusKey === 'completed' ? '#dcfce7'
-        : (statusKey === 'pending' || statusKey === 'processing') ? '#fef3c7'
-            : '#fee2e2';
-
-    return (
-        <div
-            ref={receiptRef}
-            style={{ fontFamily: "'Segoe UI', Roboto, system-ui, -apple-system, sans-serif", backgroundColor: '#ffffff' }}
-            className="w-[420px] rounded-3xl overflow-hidden"
-        >
-            {/* Green brand accent bar */}
-            <div style={{ height: 6, background: 'linear-gradient(90deg, #15803d 0%, #16a34a 50%, #22c55e 100%)' }} />
-
-            {/* Header */}
-            <div style={{ padding: '30px 32px 24px', textAlign: 'center', backgroundColor: '#ffffff' }}>
-                <img src="/logo.png" alt="JAXOPAY" style={{ height: 42, width: 'auto', display: 'block', margin: '0 auto 18px' }} />
-                <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 14, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>
-                    Proof of Transaction
-                </p>
-                <p style={{
-                    color: isCredit ? '#16a34a' : '#0f172a',
-                    fontSize: 38,
-                    fontWeight: 800,
-                    marginBottom: 12,
-                    letterSpacing: '-0.02em',
-                }}>
-                    {isCredit ? '+' : '-'}{formatCurrency(displayAmount, displayCurrency)}
-                </p>
-                <div style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '5px 16px', borderRadius: 999, backgroundColor: statusBg,
-                }}>
-                    <span style={{ color: statusColor, fontSize: 12.5, fontWeight: 700, letterSpacing: '0.03em' }}>
-                        {transaction.status?.toUpperCase()}
-                    </span>
-                </div>
-            </div>
-
-            {/* Details */}
-            <div style={{ padding: '0 24px 6px', backgroundColor: '#ffffff' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', background: '#f8fafc', borderRadius: 14, overflow: 'hidden', border: '1px solid #eef2f6' }}>
-                    <tbody>
-                        {fields.map((field, i) => (
-                            <tr key={i} style={{ borderBottom: i < fields.length - 1 ? '1px solid #eef2f6' : 'none' }}>
-                                <td style={{ color: '#64748b', fontSize: 13, padding: '13px 18px', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{field.label}</td>
-                                <td style={{
-                                    color: field.label === 'Status' ? statusColor : '#0f172a',
-                                    fontSize: 13, fontWeight: 600, padding: '13px 18px',
-                                    textAlign: 'right', wordBreak: 'break-word', overflowWrap: 'anywhere',
-                                }}>
-                                    {field.value}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-
-            {/* Footer */}
-            <div style={{ textAlign: 'center', padding: '20px 32px 28px', backgroundColor: '#ffffff' }}>
-                <p style={{ color: '#16a34a', fontSize: 11.5, letterSpacing: '0.05em', fontWeight: 700 }}>
-                    POWERED BY JAXOPAY · jaxopay.com
-                </p>
-                <p style={{ color: '#94a3b8', fontSize: 10.5, marginTop: 5 }}>
-                    Receipt Ref: {transaction.id?.slice(0, 8).toUpperCase()}
-                </p>
-            </div>
-        </div>
-    );
 };
 
 // ─── Full-screen modal ────────────────────────────────────────────────────────
@@ -342,67 +170,8 @@ export const TransactionDetailModal = ({ transaction, onClose }) => {
         else setReportErr(res.error || 'Could not submit your report. Please try again.');
     };
 
-    const getMetadataFields = (meta) => {
-        if (!meta) return [];
-        const result = [];
-        // Bank transfers/crypto withdrawals store snake_case keys; international transfer and
-        // crypto ramp (fx_transactions.recipient_details) store camelCase keys instead — check both.
-        const bankName = meta.bank_name || meta.networkName || meta.bank;
-        const acctNumber = meta.account_number || meta.accountNumber || meta.account;
-        const acctName = meta.account_name || meta.recipientName || meta.name;
-        const network = meta.network || meta.cryptoNetwork;
-        const address = meta.address || meta.walletAddress;
-        if (bankName) result.push({ label: 'Bank', value: bankName });
-        if (acctNumber) result.push({ label: 'Account', value: acctNumber });
-        if (acctName) result.push({ label: 'Account Name', value: acctName });
-        if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
-        // Bill payments — the biller and the thing being paid for. What the account number is
-        // called depends entirely on the bill type, and "Account" for a meter reads as wrong.
-        if (meta.biller) result.push({ label: 'Biller', value: formatTransactionType(meta.biller) });
-        if (meta.bill_account) result.push({ label: BILL_ACCOUNT_LABELS[meta.service_type] || 'Account', value: meta.bill_account });
-        if (meta.customer_name) result.push({ label: 'Customer Name', value: meta.customer_name });
-        if (meta.units) result.push({ label: 'Units', value: meta.units });
-        if (network) result.push({ label: 'Network', value: network });
-        if (address) result.push({ label: 'Address', value: address });
-        if (meta.country) result.push({ label: 'Country', value: meta.country });
-        // NIBSS session ID — what a Nigerian bank asks for when tracing a transfer, so it's the
-        // single most useful thing on a NGN withdrawal receipt. Only present once the provider
-        // returns one.
-        if (meta.session_id) result.push({ label: 'Session ID', value: meta.session_id, copyable: true });
-        if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
-        if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });
-        if (meta.token) result.push({ label: 'Token/PIN', value: meta.token });
-        // On-chain proof — populated for crypto deposits/withdrawals (see obiexWebhook.service.js).
-        // Copyable here; the actual "go verify it" action is the dedicated Verify on Blockchain
-        // button below, not this text itself — a labeled button reads as an obvious action, an
-        // underlined value easily doesn't.
-        if (meta.hash) result.push({ label: 'Hash', value: meta.hash, copyable: true });
-        return result;
-    };
-
-    const fields = [
-        { label: 'Transaction Type', value: formatTransactionType(transaction.transaction_type) },
-        { label: 'Status', value: transaction.status?.charAt(0).toUpperCase() + transaction.status?.slice(1) },
-        { label: 'Date & Time', value: formatDateTime(transaction.created_at) },
-        // Yellow Card's own dashboard (and Quidax/Obiex for crypto) calls this same value
-        // "Transaction ID" — matching that avoids a support back-and-forth over what "Reference"
-        // means when a user is cross-checking against the provider's own records.
-        transaction.reference && { label: 'Transaction ID', value: transaction.reference, copyable: true },
-        transaction.description && { label: 'Description', value: transaction.description },
-        transaction.fee && parseFloat(transaction.fee) > 0 && {
-            label: 'Fee',
-            value: formatCurrency(transaction.fee, transaction.currency),
-        },
-        transaction.exchange_rate && {
-            label: 'Exchange Rate',
-            value: `1 ${transaction.from_currency || ''} = ${transaction.exchange_rate} ${transaction.to_currency || ''}`,
-        },
-        transaction.from_amount && transaction.to_amount && {
-            label: 'Converted',
-            value: `${formatCurrency(transaction.from_amount, transaction.from_currency)} → ${formatCurrency(transaction.to_amount, transaction.to_currency)}`,
-        },
-        ...getMetadataFields(transaction.metadata),
-    ].filter(Boolean);
+    // Interactive view: copy buttons on the traceable values, plus the Converted row.
+    const fields = buildReceiptFields(transaction, { copyable: true, detailed: true });
 
     return (
         <>

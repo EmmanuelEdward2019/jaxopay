@@ -1232,7 +1232,12 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
     const [financialControlsLoading, setFinancialControlsLoading] = useState(false);
     const [financialControlsSaving, setFinancialControlsSaving] = useState(false);
     const [depositLimitInput, setDepositLimitInput] = useState('');
-    const [withdrawalLimitInput, setWithdrawalLimitInput] = useState('');
+    // Fiat and crypto withdrawal caps are set independently — the point of the control is to be
+    // able to pin one without touching the other when irregular activity shows up on an account.
+    const [fiatWithdrawalLimitInput, setFiatWithdrawalLimitInput] = useState('');
+    const [cryptoWithdrawalLimitInput, setCryptoWithdrawalLimitInput] = useState('');
+    const [financialControlsError, setFinancialControlsError] = useState(null);
+    const [financialControlsSaved, setFinancialControlsSaved] = useState(false);
     const { user: currentUser } = useAuthStore();
     // Backend: PATCH /admin/users/:userId (kyc_tier/status/roles) is admin/super_admin only;
     // POST /admin/users/:userId/suspend is COMPLIANCE_ACCESS (admin/super_admin/compliance_officer);
@@ -1276,23 +1281,48 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
         if (result.success) {
             setFinancialControls(result.data);
             setDepositLimitInput(result.data.custom_deposit_limit_ngn ?? '');
-            setWithdrawalLimitInput(result.data.custom_withdrawal_limit_usd ?? '');
+            // Fall back to the pre-split combined column so an override set before migration 046
+            // still shows up in the field that now governs it.
+            setFiatWithdrawalLimitInput(result.data.custom_withdrawal_limit_fiat_usd ?? result.data.custom_withdrawal_limit_usd ?? '');
+            setCryptoWithdrawalLimitInput(result.data.custom_withdrawal_limit_crypto_usd ?? result.data.custom_withdrawal_limit_usd ?? '');
+            setFinancialControlsError(null);
+        } else {
+            // Silently swallowing this is what made these controls look like they did nothing:
+            // a failed load left the toggles showing defaults and a failed save changed nothing,
+            // with no indication either way.
+            setFinancialControlsError(result.error || 'Could not load this user\'s financial controls.');
         }
         setFinancialControlsLoading(false);
     };
 
     const handleToggleFinancialControl = async (field, value) => {
+        setFinancialControlsError(null);
         const result = await adminService.updateUserFinancialControls(user.id, { [field]: value });
         if (result.success) setFinancialControls(result.data);
+        else setFinancialControlsError(result.error || 'Could not update this control. Your change was not saved.');
     };
+
+    // A blank field means "tier default", but "Tier default" alone doesn't tell the admin what
+    // number they're actually replacing — or that these are dollars, not Naira.
+    const tierDefaultHint = (value) =>
+        value == null ? 'Tier default' : `Tier default: $${Number(value).toLocaleString()}`;
 
     const handleSaveLimits = async () => {
         setFinancialControlsSaving(true);
+        setFinancialControlsError(null);
+        setFinancialControlsSaved(false);
         const result = await adminService.updateUserFinancialControls(user.id, {
             custom_deposit_limit_ngn: depositLimitInput === '' ? null : parseFloat(depositLimitInput),
-            custom_withdrawal_limit_usd: withdrawalLimitInput === '' ? null : parseFloat(withdrawalLimitInput),
+            custom_withdrawal_limit_fiat_usd: fiatWithdrawalLimitInput === '' ? null : parseFloat(fiatWithdrawalLimitInput),
+            custom_withdrawal_limit_crypto_usd: cryptoWithdrawalLimitInput === '' ? null : parseFloat(cryptoWithdrawalLimitInput),
         });
-        if (result.success) setFinancialControls(result.data);
+        if (result.success) {
+            setFinancialControls(result.data);
+            setFinancialControlsSaved(true);
+            setTimeout(() => setFinancialControlsSaved(false), 3000);
+        } else {
+            setFinancialControlsError(result.error || 'Could not save these limits. Nothing was changed.');
+        }
         setFinancialControlsSaving(false);
     };
 
@@ -1553,32 +1583,47 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
                                         />
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <div>
-                                            <label className="block text-xs font-medium text-gray-500 mb-1">Custom deposit limit (₦/day)</label>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">Deposit limit (₦/day)</label>
                                             <input
                                                 type="number"
                                                 min="0"
-                                                placeholder="Tier default"
+                                                placeholder={tierDefaultHint(null)}
                                                 value={depositLimitInput}
                                                 onChange={(e) => setDepositLimitInput(e.target.value)}
                                                 className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm"
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-medium text-gray-500 mb-1">Custom withdrawal limit ($/day)</label>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">Fiat withdrawal limit ($/day)</label>
                                             <input
                                                 type="number"
                                                 min="0"
-                                                placeholder="Tier default"
-                                                value={withdrawalLimitInput}
-                                                onChange={(e) => setWithdrawalLimitInput(e.target.value)}
+                                                placeholder={tierDefaultHint(financialControls?.tier_defaults?.fiat?.daily)}
+                                                value={fiatWithdrawalLimitInput}
+                                                onChange={(e) => setFiatWithdrawalLimitInput(e.target.value)}
+                                                className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">Crypto withdrawal limit ($/day)</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                placeholder={tierDefaultHint(financialControls?.tier_defaults?.crypto?.daily)}
+                                                value={cryptoWithdrawalLimitInput}
+                                                onChange={(e) => setCryptoWithdrawalLimitInput(e.target.value)}
                                                 className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm"
                                             />
                                         </div>
                                     </div>
                                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                        <p className="text-xs text-gray-400">Leave a field blank to fall back to the user's KYC tier default.</p>
+                                        <p className="text-xs text-gray-400">
+                                            Withdrawal limits are in <strong>US dollars</strong> and apply to every currency
+                                            (a ₦ withdrawal is converted at the live rate before it&apos;s checked). The monthly
+                                            cap is 10&times; the daily one. Blank = the user&apos;s KYC tier default.
+                                        </p>
                                         <button
                                             onClick={handleSaveLimits}
                                             disabled={financialControlsSaving}
@@ -1587,6 +1632,12 @@ const UserDetailModal = ({ user, onClose, onUpdate, onSuspend, onDelete, loading
                                             {financialControlsSaving ? 'Saving...' : 'Save Limits'}
                                         </button>
                                     </div>
+                                    {financialControlsError && (
+                                        <p className="text-xs text-red-600 dark:text-red-400">{financialControlsError}</p>
+                                    )}
+                                    {financialControlsSaved && !financialControlsError && (
+                                        <p className="text-xs text-primary-600">Limits saved — they apply to the user&apos;s next withdrawal.</p>
+                                    )}
                                 </div>
                             )}
                         </div>

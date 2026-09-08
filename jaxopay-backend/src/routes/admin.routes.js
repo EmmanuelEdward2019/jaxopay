@@ -362,6 +362,8 @@ router.patch(
   body('withdrawals_crypto_enabled').optional().isBoolean(),
   body('custom_deposit_limit_ngn').optional({ nullable: true }).isFloat({ min: 0 }),
   body('custom_withdrawal_limit_usd').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('custom_withdrawal_limit_fiat_usd').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('custom_withdrawal_limit_crypto_usd').optional({ nullable: true }).isFloat({ min: 0 }),
   validate,
   updateUserFinancialControlsAdmin
 );

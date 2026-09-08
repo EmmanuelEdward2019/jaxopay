@@ -80,8 +80,27 @@ class ObiexAdapter {
     this._cacheTTL = {
       currencies: 10 * 60 * 1000,   // 10 minutes (static data)
       networks: 10 * 60 * 1000,     // 10 minutes (static data)
-      rates: 5 * 1000,              // 5 seconds
+      // Every getExchangeRate miss is a POST /trades/quote against a 100/hour budget (see
+      // _quoteCallLog below), and its callers are all DISPLAY paths — ticker prices, a stats
+      // volume breakdown, an admin rate preview, a USD valuation for a limit check. None of them
+      // need a 5-second-fresh price; a 5-second TTL just meant almost every call was a miss.
+      rates: 10 * 60 * 1000,        // 10 minutes
     };
+
+    // ── Quote-call budget ──────────────────────────────────────────────────
+    // Obiex documents POST /trades/quote as "Limited to 100 requests per hour per API key" and it
+    // is their ONLY price source — there is no ticker endpoint. Exceeding it is what got this key
+    // disabled on 2026-07-23. Every caller shares one budget, so a rolling-hour counter lives here
+    // in the adapter rather than in any one caller: this is the only place that can actually
+    // guarantee the ceiling, no matter who calls or how many requests arrive at once.
+    //
+    // Customer trades are never throttled — they're the whole point of the integration, and are
+    // naturally bounded by real user actions. Only DISPLAY/background lookups (purpose 'price')
+    // are held back, and only once they'd eat into the reserve kept for trading.
+    this._quoteCallLog = [];
+    this._quoteBudgetPerHour = Number(process.env.OBIEX_QUOTE_BUDGET_PER_HOUR || 100);
+    // How much of that hour the non-trading, display-only lookups may use.
+    this._quotePriceBudget = Number(process.env.OBIEX_QUOTE_PRICE_BUDGET || 40);
     setInterval(() => this._clearExpiredCache(), 60 * 1000).unref?.();
 
     // Tracks whether a quotation was created against a "reversed" trade pair (buying the
@@ -118,6 +137,39 @@ class ObiexAdapter {
     for (const [key, value] of this._cache.entries()) {
       if (now - value.timestamp > maxTTL * 2) this._cache.delete(key);
     }
+  }
+
+  /** POST /trades/quote calls in the trailing hour. Prunes as it counts. */
+  _quoteCallsLastHour() {
+    const cutoff = Date.now() - 60 * 60 * 1000;
+    while (this._quoteCallLog.length > 0 && this._quoteCallLog[0] < cutoff) this._quoteCallLog.shift();
+    return this._quoteCallLog.length;
+  }
+
+  _recordQuoteCall() {
+    this._quoteCallsLastHour();
+    this._quoteCallLog.push(Date.now());
+  }
+
+  /**
+   * Whether a display-only price lookup may spend one of the hour's quote calls. Trades never ask
+   * — they always proceed. Returns false once display lookups have used their share, which keeps
+   * the remainder of the 100/hour reserved for customers actually swapping.
+   */
+  _canSpendPriceQuote() {
+    const used = this._quoteCallsLastHour();
+    return used < Math.min(this._quotePriceBudget, this._quoteBudgetPerHour);
+  }
+
+  /** Current quote-budget usage, for the admin orchestration/health view. */
+  getQuoteBudgetState() {
+    const used = this._quoteCallsLastHour();
+    return {
+      used_last_hour: used,
+      budget_per_hour: this._quoteBudgetPerHour,
+      price_lookup_budget: this._quotePriceBudget,
+      price_lookups_allowed: this._canSpendPriceQuote(),
+    };
   }
 
   /** Normalize Obiex's `{message, errors:[{message}]}` error shape into a plain Error. */
@@ -558,6 +610,8 @@ class ObiexAdapter {
       side: obiexSide,
       ...(amountIsForFrom ? { amount: Number(amount) } : { amountToReceive: Number(amount) }),
     };
+    // Counted before the await so concurrent callers can't all read a stale "under budget".
+    this._recordQuoteCall();
     const data = await this._request('POST', '/trades/quote', body);
     const d = data?.data || {};
     // d.amount/d.amountReceived mirror the request's give/receive semantics, NOT sourceId/targetId
@@ -568,8 +622,18 @@ class ObiexAdapter {
     const fromAmount = d.amount;
     const toAmount = d.amountReceived;
     if (d.id) {
+      // from_amount/to_amount are recorded alongside the orientation so a lapsed quote can be
+      // re-quoted for the identical trade at confirm time, and the replacement's price compared
+      // against the one the customer was actually shown (see requoteForExpiredConfirm in
+      // crypto.controller.js). Both are the RAW provider amounts — the markup is applied by the
+      // controller, which re-applies it identically to the replacement before comparing.
       this._quoteOrientation.set(d.id, {
-        reversed, from: String(from).toUpperCase(), to: String(to).toUpperCase(), _storedAt: Date.now(),
+        reversed,
+        from: String(from).toUpperCase(),
+        to: String(to).toUpperCase(),
+        from_amount: fromAmount,
+        to_amount: toAmount,
+        _storedAt: Date.now(),
       });
     }
     return {
@@ -652,6 +716,15 @@ class ObiexAdapter {
     };
   }
 
+  /**
+   * What a quotation was for — { reversed, from, to, from_amount, to_amount } — or null once it
+   * has been executed or swept. Lets a caller rebuild the identical trade after a quote lapses
+   * without the client having had to send the full pair back on confirm.
+   */
+  getQuoteOrientation(quotationId) {
+    return this._quoteOrientation.get(quotationId) || null;
+  }
+
   /** One-shot create+execute — available for future use; current call sites reuse quote+accept. */
   async instantSwap({ from, to, amount, amountToReceive, side = 'from' }) {
     const body = {
@@ -678,14 +751,35 @@ class ObiexAdapter {
 
   // ── Rates ────────────────────────────────────────────────────────────────
 
-  /** Quidax-compatible: returns a plain number (rate of `to` per 1 `from`), or null. */
+  /**
+   * Quidax-compatible: returns a plain number (rate of `to` per 1 `from`), or null.
+   *
+   * This is a DISPLAY lookup — tickers, stats volume breakdowns, admin rate previews, USD
+   * valuations for limit checks. It costs a POST /trades/quote (Obiex has no price endpoint), so
+   * it is capped by the shared hourly budget and, once that share is spent, serves the last known
+   * rate instead of calling. Serving a stale rate matters: several callers treat `null` as "can't
+   * price this", and in kycLimits that means skipping a limit check entirely.
+   */
   async getExchangeRate(from, to) {
     const fromU = String(from).toUpperCase();
     const toU = String(to).toUpperCase();
     if (fromU === toU) return 1;
     const cacheKey = `rate:${fromU}:${toU}`;
-    const cached = this._getFromCache(cacheKey, this._cacheTTL.rates);
-    if (cached != null) return cached;
+    // Read the entry directly rather than via _getFromCache: that helper DELETES an entry once it
+    // is past its TTL, which would throw away the very value the stale fallbacks below depend on.
+    const entry = this._cache.get(cacheKey);
+    const stale = entry?.data ?? null;
+    if (entry != null && Date.now() - entry.timestamp <= this._cacheTTL.rates) return entry.data;
+
+    if (!this._canSpendPriceQuote()) {
+      // An old price beats no price for every caller on this path.
+      logger.warn(
+        `[Obiex] Quote budget spent (${this._quoteCallsLastHour()}/${this._quoteBudgetPerHour} this hour) — ` +
+        `serving ${stale != null ? 'stale' : 'no'} rate for ${fromU}/${toU} rather than calling`
+      );
+      return stale;
+    }
+
     try {
       const quote = await this.getSwapQuote({ from: fromU, to: toU, amount: 1, side: 'from' });
       const rate = Number(quote?.to_amount);
@@ -694,7 +788,7 @@ class ObiexAdapter {
       return rate;
     } catch (e) {
       logger.warn(`[Obiex] getExchangeRate ${fromU}/${toU} failed: ${e.message}`);
-      return null;
+      return stale;
     }
   }
 
@@ -708,6 +802,66 @@ class ObiexAdapter {
   /** Quidax-compatible name: getSwapTransaction(id) — same lookup as getTransactionById. */
   async getSwapTransaction(id) {
     return this.getTransactionById(id);
+  }
+
+  /**
+   * This account's payout (withdrawal) transactions — GET /transactions/withdrawals/me.
+   *
+   * Unlike GET /transactions/{id}, every row here carries the nested `payout` object, and that
+   * is the ONLY place the NIBSS session ID for a Nigerian bank payout ever appears: Obiex calls
+   * it `payout.externalReference` (a 30-digit NIBSS session ID, e.g.
+   * "436246970508842220876716789858"). It is null at request time and only filled in once the
+   * payout actually settles, which is why the withdrawal response itself never has one, and why
+   * the WITHDRAWAL webhook — whose documented payload is type/currency/amount/status/reference/
+   * transactionId/createdAt/lastUpdated/hash/network/address — can't supply it either.
+   * See getPayoutForTransaction below, which is what callers should normally use.
+   */
+  async getPayoutTransactions({ status, page = 1, pageSize = 30, currencyId, startDate, endDate } = {}) {
+    const params = { page, pageSize };
+    if (status) params.status = status;
+    if (currencyId) params.currencyId = currencyId;
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    const data = await this._request('GET', '/transactions/withdrawals/me', undefined, params);
+    return Array.isArray(data?.data) ? data.data : [];
+  }
+
+  /**
+   * The payout record for one of our withdrawals, looked up by Obiex's transaction id and/or the
+   * `reference` we sent when initiating it. Returns the full transaction row (with `.payout`), or
+   * null when it isn't in the recent payout pages.
+   *
+   * GET /transactions/{id} is tried first (one cheap call, and its response does include `payout`
+   * for external payouts — the docs' example omits it only because that example is an internal
+   * @username transfer). The paged payout list is the fallback for the case where the id we hold
+   * is the payout id or our own reference rather than the transaction id.
+   */
+  async getPayoutForTransaction(transactionId, reference = null, { maxPages = 3, pageSize = 50 } = {}) {
+    const wanted = [transactionId, reference].filter(Boolean).map(String);
+    if (wanted.length === 0) return null;
+
+    if (transactionId) {
+      try {
+        const tx = await this.getTransactionById(transactionId);
+        if (tx?.payout) return tx;
+      } catch (e) {
+        logger.debug(`[Obiex] getTransactionById(${transactionId}) miss: ${e.message}`);
+      }
+    }
+
+    const matches = (row) => {
+      const candidates = [row?.id, row?.reference, row?.payout?.id, row?.payout?.transactionId, row?.payout?.transferReference];
+      return candidates.filter(Boolean).some((c) => wanted.includes(String(c)));
+    };
+
+    for (let page = 1; page <= maxPages; page++) {
+      const rows = await this.getPayoutTransactions({ page, pageSize }).catch(() => []);
+      if (rows.length === 0) break;
+      const hit = rows.find(matches);
+      if (hit) return hit;
+      if (rows.length < pageSize) break;
+    }
+    return null;
   }
 
   /** List this account's swap transactions (category=SWAP). */

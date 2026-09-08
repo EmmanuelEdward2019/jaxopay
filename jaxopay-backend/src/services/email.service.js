@@ -215,6 +215,11 @@ export const sendWithdrawalEmails = async (withdrawalData, userData) => {
       reason,
       beneficiary,
       typeDetail,
+      // NIBSS session ID (fiat bank payouts) / on-chain hash (crypto payouts) — the two things a
+      // customer needs to trace a withdrawal with their bank or on a block explorer. Both are
+      // resolved before this email is sent (see payoutSession.service.js / the Obiex webhook).
+      sessionId,
+      hash,
     } = withdrawalData;
 
     const { name, email } = userData;
@@ -228,7 +233,7 @@ export const sendWithdrawalEmails = async (withdrawalData, userData) => {
       template,
       data: {
         name, amount, currency, reference, txId, destination, destinationLabel, network, reason,
-        beneficiary, typeDetail,
+        beneficiary, typeDetail, sessionId, hash,
         date: new Date().toLocaleString(),
       },
     });
@@ -250,8 +255,17 @@ export const sendWithdrawalEmails = async (withdrawalData, userData) => {
             amount,
             currency,
             reference,
-            metadata: (destination || beneficiary)
-              ? { ...(beneficiary || {}), ...(destination ? { destination } : {}), ...(network ? { network } : {}) }
+            // Everything the customer's own receipt shows, so the admin copy is never the
+            // thinner one — session ID and hash especially, which are what support actually
+            // needs when a customer calls about a transfer that hasn't landed.
+            metadata: (destination || beneficiary || sessionId || hash)
+              ? {
+                ...(beneficiary || {}),
+                ...(destination ? { destination } : {}),
+                ...(network ? { network } : {}),
+                ...(sessionId ? { session_id: sessionId } : {}),
+                ...(hash ? { hash } : {}),
+              }
               : undefined,
             frontendUrl: process.env.FRONTEND_URL,
           },

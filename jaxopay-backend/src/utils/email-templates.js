@@ -218,6 +218,8 @@ export const templates = {
       ${data.beneficiary?.accountName ? row('Account Name', data.beneficiary.accountName) : ''}
       ${!data.beneficiary && data.destination ? row('Destination', data.destination) : ''}
       ${data.network ? row('Network', data.network) : ''}
+      ${data.sessionId ? row('Session ID', data.sessionId) : ''}
+      ${data.hash ? row('Transaction Hash', data.hash) : ''}
       ${row('Status', 'Completed', BRAND_GREEN)}
       ${row('Date', data.date || new Date().toLocaleString())}
     `)}
@@ -238,6 +240,7 @@ export const templates = {
       ${data.beneficiary?.accountNumber ? row('Account Number', data.beneficiary.accountNumber) : ''}
       ${data.beneficiary?.accountName ? row('Account Name', data.beneficiary.accountName) : ''}
       ${!data.beneficiary && data.destination ? row('Destination', data.destination) : ''}
+      ${data.sessionId ? row('Session ID', data.sessionId) : ''}
       ${row('Status', 'Failed — Refunded', '#dc2626')}
       ${row('Date', data.date || new Date().toLocaleString())}
     `)}

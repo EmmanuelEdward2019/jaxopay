@@ -2,6 +2,7 @@ import { transaction as dbTransaction, query } from '../config/database.js';
 import defaultLogger from '../utils/logger.js';
 import { sendTransactionEmails, sendWithdrawalEmails } from './email.service.js';
 import { notifyDeposit, notifyWithdrawal } from './notification.service.js';
+import { fetchSessionIdFromProvider, isNibssSessionId } from './payoutSession.service.js';
 
 /**
  * Obiex webhook attribution model.
@@ -139,6 +140,30 @@ export function createObiexWebhookService({
       return;
     }
 
+    // Resolved BEFORE the transaction opens: this is an outbound HTTP call to Obiex, and doing
+    // it inside the transaction would hold the withdrawal row's FOR UPDATE lock for the whole
+    // round trip. The NIBSS session ID a Nigerian bank quotes when tracing a transfer is not in
+    // this webhook's payload (Obiex's documented WITHDRAWAL body has no such field) and was
+    // still null when the payout was accepted, so it has to be fetched from
+    // GET /transactions/withdrawals/me now that the payout has settled. Fetched here rather than
+    // lazily so the receipt email the customer gets already carries it. A failure is non-fatal —
+    // the row is left untouched and the next receipt read retries it (see ensureSessionId).
+    let sessionFields = {};
+    if (isSuccessful) {
+      const sessionId = await fetchSessionIdFromProvider({
+        obiexWithdrawId: transactionId,
+        reference,
+      });
+      if (sessionId) {
+        sessionFields = isNibssSessionId(sessionId)
+          ? { session_id: sessionId, session_id_source: 'obiex_api' }
+          : { provider_external_reference: sessionId };
+        logger.info(`[WEBHOOK] Obiex payout ${transactionId}: ${isNibssSessionId(sessionId) ? `session ID ${sessionId} captured` : 'external reference captured (not NIBSS-shaped)'}`);
+      } else {
+        logger.warn(`[WEBHOOK] Obiex payout ${transactionId} settled but no session ID published yet — will retry on next receipt read`);
+      }
+    }
+
     try {
       let emailPayload = null;
 
@@ -178,7 +203,31 @@ export function createObiexWebhookService({
         const tx = txRes.rows[0];
         const newStatus = isSuccessful ? 'completed' : 'failed';
         if (tx.current_status === newStatus || ['completed', 'failed'].includes(tx.current_status)) {
-          logger.info(`[WEBHOOK] Obiex withdrawal ${transactionId} already final (${tx.current_status}); ignoring ${newStatus}`);
+          // Status is settled and must not move — but the PAYLOAD may still carry proof this row
+          // is missing. Crypto withdrawals are finalised by reconcileCryptoWithdrawal (a poll),
+          // which almost always wins the race against this webhook, so returning here discarded
+          // every hash Obiex ever sent on a withdrawal. That made "we never receive a hash"
+          // impossible to distinguish from "we received one and threw it away".
+          const proof = {};
+          const table = txType === 'wallet_transactions' ? 'wallet_transactions' : 'transactions';
+          if (txType === 'wallet_transactions') {
+            if (data?.hash && !tx.metadata?.hash) proof.hash = data.hash;
+            if (data?.network && !tx.metadata?.network) proof.network = data.network;
+          } else if (sessionFields.session_id && !tx.metadata?.session_id) {
+            proof.session_id = sessionFields.session_id;
+            proof.session_id_source = sessionFields.session_id_source;
+          }
+          if (Object.keys(proof).length > 0) {
+            await client.query(
+              `UPDATE ${table}
+                  SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
+                WHERE id = $2`,
+              [JSON.stringify({ ...proof, late_webhook_data: data }), tx.id]
+            );
+            logger.info(`[WEBHOOK] Obiex withdrawal ${transactionId} already final (${tx.current_status}) — captured late ${Object.keys(proof).join(', ')}`);
+          } else {
+            logger.info(`[WEBHOOK] Obiex withdrawal ${transactionId} already final (${tx.current_status}); ignoring ${newStatus}`);
+          }
           return;
         }
 
@@ -188,6 +237,12 @@ export function createObiexWebhookService({
         // Elevated to top-level metadata keys (not just nested under webhook_data) so the
         // transaction-detail receipt can read them the same way it already does for deposits.
         const cryptoFields = txType === 'wallet_transactions' ? { hash: data?.hash || null, network: data?.network || null } : {};
+        // A NIBSS session ID only ever applies to a fiat bank payout — a crypto withdrawal's
+        // proof is its on-chain hash, above. Any other externalReference Obiex published is kept
+        // on either kind, honestly labelled, rather than being dropped.
+        const payoutFields = txType === 'transactions'
+          ? sessionFields
+          : (sessionFields.provider_external_reference ? { provider_external_reference: sessionFields.provider_external_reference } : {});
         await client.query(
           `UPDATE ${table}
            SET status = $1,
@@ -195,7 +250,7 @@ export function createObiexWebhookService({
                updated_at = NOW(),
                completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
            WHERE id = $3`,
-          [newStatus, JSON.stringify({ webhook_data: data, updated_at: new Date().toISOString(), ...cryptoFields }), tx.id]
+          [newStatus, JSON.stringify({ webhook_data: data, updated_at: new Date().toISOString(), ...cryptoFields, ...payoutFields }), tx.id]
         );
 
         if (newStatus === 'failed') {
@@ -228,6 +283,9 @@ export function createObiexWebhookService({
           destination: isCrypto ? (tx.metadata?.address || null) : null,
           destinationLabel: isCrypto ? 'crypto address' : 'bank account',
           network: tx.metadata?.network || null,
+          // Freshly-resolved values win over whatever was on the row before this webhook.
+          sessionId: (isCrypto ? null : sessionFields.session_id) || tx.metadata?.session_id || null,
+          hash: (isCrypto ? (data?.hash || tx.metadata?.hash) : null) || null,
           beneficiary: !isCrypto && (tx.metadata?.bank_name || tx.metadata?.account_number)
             ? { bankName: tx.metadata?.bank_name, accountNumber: tx.metadata?.account_number, accountName: tx.metadata?.account_name }
             : undefined,

@@ -17,7 +17,7 @@ import emailService from '../services/email.service.js';
 import { notifyUser, notifyWithdrawal, notifyDeposit } from '../services/notification.service.js';
 import { assertDepositsAllowed, assertWithdrawalsAllowed } from '../services/financialControls.service.js';
 import { getFeeConfig, computeFee } from '../services/feeConfig.service.js';
-import { getSwapMarkupPercentage, markDownDelivered, inflateTarget, getAllSwapMarkups } from '../services/swapMarkup.service.js';
+import { getSwapMarkupPercentage, markDownDelivered, inflateTarget, getAllSwapMarkups, isFiatCurrency } from '../services/swapMarkup.service.js';
 
 // Crypto deposit/withdrawal/swap provider — Obiex by default; set CRYPTO_PROVIDER=quidax to
 // fall back (e.g. during an Obiex outage). Order-book spot trading (createOrder, getOrderBook,
@@ -42,7 +42,11 @@ const cryptoFx = CRYPTO_PROVIDER === 'quidax' ? quidax : obiex;
 // deposit/withdraw/swap calls and should stay independent of this decorative ticker).
 let _tickerSnapshot = {}; // { usdtngn: { ticker: { buy, sell, last, ... } }, ... }
 let _tickerSnapshotTime = 0;
-const TICKER_TTL_MS = 5 * 60 * 1000; // 5 minutes — 12 pairs/refresh = ~144 calls/hour to Obiex, well under its 200/min limit
+// 15 minutes. Obiex's quote endpoint (their ONLY price source) allows 100 calls/hour per key and
+// that budget is shared with real customer swaps, so the ticker's share has to stay small: at
+// most OBIEX_TICKER_MAX_PAIRS per refresh, four refreshes an hour. Display prices being a few
+// minutes old is fine — this is a ticker, not a quote.
+const TICKER_TTL_MS = 15 * 60 * 1000;
 const OBIEX_TICKER_DISABLED = String(process.env.OBIEX_TICKER_DISABLED || '').toLowerCase() === 'true';
 
 function createCryptoWithdrawalReference(userId) {
@@ -82,35 +86,125 @@ function parseMarketPair(marketId) {
   return null;
 }
 
-async function refreshTickerCacheFromObiex() {
+/**
+ * Obiex has NO ticker or price endpoint — POST /trades/quote is the only way to learn a price
+ * from them, and their docs cap it at **100 requests per hour per API key** ("Do not use this
+ * endpoint to check prices or tickers"). That cap is shared with every real customer swap quote,
+ * and blowing through it is what got the API key disabled on 2026-07-23 (the old fixed 12-pair
+ * poll at a 5-minute interval was 144 calls/hour on its own, before a single customer swapped).
+ *
+ * So: ask Obiex only for the pairs that are actually *displayed as JAXOPAY's rate* — the ones an
+ * admin has configured a markup for in Rates & Fees — and never more than OBIEX_TICKER_MAX_PAIRS
+ * of them per refresh. At the 15-minute TICKER_TTL_MS below that is at most
+ * 4 × OBIEX_TICKER_MAX_PAIRS calls/hour, leaving the rest of the budget for customers.
+ */
+const OBIEX_TICKER_MAX_PAIRS = Number(process.env.OBIEX_TICKER_MAX_PAIRS || 8);
+
+/** market id ("btcngn") for a base/quote pair, matching TICKER_PAIRS' own key format. */
+const marketIdFor = (base, quote) => `${String(base).toLowerCase()}${String(quote).toLowerCase()}`;
+
+// How "money-like" an asset is, for picking which way round to quote a market. A rate reads
+// naturally when the quote side is the more money-like one: BTC/NGN, not NGN/BTC; SOL/USDT, not
+// USDT/SOL.
+const STABLECOINS = new Set(['USDT', 'USDC', 'CNGN']);
+const quoteRank = (code) => (isFiatCurrency(code) ? 2 : STABLECOINS.has(code) ? 1 : 0);
+
+async function fetchObiexRatesForMarkedUpPairs() {
+  const markups = await getAllSwapMarkups();
+  // Only pairs with a non-zero markup — a 0% row is not a JAXOPAY price, it's passthrough, and
+  // spending a rate-limited call on it would be spending it on nothing.
+  const candidates = [...markups.entries()]
+    .filter(([, pct]) => Number(pct) !== 0)
+    .map(([key]) => key.split(':'))
+    .filter(([base, quote]) => base && quote && base !== quote);
+
+  // Markups are configured per DIRECTION, so a market that can be traded both ways has two rows
+  // (BTC->USDT and USDT->BTC, USDT->NGN and NGN->USDT, …). A ticker shows a MARKET, not a
+  // direction — quoting both would spend two of a very small number of calls on one price and
+  // render the same market twice in Live Market Rates. Collapse each market to the orientation
+  // that reads naturally (higher-ranked quote wins; alphabetical tie-break so the choice is
+  // stable across restarts).
+  const byMarket = new Map();
+  for (const [base, quote] of candidates) {
+    const key = [base, quote].sort().join('|');
+    const existing = byMarket.get(key);
+    if (!existing) { byMarket.set(key, [base, quote]); continue; }
+    const better =
+      quoteRank(quote) !== quoteRank(existing[1])
+        ? (quoteRank(quote) > quoteRank(existing[1]) ? [base, quote] : existing)
+        : ([base, quote].join() < existing.join() ? [base, quote] : existing);
+    byMarket.set(key, better);
+  }
+
+  const pairs = [...byMarket.values()]
+    // After collapsing, drop anything still quoted the wrong way round — a fiat base with a
+    // crypto quote (1 NGN = 0.0000000X BTC) is not a number anyone reads off a ticker.
+    .filter(([base, quote]) => !(isFiatCurrency(base) && !isFiatCurrency(quote)))
+    .slice(0, OBIEX_TICKER_MAX_PAIRS);
+
+  if (pairs.length === 0) return {};
+
   const entries = await Promise.all(
-    Object.entries(TICKER_PAIRS).map(async ([marketId, [base, quote]]) => {
+    pairs.map(async ([base, quote]) => {
       const rate = await obiex.getExchangeRate(base, quote).catch(() => null);
       if (!(rate > 0)) return null;
-      return [marketId, { ticker: { last: rate, buy: rate, sell: rate, change: 0, vol: 0, high: 0, low: 0 } }];
+      return [marketIdFor(base, quote), {
+        base, quote,
+        ticker: { last: rate, buy: rate, sell: rate, change: 0, vol: 0, high: 0, low: 0 },
+        // Marks this entry as priced by the exchange the swap actually executes on, which is
+        // what lets attachJaxopayRates below decide whether it may call the result "our rate".
+        source: 'obiex',
+      }];
     })
   );
-  const payload = Object.fromEntries(entries.filter(Boolean));
-  return payload;
+  return Object.fromEntries(entries.filter(Boolean));
 }
 
-async function refreshTickerCache() {
+// Guards against the same refresh running many times over. `_tickerSnapshotTime` is only updated
+// once a refresh COMPLETES, so without this every request arriving during a slow refresh saw a
+// stale snapshot and kicked off its own — turning one 8-call refresh into N of them under any
+// real concurrency. That multiplication, not the interval on its own, is what makes a provider
+// rate limit easy to blow through.
+let _tickerRefreshInFlight = null;
+
+function refreshTickerCache() {
+  if (_tickerRefreshInFlight) return _tickerRefreshInFlight;
+  _tickerRefreshInFlight = _refreshTickerCacheOnce().finally(() => { _tickerRefreshInFlight = null; });
+  return _tickerRefreshInFlight;
+}
+
+async function _refreshTickerCacheOnce() {
   try {
-    if (CRYPTO_PROVIDER === 'obiex' && !OBIEX_TICKER_DISABLED) {
-      const payload = await refreshTickerCacheFromObiex();
-      if (Object.keys(payload).length > 0) {
-        _tickerSnapshot = payload;
-        _tickerSnapshotTime = Date.now();
-        logger.debug(`[TickerCache] Refreshed via Obiex — ${Object.keys(payload).length} markets`);
-        return;
-      }
-      logger.warn('[TickerCache] Obiex returned no usable rates — falling back to Quidax');
+    // Quidax's bulk GET /markets/tickers is one call for ~100 markets and is not rate-limited the
+    // way Obiex's quote endpoint is, so it stays the broad base layer — plenty of screens read
+    // arbitrary coins out of this snapshot for rough USD estimates.
+    let payload = {};
+    try {
+      const quidaxPayload = await quidax.getTicker24h();
+      if (quidaxPayload && typeof quidaxPayload === 'object') payload = { ...quidaxPayload };
+    } catch (e) {
+      logger.warn('[TickerCache] Quidax snapshot unavailable:', e.message);
     }
-    const payload = await quidax.getTicker24h(); // GET /markets/tickers
-    if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
+
+    // …then overlay real Obiex prices for the marked-up pairs. This is the whole point: Quidax and
+    // Obiex are different exchanges, so a BTC/NGN or USDT/NGN price taken from Quidax has no
+    // relationship to what a swap here — which executes on Obiex — actually delivers. Showing a
+    // markup applied to Quidax's number as "the JAXOPAY rate" was exactly that mismatch.
+    if (CRYPTO_PROVIDER === 'obiex' && !OBIEX_TICKER_DISABLED) {
+      const obiexPayload = await fetchObiexRatesForMarkedUpPairs();
+      const count = Object.keys(obiexPayload).length;
+      if (count > 0) {
+        payload = { ...payload, ...obiexPayload };
+        logger.debug(`[TickerCache] Overlaid ${count} Obiex-priced pair(s) onto the Quidax snapshot`);
+      } else {
+        logger.warn('[TickerCache] No Obiex-priced pairs available — marked-up pairs will not be shown as JAXOPAY rates');
+      }
+    }
+
+    if (Object.keys(payload).length > 0) {
       _tickerSnapshot = payload;
       _tickerSnapshotTime = Date.now();
-      logger.debug(`[TickerCache] Refreshed via Quidax (fallback) — ${Object.keys(payload).length} markets`);
+      logger.debug(`[TickerCache] Refreshed — ${Object.keys(payload).length} markets`);
     }
   } catch (e) {
     logger.warn('[TickerCache] Refresh failed:', e.message);
@@ -1711,7 +1805,10 @@ async function attachJaxopayRates(tickers) {
   const markups = await getAllSwapMarkups();
   const out = {};
   for (const [marketId, entry] of Object.entries(tickers || {})) {
-    const pair = parseMarketPair(marketId);
+    // An Obiex-overlaid entry names its own base/quote (see fetchObiexRatesForMarkedUpPairs) —
+    // trust that over parsing the market id, which can't resolve every pair an admin may have
+    // configured a markup for (e.g. "ngnsol" has no quote suffix the parser knows).
+    const pair = (entry?.base && entry?.quote) ? [entry.base, entry.quote] : parseMarketPair(marketId);
     const raw = extractPrice(entry, 'last');
     const t = entry?.ticker || entry || {};
     let jaxopayRate = raw;
@@ -1719,12 +1816,19 @@ async function attachJaxopayRates(tickers) {
     if (pair && raw > 0) {
       const [base, quote] = pair;
       const markupPct = markups.get(`${base}:${quote}`) || 0;
-      // Only markets with a specific admin-configured row in exchange_rates are a real JAXOPAY
-      // rate — everything else falls through to raw provider passthrough (markDownDelivered is a
-      // no-op for markupPct 0), which is fine for the swap engine (an unpriced pair just isn't
-      // marked up yet) but must never be shown to a visitor as "our rate": has_markup is what lets
-      // callers tell the two cases apart instead of silently displaying the raw market price.
-      hasMarkup = markupPct !== 0;
+      // Two conditions, both required, before a number may be presented as JAXOPAY's own rate:
+      //
+      //  1. An admin has configured a markup row for this exact pair in exchange_rates. Without
+      //     one, markDownDelivered is a no-op and the number is raw provider passthrough — fine
+      //     for the swap engine (an unpriced pair simply isn't marked up yet), never something to
+      //     show a visitor as "our rate".
+      //  2. The base price came from the exchange the swap will actually execute on. The broad
+      //     ticker snapshot is Quidax's; a swap here runs on Obiex. Marking up Quidax's BTC/NGN
+      //     and labelling the result "JAXOPAY rate" was showing a number that had no relationship
+      //     to what the swap delivers — the whole point of the Obiex overlay in refreshTickerCache
+      //     above, and `source` is how an overlaid entry identifies itself.
+      const pricedBySwapProvider = CRYPTO_PROVIDER !== 'obiex' || entry?.source === 'obiex';
+      hasMarkup = markupPct !== 0 && pricedBySwapProvider;
       jaxopayRate = markDownDelivered(raw, base, quote, markupPct);
     }
     out[marketId] = {
@@ -1828,7 +1932,50 @@ async function requestAmountForSide({ from_currency, to_currency, from_amount, t
   return { amount, side: 'to' };
 }
 
-// Step 2 — Create a real swap quotation (15-second window)
+/**
+ * The quote window every swap pair gets, regardless of what the provider's own quote is valid for.
+ *
+ * Obiex sets `expiresIn` per quote and it is not uniform — USDT/NGN comes back at 30s while most
+ * other pairs come back at 10s, which made the countdown on the swap screen feel arbitrary and
+ * gave people ten seconds to read a rate, decide, and enter a PIN. Presenting one consistent
+ * 30-second window is honest here ONLY because confirmSwapQuotation below re-quotes and executes
+ * transparently if the provider's own shorter quote has lapsed inside that window — so a swap
+ * confirmed at second 28 still goes through, at a live rate no worse than the one displayed.
+ *
+ * `provider_expires_at` / `provider_expires_in` carry the provider's real numbers through
+ * unchanged, so nothing downstream loses the truth.
+ */
+const SWAP_QUOTE_WINDOW_SECONDS = Number(process.env.SWAP_QUOTE_WINDOW_SECONDS || 30);
+
+function normalizeQuoteWindow(quotation) {
+  if (!quotation) return quotation;
+  const providerExpiresAt = quotation.expires_at || null;
+  const providerExpiresIn = quotation.expires_in != null ? Number(quotation.expires_in) : null;
+
+  const providerMs = providerExpiresAt
+    ? new Date(providerExpiresAt).getTime() - Date.now()
+    : (providerExpiresIn != null ? providerExpiresIn * 1000 : null);
+
+  const windowMs = SWAP_QUOTE_WINDOW_SECONDS * 1000;
+  // Never shorten a provider window that is already longer than ours.
+  const effectiveMs = Math.max(windowMs, Number.isFinite(providerMs) && providerMs > 0 ? providerMs : 0);
+
+  return {
+    ...quotation,
+    expires_in: Math.round(effectiveMs / 1000),
+    expires_at: new Date(Date.now() + effectiveMs).toISOString(),
+    provider_expires_at: providerExpiresAt,
+    provider_expires_in: providerExpiresIn,
+  };
+}
+
+/** True when a provider error means "this quote is too old", not "this swap is impossible". */
+function isQuoteExpiredError(err) {
+  const text = `${err?.message || ''} ${err?.code || ''} ${JSON.stringify(err?.response?.data || {})}`;
+  return /expir|not found|invalid quot|stale/i.test(text);
+}
+
+// Step 2 — Create a real swap quotation (uniform SWAP_QUOTE_WINDOW_SECONDS window)
 // POST /crypto/swap/quotation
 export const createSwapQuotation = catchAsync(async (req, res) => {
   const { from_currency, to_currency, from_amount, to_amount } = req.body;
@@ -1848,7 +1995,7 @@ export const createSwapQuotation = catchAsync(async (req, res) => {
 
   const { quotation: markedUp } = await applyMarkupToQuotation(quotation, { from_currency, to_currency, side, originalToAmount: to_amount });
 
-  res.status(200).json({ success: true, data: markedUp });
+  res.status(200).json({ success: true, data: normalizeQuoteWindow(markedUp) });
 });
 
 // Step 3 — Refresh an existing quotation before it expires
@@ -1885,11 +2032,66 @@ export const refreshSwapQuotation = catchAsync(async (req, res) => {
     ({ quotation: markedUp } = await applyMarkupToQuotation(quotation, { from_currency, to_currency, side, originalToAmount: to_amount }));
   }
 
-  res.status(200).json({ success: true, data: markedUp });
+  res.status(200).json({ success: true, data: normalizeQuoteWindow(markedUp) });
 });
 
 // Step 4 — Confirm a quotation, execute the swap, and record in DB
 // POST /crypto/swap/quotation/:id/confirm
+// How much worse than the expired quote a replacement may be before the customer has to look at
+// it. 0.5% covers ordinary tick-to-tick movement on a volatile pair over a few seconds; anything
+// beyond it is a real price move and belongs in front of the customer, not filled silently.
+const REQUOTE_TOLERANCE = Number(process.env.SWAP_REQUOTE_TOLERANCE || 0.005);
+
+/**
+ * Replace a lapsed quotation with a fresh one for the same trade and execute it. Returns null
+ * (so the caller can surface a plain "get a new quote") whenever that can't be done safely:
+ * the pair can't be recovered, the fresh quote fails, or it prices materially worse than the one
+ * the customer was actually looking at.
+ */
+async function requoteForExpiredConfirm(expiredId, { from_currency, from_amount }) {
+  // The adapter remembers each quotation's pair, so the pair survives even when the client only
+  // sent from_currency/from_amount on confirm.
+  const orientation = cryptoFx.getQuoteOrientation?.(expiredId) || null;
+  const fromCur = (from_currency || orientation?.from || '').toUpperCase();
+  const toCur = (orientation?.to || '').toUpperCase();
+  const amount = from_amount != null ? Number(from_amount) : Number(orientation?.from_amount);
+  if (!orientation) logger.debug(`[Swap] No stored orientation for lapsed quotation ${expiredId}`);
+  if (!fromCur || !toCur || !(amount > 0)) return null;
+
+  let fresh;
+  try {
+    fresh = await cryptoFx.getSwapQuote({ from: fromCur, to: toCur, amount, side: 'from' });
+  } catch (e) {
+    logger.warn(`[Swap] Re-quote after expiry failed for ${fromCur}->${toCur}: ${e.message}`);
+    return null;
+  }
+  if (!fresh?.id || !(parseFloat(fresh.to_amount) > 0)) return null;
+
+  // Compare what the customer would now receive against what they were shown. Both sides are the
+  // raw provider amount marked down by the same configured markup, so the comparison is exactly
+  // the one the customer would make looking at the two screens.
+  const markupPct = await getSwapMarkupPercentage(fromCur, toCur);
+  const delivered = (rawAmount) => {
+    const raw = parseFloat(rawAmount) || 0;
+    return markupPct ? Math.min(markDownDelivered(raw, fromCur, toCur, markupPct), raw) : raw;
+  };
+  const previousToAmount = delivered(orientation?.to_amount);
+  const freshDelivered = delivered(fresh.to_amount);
+
+  if (previousToAmount > 0 && freshDelivered < previousToAmount * (1 - REQUOTE_TOLERANCE)) {
+    logger.info(`[Swap] Re-quote for ${fromCur}->${toCur} priced ${freshDelivered} vs ${previousToAmount} shown — outside tolerance, asking the customer to re-quote`);
+    return null;
+  }
+
+  try {
+    const confirmed = await cryptoFx.executeSwap(fresh.id);
+    return confirmed?.id ? { id: fresh.id, confirmed } : null;
+  } catch (e) {
+    logger.warn(`[Swap] Executing replacement quotation ${fresh.id} failed: ${e.message}`);
+    return null;
+  }
+}
+
 export const confirmSwapQuotation = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { from_currency, from_amount } = req.body || {};
@@ -1920,8 +2122,32 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
   }
 
 
-  // Execute swap on the provider — this is the authoritative action
-  const confirmed = await cryptoFx.executeSwap(id);
+  // Execute swap on the provider — this is the authoritative action.
+  //
+  // The customer was shown a uniform SWAP_QUOTE_WINDOW_SECONDS countdown (see
+  // normalizeQuoteWindow), which for most pairs is longer than the provider's own quote validity
+  // — Obiex gives USDT/NGN 30s but most other pairs only 10s. So a confirm arriving inside the
+  // window we advertised can still find the provider quote lapsed. Rather than dead-ending the
+  // customer on a countdown we ourselves set, re-quote the same trade once and execute that,
+  // provided the fresh price is no worse for them than a small tolerance. If it has genuinely
+  // moved against them, stop and make them look at the new number — silently filling at a
+  // materially worse rate than the one on screen would be the one unacceptable outcome.
+  let confirmed;
+  try {
+    confirmed = await cryptoFx.executeSwap(id);
+  } catch (err) {
+    if (!isQuoteExpiredError(err)) throw err;
+
+    const requote = await requoteForExpiredConfirm(id, { from_currency, from_amount });
+    if (!requote) {
+      throw new AppError(
+        'This quote expired before it could be executed. Please get a new quote and try again.',
+        409, 'QUOTE_EXPIRED'
+      );
+    }
+    logger.info(`[Swap] Quotation ${id} lapsed at the provider; executed fresh quotation ${requote.id} for user ${req.user.id}`);
+    confirmed = requote.confirmed;
+  }
 
   if (!confirmed?.id) throw new AppError('Swap execution failed. Please refresh and try again.', 503);
 

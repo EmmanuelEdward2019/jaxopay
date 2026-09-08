@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Activity,
@@ -13,9 +13,18 @@ import {
     X,
     Download,
     Calendar,
+    Copy,
+    Check,
+    ExternalLink,
 } from 'lucide-react';
+import { toPng } from 'html-to-image';
 import adminService from '../../services/adminService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
+// The customer's own receipt, field for field — the admin copy used to be a raw metadata dump
+// that silently omitted everything the combined admin query wasn't selecting (session ID, hash,
+// bank, account name…). Same builder, same printable component, so the two can never drift.
+import { buildReceiptFields, explorerUrlFor } from '../../utils/receiptFields';
+import TransactionReceipt from '../../components/common/TransactionReceipt';
 
 const STATUS_COLORS = {
     completed: 'bg-primary-100 text-primary-700',
@@ -28,6 +37,203 @@ const TYPE_ICONS = {
     credit: { icon: ArrowDownRight, color: 'text-primary-600', bg: 'bg-primary-100' },
     debit: { icon: ArrowUpRight, color: 'text-red-600', bg: 'bg-red-100' },
     transfer: { icon: Activity, color: 'text-blue-600', bg: 'bg-blue-100' },
+};
+
+// ─── Admin transaction receipt ────────────────────────────────────────────────
+// Everything on the customer's own receipt (buildReceiptFields — including the NIBSS Session ID
+// and the on-chain Hash), followed by the operational fields only an admin needs. Downloadable as
+// the same PNG the customer gets, so a support ticket can carry the exact document being disputed.
+const CopyableValue = ({ value, mono = true }) => {
+    const [copied, setCopied] = useState(false);
+    const copy = () => {
+        navigator.clipboard?.writeText(String(value));
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+    };
+    return (
+        <span className="inline-flex items-start gap-1.5 max-w-full">
+            <span className={`${mono ? 'font-mono' : ''} text-gray-900 dark:text-white break-all`}>{value}</span>
+            <button
+                onClick={copy}
+                title="Copy"
+                className="shrink-0 p-0.5 text-gray-400 hover:text-primary-600 transition-colors"
+            >
+                {copied ? <Check className="w-3.5 h-3.5 text-primary-600" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+        </span>
+    );
+};
+
+const TransactionDetailModal = ({ transaction, onClose }) => {
+    const receiptRef = useRef(null);
+    const [downloading, setDownloading] = useState(false);
+    const [showRaw, setShowRaw] = useState(false);
+
+    // Identical to the customer's view of the same transaction.
+    const fields = buildReceiptFields(transaction, { copyable: true, detailed: true });
+
+    const meta = transaction.metadata || {};
+    const txHash = meta.hash;
+    const txNetwork = meta.network || meta.cryptoNetwork;
+    const blockExplorerUrl = explorerUrlFor(txNetwork, txHash);
+    const providerReference = transaction.external_reference || meta.provider_reference || meta.obiex_withdraw_id;
+
+    const downloadReceipt = async () => {
+        if (!receiptRef.current) return;
+        setDownloading(true);
+        try {
+            const dataUrl = await toPng(receiptRef.current, { cacheBust: true, quality: 1, pixelRatio: 2 });
+            const link = document.createElement('a');
+            link.download = `jaxopay-receipt-${transaction.reference || transaction.id?.slice(0, 8)}.png`;
+            link.href = dataUrl;
+            link.click();
+        } catch (err) {
+            console.error('Receipt download failed:', err);
+        } finally {
+            setDownloading(false);
+        }
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            onClick={onClose}
+        >
+            {/* Off-screen printable receipt — the customer's exact document. */}
+            <div style={{ position: 'fixed', left: -9999, top: -9999, pointerEvents: 'none', zIndex: -1 }}>
+                <TransactionReceipt transaction={transaction} receiptRef={receiptRef} />
+            </div>
+
+            <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Transaction Receipt</h2>
+                    <button
+                        onClick={onClose}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                    >
+                        <X className="w-5 h-5 text-gray-500" />
+                    </button>
+                </div>
+
+                <div className="p-6 space-y-5 overflow-y-auto">
+                    {/* Amount headline */}
+                    <div className="text-center pb-4 border-b border-gray-100 dark:border-gray-700">
+                        <p className="text-3xl font-bold text-gray-900 dark:text-white">
+                            {formatCurrency(
+                                Math.abs(transaction.amount || transaction.from_amount || 0),
+                                transaction.currency || transaction.from_currency || 'NGN'
+                            )}
+                        </p>
+                        <span className={`inline-block mt-2 px-2.5 py-0.5 text-xs font-medium rounded-full ${STATUS_COLORS[transaction.status] || 'bg-gray-100 text-gray-700'}`}>
+                            {transaction.status}
+                        </span>
+                    </div>
+
+                    {/* The customer's receipt rows, verbatim */}
+                    <dl className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {fields.map((field, i) => (
+                            <div key={i} className="py-2.5 flex items-start justify-between gap-4 text-sm">
+                                <dt className="text-gray-500 shrink-0">{field.label}</dt>
+                                <dd className="text-right min-w-0">
+                                    {field.copyable
+                                        ? <CopyableValue value={field.value} />
+                                        : <span className="text-gray-900 dark:text-white break-words">{field.value}</span>}
+                                </dd>
+                            </div>
+                        ))}
+                    </dl>
+
+                    {blockExplorerUrl && (
+                        <a
+                            href={blockExplorerUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-2 w-full px-4 py-2.5 text-sm font-medium text-primary-700 bg-primary-50 dark:bg-primary-900/20 dark:text-primary-300 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/40"
+                        >
+                            <ExternalLink className="w-4 h-4" />
+                            Verify on Blockchain
+                        </a>
+                    )}
+
+                    {/* Admin-only operational fields — deliberately below the receipt so what the
+                        admin reads first is exactly what the customer is looking at. */}
+                    <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3 text-sm">
+                        <h3 className="font-semibold text-gray-900 dark:text-white">Internal</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <span className="text-gray-500 block text-xs">User</span>
+                                <span className="text-gray-900 dark:text-white break-all">{transaction.user_name || transaction.user_email || 'System'}</span>
+                                {transaction.user_name && transaction.user_email && (
+                                    <span className="block text-xs text-gray-400 break-all">{transaction.user_email}</span>
+                                )}
+                            </div>
+                            <div>
+                                <span className="text-gray-500 block text-xs">Record ID</span>
+                                <CopyableValue value={transaction.id} />
+                            </div>
+                            {providerReference && (
+                                <div className="sm:col-span-2">
+                                    <span className="text-gray-500 block text-xs">Provider Reference</span>
+                                    <CopyableValue value={providerReference} />
+                                    <span className="block text-[11px] text-gray-400 mt-0.5">
+                                        Traces the payout/charge on the provider&apos;s own dashboard. For a NGN bank
+                                        payout the customer&apos;s bank wants the Session ID above instead.
+                                    </span>
+                                </div>
+                            )}
+                            <div>
+                                <span className="text-gray-500 block text-xs">Last Updated</span>
+                                <span className="text-gray-900 dark:text-white">{formatDateTime(transaction.updated_at || transaction.created_at)}</span>
+                            </div>
+                        </div>
+
+                        {meta && Object.keys(meta).length > 0 && (
+                            <div>
+                                <button
+                                    onClick={() => setShowRaw(v => !v)}
+                                    className="text-xs font-medium text-primary-600 hover:text-primary-700"
+                                >
+                                    {showRaw ? 'Hide' : 'Show'} raw metadata ({Object.keys(meta).length} keys)
+                                </button>
+                                {showRaw && (
+                                    <div className="mt-2 bg-gray-50 dark:bg-gray-900 p-3 rounded-lg space-y-2 max-h-60 overflow-y-auto">
+                                        {Object.entries(meta).map(([key, value]) => (
+                                            <div key={key} className="flex flex-col">
+                                                <span className="text-xs text-gray-400 capitalize">{key.replace(/_/g, ' ')}</span>
+                                                <span className="text-xs text-gray-900 dark:text-white font-mono break-all">
+                                                    {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+                    <button
+                        onClick={downloadReceipt}
+                        disabled={downloading}
+                        className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                    >
+                        <Download className="w-4 h-4" />
+                        {downloading ? 'Preparing…' : 'Download Receipt'}
+                    </button>
+                </div>
+            </motion.div>
+        </motion.div>
+    );
 };
 
 const TransactionMonitor = () => {
@@ -313,117 +519,14 @@ const TransactionMonitor = () => {
                 )}
             </div>
 
-            {/* Transaction Detail Modal */}
+            {/* Transaction Detail Modal — the customer's receipt, plus the operational extras
+                (user, internal id, provider reference, raw metadata) an admin also needs. */}
             <AnimatePresence>
                 {showDetailModal && selectedTx && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-                        onClick={() => setShowDetailModal(false)}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.95, opacity: 0 }}
-                            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Transaction Details</h2>
-                                <button
-                                    onClick={() => setShowDetailModal(false)}
-                                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-                                >
-                                    <X className="w-5 h-5 text-gray-500" />
-                                </button>
-                            </div>
-                            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                        <span className="text-gray-500">Transaction ID</span>
-                                        <p className="font-mono text-gray-900 dark:text-white break-all">{selectedTx.id}</p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">Type</span>
-                                        <p className="text-gray-900 dark:text-white capitalize">{(selectedTx.transaction_type || selectedTx.type)?.replace(/_/g, ' ')}</p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">User Email</span>
-                                        <p className="text-gray-900 dark:text-white break-all">{selectedTx.user_email || 'System'}</p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">Amount</span>
-                                        <p className="font-semibold text-gray-900 dark:text-white">
-                                            {formatCurrency(selectedTx.from_amount || selectedTx.net_amount || selectedTx.amount || 0, selectedTx.from_currency || selectedTx.currency || 'NGN')}
-                                        </p>
-                                    </div>
-                                    {selectedTx.fee_amount && parseFloat(selectedTx.fee_amount) > 0 && (
-                                        <div>
-                                            <span className="text-gray-500">Fee Amount</span>
-                                            <p className="font-semibold text-gray-900 dark:text-white">
-                                                {formatCurrency(selectedTx.fee_amount, selectedTx.from_currency || selectedTx.currency || 'NGN')}
-                                            </p>
-                                        </div>
-                                    )}
-                                    <div>
-                                        <span className="text-gray-500">Status</span>
-                                        <p>
-                                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${STATUS_COLORS[selectedTx.status]
-                                                }`}>
-                                                {selectedTx.status}
-                                            </span>
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">Created</span>
-                                        <p className="text-gray-900 dark:text-white">{formatDateTime(selectedTx.created_at)}</p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">Updated</span>
-                                        <p className="text-gray-900 dark:text-white">{formatDateTime(selectedTx.updated_at)}</p>
-                                    </div>
-                                    {selectedTx.description && (
-                                        <div className="col-span-2">
-                                            <span className="text-gray-500">Description</span>
-                                            <p className="text-gray-900 dark:text-white">{selectedTx.description}</p>
-                                        </div>
-                                    )}
-                                    {selectedTx.reference && (
-                                        <div className="col-span-2">
-                                            <span className="text-gray-500">Reference</span>
-                                            <p className="font-mono text-gray-900 dark:text-white break-all">{selectedTx.reference}</p>
-                                        </div>
-                                    )}
-                                    {(selectedTx.external_reference || selectedTx.metadata?.provider_reference) && (
-                                        <div className="col-span-2">
-                                            <span className="text-gray-500">Provider Reference</span>
-                                            <p className="font-mono text-gray-900 dark:text-white break-all">
-                                                {selectedTx.external_reference || selectedTx.metadata?.provider_reference}
-                                            </p>
-                                            <span className="text-[11px] text-gray-400">Use this to trace the payout/charge on the payment provider's dashboard when handling a customer complaint.</span>
-                                        </div>
-                                    )}
-                                    {selectedTx.metadata && Object.keys(selectedTx.metadata).length > 0 && (
-                                        <div className="col-span-2 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                                            <span className="text-gray-500 font-bold mb-2 block">Additional Metadata</span>
-                                            <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg space-y-2">
-                                                {Object.entries(selectedTx.metadata).map(([key, value]) => (
-                                                    <div key={key} className="flex flex-col">
-                                                        <span className="text-xs text-gray-400 capitalize">{key.replace(/_/g, ' ')}</span>
-                                                        <span className="text-sm text-gray-900 dark:text-white font-mono break-all">
-                                                            {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                                        </span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </motion.div>
-                    </motion.div>
+                    <TransactionDetailModal
+                        transaction={selectedTx}
+                        onClose={() => setShowDetailModal(false)}
+                    />
                 )}
             </AnimatePresence>
         </div>

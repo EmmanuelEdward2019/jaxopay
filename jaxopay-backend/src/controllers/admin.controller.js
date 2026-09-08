@@ -13,6 +13,8 @@ import * as kycNotify from '../services/kycNotification.service.js';
 import currencyEngine from '../services/CurrencyEngineService.js';
 import { auditFromReq } from '../services/audit.service.js';
 import { performAccountDeletion } from './user.controller.js';
+import { backfillSessionIds } from '../services/payoutSession.service.js';
+import { tierCapFor } from '../services/kycLimits.service.js';
 import { getUserFinancialControls, upsertUserFinancialControls } from '../services/financialControls.service.js';
 import { usdRate } from '../services/kycLimits.service.js';
 import { getSwapBaseRate } from '../services/swapMarkup.service.js';
@@ -1755,19 +1757,52 @@ export const updateWalletStatus = catchAsync(async (req, res) => {
 
 // Get all transactions across the system (admin only)
 // Combined view of ALL money movement: fiat transactions + bill payments + wallet (crypto) + fx (swaps/transfers).
+//
+// Deliberately selects the SAME receipt-bearing columns the customer-facing combined query in
+// transaction.controller.js does — metadata above all. Without metadata the admin's copy of a
+// receipt silently lost every field that lives inside it (NIBSS session ID, on-chain hash, bank,
+// account number/name, biller, network), so support was looking at a strictly thinner document
+// than the customer was quoting at them over the phone. fee/to_amount/to_currency/exchange_rate/
+// external_reference/updated_at are here for the same reason.
 const ADMIN_TX_COMBINED = `
   WITH combined AS (
     SELECT t.id, t.user_id, t.transaction_type::varchar AS transaction_type, t.from_amount::numeric AS amount,
            t.from_currency::varchar AS currency, t.status::varchar AS status, t.description::text AS description,
-           t.reference::varchar AS reference, t.created_at
+           t.reference::varchar AS reference, t.created_at,
+           t.metadata AS metadata, t.fee_amount::numeric AS fee_amount,
+           t.to_amount::numeric AS to_amount, t.to_currency::varchar AS to_currency,
+           t.exchange_rate::numeric AS exchange_rate, t.external_reference::varchar AS external_reference,
+           t.updated_at AS updated_at
     FROM transactions t
     UNION ALL
     SELECT bp.id, bp.user_id, 'bill_payment'::varchar, bp.amount::numeric, bp.currency::varchar, bp.status::varchar,
-           ('Bill Payment: ' || bp.service_type)::text, bp.reference::varchar, bp.created_at
+           ('Bill Payment: ' || bp.service_type)::text, bp.reference::varchar, bp.created_at,
+           -- Same fold-in as the customer query: the biller/meter/phone columns live outside
+           -- metadata, so a bill receipt is useless without them.
+           (COALESCE(bp.metadata, '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
+              'biller', bp.provider_id,
+              'bill_account', bp.account_number,
+              'customer_name', bp.customer_name,
+              'service_type', bp.service_type,
+              'receipt_number', bp.receipt_number
+           ))), bp.fee::numeric,
+           NULL::numeric, NULL::varchar, NULL::numeric, NULL::varchar, bp.created_at
     FROM bill_payments bp
     UNION ALL
     SELECT wtx.id, w.user_id, wtx.transaction_type::varchar, wtx.amount::numeric, wtx.currency::varchar, wtx.status::varchar,
-           wtx.description::text, (wtx.metadata->>'quidax_tx_id')::varchar, wtx.created_at
+           wtx.description::text,
+           COALESCE(
+             wtx.metadata->>'quidax_tx_id',
+             wtx.metadata->>'obiex_tx_id',
+             wtx.metadata->>'provider_swap_id',
+             wtx.metadata->>'quidax_withdraw_id',
+             wtx.metadata->>'obiex_withdraw_id',
+             wtx.metadata->>'quidax_reference',
+             wtx.metadata->>'obiex_reference'
+           )::varchar,
+           wtx.created_at,
+           wtx.metadata, NULL::numeric,
+           NULL::numeric, NULL::varchar, NULL::numeric, NULL::varchar, wtx.created_at
     FROM wallet_transactions wtx JOIN wallets w ON w.id = wtx.wallet_id
     WHERE NOT EXISTS (SELECT 1 FROM transactions t WHERE (wtx.metadata->>'quidax_tx_id') IS NOT NULL AND (t.metadata->>'quidax_tx_id') = (wtx.metadata->>'quidax_tx_id'))
     UNION ALL
@@ -1787,7 +1822,9 @@ const ADMIN_TX_COMBINED = `
               WHEN 'crypto_onramp' THEN 'Bought '||fx.to_currency||' with '||fx.from_currency
               ELSE 'International Transfer to '||COALESCE(fx.recipient_details->>'name', fx.to_currency)
             END)::text,
-           fx.provider_txn_id::varchar, fx.created_at
+           fx.provider_txn_id::varchar, fx.created_at,
+           fx.recipient_details, NULL::numeric,
+           fx.converted_amount::numeric, fx.to_currency::varchar, NULL::numeric, NULL::varchar, fx.created_at
     FROM fx_transactions fx
   )`;
 
@@ -1827,6 +1864,11 @@ export const getAllTransactions = catchAsync(async (req, res) => {
     `${ADMIN_TX_COMBINED} SELECT COUNT(*) AS total FROM combined c ${conditions}`,
     params
   );
+
+  // Same best-effort session-ID fill-in the customer's own transaction list does, so an admin
+  // opening a receipt from this page sees the identical document — not one missing the very
+  // field support needs to trace a payout with the bank.
+  await backfillSessionIds(result.rows).catch(() => {});
 
   res.status(200).json({
     success: true,
@@ -2103,7 +2145,25 @@ export const updateUserFeatureAccess = catchAsync(async (req, res) => {
 export const getUserFinancialControlsAdmin = catchAsync(async (req, res) => {
   const { userId } = req.params;
   const controls = await getUserFinancialControls(userId);
-  res.status(200).json({ success: true, data: controls });
+
+  // The tier defaults these overrides replace, so the admin panel can show what a blank field
+  // actually means for THIS user instead of just the word "default". Limits are denominated in
+  // USD across every currency (see kycLimits.service.js), which is easy to mistake for Naira
+  // when typing a figure — showing the number being replaced makes that unit obvious.
+  const userRes = await query('SELECT kyc_tier FROM users WHERE id = $1', [userId]);
+  const kycTier = userRes.rows[0]?.kyc_tier ?? 0;
+
+  res.status(200).json({
+    success: true,
+    data: {
+      ...controls,
+      tier_defaults: {
+        kyc_tier: kycTier,
+        fiat: tierCapFor(kycTier, 'NGN'),
+        crypto: tierCapFor(kycTier, 'USDT'),
+      },
+    },
+  });
 });
 
 export const updateUserFinancialControlsAdmin = catchAsync(async (req, res) => {
@@ -2112,6 +2172,7 @@ export const updateUserFinancialControlsAdmin = catchAsync(async (req, res) => {
     deposits_fiat_enabled, deposits_crypto_enabled,
     withdrawals_fiat_enabled, withdrawals_crypto_enabled,
     custom_deposit_limit_ngn, custom_withdrawal_limit_usd,
+    custom_withdrawal_limit_fiat_usd, custom_withdrawal_limit_crypto_usd,
   } = req.body;
 
   const updates = {};
@@ -2122,6 +2183,17 @@ export const updateUserFinancialControlsAdmin = catchAsync(async (req, res) => {
   // Explicit null clears the override and falls back to the KYC-tier default.
   if (custom_deposit_limit_ngn !== undefined) updates.custom_deposit_limit_ngn = custom_deposit_limit_ngn;
   if (custom_withdrawal_limit_usd !== undefined) updates.custom_withdrawal_limit_usd = custom_withdrawal_limit_usd;
+  // Fiat and crypto withdrawal caps are independent (see financialControls.service.js). Writing
+  // either one also clears the legacy combined column, so a stale pre-migration-046 value can't
+  // keep applying to the half the admin just cleared.
+  if (custom_withdrawal_limit_fiat_usd !== undefined) {
+    updates.custom_withdrawal_limit_fiat_usd = custom_withdrawal_limit_fiat_usd;
+    updates.custom_withdrawal_limit_usd = null;
+  }
+  if (custom_withdrawal_limit_crypto_usd !== undefined) {
+    updates.custom_withdrawal_limit_crypto_usd = custom_withdrawal_limit_crypto_usd;
+    updates.custom_withdrawal_limit_usd = null;
+  }
 
   const result = await upsertUserFinancialControls(userId, updates, req.user.id);
 
@@ -2192,7 +2264,11 @@ export const getOrchestrationStatus = catchAsync(async (req, res) => {
       adapters: cryptoProviderName === 'obiex'
         ? [
             { name: 'Obiex', role: 'primary', status: statusFor(obiexOn, 'obiex'),
-              features: ['Deposit addresses', 'Withdrawals', 'Swaps (quote/accept)'] },
+              features: ['Deposit addresses', 'Withdrawals', 'Swaps (quote/accept)'],
+              // Obiex caps POST /trades/quote at 100/hour per key and it is their only price
+              // source — exceeding it is what got the key disabled on 2026-07-23. Surfaced here so
+              // the headroom is something an admin can actually watch instead of infer.
+              quote_budget: obiex.getQuoteBudgetState?.() || null },
             // Quidax always powers order-book spot trading (Trade/Exchange pages) regardless of
             // CRYPTO_PROVIDER, and doubles as the deposit/withdraw/swap fallback.
             ...(quidaxOn ? [{ name: 'Quidax', role: 'fallback', status: statusFor(quidaxOn, 'quidax'),
