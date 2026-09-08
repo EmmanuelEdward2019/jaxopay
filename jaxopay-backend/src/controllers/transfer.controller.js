@@ -12,7 +12,7 @@ import { sendWithdrawalEmails } from '../services/email.service.js';
 import { assertWithdrawalsAllowed } from '../services/financialControls.service.js';
 import { notifyWithdrawal } from '../services/notification.service.js';
 import { getFeeConfig, computeFee } from '../services/feeConfig.service.js';
-import { extractSessionId } from '../services/payoutSession.service.js';
+import { extractSessionId, isNibssSessionId } from '../services/payoutSession.service.js';
 
 async function notifyPayout(userId, payload) {
     try {
@@ -34,6 +34,8 @@ async function notifyPayout(userId, payload) {
         currency: payload.currency,
         reference: payload.reference,
         status: payload.success ? 'completed' : 'failed',
+        sessionId: payload.sessionId,
+        beneficiary: payload.beneficiary,
     }).catch(() => {});
 }
 
@@ -408,6 +410,11 @@ export const sendTransfer = catchAsync(async (req, res) => {
             isComplete = false;
             providerMetadata = {
                 provider: 'obiex',
+                // The bank name the payout actually went to. The frontend never sends bank_name
+                // (it's resolved server-side from Obiex's own list, above), so the INSERT further
+                // up stored nothing for it — leaving every receipt, email and admin view to render
+                // an undefined bank. Recorded here, where the resolved value finally exists.
+                bank_name: resolvedBankName,
                 obiex_withdraw_id: providerReference,
                 obiex_reference: reference,
                 obiex_status: transferStatus,
@@ -572,6 +579,7 @@ async function reconcileBankTransfer(reference) {
 
     // Ask the provider for the live disbursement status.
     let providerStatus;
+    let providerSessionId = null;
     try {
         if (isObiex) {
             const obiexWithdrawId = tx.metadata?.obiex_withdraw_id;
@@ -582,6 +590,12 @@ async function reconcileBankTransfer(reference) {
             }
             const result = await obiex.getTransactionById(obiexWithdrawId);
             providerStatus = String(result?.payout?.status || result?.status || '').toLowerCase();
+            // This poll — not the webhook — is what actually finalises NGN payouts, and the
+            // response it just fetched carries payout.externalReference: the NIBSS session ID a
+            // Nigerian bank quotes when tracing a transfer. It was being read for `status` and
+            // discarded, which is why completed withdrawals reached the customer's email with no
+            // session ID on them.
+            providerSessionId = extractSessionId(result);
         } else {
             const result = await korapay.getDisbursementStatus(reference);
             providerStatus = (result.status || '').toLowerCase();
@@ -595,13 +609,21 @@ async function reconcileBankTransfer(reference) {
     }
 
     if (['success', 'successful', 'completed'].includes(providerStatus)) {
+        const sessionPatch = providerSessionId && !tx.metadata?.session_id
+            ? (isNibssSessionId(providerSessionId)
+                ? { session_id: providerSessionId, session_id_source: 'obiex_api' }
+                : { provider_external_reference: providerSessionId })
+            : {};
         let didFinalize = false;
         await transaction(async (client) => {
             const cur = await client.query(`SELECT status FROM transactions WHERE reference = $1 FOR UPDATE`, [reference]);
             if (['completed', 'failed'].includes(cur.rows[0]?.status)) return;
             await client.query(
-                `UPDATE transactions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE reference = $1`,
-                [reference]
+                `UPDATE transactions
+                    SET status = 'completed', completed_at = NOW(), updated_at = NOW(),
+                        metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+                  WHERE reference = $1`,
+                [reference, JSON.stringify(sessionPatch)]
             );
             didFinalize = true;
         });
@@ -614,6 +636,9 @@ async function reconcileBankTransfer(reference) {
                 beneficiary,
                 destinationLabel: 'bank account',
                 typeDetail,
+                // So the completion email carries the number the customer needs to trace the
+                // transfer with their bank.
+                sessionId: sessionPatch.session_id || tx.metadata?.session_id || null,
             });
         }
         return { status: 'completed', userId: tx.user_id };

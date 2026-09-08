@@ -11,6 +11,7 @@ import { creditUserWalletByQuidax, persistQuidaxWalletAddress } from '../service
 import { creditUserWalletByObiex, updateObiexWithdrawal } from '../services/obiexWebhook.service.js';
 import { sendTransactionEmails, sendWithdrawalEmails } from '../services/email.service.js';
 import GlydeAdapter from '../orchestration/adapters/fiat/GlydeAdapter.js';
+import { buildDepositMetadata, depositNotificationDetails } from '../services/depositDetails.service.js';
 import { notifyDeposit, notifyWithdrawal } from '../services/notification.service.js';
 import { getFeeConfig, computeFee } from '../services/feeConfig.service.js';
 
@@ -636,7 +637,7 @@ async function processKorapay(payload) {
                     const userId = userRes.rows[0].id;
                     const walletRes = await query('SELECT id FROM wallets WHERE user_id = $1 AND currency = $2', [userId, currency || 'NGN']);
                     if (walletRes.rows.length > 0) {
-                        await applyKorapayDeposit(userId, walletRes.rows[0].id, amount, currency || 'NGN', fee, reference);
+                        await applyKorapayDeposit(userId, walletRes.rows[0].id, amount, currency || 'NGN', fee, reference, data);
                         return;
                     }
                 }
@@ -646,24 +647,31 @@ async function processKorapay(payload) {
         }
 
         const { wallet_id, user_id } = vbaRes.rows[0];
-        await applyKorapayDeposit(user_id, wallet_id, amount, currency || 'NGN', fee, reference);
+        await applyKorapayDeposit(user_id, wallet_id, amount, currency || 'NGN', fee, reference, data);
     }
 }
 
-async function applyKorapayDeposit(userId, walletId, amount, currency, fee, reference) {
+async function applyKorapayDeposit(userId, walletId, amount, currency, fee, reference, providerPayload = null) {
     try {
         const providerNet = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
         const depositFeeCfg = await getFeeConfig('fiat_deposit', currency);
         const platformFee = computeFee(depositFeeCfg, providerNet);
         const netAmount = Math.max(0, providerNet - platformFee);
+        // Everything the provider told us about this credit — who sent it, from which
+        // bank, and the NIBSS session ID identifying the transfer. Previously this column
+        // was omitted entirely, so every fiat deposit stored metadata: null and its receipt
+        // could show nothing beyond amount, date and our own reference.
+        const depositMetadata = buildDepositMetadata(providerPayload, { provider: 'korapay', reference });
+
         await transaction(async (client) => {
             // Log transaction
             await client.query(
                 `INSERT INTO transactions
                  (user_id, to_wallet_id, transaction_type, from_amount, to_amount,
-                  from_currency, to_currency, net_amount, fee_amount, status, description, reference)
-                 VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $5, $6, 'completed', 'Bank Transfer Deposit', $7)`,
-                [userId, walletId, amount, currency, netAmount, (parseFloat(fee) || 0) + platformFee, reference]
+                  from_currency, to_currency, net_amount, fee_amount, status, description, reference, metadata)
+                 VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $5, $6, 'completed', 'Bank Transfer Deposit', $7, $8)`,
+                [userId, walletId, amount, currency, netAmount, (parseFloat(fee) || 0) + platformFee, reference,
+                 JSON.stringify(depositMetadata)]
             );
 
             // Credit wallet
@@ -698,10 +706,13 @@ async function applyKorapayDeposit(userId, walletId, amount, currency, fee, refe
                 amount: amount,
                 currency: currency,
                 reference: reference,
-                details: 'Virtual Bank Account Transfer'
+                details: 'Virtual Bank Account Transfer',
+                // Who sent it, from which bank, and the session ID identifying the transfer —
+                // the same detail the receipt shows, so the email is not the thinner record.
+                metadata: depositNotificationDetails(depositMetadata),
             }, userRes.rows[0]).catch(e => logger.error('[WEBHOOK] VBA deposit email error:', e));
         }
-        notifyDeposit(userId, { amount, currency, reference }).catch(() => {});
+        notifyDeposit(userId, { amount, currency, reference, ...depositNotificationDetails(depositMetadata) }).catch(() => {});
     } catch (err) {
         logger.error(`[WEBHOOK] Korapay deposit error: ${err.message}`);
     }
@@ -829,7 +840,7 @@ async function processGlyde(payload) {
     }
 
     const { wallet_id, user_id } = vbaRes.rows[0];
-    await applyGlydeDeposit(user_id, wallet_id, amount, currency || 'NGN', fee, reference || ourRef);
+    await applyGlydeDeposit(user_id, wallet_id, amount, currency || 'NGN', fee, reference || ourRef, data);
 }
 
 /**
@@ -857,7 +868,7 @@ export async function reconcileGlydeVBA(vba) {
         if (existing.rows.length > 0) continue;
 
         logger.info(`[Reconcile] Found unprocessed Glyde credit ${tx.reference} for wallet ${vba.wallet_id} — crediting now.`);
-        await applyGlydeDeposit(vba.user_id, vba.wallet_id, tx.amount, 'NGN', tx.fee, tx.reference);
+        await applyGlydeDeposit(vba.user_id, vba.wallet_id, tx.amount, 'NGN', tx.fee, tx.reference, tx);
     }
 }
 
@@ -885,20 +896,27 @@ export async function sweepPendingGlydeDeposits(limit = 100) {
     return { checked };
 }
 
-export async function applyGlydeDeposit(userId, walletId, amount, currency, fee, reference) {
+export async function applyGlydeDeposit(userId, walletId, amount, currency, fee, reference, providerPayload = null) {
     try {
         const providerNet = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
         const depositFeeCfg = await getFeeConfig('fiat_deposit', currency);
         const platformFee = computeFee(depositFeeCfg, providerNet);
         const netAmount = Math.max(0, providerNet - platformFee);
 
+        // Everything the provider told us about this credit — who sent it, from which
+        // bank, and the NIBSS session ID identifying the transfer. Previously this column
+        // was omitted entirely, so every fiat deposit stored metadata: null and its receipt
+        // could show nothing beyond amount, date and our own reference.
+        const depositMetadata = buildDepositMetadata(providerPayload, { provider: 'glyde', reference });
+
         await transaction(async (client) => {
             await client.query(
                 `INSERT INTO transactions
                  (user_id, to_wallet_id, transaction_type, from_amount, to_amount,
-                  from_currency, to_currency, net_amount, fee_amount, status, description, reference)
-                 VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $5, $6, 'completed', 'Bank Transfer Deposit', $7)`,
-                [userId, walletId, amount, currency, netAmount, (parseFloat(fee) || 0) + platformFee, reference]
+                  from_currency, to_currency, net_amount, fee_amount, status, description, reference, metadata)
+                 VALUES ($1, $2, 'deposit', $3, $3, $4, $4, $5, $6, 'completed', 'Bank Transfer Deposit', $7, $8)`,
+                [userId, walletId, amount, currency, netAmount, (parseFloat(fee) || 0) + platformFee, reference,
+                 JSON.stringify(depositMetadata)]
             );
 
             await client.query(
@@ -930,9 +948,10 @@ export async function applyGlydeDeposit(userId, walletId, amount, currency, fee,
                 currency,
                 reference,
                 details: 'Virtual Bank Account Transfer',
+                metadata: depositNotificationDetails(depositMetadata),
             }, userRes.rows[0]).catch((e) => logger.error('[WEBHOOK] Glyde deposit email error:', e));
         }
-        notifyDeposit(userId, { amount, currency, reference }).catch(() => {});
+        notifyDeposit(userId, { amount, currency, reference, ...depositNotificationDetails(depositMetadata) }).catch(() => {});
     } catch (err) {
         logger.error(`[WEBHOOK] Glyde deposit error: ${err.message}`);
     }
@@ -961,6 +980,9 @@ async function notifyTransfer(tx, success) {
                 beneficiary,
                 destinationLabel: 'bank account',
                 typeDetail: `${tx.from_currency} Bank Transfer`,
+                // The NIBSS session ID, when the payout has already published one — the number a
+                // Nigerian bank asks for when tracing a transfer.
+                sessionId: tx.metadata?.session_id || null,
             }, userRes.rows[0]).catch((e) => logger.error('[WEBHOOK] Transfer email error:', e));
         }
         notifyWithdrawal(tx.user_id, {

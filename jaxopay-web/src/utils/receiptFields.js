@@ -74,6 +74,14 @@ export const getReceiptMetadataFields = (meta, { copyable = false } = {}) => {
     if (bankName) result.push({ label: 'Bank', value: bankName });
     if (acctNumber) result.push({ label: 'Account', value: acctNumber });
     if (acctName) result.push({ label: 'Account Name', value: acctName });
+    // Incoming fiat deposits: who paid, from where. Captured from the collection provider's
+    // payload (see depositDetails.service.js) — a deposit receipt that shows only an amount and a
+    // reference is useless when a customer is asking "did my transfer from GTB arrive?".
+    if (meta.sender_name) result.push({ label: 'Sender', value: meta.sender_name });
+    if (meta.sender_bank) result.push({ label: 'Sender Bank', value: meta.sender_bank });
+    if (meta.sender_account) result.push({ label: 'Sender Account', value: meta.sender_account, copyable });
+    if (meta.payment_method) result.push({ label: 'Payment Method', value: meta.payment_method });
+    if (meta.narration) result.push({ label: 'Narration', value: meta.narration });
     if (meta.package || meta.plan) result.push({ label: 'Package', value: meta.package || meta.plan });
     // Bill payments — the biller and the thing being paid for. What the account number is
     // called depends entirely on the bill type, and "Account" for a meter reads as wrong.
@@ -85,9 +93,10 @@ export const getReceiptMetadataFields = (meta, { copyable = false } = {}) => {
     if (address) result.push({ label: 'Address', value: address });
     if (meta.country) result.push({ label: 'Country', value: meta.country });
     // NIBSS session ID — what a Nigerian bank asks for when tracing a transfer, so it's the
-    // single most useful thing on a NGN withdrawal receipt. Obiex only publishes it after the
-    // payout settles, so the backend fetches it from their API and stores it here (see
-    // payoutSession.service.js); until then the row is simply absent rather than blank.
+    // single most useful thing on a NGN receipt, incoming or outgoing. On a withdrawal the
+    // backend fetches it from Obiex once the payout settles (payoutSession.service.js); on a
+    // deposit it comes from the collection provider's own payload (depositDetails.service.js).
+    // Absent rather than blank until one exists.
     if (meta.session_id) result.push({ label: 'Session ID', value: meta.session_id, copyable });
     if (meta.recipient_email) result.push({ label: 'Recipient', value: meta.recipient_email });
     if (meta.sender_email) result.push({ label: 'Sender', value: meta.sender_email });

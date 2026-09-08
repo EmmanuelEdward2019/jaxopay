@@ -49,6 +49,43 @@ const row = (label, value, valueColor = INK) => `
     <td class="jx-value" style="padding:9px 0;border-bottom:1px solid #eef2f6;font-family:${FONT};font-size:14px;color:${valueColor};font-weight:600;text-align:left;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;">${value}</td>
   </tr>`;
 
+/**
+ * Renders an arbitrary metadata object as label/value rows.
+ *
+ * Skips null/undefined/empty values — `Object.entries().map(([k, v]) => row(k, v))` happily
+ * printed the literal string "undefined" next to a key whose value was missing, which is how
+ * admin alerts ended up showing 'bankName: undefined' on every NGN payout. Also humanises keys,
+ * so a receipt reads "Session ID" rather than "session_id" or "bankName".
+ */
+const KEY_LABELS = {
+  session_id: 'Session ID', sessionId: 'Session ID',
+  bank_name: 'Bank', bankName: 'Bank',
+  account_name: 'Account Name', accountName: 'Account Name',
+  account_number: 'Account Number', accountNumber: 'Account Number',
+  sender_name: 'Sender', senderName: 'Sender',
+  sender_bank: 'Sender Bank', senderBank: 'Sender Bank',
+  sender_account: 'Sender Account', senderAccount: 'Sender Account',
+  payment_method: 'Payment Method', paymentMethod: 'Payment Method',
+  hash: 'Transaction Hash',
+  narration: 'Narration',
+  network: 'Network',
+  destination: 'Destination',
+};
+const humaniseKey = (key) =>
+  KEY_LABELS[key] ||
+  String(key)
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+
+const metadataRows = (metadata) => {
+  if (!metadata || typeof metadata !== 'object') return '';
+  return Object.entries(metadata)
+    .filter(([, v]) => v != null && v !== '' && typeof v !== 'object')
+    .map(([k, v]) => row(humaniseKey(k), v))
+    .join('');
+};
+
 /** Wraps label/value rows in a light card. */
 const infoBox = (rowsHtml) => `
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${SOFT};border:1px solid #eef2f6;border-radius:10px;margin:22px 0;">
@@ -186,6 +223,7 @@ export const templates = {
       ${row('Amount', `${data.currency} ${data.amount}`)}
       ${row('Status', statusLabel, statusColor)}
       ${row('Date', data.date || new Date().toLocaleString())}
+      ${metadataRows(data.metadata)}
     `)}
     ${p('Thank you for choosing JAXOPAY for your global transactions.')}
   `);
@@ -256,7 +294,7 @@ export const templates = {
       ${row('Amount', `${data.currency} ${data.amount}`)}
       ${row('Reference', data.reference)}
       ${row('Transaction ID', data.id)}
-      ${data.metadata ? Object.entries(data.metadata).map(([key, value]) => row(key, value)).join('') : ''}
+      ${metadataRows(data.metadata)}
     `)}
     ${button(`${data.frontendUrl || 'https://jaxopay.com'}/admin/transactions/${data.id}`, 'View in Admin Panel', BRAND_NAVY)}
   `),

@@ -317,6 +317,8 @@ export function createObiexWebhookService({
           currency: emailPayload.currency,
           reference: emailPayload.reference,
           status: emailPayload.success ? 'completed' : 'failed',
+          sessionId: emailPayload.sessionId,
+          beneficiary: emailPayload.beneficiary,
         }).catch(() => {});
       }
     } catch (err) {

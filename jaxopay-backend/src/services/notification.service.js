@@ -39,22 +39,41 @@ export async function notifyUsers(userIds, payload) {
 
 // ── Convenience wrappers for the platform's most common events ──────────────────────────────
 
-export const notifyDeposit = (userId, { amount, currency, reference }) =>
+// A push/in-app notification is glanced at, not studied, so the extra detail goes in the message
+// only where it identifies the money — who sent a deposit. Everything else (session ID, sender
+// bank/account) rides in metadata, where the app can surface it on tap without lengthening a line
+// that has to fit a lock screen.
+/** Strips null/undefined so a stored notification never carries empty keys. */
+const cleanMetadata = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v != null && v !== ''));
+
+export const notifyDeposit = (userId, { amount, currency, reference, senderName, senderBank, senderAccount, sessionId, narration }) =>
   notifyUser(userId, {
     type: 'deposit',
     title: 'Deposit received',
-    message: `Your deposit of ${amount} ${currency} has been credited to your wallet.`,
-    metadata: { reference, amount, currency },
+    message: senderName
+      ? `Your deposit of ${amount} ${currency} from ${senderName} has been credited to your wallet.`
+      : `Your deposit of ${amount} ${currency} has been credited to your wallet.`,
+    metadata: cleanMetadata({
+      reference, amount, currency,
+      sender_name: senderName, sender_bank: senderBank, sender_account: senderAccount,
+      session_id: sessionId, narration,
+    }),
   });
 
-export const notifyWithdrawal = (userId, { amount, currency, status, reference }) =>
+export const notifyWithdrawal = (userId, { amount, currency, status, reference, sessionId, beneficiary }) =>
   notifyUser(userId, {
     type: 'withdrawal',
     title: status === 'failed' ? 'Withdrawal failed' : 'Withdrawal processed',
     message: status === 'failed'
       ? `Your withdrawal of ${amount} ${currency} could not be completed. Your funds have been returned.`
       : `Your withdrawal of ${amount} ${currency} has been processed.`,
-    metadata: { reference, amount, currency, status },
+    metadata: cleanMetadata({
+      reference, amount, currency, status,
+      session_id: sessionId,
+      bank_name: beneficiary?.bankName,
+      account_number: beneficiary?.accountNumber,
+      account_name: beneficiary?.accountName,
+    }),
   });
 
 export const notifyBillPayment = (userId, { service, amount, currency, status, reference }) =>
