@@ -5,6 +5,7 @@ import { param, query, body } from 'express-validator';
 import {
   getTransactions,
   getTransaction,
+  downloadTransactionReceipt,
   getTransactionStats,
   getStatementSummary,
   downloadStatementPDF,
@@ -65,6 +66,15 @@ router.post(
 );
 
 // Get single transaction
+// Receipt as a shareable PDF. Declared before the bare '/:transactionId' so the ".pdf" suffix is
+// never swallowed by the id param.
+router.get(
+  '/:transactionId/receipt.pdf',
+  param('transactionId').isUUID(),
+  validate,
+  downloadTransactionReceipt
+);
+
 router.get(
   '/:transactionId',
   param('transactionId').isUUID(),

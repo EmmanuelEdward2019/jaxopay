@@ -5,6 +5,7 @@ import obiex from '../orchestration/adapters/crypto/ObiexAdapter.js';
 import { getStatementRows, buildStatementCSV, buildStatementPDF, resolveDateRange } from '../services/statement.service.js';
 import { sendEmail } from '../services/email.service.js';
 import { ensureSessionId, backfillSessionIds } from '../services/payoutSession.service.js';
+import { buildReceiptPDF } from '../services/receiptPdf.service.js';
 
 // Same provider selection as crypto.controller.js — used only for read-only rate lookups here.
 const CRYPTO_PROVIDER = (process.env.CRYPTO_PROVIDER || 'obiex').toLowerCase() === 'quidax' ? 'quidax' : 'obiex';
@@ -279,6 +280,46 @@ export const getTransaction = catchAsync(async (req, res) => {
     success: true,
     data: tx,
   });
+});
+
+/**
+ * GET /transactions/:transactionId/receipt.pdf — the receipt as a shareable document.
+ *
+ * Exists because React Native cannot rasterise a view without a native module, and adding one
+ * would force a store rebuild and break the OTA-only deploy flow. Rendering here means the app
+ * downloads a file and hands it to the OS share sheet — so "Share Receipt" sends an actual
+ * document instead of a block of plain text.
+ */
+export const downloadTransactionReceipt = catchAsync(async (req, res) => {
+  const { transactionId } = req.params;
+
+  const result = await query(
+    `WITH combined AS (${combinedQuery})
+     SELECT * FROM combined
+     WHERE id = $1 AND user_id = $2`,
+    [transactionId, req.user.id]
+  );
+  if (result.rows.length === 0) throw new AppError('Transaction not found', 404);
+
+  const tx = result.rows[0];
+  // Same on-demand resolution the detail endpoint does, so a shared receipt is never missing the
+  // session ID that the on-screen one shows.
+  const sessionId = await ensureSessionId(tx).catch(() => null);
+  if (sessionId) tx.metadata = { ...(tx.metadata || {}), session_id: sessionId };
+
+  const userRes = await query(
+    `SELECT COALESCE(up.first_name || ' ' || up.last_name, up.first_name, u.email) AS name, u.email
+     FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = $1`,
+    [req.user.id]
+  );
+
+  const pdf = await buildReceiptPDF(tx, userRes.rows[0] || {});
+  const filename = `jaxopay-receipt-${(tx.reference || tx.id || '').toString().slice(0, 40) || 'transaction'}.pdf`;
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', pdf.length);
+  res.status(200).send(pdf);
 });
 
 // Get transaction statistics
