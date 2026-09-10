@@ -124,6 +124,30 @@ export function createObiexWebhookService({
     }
   }
 
+  /**
+   * Attach on-chain proof (hash/network) to a withdrawal without touching its status or balances.
+   * Used when a webhook carries a hash but isn't a state transition we act on. Never overwrites a
+   * hash we already hold, and is a no-op when the withdrawal can't be located.
+   */
+  async function recordWithdrawalProof(transactionId, reference, proof) {
+    try {
+      const res = await query(
+        `UPDATE wallet_transactions
+            SET metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb, updated_at = NOW()
+          WHERE (metadata->>'obiex_withdraw_id' = $1
+                 OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2 OR reference = $2)))
+            AND COALESCE(metadata->>'hash', '') = ''
+          RETURNING id`,
+        [String(transactionId || ''), reference ? String(reference) : null, JSON.stringify(proof)]
+      );
+      if (res.rows.length > 0) {
+        logger.info(`[WEBHOOK] Obiex withdrawal ${transactionId}: captured on-chain hash ${proof.hash}`);
+      }
+    } catch (e) {
+      logger.warn(`[WEBHOOK] Could not record withdrawal proof for ${transactionId}: ${e.message}`);
+    }
+  }
+
   /** WITHDRAWAL event — update the matching pending withdrawal's status; refund on failure. */
   async function updateObiexWithdrawal(data) {
     const { transactionId, reference, status } = data || {};
@@ -136,6 +160,17 @@ export function createObiexWebhookService({
     const isFailed = FAILED_STATUSES.has(statusUpper);
 
     if (!isSuccessful && !isFailed) {
+      // Status isn't terminal, so nothing about the transaction's state changes — but the payload
+      // may still carry the on-chain hash, and Obiex have confirmed `hash` on a WITHDRAWAL event
+      // is the blockchain hash. Their own status for a completed payout has been observed still
+      // reading PENDING, so a hash arriving on a non-terminal event is a real possibility and
+      // returning here would throw away the one thing a customer needs to verify the transfer.
+      if (data?.hash) {
+        await recordWithdrawalProof(transactionId, reference, {
+          hash: data.hash,
+          ...(data?.network ? { network: data.network } : {}),
+        });
+      }
       logger.info(`[WEBHOOK] Obiex withdrawal ${transactionId} status=${status} — no local state change needed`);
       return;
     }
