@@ -183,7 +183,7 @@ async function _refreshTickerCacheOnce() {
       const quidaxPayload = await quidax.getTicker24h();
       if (quidaxPayload && typeof quidaxPayload === 'object') payload = { ...quidaxPayload };
     } catch (e) {
-      logger.warn('[TickerCache] Quidax snapshot unavailable:', e.message);
+      logger.warn(`[TickerCache] Quidax snapshot unavailable: ${e.message}`);
     }
 
     // …then overlay real Obiex prices for the marked-up pairs. This is the whole point: Quidax and
@@ -207,7 +207,7 @@ async function _refreshTickerCacheOnce() {
       logger.debug(`[TickerCache] Refreshed — ${Object.keys(payload).length} markets`);
     }
   } catch (e) {
-    logger.warn('[TickerCache] Refresh failed:', e.message);
+    logger.warn(`[TickerCache] Refresh failed: ${e.message}`);
   }
 }
 
@@ -276,7 +276,7 @@ export const getSupportedCryptos = catchAsync(async (req, res) => {
       data: assets,
     });
   } catch (err) {
-    logger.error('[SupportedCryptos] Quidax Failed:', err.message);
+    logger.error(`[SupportedCryptos] Quidax Failed: ${err.message}`);
     // Minimal fallback as last resort (not hardcoded rates, just asset codes)
     const fallback = [
       { code: 'BTC', name: 'Bitcoin', type: 'crypto' },
@@ -1451,9 +1451,9 @@ async function notifyCryptoWithdrawalResult(tx, success) {
       network: tx.metadata?.network || null,
       typeDetail: `Crypto Withdrawal (${tx.currency}${tx.metadata?.network ? ' · ' + tx.metadata.network : ''})`,
       reason: success ? undefined : 'Payout failed at provider — funds returned',
-    }, userRes.rows[0]).catch((e) => logger.error('[CryptoWithdraw] reconcile email error:', e.message));
+    }, userRes.rows[0]).catch((e) => logger.error(`[CryptoWithdraw] reconcile email error: ${e.message}`));
   } catch (e) {
-    logger.error('[CryptoWithdraw] reconcile notify error:', e.message);
+    logger.error(`[CryptoWithdraw] reconcile notify error: ${e.message}`);
   }
   notifyWithdrawal(tx.user_id, {
     amount: tx.amount,
@@ -1777,7 +1777,7 @@ export const getMarkets = catchAsync(async (req, res) => {
     const data = await quidax.getMarkets();
     res.status(200).json({ success: true, data });
   } catch (err) {
-    logger.warn('[Markets] Quidax failed:', err.message);
+    logger.warn(`[Markets] Quidax failed: ${err.message}`);
     // Return common default markets as fallback
     res.status(200).json({
       success: true,
@@ -1851,7 +1851,7 @@ export const get24hTickers = catchAsync(async (req, res) => {
     const data = market ? (all?.[String(market).toLowerCase()] || null) : all;
     res.status(200).json({ success: true, data });
   } catch (err) {
-    logger.warn('[24hTickers] ticker unavailable:', err.message);
+    logger.warn(`[24hTickers] ticker unavailable: ${err.message}`);
     res.status(200).json({ success: true, data: null, message: 'Ticker data temporarily unavailable' });
   }
 });
@@ -2268,8 +2268,8 @@ export const confirmSwapQuotation = catchAsync(async (req, res) => {
       reference: confirmed.id,
       details: `Instant Swap: ${fromAmount} ${fromCurrency} → ${toAmount} ${toCurrency}`,
       date: new Date().toLocaleString(),
-    }, userRes.rows[0]).catch((e) => logger.error('[ConfirmSwap] receipt email error:', e.message));
-  }).catch((e) => logger.error('[ConfirmSwap] receipt email lookup error:', e.message));
+    }, userRes.rows[0]).catch((e) => logger.error(`[ConfirmSwap] receipt email error: ${e.message}`));
+  }).catch((e) => logger.error(`[ConfirmSwap] receipt email lookup error: ${e.message}`));
 
   notifyUser(req.user.id, {
     type: 'swap',
