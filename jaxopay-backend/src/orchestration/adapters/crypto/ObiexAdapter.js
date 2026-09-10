@@ -864,6 +864,21 @@ class ObiexAdapter {
     return null;
   }
 
+  /**
+   * Ask Obiex to re-deliver the webhook(s) for one transaction — POST /transactions/{id}/resendWebhook.
+   *
+   * Used to recover data from events that were delivered but lost on our side. Safe to call on a
+   * settled transaction: updateObiexWithdrawal treats a replayed event for an already-final row as
+   * proof-only (it attaches hash/network and returns without touching status, balances or email),
+   * so a replay cannot double-credit anyone or re-send a notification.
+   *
+   * Must be called from an IP Obiex has allowlisted — in practice the droplet, not a dev machine.
+   */
+  async resendWebhook(transactionId) {
+    const data = await this._request('POST', `/transactions/${encodeURIComponent(transactionId)}/resendWebhook`, {});
+    return data?.data ?? data ?? null;
+  }
+
   /** List this account's swap transactions (category=SWAP). */
   async getSwapTransactions() {
     const data = await this._request('GET', '/transactions/me', undefined, { category: 'SWAP' });
