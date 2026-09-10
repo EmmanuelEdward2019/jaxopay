@@ -235,9 +235,13 @@ export const getTransactions = catchAsync(async (req, res) => {
   ]);
 
   // Fill in any NIBSS session IDs Obiex had not published yet when the payout webhook landed.
-  // Bounded and best-effort (see backfillSessionIds) so a slow provider can never stall the list;
-  // a row it can't resolve this time is simply retried the next time the list is loaded.
-  await backfillSessionIds(result.rows).catch(() => {});
+  //
+  // Deliberately NOT awaited. This is a listing, and the mobile dashboard loads it on every open —
+  // awaiting meant up to five provider round-trips sat between the query and the response, which
+  // is a provider's latency added to the app's startup for data no one is reading yet. It writes
+  // the id straight to the row, so it lands in the next read; the receipt endpoint below resolves
+  // on demand for the one case where a user is actually looking at it.
+  backfillSessionIds(result.rows).catch(() => {});
 
   res.status(200).json({
     success: true,

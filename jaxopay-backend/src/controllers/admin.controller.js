@@ -1867,8 +1867,9 @@ export const getAllTransactions = catchAsync(async (req, res) => {
 
   // Same best-effort session-ID fill-in the customer's own transaction list does, so an admin
   // opening a receipt from this page sees the identical document — not one missing the very
-  // field support needs to trace a payout with the bank.
-  await backfillSessionIds(result.rows).catch(() => {});
+  // field support needs to trace a payout with the bank. Not awaited, for the same reason: the
+  // provider round-trips belong in the background, not in front of the response.
+  backfillSessionIds(result.rows).catch(() => {});
 
   res.status(200).json({
     success: true,
