@@ -19,6 +19,36 @@ import { getFeeConfig, computeFee } from '../services/feeConfig.service.js';
  * Unified webhook handler for all providers
  * POST /webhooks/:provider
  */
+/**
+ * Records an inbound webhook exactly as received, before any handler touches it.
+ *
+ * Never throws and never blocks delivery: a failure to log must not cause us to 500 back at a
+ * provider and trigger their retry logic. Returns the row id so the caller can attach a
+ * processing error to it afterwards.
+ */
+async function recordWebhookEvent({ provider, payload, signatureValid }) {
+    try {
+        const p = payload || {};
+        const res = await query(
+            `INSERT INTO webhook_events (provider, event_type, transaction_id, reference, status, signature_valid, payload)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+            [
+                String(provider || '').toLowerCase(),
+                (p.type || p.event || p.event_type || p.action || null)?.toString().slice(0, 120) || null,
+                (p.transactionId || p.transaction_id || p.data?.transactionId || p.data?.id || null)?.toString().slice(0, 255) || null,
+                (p.reference || p.data?.reference || p.merchant_reference || p.data?.merchant_reference || null)?.toString().slice(0, 255) || null,
+                (p.status || p.data?.status || null)?.toString().slice(0, 60) || null,
+                signatureValid,
+                JSON.stringify(payload ?? null),
+            ]
+        );
+        return res.rows[0]?.id || null;
+    } catch (e) {
+        logger.warn(`[WEBHOOK] Could not record inbound event for ${provider}: ${e.message}`);
+        return null;
+    }
+}
+
 export const handleWebhook = catchAsync(async (req, res) => {
     const { provider } = req.params;
     const body = req.body;
@@ -57,6 +87,11 @@ export const handleWebhook = catchAsync(async (req, res) => {
         }
     }
 
+    // 1b. Record the event as received, before any handler runs. Deliberately after the signature
+    // check so the result can be stored, and before dispatch so an event that later blows up in a
+    // handler is still on file with its full payload.
+    const webhookEventId = await recordWebhookEvent({ provider, payload: body, signatureValid: isValid });
+
     // 2. Route to handler
     try {
         switch (provider.toLowerCase()) {
@@ -86,6 +121,13 @@ export const handleWebhook = catchAsync(async (req, res) => {
         }
     } catch (err) {
         logger.error(`[WEBHOOK] Error processing ${provider}:`, err);
+        // Attach the failure to the stored event, so "arrived but was dropped" is a query rather
+        // than an exercise in log archaeology.
+        if (webhookEventId) {
+            await query('UPDATE webhook_events SET processing_error = $1 WHERE id = $2',
+                [String(err?.message || err).slice(0, 2000), webhookEventId]
+            ).catch(() => {});
+        }
         return res.status(202).json({ success: false, message: 'Processed with errors' });
     }
 

@@ -137,8 +137,7 @@ export function createObiexWebhookService({
           WHERE (metadata->>'obiex_withdraw_id' = $1
                  OR metadata->>'obiex_response_reference' = $1
                  OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2
-                                               OR metadata->>'obiex_response_reference' = $2
-                                               OR reference = $2)))
+                                               OR metadata->>'obiex_response_reference' = $2)))
             AND COALESCE(metadata->>'hash', '') = ''
           RETURNING id`,
         [String(transactionId || ''), reference ? String(reference) : null, JSON.stringify(proof)]
@@ -212,13 +211,18 @@ export function createObiexWebhookService({
         // share the same WITHDRAWAL webhook event, matching Quidax's existing dual-table pattern.
         let txType = 'wallet_transactions';
         let txRes = await client.query(
+          // NOTE: wallet_transactions has NO `reference` column — the crypto withdrawal's provider
+          // ids live in metadata (obiex_withdraw_id / obiex_reference / obiex_response_reference).
+          // A bare `reference = $2` here threw 42703 "column reference does not exist" on EVERY
+          // successful crypto withdrawal webhook, before anything was read or written. The events
+          // were arriving and being discarded by our own SQL. Only `transactions` (the fiat payout
+          // table, below) actually has that column.
           `SELECT id, wallet_id, amount, currency, status AS current_status, metadata
            FROM wallet_transactions
            WHERE metadata->>'obiex_withdraw_id' = $1
               OR metadata->>'obiex_response_reference' = $1
               OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2
-                                            OR metadata->>'obiex_response_reference' = $2
-                                            OR reference = $2))
+                                            OR metadata->>'obiex_response_reference' = $2))
            FOR UPDATE`,
           [String(transactionId || ''), reference ? String(reference) : null]
         );
