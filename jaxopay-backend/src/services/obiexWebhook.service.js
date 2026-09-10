@@ -135,7 +135,10 @@ export function createObiexWebhookService({
         `UPDATE wallet_transactions
             SET metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb, updated_at = NOW()
           WHERE (metadata->>'obiex_withdraw_id' = $1
-                 OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2 OR reference = $2)))
+                 OR metadata->>'obiex_response_reference' = $1
+                 OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2
+                                               OR metadata->>'obiex_response_reference' = $2
+                                               OR reference = $2)))
             AND COALESCE(metadata->>'hash', '') = ''
           RETURNING id`,
         [String(transactionId || ''), reference ? String(reference) : null, JSON.stringify(proof)]
@@ -212,7 +215,10 @@ export function createObiexWebhookService({
           `SELECT id, wallet_id, amount, currency, status AS current_status, metadata
            FROM wallet_transactions
            WHERE metadata->>'obiex_withdraw_id' = $1
-              OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2 OR reference = $2))
+              OR metadata->>'obiex_response_reference' = $1
+              OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2
+                                            OR metadata->>'obiex_response_reference' = $2
+                                            OR reference = $2))
            FOR UPDATE`,
           [String(transactionId || ''), reference ? String(reference) : null]
         );
@@ -224,14 +230,22 @@ export function createObiexWebhookService({
              FROM transactions
              WHERE transaction_type = 'bank_transfer'
                AND (metadata->>'obiex_withdraw_id' = $1
-                 OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2 OR reference = $2)))
+                 OR metadata->>'obiex_response_reference' = $1
+                 OR ($2::text IS NOT NULL AND (metadata->>'obiex_reference' = $2
+                                               OR metadata->>'obiex_response_reference' = $2
+                                               OR reference = $2)))
              FOR UPDATE`,
             [String(transactionId || ''), reference ? String(reference) : null]
           );
         }
 
         if (txRes.rows.length === 0) {
-          logger.warn(`[WEBHOOK] Obiex withdrawal not found: ${transactionId} or ref ${reference}`);
+          // Loud and complete on purpose: this is the one branch where Obiex's delivery logs would
+          // show a 200 while nothing happened here, so the full payload has to be recoverable.
+          logger.error(
+            `[WEBHOOK] ⚠️  Obiex WITHDRAWAL received but NOT MATCHED to any local transaction — ` +
+            `transactionId=${transactionId} reference=${reference}. Raw payload: ${JSON.stringify(data)}`
+          );
           return;
         }
 
