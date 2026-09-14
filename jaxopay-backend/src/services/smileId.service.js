@@ -93,8 +93,19 @@ export function signSmileRequest(apiKey, partnerId) {
  * costs nothing and avoids a second silent-failure mode while this is still settling in.
  */
 export function verifySmileCallbackSignature(body, headers = {}) {
-  const { apiKey, partnerId } = getSmileCredentials();
-  if (!apiKey || !partnerId) return false;
+  // Smile signs a callback with "the API key that was used to generate the token for the original
+  // verification request" — and this platform uses TWO different keys depending on the flow:
+  //   * RN native SDK (v11) authenticates from smile_config.json's auth_token  -> SMILE_ID_API_KEY
+  //   * Web hosted SDK / server-side v3 mint their token from                  -> SMILE_ID_API_KEY_V3
+  // Verifying against only the v1 key would therefore reject every callback for a v3-submitted
+  // job. Smile retries a rejected delivery 3 times and then drops the verdict permanently, so a
+  // wrong key here loses the result outright rather than merely delaying it. Try both.
+  const { partnerId } = getSmileCredentials();
+  const candidateKeys = [
+    getSmileV3Credentials().apiKey,
+    getSmileCredentials().apiKey,
+  ].filter((k, i, a) => k && a.indexOf(k) === i);
+  if (candidateKeys.length === 0 || !partnerId) return false;
 
   const h = headers || {};
   let b = body;
@@ -109,15 +120,17 @@ export function verifySmileCallbackSignature(body, headers = {}) {
   const receivedTs = h['response-timestamp'] || b?.Timestamp || b?.timestamp;
   if (!receivedSig || !receivedTs) return false;
 
-  const hmac = crypto.createHmac('sha256', apiKey);
-  hmac.update(String(receivedTs), 'utf8');
-  hmac.update(String(partnerId), 'utf8');
-  hmac.update('sid_request', 'utf8');
-  const expected = hmac.digest('base64');
-  const sigBuf = Buffer.from(receivedSig);
-  const expBuf = Buffer.from(expected);
-  if (sigBuf.length !== expBuf.length) return false;
-  return crypto.timingSafeEqual(sigBuf, expBuf);
+  const sigBuf = Buffer.from(String(receivedSig));
+  for (const key of candidateKeys) {
+    const hmac = crypto.createHmac('sha256', key);
+    hmac.update(String(receivedTs), 'utf8');
+    hmac.update(String(partnerId), 'utf8');
+    hmac.update('sid_request', 'utf8');
+    const expBuf = Buffer.from(hmac.digest('base64'));
+    // Length check first: timingSafeEqual throws on a length mismatch rather than returning false.
+    if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) return true;
+  }
+  return false;
 }
 
 export function getSmileApiBase() {
