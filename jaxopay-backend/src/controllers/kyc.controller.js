@@ -407,9 +407,11 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
 
   const callbackUrl = buildCallbackUrl('/webhooks/smile_identity');
 
-  const { smileResponse, jobId } = await smileId.submitBasicKycAsync({
+  const { smileResponse, jobId, typeId } = await smileId.submitBasicKycAsync({
     userId: req.user.id,
     callbackUrl,
+    // V3 requires an email or phone in user_details; email is always present on a JAXOPAY account.
+    email: req.user.email,
     country,
     // Smile's API is case-sensitive on id_type (see submitRampIdVerification for the confirmed
     // production failure this caused there) — normalize here too rather than trust the caller.
@@ -425,14 +427,14 @@ export const submitSmileBasicKyc = catchAsync(async (req, res) => {
 
   await query(
     `INSERT INTO kyc_documents
-     (user_id, document_type, document_number, document_url, selfie_url, status, tier)
-     VALUES ($1, 'smile_basic_kyc', $2, $3, null, 'pending', 'tier_1')`,
-    [req.user.id, `SMILE:${jobId}`, 'https://jaxopay.com/kyc/smile-id-async']
+     (user_id, document_type, document_number, document_url, selfie_url, status, tier, smile_type_id)
+     VALUES ($1, 'smile_basic_kyc', $2, $3, null, 'pending', 'tier_1', $4)`,
+    [req.user.id, `SMILE:${jobId}`, 'https://jaxopay.com/kyc/smile-id-async', typeId || null]
   );
 
   await query(`UPDATE users SET kyc_status = 'under_review', updated_at = NOW() WHERE id = $1`, [req.user.id]);
 
-  logger.info('[KYC] Smile Basic KYC submitted', { userId: req.user.id, jobId });
+  logger.info('[KYC] Smile Basic KYC submitted', { userId: req.user.id, jobId, typeId });
   auditFromReq(req, { action: 'kyc_submitted', entityType: 'kyc_document', newValues: { method: 'smile_basic', job_id: jobId } });
 
   kycNotify
@@ -464,7 +466,7 @@ export const submitRampIdVerification = catchAsync(async (req, res) => {
 
   // Profile fields live on user_profiles; phone lives on users — join like _buildSender does.
   const prof = (await query(
-    `SELECT p.first_name, p.last_name, p.date_of_birth, p.gender, u.phone
+    `SELECT p.first_name, p.last_name, p.date_of_birth, p.gender, u.phone, u.email
      FROM users u LEFT JOIN user_profiles p ON p.user_id = u.id
      WHERE u.id = $1`,
     [req.user.id]
@@ -492,6 +494,7 @@ export const submitRampIdVerification = catchAsync(async (req, res) => {
   // dead-end the user: the ID is stored as pending (manual review) and the user may proceed —
   // Yellow Card independently validates the BVN/NIN on every ramp transaction anyway.
   let jobId = null;
+  let typeId = null;
   let smileError = null;
   if (smileId.isSmileConfigured() && process.env.API_BASE_URL) {
     try {
@@ -507,8 +510,10 @@ export const submitRampIdVerification = catchAsync(async (req, res) => {
         id_type: docType.toUpperCase(), id_number: num,
         first_name: fn, last_name: ln, middle_name,
         dob: dob || prof.date_of_birth, gender: gender || prof.gender, phone_number: phone_number || prof.phone,
+        email: prof.email,
       });
       jobId = out.jobId;
+      typeId = out.typeId;
     } catch (e) {
       smileError = e.message || 'verification service error';
       logger.error(`[KYC] Ramp ID Smile verification unavailable (falling back to manual review): ${smileError}`);
@@ -521,9 +526,9 @@ export const submitRampIdVerification = catchAsync(async (req, res) => {
   if (jobId) {
     // Tracking row (reuses the existing Smile callback for tier bump + promotes the ID row below).
     await query(
-      `INSERT INTO kyc_documents (user_id, document_type, document_number, document_url, selfie_url, status, tier)
-       VALUES ($1, 'smile_basic_kyc', $2, $3, null, 'pending', 'tier_1')`,
-      [req.user.id, `SMILE:${jobId}`, 'https://jaxopay.com/kyc/smile-id-async']
+      `INSERT INTO kyc_documents (user_id, document_type, document_number, document_url, selfie_url, status, tier, smile_type_id)
+       VALUES ($1, 'smile_basic_kyc', $2, $3, null, 'pending', 'tier_1', $4)`,
+      [req.user.id, `SMILE:${jobId}`, 'https://jaxopay.com/kyc/smile-id-async', typeId || null]
     );
   }
   // The actual BVN/NIN the ramp gate + Yellow Card sender additionalId read. document_url ties it
@@ -641,7 +646,12 @@ export const cancelSmileBiometricJob = catchAsync(async (req, res) => {
   );
   if (result.rowCount > 0) {
     await query(
-      `UPDATE users SET kyc_status = 'not_started', updated_at = NOW()
+      // 'pending' is this enum's "nothing submitted yet" value — kyc_status is a Postgres enum of
+      // (pending, approved, rejected, under_review) and has NEVER had 'not_started'. Every cancel
+      // therefore threw `invalid input value for enum kyc_status: "not_started"` AFTER the DELETE
+      // above had already committed, so the row vanished, the request 500'd, and the user was left
+      // stranded in 'under_review' with no pending document to clear it.
+      `UPDATE users SET kyc_status = 'pending', updated_at = NOW()
        WHERE id = $1 AND kyc_status = 'under_review'
          AND NOT EXISTS (SELECT 1 FROM kyc_documents WHERE user_id = $1 AND status = 'pending')`,
       [req.user.id]

@@ -133,6 +133,18 @@ export function getSmileApiBase() {
  * @param {object} opts
  * @param {string} opts.callbackUrl - Full URL to POST /webhooks/smile_identity
  */
+/**
+ * Basic/Enhanced KYC submission. Now a thin wrapper over the V3 API (submitEnhancedKycV3).
+ *
+ * Was `POST /v2/verify_async` signed with SMILE_ID_API_KEY. That key is the mobile SDK's
+ * auth_token, not a server API key, and this account rejected every call with
+ * `{"code":"2205","error":"You are not authorized to do that."}` — verified both in production
+ * logs and by reproducing it live. Nothing was ever queued at Smile, so no verdict webhook could
+ * ever be sent and every submission sat "pending" indefinitely.
+ *
+ * Returns `typeId` (Smile's own TypeID from the 202) alongside our partner `jobId`, so callers can
+ * persist it and later poll GET /v3/status/{typeId} without depending on a webhook arriving.
+ */
 export async function submitBasicKycAsync({
   userId,
   callbackUrl,
@@ -145,63 +157,28 @@ export async function submitBasicKycAsync({
   dob,
   gender,
   phone_number,
+  email,
 }) {
-  const { apiKey, partnerId } = getSmileCredentials();
-  if (!apiKey || !partnerId) {
-    throw new AppError('Identity verification is not configured on the server', 503);
-  }
-
+  const { partnerId } = getSmileV3Credentials();
   const jobId = crypto.randomUUID();
-  const { signature, timestamp } = signSmileRequest(apiKey, partnerId);
 
-  const payload = {
-    callback_url: callbackUrl,
-    country: String(country).toUpperCase(),
-    id_type,
-    id_number: String(id_number),
-    first_name,
-    last_name,
-    middle_name: middle_name || '',
-    dob: dob || '',
-    gender: gender || '',
-    phone_number: phone_number || '',
-    partner_id: partnerId,
-    partner_params: {
-      job_id: jobId,
-      user_id: String(userId),
-      job_type: 5,
-    },
-    signature,
-    source_sdk: 'rest_api',
-    source_sdk_version: 'jaxopay-backend-1.0',
-    timestamp,
-  };
+  const { typeId, status, raw } = await submitEnhancedKycV3({
+    userId,
+    jobId,
+    callbackUrl,
+    country,
+    idType: id_type,
+    idNumber: id_number,
+    // V3 takes given_names (which may include a middle name) rather than separate fields.
+    givenNames: [first_name, middle_name].filter(Boolean).join(' ').trim() || first_name,
+    lastName: last_name,
+    email,
+    phoneNumber: phone_number,
+  });
 
-  const base = getSmileApiBase();
-  const url = `${base}/v2/verify_async`;
-
-  logger.info(`[SmileID] POST ${url} job_id=${jobId} user=${userId}`);
-
-  try {
-    const res = await axios.post(url, payload, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 60000,
-    });
-    return {
-      smileResponse: res.data,
-      jobId,
-      partnerId,
-    };
-  } catch (err) {
-    const msg = err.response?.data || err.message;
-    logger.error('[SmileID] verify_async failed:', typeof msg === 'object' ? JSON.stringify(msg) : msg);
-    // AppError (not a plain Error) so the real upstream reason reaches the client — a plain Error
-    // here loses both .isOperational and the original .response, so errorHandler's upstream-error
-    // normalization can never match it and it falls through to a generic "Something went wrong"
-    // 500, silently swallowing exactly the detail (bad credentials, malformed request, whatever
-    // Smile actually said) needed to diagnose a failure like this.
-    throw new AppError(err.response?.data?.message || err.response?.data?.error || err.message || 'Verification request failed', 502);
-  }
+  // dob/gender have no place in the V3 enhanced_kyc schema — the ID authority lookup is keyed on
+  // country/id_type/id_number plus the name. Accepted here so existing callers are unchanged.
+  return { smileResponse: raw, jobId, typeId, status, partnerId };
 }
 
 /**
@@ -380,7 +357,7 @@ export async function replayVerificationCallback({ typeId }) {
   const base = getSmileApiBase();
   try {
     const res = await axios.post(`${base}/v3/replay/${typeId}`, undefined, {
-      headers: { 'SmileID-Token': token },
+      headers: v3Headers(token),
       timeout: 15000,
       signal: AbortSignal.timeout(15000),
     });
@@ -397,6 +374,154 @@ export async function replayVerificationCallback({ typeId }) {
 }
 
 /** Result codes Smile marks as approved / passed for tier decisions (Biometric + Basic KYC). */
+/**
+ * Standard headers for every V3 product call. Both are required: the live probe that proved this
+ * account is v3-capable (GET /v3/status/... returning a clean not_found rather than 401) only
+ * succeeded with the partner id alongside the token. No HMAC headers are needed — this account is
+ * not configured for SDK/partner-secret authentication.
+ */
+function v3Headers(token, partnerId) {
+  const pid = partnerId || getSmileV3Credentials().partnerId;
+  return { 'SmileID-Token': token, 'SmileID-Partner-ID': String(pid) };
+}
+
+// Consent is mandatory on every V3 submission. The user performing the KYC form submission IS the
+// consent act; we record when, in which language the notice was shown, and where that notice lives.
+const SMILE_PRIVACY_POLICY_URL = process.env.SMILE_CONSENT_PRIVACY_URL || 'https://jaxopay.com/privacy';
+
+function buildConsent() {
+  return {
+    granted: true,
+    granted_at: new Date().toISOString(),
+    notice_language: 'EN',
+    notice_privacy_policy_url: SMILE_PRIVACY_POLICY_URL,
+  };
+}
+
+/**
+ * Smile requires E.164 (^\+[1-9]\d{6,14}$). Nigerian numbers are commonly stored as 0803...,
+ * which fails that outright — returns null rather than a malformed value, so the caller falls back
+ * to email (the schema needs email OR phone, not both).
+ */
+function toE164(raw, country = 'NG') {
+  const v = String(raw || '').replace(/[\s()-]/g, '');
+  if (!v) return null;
+  if (/^\+[1-9]\d{6,14}$/.test(v)) return v;
+  if (String(country).toUpperCase() === 'NG') {
+    const digits = v.replace(/^\+?234/, '').replace(/^0/, '');
+    if (/^\d{10}$/.test(digits)) return `+234${digits}`;
+  }
+  return null;
+}
+
+/**
+ * Enhanced KYC via the V3 REST API — POST /v3/enhanced_kyc.
+ *
+ * Replaces submitBasicKycAsync's V2 `/v2/verify_async` call, which this account rejects outright:
+ * every submission returned `{"code":"2205","error":"You are not authorized to do that."}` because
+ * SMILE_ID_API_KEY holds the mobile SDK's auth_token, not a server API key. Because nothing was
+ * ever accepted, Smile never had a job to run and no callback could ever be sent — which is the
+ * whole reason verifications sat "pending" forever.
+ *
+ * Crucially, the 202 response carries Smile's own TypeID as `job_id`. Storing that is what makes
+ * GET /v3/status/{id} polling and POST /v3/replay/{id} possible at all; previously the TypeID was
+ * only learnable from a webhook, so a job whose webhook never arrived could never be resolved.
+ *
+ * @returns {Promise<{ typeId: string|null, status: string|null, raw: object }>}
+ */
+export async function submitEnhancedKycV3({
+  userId, jobId, callbackUrl, country, idType, idNumber,
+  givenNames, lastName, email, phoneNumber,
+}) {
+  // Caller input is validated BEFORE server configuration: a request missing the contact details
+  // V3 requires is a 400 whatever the server's credential state, and reporting it as
+  // "not configured on the server" (which is what checking credentials first produced) sends
+  // whoever is debugging it looking in entirely the wrong place.
+  const phone = toE164(phoneNumber, country);
+  const userDetails = { given_names: String(givenNames || '').trim(), last_name: String(lastName || '').trim() };
+  if (email) userDetails.email = String(email).trim();
+  if (phone) userDetails.phone_number = phone;
+  if (!userDetails.email && !userDetails.phone_number) {
+    throw new AppError('An email address or phone number is required for identity verification.', 400);
+  }
+
+  const { apiKey, partnerId } = getSmileV3Credentials();
+  if (!apiKey || !partnerId) {
+    throw new AppError('Identity verification is not configured on the server', 503);
+  }
+
+  const { token } = await mintV3Token({ userId, product: 'enhanced_kyc' });
+
+  const form = new FormData();
+  form.append('country', String(country || 'NG').toUpperCase());
+  form.append('id_type', String(idType || '').toUpperCase());
+  form.append('id_number', String(idNumber || '').trim());
+  // Nested objects travel as JSON strings in the multipart body — the same convention mintV3Token
+  // already uses for partner_params and which Smile accepts there.
+  form.append('user_details', JSON.stringify(userDetails));
+  form.append('consent', JSON.stringify(buildConsent()));
+  if (callbackUrl) form.append('callback_url', callbackUrl);
+  // job_id/user_id round-trip to the webhook, so processSmileIdentity can still match our own
+  // pending row by `SMILE:${job_id}` exactly as it does for every other path.
+  form.append('partner_params', JSON.stringify({ job_id: jobId, user_id: String(userId), internal_user_id: String(userId) }));
+
+  const base = getSmileApiBase();
+  const url = `${base}/v3/enhanced_kyc`;
+  logger.info(`[SmileID] POST ${url} job_id=${jobId} user=${userId} id_type=${String(idType).toUpperCase()}`);
+
+  try {
+    const res = await axios.post(url, form, {
+      headers: { ...form.getHeaders(), ...v3Headers(token, partnerId) },
+      timeout: 30000,
+      signal: AbortSignal.timeout(30000),
+    });
+    const typeId = res.data?.job_id || null;
+    logger.info(`[SmileID] enhanced_kyc accepted job_id=${jobId} type_id=${typeId} status=${res.data?.status}`);
+    return { typeId, status: res.data?.status || null, raw: res.data };
+  } catch (err) {
+    const msg = err.response?.data || err.message;
+    logger.error(`[SmileID] enhanced_kyc failed: ${typeof msg === 'object' ? JSON.stringify(msg) : msg}`);
+    throw new AppError(
+      err.response?.data?.message || err.response?.data?.error || err.message || 'Verification request failed',
+      err.response?.status || 502
+    );
+  }
+}
+
+/**
+ * GET /v3/status/{typeId} — the authoritative state of a verification, without needing a webhook.
+ *
+ * Terminal states (clear/block/attention/error) return 200, `processing` returns 202, and an
+ * unknown job returns 404 with status `not_found` rather than an error body — so this never throws
+ * for an ordinary "not ready yet" or "never existed", it just reports it. Only the TypeID is
+ * accepted here; our own partner job_id is not a valid path parameter.
+ */
+export async function getVerificationStatusV3(typeId) {
+  if (!/^job_[0-9a-z]{26}$/.test(String(typeId || ''))) {
+    throw new AppError(`Not a valid Smile ID job TypeID: ${typeId}`, 400);
+  }
+  const { partnerId } = getSmileV3Credentials();
+  const { token } = await mintV3Token({});
+  const base = getSmileApiBase();
+  const res = await axios.get(`${base}/v3/status/${typeId}`, {
+    headers: v3Headers(token, partnerId),
+    timeout: 15000,
+    signal: AbortSignal.timeout(15000),
+    // 202 and 404 are meaningful states here, not transport failures.
+    validateStatus: () => true,
+  });
+  const status = String(res.data?.status || '').toLowerCase();
+  return {
+    httpStatus: res.status,
+    status,
+    message: res.data?.message || '',
+    isTerminal: ['clear', 'block', 'attention', 'error'].includes(status),
+    isProcessing: status === 'processing',
+    isNotFound: status === 'not_found' || res.status === 404,
+    raw: res.data,
+  };
+}
+
 export const SMILE_APPROVED_RESULT_CODES = new Set([
   '0810',
   '0817',

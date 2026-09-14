@@ -480,23 +480,85 @@ async function applySmileVerdict({ jobId, userId, approved, resultText, docType,
  * captured yet has never received ANY webhook (not even a "processing" one) and can't be replayed
  * — it can only resolve once Smile's first delivery attempt actually reaches us.
  */
+// A job we registered but that Smile may never have received — the RN native SDK submits from the
+// device, so if that submission never happened (e.g. the native module can't load) no TypeID is
+// ever learned and there is nothing to poll or replay. Such a row would otherwise block the user
+// from ever retrying, since both prepare and submit refuse while any pending row exists.
+const SMILE_PENDING_MAX_AGE_MIN = Number(process.env.SMILE_PENDING_MAX_AGE_MIN) || 60;
+
+/**
+ * Resolve one pending Smile row WITHOUT depending on a webhook.
+ *
+ * Polling GET /v3/status/{typeId} is the authoritative path: it returns the verification's real
+ * lifecycle state directly, so a dropped or never-configured callback no longer strands the user.
+ * Replay is kept as a secondary nudge — it re-sends the callback for anything downstream that
+ * expects the full webhook payload — but the verdict itself is applied from the poll.
+ */
 async function reconcileOnePendingSmileRow(row) {
     const jobId = row.document_number.slice('SMILE:'.length);
+
     if (!row.smile_type_id) {
-        logger.info(`[SMILE SWEEP] job ${jobId} user ${row.user_id}: no smile_type_id captured yet — cannot replay, waiting for a first webhook delivery`);
+        const ageMin = (Date.now() - new Date(row.created_at).getTime()) / 60000;
+        if (ageMin >= SMILE_PENDING_MAX_AGE_MIN) {
+            // Deliberately NOT marked approved/rejected on its merits — we simply never got a
+            // verification to judge. Released so the user can start a fresh attempt.
+            const res = await query(
+                `UPDATE kyc_documents
+                    SET status = 'rejected',
+                        rejection_reason = 'Verification was not completed — please try again',
+                        reviewed_at = NOW(), updated_at = NOW()
+                  WHERE user_id = $1::uuid AND document_number = $2 AND status = 'pending'`,
+                [row.user_id, row.document_number]
+            );
+            if (res.rowCount > 0) {
+                await query(
+                    `UPDATE users SET kyc_status = 'pending', updated_at = NOW()
+                      WHERE id = $1::uuid AND kyc_status = 'under_review'
+                        AND NOT EXISTS (SELECT 1 FROM kyc_documents WHERE user_id = $1::uuid AND status = 'pending')`,
+                    [row.user_id]
+                );
+                logger.warn(`[SMILE SWEEP] job ${jobId} user ${row.user_id}: never reached Smile (no TypeID after ${Math.round(ageMin)}m) — released so the user can retry`);
+            }
+            return { replayed: false, aged: true };
+        }
+        logger.info(`[SMILE SWEEP] job ${jobId} user ${row.user_id}: no smile_type_id yet (${Math.round(ageMin)}m old) — nothing to poll`);
         return { replayed: false };
     }
-    try {
-        await smileId.replayVerificationCallback({ typeId: row.smile_type_id });
-        logger.info(`[SMILE SWEEP] replay requested for job ${jobId} (type_id ${row.smile_type_id}) user ${row.user_id}`);
-        return { replayed: true };
-    } catch (e) {
-        if (e.isReplayPending) {
-            // 409 — Smile hasn't finished processing yet. Normal, not an error; try again next tick.
-            return { replayed: false };
-        }
-        throw e;
+
+    const status = await smileId.getVerificationStatusV3(row.smile_type_id);
+
+    if (status.isProcessing || status.isNotFound) {
+        logger.info(`[SMILE SWEEP] job ${jobId} (type_id ${row.smile_type_id}): ${status.status} — leaving pending`);
+        return { replayed: false };
     }
+
+    if (status.isTerminal) {
+        // clear = passed. block/attention/error are all "did not pass" for our purposes; attention
+        // means a human at Smile must look at it, which we surface as a rejection with the reason
+        // rather than leaving the user waiting indefinitely on a queue we can't see.
+        const approved = status.status === 'clear';
+        const docType = row.document_type || 'smile_biometric_kyc';
+        const tier = docType === 'smile_basic_kyc' ? 'tier_1' : 'tier_2';
+        await applySmileVerdict({
+            jobId,
+            userId: row.user_id,
+            approved,
+            resultText: status.message || (approved ? '' : `Verification result: ${status.status}`),
+            docType,
+            tier,
+            smileTypeId: row.smile_type_id,
+            source: 'sweep',
+        });
+        logger.info(`[SMILE SWEEP] job ${jobId} resolved from /v3/status as "${status.status}" (approved=${approved})`);
+
+        // Best-effort: ask Smile to re-send the callback too, so anything that consumes the full
+        // webhook payload still sees it. The verdict above is already applied either way.
+        smileId.replayVerificationCallback({ typeId: row.smile_type_id }).catch(() => {});
+        return { replayed: true };
+    }
+
+    logger.warn(`[SMILE SWEEP] job ${jobId}: unrecognized status "${status.status}" (HTTP ${status.httpStatus}) — leaving pending`);
+    return { replayed: false };
 }
 
 /**
@@ -509,7 +571,7 @@ async function reconcileOnePendingSmileRow(row) {
  */
 export async function sweepPendingSmileJobs(limit = 50) {
     const rows = (await query(
-        `SELECT user_id, document_number, smile_type_id FROM kyc_documents
+        `SELECT user_id, document_number, smile_type_id, document_type, created_at FROM kyc_documents
          WHERE status = 'pending' AND document_number LIKE 'SMILE:%'
          ORDER BY updated_at ASC LIMIT $1`,
         [limit]
@@ -541,7 +603,7 @@ export async function sweepPendingSmileJobs(limit = 50) {
  */
 export async function reconcileSmileJobsForUser(userId, limit = 5) {
     const rows = (await query(
-        `SELECT user_id, document_number, smile_type_id FROM kyc_documents
+        `SELECT user_id, document_number, smile_type_id, document_type, created_at FROM kyc_documents
          WHERE user_id = $1::uuid AND status = 'pending' AND document_number LIKE 'SMILE:%'
          ORDER BY updated_at ASC LIMIT $2`,
         [userId, limit]
