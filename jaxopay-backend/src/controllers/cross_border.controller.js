@@ -31,6 +31,32 @@ export const getExchangeRate = catchAsync(async (req, res) => {
     });
 });
 
+/**
+ * The only currencies an international transfer may be funded FROM.
+ *
+ * Product decision: everything else must be swapped to USD or USDT first. Enforced here and not
+ * only in the two clients, because both the quote and the send endpoints take the source currency
+ * straight from the request — a UI-only restriction is bypassable with a direct API call, and this
+ * one moves money.
+ *
+ * Both are real Yellow Card rate-table currencies (verified against GET /business/rates, which
+ * carries USD, USDT, USDC among 54 codes), so every corridor still prices via the USD cross rate
+ * in YellowCardService.getExchangeRate.
+ */
+export const INTL_TRANSFER_SOURCE_CURRENCIES = ['USD', 'USDT'];
+
+function assertIntlTransferSourceCurrency(currency) {
+    const cur = String(currency || '').toUpperCase();
+    if (!INTL_TRANSFER_SOURCE_CURRENCIES.includes(cur)) {
+        throw new AppError(
+            `International transfers can only be sent from ${INTL_TRANSFER_SOURCE_CURRENCIES.join(' or ')}. ` +
+            `Swap your ${cur || 'balance'} to USD or USDT first, then send.`,
+            400,
+            'UNSUPPORTED_SOURCE_CURRENCY'
+        );
+    }
+}
+
 // Read-only preview of what sendInternationalPayment will do — the customer rate and what the
 // recipient receives. There is no fee to disclose: JAXOPAY's margin is inside the rate, and the
 // sender is debited exactly the amount they entered.
@@ -39,6 +65,9 @@ export const getInternationalTransferQuote = catchAsync(async (req, res) => {
     if (!fromCurrency || !toCurrency || !amount) {
         throw new AppError('params fromCurrency, toCurrency and amount are required', 400);
     }
+    // Quoting an unsupported source would let the form show a rate for a transfer that can never
+    // be submitted — reject it at the same boundary the send path uses.
+    assertIntlTransferSourceCurrency(fromCurrency);
     const quote = await currencyEngine.getInternationalTransferQuote(fromCurrency, toCurrency, parseFloat(amount));
     res.status(200).json({ success: true, data: quote });
 });
@@ -60,6 +89,10 @@ export const sendInternationalPayment = catchAsync(async (req, res) => {
     if (!b.amount || !b.currency || !b.recipientCountry || !b.recipientName || !b.accountNumber || !b.networkId) {
         throw new AppError('Missing required transfer parameters (amount, currency, recipientCountry, recipientName, accountNumber, networkId)', 400);
     }
+
+    // Checked before the PIN prompt: a user should be told the currency is unsupported rather than
+    // being asked to authorise a transfer that is going to be rejected anyway.
+    assertIntlTransferSourceCurrency(b.currency);
 
     await assertWithdrawalsAllowed(req.user.id, 'fiat');
 

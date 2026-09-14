@@ -54,6 +54,11 @@ const COUNTRY_NAMES = {
 // withdrawing externally uses the existing Currency Swap / crypto withdraw features.
 const STABLECOINS = ['USDT', 'USDC'];
 
+// Mirrors the backend's INTL_TRANSFER_SOURCE_CURRENCIES (cross_border.controller.js), which is the
+// real enforcement point — this only keeps the UI from offering what the API will refuse. Anything
+// else must be swapped to USD or USDT on the Swap tab first.
+const INTL_TRANSFER_SOURCE_CURRENCIES = ['USD', 'USDT'];
+
 const CrossBorder = () => {
     const [activeTab, setActiveTab] = useState('swap'); // 'swap' | 'transfer' | 'collect'
     const [wallets, setWallets] = useState([]);
@@ -91,7 +96,9 @@ const CrossBorder = () => {
     // Transfer State
     const [transferData, setTransferData] = useState({
         amount: '',
-        currency: 'NGN',              // wallet the user pays FROM
+        // USD, not NGN: an international transfer can only be funded from USD or USDT now
+        // (see INTL_TRANSFER_SOURCE_CURRENCIES in the backend, which enforces it).
+        currency: 'USD',              // wallet the user pays FROM
         targetCurrency: 'NGN',        // destination local currency (set from country)
         recipientName: '',
         accountNumber: '',
@@ -750,7 +757,11 @@ const CrossBorder = () => {
                                                                     ...prev,
                                                                     recipientCountry: c.country,
                                                                     targetCurrency: destCur || prev.targetCurrency,
-                                                                    currency: destCur || prev.currency,
+                                                                    // Deliberately NOT set to the destination's local currency any
+                                                                    // more: the send currency is restricted to USD/USDT, and
+                                                                    // auto-setting it to e.g. MXN put the form into a state the API
+                                                                    // rejects. The destination currency is still used for the quote.
+                                                                    currency: prev.currency,
                                                                     networkId: '', networkName: '', networkAccountType: '', networkChannelIds: [],
                                                                 }));
                                                                 setIntlMethod('bank');
@@ -911,7 +922,7 @@ const CrossBorder = () => {
                                                             onChange={(e) => setTransferData(prev => ({ ...prev, currency: e.target.value }))}
                                                             className="shrink-0 bg-card border-border rounded-xl px-4 py-2 font-bold focus:ring-ring"
                                                         >
-                                                            {[...new Set([transferData.currency, 'NGN', 'USD', ...payoutCountries.flatMap(c => c.currencies || [])].filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
+                                                            {INTL_TRANSFER_SOURCE_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
                                                         </select>
                                                     </div>
                                                     {transferData.recipientCountry && (() => {
@@ -920,8 +931,19 @@ const CrossBorder = () => {
                                                         return (
                                                             <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                                                                 <p>
-                                                                    Auto-set to <span className="font-semibold text-foreground">{localCur}</span> — you can change the send currency above.
+                                                                    Recipient receives <span className="font-semibold text-foreground">{localCur}</span>.
                                                                     {transferData.currency !== localCur && ` Your ${transferData.currency} is converted to ${localCur} at the live rate.`}
+                                                                </p>
+                                                                {/* The send currency no longer auto-sets to the destination's local
+                                                                    currency, so the old "Auto-set to X — you can change it above"
+                                                                    line was describing behaviour that no longer happens. */}
+                                                                <p>
+                                                                    International transfers are sent from {INTL_TRANSFER_SOURCE_CURRENCIES.join(' or ')} only.
+                                                                    Holding another currency? <button
+                                                                        type="button"
+                                                                        onClick={() => setActiveTab('swap')}
+                                                                        className="underline font-semibold text-primary hover:opacity-80"
+                                                                    >Swap it to USD or USDT first</button>, then come back.
                                                                 </p>
                                                                 {sc?.min > 0 && transferData.currency === localCur && (
                                                                     <p>Minimum payout to {COUNTRY_NAMES[sc.country] || sc.country}: <span className="font-semibold text-foreground">{sc.min.toLocaleString()} {localCur}</span></p>
