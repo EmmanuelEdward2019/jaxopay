@@ -74,9 +74,17 @@ class WebhookVerifier {
                 return this._verifySudo(headers, payload);
             case 'vtpass':
                 return this._verifyVTpass(headers, payload);
+            // Every spelling Smile's dashboard may be configured with. A partner can register more
+            // than one callback URL, and an unlisted alias falls through to `default` below, which
+            // returns false in production -> 401. Smile retries a 401 three times and then DROPS
+            // the verdict permanently, so a missing alias silently loses real results. 'smileid'
+            // was configured as a second callback URL and was not handled here.
             case 'smile_identity':
             case 'smile':
             case 'smile-id':
+            case 'smileid':
+            case 'smile-identity':
+            case 'smileidentity':
                 return this._verifySmileIdentity(headers, body);
             case 'korapay':
                 // Korapay signs JSON.stringify(body.data), so it needs the PARSED object,

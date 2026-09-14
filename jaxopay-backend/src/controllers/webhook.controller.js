@@ -82,7 +82,7 @@ export const handleWebhook = catchAsync(async (req, res) => {
                 'Verify OBIEX_SIGNATURE_SECRET matches the Signature Secret in Settings > Developers on the Obiex dashboard.'
             );
             // continue to processing below
-        } else if (!['vtpass', 'smile_identity', 'smile', 'smile-id'].includes(provider.toLowerCase())) {
+        } else if (!['vtpass', 'smile_identity', 'smile', 'smile-id', 'smileid', 'smile-identity', 'smileidentity'].includes(provider.toLowerCase())) {
             return res.status(401).json({ success: false, message: 'Invalid signature' });
         }
     }
@@ -98,10 +98,16 @@ export const handleWebhook = catchAsync(async (req, res) => {
             case 'vtpass':
                 await processVTpass(body);
                 break;
-            // Smile posts to /webhooks/smile_identity (the URL we register); accept all aliases.
+            // Smile posts to whichever callback URL(s) the partner registered in their dashboard —
+            // more than one can be configured. 'smileid' was registered as a second URL and had no
+            // case here, so it fell through to `default` (acknowledged, never processed) after
+            // already being 401'd by the verifier. Accept every spelling.
             case 'smile-id':
             case 'smile_identity':
             case 'smile':
+            case 'smileid':
+            case 'smile-identity':
+            case 'smileidentity':
                 await processSmileIdentity(body, headers);
                 break;
             case 'quidax':
@@ -374,7 +380,30 @@ async function applySmileVerdict({ jobId, userId, approved, resultText, docType,
         `SELECT 1 FROM kyc_documents WHERE user_id = $1::uuid AND document_number = $2 LIMIT 1`,
         [userId, docNumber]
     );
-    const mode = existing.rows.length > 0 ? 'update' : 'insert';
+
+    // The job id in a verdict does not always match the one we registered. The RN native SDK (v11)
+    // reports its own numeric job id to Smile rather than the UUID we passed in BiometricKYCParams
+    // (confirmed on a real approved job: dashboard Job ID 1000000007, our row SMILE:b788ff4f-...),
+    // and a v3 web job has no partner job_id at all. Inserting a fresh row in that case leaves the
+    // user's ACTUAL pending verification pending forever while an unrelated approved row appears
+    // beside it — precisely the "approved at Smile, still pending in the app" report. Fall back to
+    // the user's most recent pending Smile row, which is the verification this verdict is for.
+    let targetDocNumber = docNumber;
+    let mode = existing.rows.length > 0 ? 'update' : 'insert';
+    if (mode === 'insert') {
+        const pending = await query(
+            `SELECT document_number FROM kyc_documents
+              WHERE user_id = $1::uuid AND status = 'pending'
+                AND document_type IN ('smile_basic_kyc', 'smile_biometric_kyc')
+              ORDER BY created_at DESC LIMIT 1`,
+            [userId]
+        );
+        if (pending.rows.length > 0) {
+            targetDocNumber = pending.rows[0].document_number;
+            mode = 'update';
+            logger.info(`${logTag} Smile ID job ${jobId}: no row for ${docNumber}; resolving the user's pending row ${targetDocNumber} instead`);
+        }
+    }
 
     let docUpdate;
     if (mode === 'insert') {
@@ -414,7 +443,7 @@ async function applySmileVerdict({ jobId, userId, approved, resultText, docType,
                 approved ? 'approved' : 'rejected',
                 approved ? null : (resultText || 'Verification did not pass'),
                 userId,
-                docNumber,
+                targetDocNumber,
                 smileTypeId || null,
             ]
         );
@@ -434,7 +463,7 @@ async function applySmileVerdict({ jobId, userId, approved, resultText, docType,
             approved ? 'approved' : 'rejected',
             approved ? null : (resultText || 'Verification did not pass'),
             userId,
-            docNumber,
+            targetDocNumber,
         ]
     ).catch((e) => logger.error(`${logTag} Smile ID ramp BVN/NIN update:`, e.message));
 
@@ -443,7 +472,7 @@ async function applySmileVerdict({ jobId, userId, approved, resultText, docType,
         const userRow = await query(`SELECT kyc_tier FROM users WHERE id = $1::uuid`, [userId]);
         const docTierRow = await query(
             `SELECT tier::text AS tier FROM kyc_documents WHERE document_number = $1 AND user_id = $2::uuid`,
-            [docNumber, userId]
+            [targetDocNumber, userId]
         );
         const current = tierRank[userRow.rows[0]?.kyc_tier] ?? 0;
         const fromDoc = tierRank[docTierRow.rows[0]?.tier] ?? 1;
