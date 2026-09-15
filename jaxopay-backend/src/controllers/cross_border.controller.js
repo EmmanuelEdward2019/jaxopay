@@ -43,14 +43,18 @@ export const getExchangeRate = catchAsync(async (req, res) => {
  * carries USD, USDT, USDC among 54 codes), so every corridor still prices via the USD cross rate
  * in YellowCardService.getExchangeRate.
  */
-export const INTL_TRANSFER_SOURCE_CURRENCIES = ['USD', 'USDT'];
+export const INTL_TRANSFER_SOURCE_CURRENCIES = ['USD', 'USDT', 'NGN'];
 
 function assertIntlTransferSourceCurrency(currency) {
     const cur = String(currency || '').toUpperCase();
     if (!INTL_TRANSFER_SOURCE_CURRENCIES.includes(cur)) {
+        const allowed = INTL_TRANSFER_SOURCE_CURRENCIES;
+        const list = allowed.length > 1
+            ? `${allowed.slice(0, -1).join(', ')} or ${allowed[allowed.length - 1]}`
+            : allowed[0];
         throw new AppError(
-            `International transfers can only be sent from ${INTL_TRANSFER_SOURCE_CURRENCIES.join(' or ')}. ` +
-            `Swap your ${cur || 'balance'} to USD or USDT first, then send.`,
+            `International transfers can only be sent from ${list}. ` +
+            `Swap your ${cur || 'balance'} to one of those first, then send.`,
             400,
             'UNSUPPORTED_SOURCE_CURRENCY'
         );

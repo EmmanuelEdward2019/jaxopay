@@ -57,7 +57,7 @@ const STABLECOINS = ['USDT', 'USDC'];
 // Mirrors the backend's INTL_TRANSFER_SOURCE_CURRENCIES (cross_border.controller.js), which is the
 // real enforcement point — this only keeps the UI from offering what the API will refuse. Anything
 // else must be swapped to USD or USDT on the Swap tab first.
-const INTL_TRANSFER_SOURCE_CURRENCIES = ['USD', 'USDT'];
+const INTL_TRANSFER_SOURCE_CURRENCIES = ['USD', 'USDT', 'NGN'];
 
 const CrossBorder = () => {
     const [activeTab, setActiveTab] = useState('swap'); // 'swap' | 'transfer' | 'collect'
@@ -938,12 +938,12 @@ const CrossBorder = () => {
                                                                     currency, so the old "Auto-set to X — you can change it above"
                                                                     line was describing behaviour that no longer happens. */}
                                                                 <p>
-                                                                    International transfers are sent from {INTL_TRANSFER_SOURCE_CURRENCIES.join(' or ')} only.
+                                                                    International transfers are sent from {INTL_TRANSFER_SOURCE_CURRENCIES.slice(0, -1).join(', ')} or {INTL_TRANSFER_SOURCE_CURRENCIES.at(-1)} only.
                                                                     Holding another currency? <button
                                                                         type="button"
                                                                         onClick={() => setActiveTab('swap')}
                                                                         className="underline font-semibold text-primary hover:opacity-80"
-                                                                    >Swap it to USD or USDT first</button>, then come back.
+                                                                    >Swap it first</button>, then come back.
                                                                 </p>
                                                                 {sc?.min > 0 && transferData.currency === localCur && (
                                                                     <p>Minimum payout to {COUNTRY_NAMES[sc.country] || sc.country}: <span className="font-semibold text-foreground">{sc.min.toLocaleString()} {localCur}</span></p>
