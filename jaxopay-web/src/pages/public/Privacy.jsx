@@ -60,6 +60,7 @@ export default function Privacy() {
         '• Export your data in a portable format',
         '• Withdraw consent at any time',
         'To exercise these rights, contact us at privacy@jaxopay.com',
+        'To delete your account, follow the steps at jaxopay.com/delete-account',
       ],
     },
     {

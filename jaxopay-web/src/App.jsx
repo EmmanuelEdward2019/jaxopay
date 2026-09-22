@@ -30,6 +30,7 @@ import Terms from './pages/public/Terms';
 import Cookies from './pages/public/Cookies';
 import Fees from './pages/public/Fees';
 import Sanctions from './pages/public/Sanctions';
+import DeleteAccount from './pages/public/DeleteAccount';
 
 // Product Pages
 import Payments from './pages/products/Payments';
@@ -256,6 +257,7 @@ function App() {
           <Route path="/cookies" element={<Cookies />} />
           <Route path="/fees" element={<Fees />} />
           <Route path="/sanctions" element={<Sanctions />} />
+          <Route path="/delete-account" element={<DeleteAccount />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/careers" element={<Careers />} />
 

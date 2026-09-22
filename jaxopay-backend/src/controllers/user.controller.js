@@ -4,6 +4,7 @@ import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import bcrypt from 'bcryptjs';
 import { auditFromReq } from '../services/audit.service.js';
+import { sendEmail } from '../services/email.service.js';
 
 // Get current user profile
 export const getProfile = catchAsync(async (req, res) => {
@@ -431,6 +432,27 @@ export async function performAccountDeletion(userId) {
   logger.info('Account deleted (approved) — PII erased, financial/AML records retained:', { userId });
 }
 
+// Files a pending deletion request for a user whose identity the caller has already verified.
+// Shared by the in-app route and the public web page so both land in the same super_admin
+// review queue. Returns { row, alreadyPending }.
+async function fileAccountDeletionRequest(userId, reason) {
+  const existing = await query(
+    `SELECT id, status, requested_at FROM account_deletion_requests WHERE user_id = $1 AND status = 'pending'`,
+    [userId]
+  );
+  if (existing.rows.length > 0) {
+    return { row: existing.rows[0], alreadyPending: true };
+  }
+
+  const result = await query(
+    `INSERT INTO account_deletion_requests (user_id, reason, status)
+     VALUES ($1, $2, 'pending')
+     RETURNING id, status, requested_at`,
+    [userId, reason || null]
+  );
+  return { row: result.rows[0], alreadyPending: false };
+}
+
 // Request account deletion — does NOT delete anything immediately. Creates a pending request
 // that a super_admin must approve (or reject) from the admin panel.
 export const requestAccountDeletion = catchAsync(async (req, res) => {
@@ -442,31 +464,85 @@ export const requestAccountDeletion = catchAsync(async (req, res) => {
     throw new AppError('Invalid password', 401);
   }
 
-  const existing = await query(
-    `SELECT id, status, requested_at FROM account_deletion_requests WHERE user_id = $1 AND status = 'pending'`,
-    [req.user.id]
-  );
-  if (existing.rows.length > 0) {
+  const { row, alreadyPending } = await fileAccountDeletionRequest(req.user.id, reason);
+  if (alreadyPending) {
     return res.status(200).json({
       success: true,
       message: 'You already have a pending account deletion request awaiting review.',
-      data: existing.rows[0],
+      data: row,
     });
   }
 
-  const result = await query(
-    `INSERT INTO account_deletion_requests (user_id, reason, status)
-     VALUES ($1, $2, 'pending')
-     RETURNING id, status, requested_at`,
-    [req.user.id, reason || null]
-  );
-
-  logger.info('Account deletion requested:', { userId: req.user.id, requestId: result.rows[0].id });
+  logger.info('Account deletion requested:', { userId: req.user.id, requestId: row.id });
 
   res.status(201).json({
     success: true,
     message: 'Your account deletion request has been submitted and is awaiting super admin approval.',
-    data: result.rows[0],
+    data: row,
+  });
+});
+
+// POST /auth/account-deletion-request — unauthenticated. Backs the public jaxopay.com/delete-account
+// page that Google Play and the App Store require: someone who no longer has the app installed
+// must still be able to ask for deletion.
+//
+// Identity is proven the same way login proves it (email + password, same rate limiter, same
+// generic error so it can't be used to probe which emails exist). It exposes nothing login
+// doesn't already, and it deletes nothing: it only files the same super_admin-reviewed request as
+// the in-app flow. The account holder is emailed either way, so a request they didn't make can't
+// go unnoticed.
+export const requestAccountDeletionPublic = catchAsync(async (req, res) => {
+  const { email, password, reason } = req.body;
+
+  const result = await query(
+    `SELECT u.id, u.email, u.password_hash, up.first_name
+       FROM users u
+       LEFT JOIN user_profiles up ON up.user_id = u.id
+      WHERE u.email = $1 AND u.deleted_at IS NULL`,
+    [email]
+  );
+  const user = result.rows[0];
+  // Deactivated accounts can still ask to be deleted, so is_active is deliberately not checked.
+  const isValid = user && user.password_hash
+    ? await bcrypt.compare(password, user.password_hash)
+    : false;
+  if (!isValid) {
+    logger.warn('Public account deletion request: invalid credentials', { email });
+    throw new AppError('Invalid email or password', 401);
+  }
+
+  const { row, alreadyPending } = await fileAccountDeletionRequest(user.id, reason);
+
+  auditFromReq(req, {
+    userId: user.id,
+    action: 'account_deletion_requested',
+    entityType: 'account_deletion_request',
+    entityId: row.id,
+    newValues: { source: 'public_web', already_pending: alreadyPending },
+  });
+
+  if (!alreadyPending) {
+    logger.info('Account deletion requested (public page):', { userId: user.id, requestId: row.id });
+    sendEmail({
+      to: user.email,
+      subject: 'We received your account deletion request',
+      template: 'genericNotification',
+      data: {
+        subject: 'Account deletion request received',
+        name: user.first_name || 'there',
+        message:
+          'We received a request to delete your JAXOPAY account. Our team will review it and email you once it has been processed. Your account stays active until then.<br/><br/>' +
+          'If you did not make this request, change your password right away and contact support@jaxopay.com.',
+      },
+    }).catch((err) => logger.error('Failed to send deletion-request confirmation email:', err.message));
+  }
+
+  res.status(alreadyPending ? 200 : 201).json({
+    success: true,
+    message: alreadyPending
+      ? 'You already have a pending account deletion request. Our team will email you once it has been processed.'
+      : "Your account deletion request has been received and we've emailed you a confirmation. Our team will review it and email you again once it has been processed.",
+    data: { status: row.status, requested_at: row.requested_at },
   });
 });
 

@@ -328,11 +328,38 @@ export const getAccountDeletionRequests = catchAsync(async (req, res) => {
 });
 
 // POST /admin/account-deletion-requests/:id/approve (super_admin only)
+// Deletion outcome emails. Both request paths (in-app and the public jaxopay.com/delete-account
+// page) tell the user they'll hear back once their request is processed; these are that follow-up.
+async function getDeletionContact(userId) {
+  const row = (await query(
+    `SELECT u.email, up.first_name FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = $1`,
+    [userId]
+  )).rows[0];
+  return row ? { email: row.email, name: row.first_name || 'there' } : null;
+}
+
+function notifyDeletionOutcome(contact, { subject, message }) {
+  if (!contact?.email) return;
+  sendEmailSvc({
+    to: contact.email,
+    subject,
+    template: 'genericNotification',
+    data: { subject, name: contact.name, message },
+  }).catch((err) => logger.error('Failed to send account deletion outcome email:', err.message));
+}
+
+const escapeHtml = (str) => String(str).replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
 export const approveAccountDeletionRequest = catchAsync(async (req, res) => {
   const { id } = req.params;
   const r = (await query(`SELECT * FROM account_deletion_requests WHERE id = $1`, [id])).rows[0];
   if (!r) throw new AppError('Deletion request not found', 404);
   if (r.status !== 'pending') throw new AppError(`Request is already ${r.status}`, 400);
+
+  // Read the contact details first: performAccountDeletion mangles the email and erases the name.
+  const contact = await getDeletionContact(r.user_id);
 
   // Throws (and leaves the request pending) if the user still has a wallet balance.
   await performAccountDeletion(r.user_id);
@@ -343,6 +370,11 @@ export const approveAccountDeletionRequest = catchAsync(async (req, res) => {
   );
 
   await logAdminAction({ adminId: req.user.id, action: 'approve_account_deletion', targetId: r.user_id, targetType: 'user', req });
+
+  notifyDeletionOutcome(contact, {
+    subject: 'Your JAXOPAY account has been deleted',
+    message: 'Your account deletion request has been processed and your JAXOPAY account is now closed. Your personal details have been removed. We keep only the transaction and compliance records the law requires us to retain.<br/><br/>Thank you for using JAXOPAY.',
+  });
 
   res.status(200).json({ success: true, message: 'Account deleted and request approved.' });
 });
@@ -361,6 +393,12 @@ export const rejectAccountDeletionRequest = catchAsync(async (req, res) => {
   );
 
   await logAdminAction({ adminId: req.user.id, action: 'reject_account_deletion', targetId: r.user_id, targetType: 'user', changes: { admin_note }, req });
+
+  const note = admin_note ? `<br/><br/>Note from our team: ${escapeHtml(admin_note)}` : '';
+  notifyDeletionOutcome(await getDeletionContact(r.user_id), {
+    subject: "We couldn't process your account deletion request",
+    message: `We reviewed your request to delete your JAXOPAY account and weren't able to complete it. Your account is still active.${note}<br/><br/>Reply to this email or contact support@jaxopay.com if you have any questions.`,
+  });
 
   res.status(200).json({ success: true, message: 'Deletion request rejected.' });
 });

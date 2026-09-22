@@ -1,5 +1,7 @@
 import express from 'express';
 import * as authController from '../controllers/auth.controller.js';
+import { requestAccountDeletionPublic } from '../controllers/user.controller.js';
+import { body } from 'express-validator';
 import { verifyToken, captureDeviceFingerprint } from '../middleware/auth.js';
 import { authRateLimiter, otpRateLimiter } from '../middleware/rateLimiter.js';
 import {
@@ -10,6 +12,7 @@ import {
   forgotPasswordValidation,
   resetPasswordValidation,
   changePasswordValidation,
+  validate,
 } from '../middleware/validator.js';
 
 const router = express.Router();
@@ -83,6 +86,18 @@ router.post(
   '/resend-verification',
   otpRateLimiter,
   authController.resendVerificationEmail
+);
+
+// Public account deletion request (jaxopay.com/delete-account). Proves identity like login does
+// and only files an admin-reviewed request; see requestAccountDeletionPublic.
+router.post(
+  '/account-deletion-request',
+  authRateLimiter,
+  body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email address'),
+  body('password').notEmpty().withMessage('Password is required'),
+  body('reason').optional({ checkFalsy: true }).isString().isLength({ max: 500 }),
+  validate,
+  requestAccountDeletionPublic
 );
 
 // Protected routes

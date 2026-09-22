@@ -166,7 +166,8 @@ apiClient.interceptors.response.use(
       originalRequest.url?.includes('/auth/verify-otp') ||
       originalRequest.url?.includes('/auth/verify-email') ||
       originalRequest.url?.includes('/auth/resend-verification') ||
-      originalRequest.url?.includes('/auth/forgot-password');
+      originalRequest.url?.includes('/auth/forgot-password') ||
+      originalRequest.url?.includes('/auth/account-deletion-request');
 
     if (!error.response) {
       const msg = error.message || '';
