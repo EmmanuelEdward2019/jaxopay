@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Trash2, Smartphone, Monitor, Mail, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Trash2, Smartphone, Monitor, Mail, CheckCircle, AlertTriangle, FileEdit, Download, Eraser } from 'lucide-react';
 import PublicLayout from '../../components/layout/PublicLayout';
 import apiClient from '../../lib/apiClient';
 
@@ -217,6 +217,68 @@ export default function DeleteAccount() {
                 We keep these only for as long as anti-money-laundering and financial record-keeping laws require,
                 generally at least five years after the account is closed, and use them only for legal, regulatory
                 and fraud-prevention purposes.
+              </p>
+            </div>
+          </div>
+
+          {/* Data requests short of deleting the account. This section is the target of the
+              "users can request data deletion without deleting their account" answer in Play
+              Console, hence the id — it is linked directly as /delete-account#request-your-data. */}
+          <div id="request-your-data" className="scroll-mt-24">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+              Request your data without closing your account
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              You don't have to delete your account to correct, export or remove your data.
+            </p>
+
+            <div className="grid gap-6 md:grid-cols-3">
+              <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-700">
+                <FileEdit className="w-7 h-7 text-accent-600 dark:text-accent-400 mb-3" />
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Correct your details</h3>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
+                  Update your name, phone number, date of birth and address yourself in the app under
+                  <strong> Profile → Edit Profile</strong>, or on the website under <strong>Settings</strong>.
+                  To correct something you can't edit, such as a verified identity document, email us.
+                </p>
+              </div>
+              <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-700">
+                <Download className="w-7 h-7 text-accent-600 dark:text-accent-400 mb-3" />
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Export your data</h3>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
+                  Download a statement of your account as PDF or CSV — filtered by date and type, or emailed
+                  to you — from <strong>Transactions → Download Statement</strong>. For a full copy of
+                  everything else we hold on you, email us and we'll send it.
+                </p>
+              </div>
+              <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-700">
+                <Eraser className="w-7 h-7 text-accent-600 dark:text-accent-400 mb-3" />
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Delete part of your data</h3>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
+                  Ask us to remove data we aren't required to keep — saved beneficiaries, your profile photo,
+                  marketing preferences, notification history and registered devices. Saved recipients can also
+                  be deleted yourself in the app under <strong>Beneficiaries</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+              <p className="text-gray-700 dark:text-gray-300">
+                <strong className="text-gray-900 dark:text-white">How to ask:</strong> email{' '}
+                <a
+                  href="mailto:privacy@jaxopay.com?subject=Data%20request"
+                  className="text-accent-600 dark:text-accent-400 hover:underline"
+                >
+                  privacy@jaxopay.com
+                </a>{' '}
+                from the address on your account, telling us what you'd like corrected, exported or deleted.
+                We reply within 30 days, and may ask you to confirm your identity first so nobody else can
+                request your data.
+              </p>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mt-3">
+                What we can't delete while your account is open: your transaction history, identity
+                verification records and audit logs. Anti-money-laundering and financial record-keeping laws
+                require us to keep these, and we can't operate your account without them.
               </p>
             </div>
           </div>
