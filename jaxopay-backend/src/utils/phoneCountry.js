@@ -28,10 +28,11 @@ export function deriveCountryFromPhone(phone) {
   const digits = phone.replace(/[^\d]/g, '');
   if (!digits) return null;
 
-  // A local Nigerian number: 11 digits starting 0 (0803..., as the signup field's own placeholder
-  // shows). Deliberately limited to Nigeria — a bare leading 0 is a local prefix in many countries,
-  // and this is only a safe read because Nigeria is the market the app onboards.
-  if (digits.length === 11 && digits.startsWith('0')) return 'NG';
+  // A local Nigerian number, matched on the actual NG mobile prefixes rather than "11 digits
+  // starting with 0". That looser rule collides with UK mobiles, which share the shape: a real
+  // account with the number 07777436026 and a GB profile was being read as Nigerian. Nigeria uses
+  // 070/071/080/081/090/091; the UK's 074-079 no longer match.
+  if (/^0(70|71|80|81|90|91)\d{8}$/.test(digits)) return 'NG';
 
   for (const [code, iso2] of DIAL_CODES) {
     if (digits.startsWith(code)) return iso2;
