@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 import { query, transaction } from '../config/database.js';
 import { AppError, catchAsync } from '../middleware/errorHandler.js';
 import { sendEmail } from '../services/email.service.js';
+import { resolveSignupCountry } from '../utils/phoneCountry.js';
 import { sendSMS } from '../services/sms.service.js';
 import { parseUserAgent, getDeviceInfo } from '../utils/deviceParser.js';
 import logger from '../utils/logger.js';
@@ -158,6 +159,10 @@ export const signup = catchAsync(async (req, res) => {
   const firstName = metadata?.first_name || req.body.first_name || 'User';
   const lastName = metadata?.last_name || req.body.last_name || null;
 
+  // The mobile app hardcoded 'US' for every account and the web app sends nothing, so the client's
+  // value is not trusted over the phone number. See resolveSignupCountry.
+  const resolvedCountry = resolveSignupCountry(phone, country_code);
+
   const verificationCode = generateNumericCode();
   const codeHash = await bcrypt.hash(verificationCode, 10);
 
@@ -167,7 +172,7 @@ export const signup = catchAsync(async (req, res) => {
       `INSERT INTO pending_signups
        (email, phone, password_hash, first_name, last_name, country_code, code_hash, expires_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + INTERVAL '15 minutes')`,
-      [email, phone || null, passwordHash, firstName, lastName, country_code || null, codeHash]
+      [email, phone || null, passwordHash, firstName, lastName, resolvedCountry, codeHash]
     );
   });
 
