@@ -31,6 +31,7 @@ import Cookies from './pages/public/Cookies';
 import Fees from './pages/public/Fees';
 import Sanctions from './pages/public/Sanctions';
 import DeleteAccount from './pages/public/DeleteAccount';
+import ScrollToHash from './components/ScrollToHash';
 
 // Product Pages
 import Payments from './pages/products/Payments';
@@ -243,6 +244,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
+        <ScrollToHash />
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<Home />} />
